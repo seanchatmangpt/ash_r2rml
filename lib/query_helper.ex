@@ -579,6 +579,78 @@ defmodule AshNeo4j.QueryHelper do
     AshNeo4j.Error.UnsupportedChangesetFilter.exception(resource: module, filter: filter)
   end
 
+  @doc """
+  Renders `changeset.atomics` (a keyword of `{field, Ash.Expr}`, #361) into
+  `{:ok, {set_expressions, params}}` for the update `SET`, where each entry is
+  `"n.<prop> = <cypher>"` evaluated against the **live** node — or
+  `{:error, %AshNeo4j.Error.UnsupportedAtomic{}}` when an expression can't be
+  rendered.
+
+  Numeric-first cut: arithmetic (`+ - * /`), comparisons, `if/3` (⇒ `CASE`),
+  attribute refs (`n.<prop>`) and scalar literals (bound as params). Anything else
+  — notably string/atom atomics Ash wraps in cast calls — is refused rather than
+  mis-written (stance a). Param keys are `am_`-prefixed and threaded across all
+  atomics so they stay unique.
+  """
+  @spec render_atomic_sets(module(), ResourceMapping.t(), keyword()) ::
+          {:ok, {[binary()], map()}} | {:error, struct()}
+  def render_atomic_sets(_resource, %ResourceMapping{}, []), do: {:ok, {[], %{}}}
+
+  def render_atomic_sets(resource, %ResourceMapping{module: module} = mapping, atomics) do
+    Enum.reduce_while(atomics, {:ok, {[], %{}}}, fn {field, expr}, {:ok, {sets, params}} ->
+      with {:ok, hydrated} <- Ash.Filter.hydrate_refs(expr, %{resource: resource, public?: false}),
+           {:ok, cypher, params} <- render_atomic_node(mapping, hydrated, params) do
+        {:cont, {:ok, {sets ++ ["n.#{property_name(mapping, field)} = #{cypher}"], params}}}
+      else
+        _ -> {:halt, {:error, AshNeo4j.Error.UnsupportedAtomic.exception(resource: module, expression: expr)}}
+      end
+    end)
+  end
+
+  # `+ - * /` (parenthesised) and comparisons, dispatched on the `:operator` atom.
+  @atomic_binary_ops %{
+    +: "+",
+    -: "-",
+    *: "*",
+    /: "/",
+    >: ">",
+    >=: ">=",
+    <: "<",
+    <=: "<=",
+    ==: "=",
+    !=: "<>"
+  }
+
+  defp render_atomic_node(mapping, %Ash.Query.Ref{} = ref, params),
+    do: {:ok, "n.#{property_name(mapping, ref)}", params}
+
+  defp render_atomic_node(mapping, %Ash.Query.Function.If{arguments: [condition, then | rest]}, params) do
+    with {:ok, c, params} <- render_atomic_node(mapping, condition, params),
+         {:ok, t, params} <- render_atomic_node(mapping, then, params),
+         {:ok, e, params} <- render_atomic_else(mapping, rest, params) do
+      {:ok, "CASE WHEN #{c} THEN #{t} ELSE #{e} END", params}
+    end
+  end
+
+  defp render_atomic_node(mapping, %{operator: op, left: left, right: right}, params)
+       when is_map_key(@atomic_binary_ops, op) do
+    with {:ok, l, params} <- render_atomic_node(mapping, left, params),
+         {:ok, r, params} <- render_atomic_node(mapping, right, params) do
+      {:ok, "(#{l} #{@atomic_binary_ops[op]} #{r})", params}
+    end
+  end
+
+  defp render_atomic_node(_mapping, literal, params)
+       when is_number(literal) or is_binary(literal) or is_boolean(literal) or is_nil(literal) do
+    key = "am_#{map_size(params)}"
+    {:ok, "$#{key}", Map.put(params, key, literal)}
+  end
+
+  defp render_atomic_node(_mapping, other, _params), do: {:error, other}
+
+  defp render_atomic_else(_mapping, [], params), do: {:ok, "null", params}
+  defp render_atomic_else(mapping, [else_], params), do: render_atomic_node(mapping, else_, params)
+
   # True when the filter is an `and`-only tree of leaf predicates — no `or`/`not`,
   # so `to_simple_filter`'s flattened predicate list represents it faithfully.
   defp simple_conjunction?(%Ash.Filter{expression: expression}), do: simple_conjunction?(expression)

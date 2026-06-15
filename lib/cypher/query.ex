@@ -781,19 +781,30 @@ defmodule AshNeo4j.Cypher.Query do
   end
 
   @doc """
-  `MATCH (n:L1:L2 {match_props}) SET n += {set_props} REMOVE n.p1, n.p2 RETURN n`
+  `MATCH (n:L1:L2 {match_props}) [WHERE guard] SET n += {set_props} [, n.x = <expr>]
+  REMOVE n.p1, n.p2 RETURN n`
 
-  Handles all combinations of empty/non-empty set_props and remove_props.
+  Handles all combinations of empty/non-empty set_props and remove_props. `opts`:
+
+    * `:guard` — `changeset.filter` conditions (#361); rendered as a `WHERE`
+      between the `MATCH` and `SET`. Zero matched rows ⇒ the caller raises
+      `StaleRecord`.
+    * `:atomics` — `{set_expressions, params}` for `changeset.atomics` (#361):
+      live-node `SET n.<prop> = <expr>` clauses (already rendered against `:n`).
   """
-  @spec update_node(atom() | [atom()], map(), map(), [atom()]) :: t()
-  def update_node(label, match_props, set_props, remove_props \\ [], guard_conditions \\ [])
-      when is_map(match_props) and is_map(set_props) and is_list(remove_props) and
-             is_list(guard_conditions) do
+  @spec update_node(atom() | [atom()], map(), map(), [atom()], keyword()) :: t()
+  def update_node(label, match_props, set_props, remove_props \\ [], opts \\ [])
+      when is_map(match_props) and is_map(set_props) and is_list(remove_props) and is_list(opts) do
     {match_pattern, match_params} = Cypher.parameterized_node(:n, List.wrap(label), match_props)
     {props_cypher, set_params} = Cypher.parameterized_properties(:n, set_props)
-    {guard_clauses, guard_params} = guard_where(guard_conditions)
+    {guard_clauses, guard_params} = guard_where(Keyword.get(opts, :guard, []))
+    {atomic_exprs, atomic_params} = Keyword.get(opts, :atomics, {[], %{}})
 
-    set_clauses = if map_size(set_props) > 0, do: [%Set{expression: "n += #{props_cypher}"}], else: []
+    set_exprs =
+      (if(map_size(set_props) > 0, do: ["n += #{props_cypher}"], else: [])) ++ atomic_exprs
+
+    set_clauses = if set_exprs != [], do: [%Set{expression: Enum.join(set_exprs, ", ")}], else: []
+
     remove_clauses =
       if remove_props != [],
         do: [%Remove{items: Enum.map(remove_props, &"n.#{Cypher.quote_if_dotted(&1)}")}],
@@ -803,7 +814,7 @@ defmodule AshNeo4j.Cypher.Query do
       clauses:
         [%Match{pattern: match_pattern}] ++
           guard_clauses ++ set_clauses ++ remove_clauses ++ [%Return{items: ["n"]}],
-      params: match_params |> Map.merge(set_params) |> Map.merge(guard_params)
+      params: match_params |> Map.merge(set_params) |> Map.merge(guard_params) |> Map.merge(atomic_params)
     }
   end
 

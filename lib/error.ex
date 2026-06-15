@@ -48,6 +48,23 @@ defmodule AshNeo4j.Error.UnsupportedChangesetFilter do
   end
 end
 
+defmodule AshNeo4j.Error.UnsupportedAtomic do
+  @moduledoc """
+  **Returned** (never raised) when a `changeset.atomics` expression can't be
+  rendered into the update Cypher `SET` (#361). The numeric-first cut renders
+  arithmetic (`+ - * /`), comparisons, `if/3` (⇒ `CASE`), attribute refs and
+  scalar literals; anything else — notably string/atom atomics that Ash wraps in
+  cast calls (`string_trim/…`) — is refused rather than mis-written.
+
+  Express the change as a numeric atomic, or perform it outside the data layer.
+  """
+  use Splode.Error, fields: [:resource, :expression], class: :invalid
+
+  def message(%{resource: resource, expression: expression}) do
+    "cannot render atomic update on #{inspect(resource)} into Cypher (#{inspect(expression)})"
+  end
+end
+
 defmodule AshNeo4j.Error.GeoDimensionMismatch do
   @moduledoc """
   Returned (never raised) when a spatial operation combines geometries of

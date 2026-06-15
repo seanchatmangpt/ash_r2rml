@@ -29,6 +29,9 @@ defmodule AshNeo4j.DataLayer do
   # Advertise the "only-update-if" guard (#361) so Ash threads `changeset.filter`
   # into update/destroy — without this, `Ash.Changeset.filter/2` silently drops it.
   def can?(_, :changeset_filter), do: true
+  # Atomic updates (#361): render `changeset.atomics` against the live node. Single
+  # record only — the bulk `update_query/4` decision point is deferred.
+  def can?(_, {:atomic, :update}), do: true
   def can?(_, :upsert), do: true
   def can?(_, :destroy), do: true
   def can?(_, :sort), do: true
@@ -391,15 +394,16 @@ defmodule AshNeo4j.DataLayer do
   end
 
   defp do_update(resource, changeset, %ResourceMapping{} = mapping) do
-    # Honour the `changeset.filter` "only-update-if" guard (#361). Refuse a guard
-    # we can't push down in full rather than apply the update unguarded (stance a).
-    case QueryHelper.guard_conditions(mapping, changeset.filter) do
-      {:error, _} = error -> error
-      {:ok, guard_conditions} -> do_update(resource, changeset, mapping, guard_conditions)
+    # Honour the `changeset.filter` "only-update-if" guard and render
+    # `changeset.atomics` against the live node (#361). Refuse anything we can't
+    # render in full rather than write unguarded / mis-write (stance a).
+    with {:ok, guard_conditions} <- QueryHelper.guard_conditions(mapping, changeset.filter),
+         {:ok, atomic_sets} <- QueryHelper.render_atomic_sets(resource, mapping, changeset.atomics || []) do
+      do_update(resource, changeset, mapping, guard_conditions, atomic_sets)
     end
   end
 
-  defp do_update(resource, changeset, %ResourceMapping{} = mapping, guard_conditions) do
+  defp do_update(resource, changeset, %ResourceMapping{} = mapping, guard_conditions, atomic_sets) do
     subject_id = id_properties(mapping, changeset.data)
     subject_label = mapping.label_pair
 
@@ -408,11 +412,16 @@ defmodule AshNeo4j.DataLayer do
     remove_property_names = stale_property_names(mapping, update_properties, changeset)
 
     guarded? = guard_conditions != []
+    {atomic_exprs, _atomic_params} = atomic_sets
 
     property_update_result =
-      if !Enum.empty?(update_properties) or !Enum.empty?(remove_property_names) or guarded? do
+      if !Enum.empty?(update_properties) or !Enum.empty?(remove_property_names) or guarded? or
+           atomic_exprs != [] do
         case subject_label
-             |> Neo4jHelper.update_node(subject_id, update_properties, remove_property_names, guard_conditions) do
+             |> Neo4jHelper.update_node(subject_id, update_properties, remove_property_names,
+               guard: guard_conditions,
+               atomics: atomic_sets
+             ) do
           # No row matched the id + guard: a present guard ⇒ the row is stale
           # (the predicate no longer holds); otherwise the id itself didn't match.
           {:ok, %Bolty.Response{results: []}} ->
