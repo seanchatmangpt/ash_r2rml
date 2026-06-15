@@ -374,7 +374,44 @@ defmodule AshNeo4j.Cypher do
     {prefix <> Enum.map_join(clauses, " ", &render_clause/1), params}
   end
 
-  defp cypher25_prefix, do: if(BoltyHelper.cypher25?(), do: "CYPHER 25 ", else: "")
+  # Dialect posture (#363): Cypher 25 is the target dialect — we emit the
+  # `CYPHER 25 ` selector explicitly on every server that supports it, so our
+  # (audited Cypher-25-clean) output runs under Cypher 25 there. The bare /
+  # no-selector branch is purely the Neo4j 5.26-LTS fallback, which relies on the
+  # server defaulting to CYPHER 5.
+  defp cypher25_prefix do
+    if BoltyHelper.cypher25?() do
+      "CYPHER 25 "
+    else
+      warn_cypher5_sunset()
+      ""
+    end
+  end
+
+  # Sunset tripwire (#363): the bare fallback above assumes the server defaults to
+  # CYPHER 5. CYPHER 5 is feature-capped from Neo4j 2026.06 and slated for removal
+  # (late-2026.x / 2027.x TBD); a server that no longer speaks it reports
+  # `policy.cypher_5 == false`. Reaching this with cypher_5 false means our
+  # unprefixed Cypher now runs under an unknown server default — flag it once per
+  # pool rather than emit silently. (Near-unreachable on real servers, since a
+  # post-CYPHER-5 server is a Cypher 25 server and takes the prefixed branch.)
+  defp warn_cypher5_sunset do
+    pool = BoltyHelper.current_pool()
+
+    with false <- :persistent_term.get({__MODULE__, :cypher5_warned, pool}, false),
+         %{cypher_5: false} <- BoltyHelper.policy(pool) do
+      Logger.warning(
+        "AshNeo4j is emitting unprefixed Cypher (CYPHER 5 fallback) to pool #{inspect(pool)}, " <>
+          "but the server reports no CYPHER 5 support (policy.cypher_5 == false). CYPHER 5 is " <>
+          "being sunset (Neo4j 2026.06 feature-cap; removal TBD) — these queries now run under the " <>
+          "server's default language. See AshNeo4j #363."
+      )
+
+      :persistent_term.put({__MODULE__, :cypher5_warned, pool}, true)
+    end
+
+    :ok
+  end
 
   defp render_clause(%Match{pattern: p}), do: "MATCH #{p}"
   defp render_clause(%OptionalMatch{pattern: p}), do: "OPTIONAL MATCH #{p}"
