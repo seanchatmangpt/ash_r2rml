@@ -12,6 +12,19 @@ defmodule AshNeo4j.Error.RequiresCypher25 do
   def message(_), do: "This operation requires Cypher 25 (Neo4j ≥ 2025.06)"
 end
 
+defmodule AshNeo4j.Error.RequiresDynamicLabels do
+  @moduledoc """
+  Returned (never raised) when a dynamic label/type operation (`MATCH (n:$(expr))`,
+  `-[r:$(expr)]->`) is attempted against a Neo4j server older than 5.26. This is
+  the **server-feature axis** — dynamic labels run under plain `CYPHER 5` and are
+  unrelated to the `CYPHER 25` selector (`AshNeo4j.Error.RequiresCypher25`).
+  Upgrade to Neo4j 5.26 or later to use this feature.
+  """
+  use Splode.Error, fields: [], class: :invalid
+
+  def message(_), do: "This operation requires dynamic labels (Neo4j ≥ 5.26)"
+end
+
 defmodule AshNeo4j.Error.GeoDimensionMismatch do
   @moduledoc """
   Returned (never raised) when a spatial operation combines geometries of

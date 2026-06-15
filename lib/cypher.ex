@@ -426,6 +426,54 @@ defmodule AshNeo4j.Cypher do
   end
 
   @doc """
+  A **dynamic label/type** fragment `:$(expr)` (Neo4j ≥ 5.26) — the runtime-resolved
+  counterpart to a static `:Label` in a node pattern `(n:$(expr))` or a relationship
+  pattern `-[r:$(expr)]->` (#339). `expr` is any Cypher expression yielding the
+  label/type: a parameter token (`"$label"`), a property (`"n.kind"`), or — for
+  multiple labels in `CREATE` — a list-valued parameter (`"$labels"`).
+
+  `expr` must be a server-side Cypher expression, never an interpolated literal —
+  that is the injection-safe form (the value is bound, not string-built). Gate
+  emission with `require_dynamic_labels/0`.
+
+  ## Examples
+  ```
+  iex> AshNeo4j.Cypher.dynamic_label("$label")
+  ":$($label)"
+  iex> AshNeo4j.Cypher.dynamic_label("n.kind")
+  ":$(n.kind)"
+  ```
+  """
+  @spec dynamic_label(binary()) :: binary()
+  def dynamic_label(expr) when is_binary(expr), do: ":$(#{expr})"
+
+  @doc """
+  `:ok` when the connected server supports dynamic labels/types in **pattern
+  position** (`(n:$(expr))`, `-[r:$(expr)]->` in `MATCH`/`CREATE`/`MERGE`;
+  negotiated server version ≥ 5.26), else
+  `{:error, %AshNeo4j.Error.RequiresDynamicLabels{}}`. This is the **server-feature
+  axis** (plain `CYPHER 5`), distinct from `require_cypher25/0`. Use at the top of
+  any function that emits `dynamic_label/1` and thread the error up — a data layer
+  returns it, never raises.
+
+  > #### WHERE-predicate label filtering is a *finer* gate {: .warning}
+  > The `WHERE n:$(expr)` predicate form is **not** covered by this check: it
+  > fails on 5.26 (`dynamic_labels: true`) and only works on later servers
+  > (verified ≥ 2026.05). `dynamic_labels?/0` / `policy().dynamic_labels` guarantee
+  > the pattern form only — matching bolty's flag semantics. A label-filter
+  > consumer must establish its own server gate (#339; capability-granularity
+  > question raised as diffo-dev/bolty#53).
+  """
+  @spec require_dynamic_labels() :: :ok | {:error, struct()}
+  def require_dynamic_labels() do
+    if BoltyHelper.dynamic_labels?() do
+      :ok
+    else
+      {:error, AshNeo4j.Error.RequiresDynamicLabels.exception([])}
+    end
+  end
+
+  @doc """
   Runs some cypher
 
   ## Examples

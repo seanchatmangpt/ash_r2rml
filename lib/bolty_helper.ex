@@ -117,4 +117,25 @@ defmodule AshNeo4j.BoltyHelper do
       nil -> false
     end
   end
+
+  @doc """
+  Returns `true` when the current pool (see `current_pool/0`) is connected to a
+  Neo4j server that supports dynamic labels/types (`MATCH (n:$(expr))`,
+  `-[r:$(expr)]->`), which landed in Neo4j 5.26.
+
+  This is the **server-feature axis**, distinct from `cypher25?/0`: dynamic
+  labels run under plain `CYPHER 5` and need no `CYPHER 25` selector, so a
+  5.26 server reports `dynamic_labels: true` but `cypher_25: false`. Read from
+  the negotiated `policy().dynamic_labels` flag (bolty ≥ 0.2.0); `false` when the
+  pool is not started.
+  """
+  def dynamic_labels?(), do: dynamic_labels?(current_pool())
+
+  @doc "Dynamic label/type support for an explicit `pool`."
+  def dynamic_labels?(pool) do
+    case policy(pool) do
+      %{dynamic_labels: dynamic_labels} -> dynamic_labels
+      nil -> false
+    end
+  end
 end
