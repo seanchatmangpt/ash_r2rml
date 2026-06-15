@@ -541,6 +541,60 @@ defmodule AshNeo4j.QueryHelper do
     end
   end
 
+  @doc """
+  Renders an update's `changeset.filter` guard (the "only-update-if" predicate,
+  #361) to `{:ok, conditions}` for the update `WHERE`, or
+  `{:error, %AshNeo4j.Error.UnsupportedUpdateFilter{}}` when it can't be rendered
+  **in full**.
+
+  Stance: never under-guard. The guard is only pushed down when the filter is a
+  conjunction (`and`-only — no `or`/`not`) of supported attribute predicates that
+  each render; a calculation ref or any predicate the pushdown drops makes the
+  whole guard unsupported, so the data layer returns rather than applies the
+  update unguarded. `nil` (no guard) is `{:ok, []}`.
+  """
+  @spec guard_conditions(ResourceMapping.t(), Ash.Filter.t() | nil) ::
+          {:ok, list()} | {:error, struct()}
+  def guard_conditions(%ResourceMapping{}, nil), do: {:ok, []}
+
+  def guard_conditions(%ResourceMapping{module: module} = mapping, filter) do
+    predicates =
+      filter
+      |> Ash.Filter.to_simple_filter(skip_invalid?: true)
+      |> Map.get(:predicates, [])
+
+    if simple_conjunction?(filter) and predicates != [] and not Enum.any?(predicates, &calculation_ref?/1) do
+      case to_conditions(mapping, predicates) do
+        # Every predicate rendered — a `nil` (unhandled) drop shortens the list.
+        {:ok, conditions} when length(conditions) == length(predicates) -> {:ok, conditions}
+        {:ok, _partial} -> {:error, unsupported_changeset_filter(module, filter)}
+        {:error, _} = error -> error
+      end
+    else
+      {:error, unsupported_changeset_filter(module, filter)}
+    end
+  end
+
+  defp unsupported_changeset_filter(module, filter) do
+    AshNeo4j.Error.UnsupportedChangesetFilter.exception(resource: module, filter: filter)
+  end
+
+  # True when the filter is an `and`-only tree of leaf predicates — no `or`/`not`,
+  # so `to_simple_filter`'s flattened predicate list represents it faithfully.
+  defp simple_conjunction?(%Ash.Filter{expression: expression}), do: simple_conjunction?(expression)
+  defp simple_conjunction?(nil), do: true
+
+  defp simple_conjunction?(%Ash.Query.BooleanExpression{op: :and, left: left, right: right}),
+    do: simple_conjunction?(left) and simple_conjunction?(right)
+
+  defp simple_conjunction?(%Ash.Query.BooleanExpression{op: :or}), do: false
+  defp simple_conjunction?(%Ash.Query.Not{}), do: false
+  defp simple_conjunction?(_leaf), do: true
+
+  defp calculation_ref?(predicate) do
+    match?(%Ash.Query.Ref{attribute: %Ash.Query.Calculation{}}, Map.get(predicate, :left))
+  end
+
   defp to_conditions(%ResourceMapping{} = mapping, predicates) do
     predicates
     |> Enum.map(fn

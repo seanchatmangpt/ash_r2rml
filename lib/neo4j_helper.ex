@@ -120,9 +120,9 @@ defmodule AshNeo4j.Neo4jHelper do
   :ok
   ```
   """
-  def update_node(label, match_properties, set_properties, remove_properties \\ [])
-      when (is_atom(label) or is_list(label)) and is_map(set_properties) do
-    Query.update_node(label, match_properties, set_properties, remove_properties)
+  def update_node(label, match_properties, set_properties, remove_properties \\ [], guard_conditions \\ [])
+      when (is_atom(label) or is_list(label)) and is_map(set_properties) and is_list(guard_conditions) do
+    Query.update_node(label, match_properties, set_properties, remove_properties, guard_conditions)
     |> Cypher.run()
   end
 

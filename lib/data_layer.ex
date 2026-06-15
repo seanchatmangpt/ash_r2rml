@@ -26,6 +26,9 @@ defmodule AshNeo4j.DataLayer do
   def can?(_, :create), do: true
   def can?(_, :composite_primary_key), do: true
   def can?(_, :update), do: true
+  # Advertise the "only-update-if" guard (#361) so Ash threads `changeset.filter`
+  # into update/destroy — without this, `Ash.Changeset.filter/2` silently drops it.
+  def can?(_, :changeset_filter), do: true
   def can?(_, :upsert), do: true
   def can?(_, :destroy), do: true
   def can?(_, :sort), do: true
@@ -388,6 +391,15 @@ defmodule AshNeo4j.DataLayer do
   end
 
   defp do_update(resource, changeset, %ResourceMapping{} = mapping) do
+    # Honour the `changeset.filter` "only-update-if" guard (#361). Refuse a guard
+    # we can't push down in full rather than apply the update unguarded (stance a).
+    case QueryHelper.guard_conditions(mapping, changeset.filter) do
+      {:error, _} = error -> error
+      {:ok, guard_conditions} -> do_update(resource, changeset, mapping, guard_conditions)
+    end
+  end
+
+  defp do_update(resource, changeset, %ResourceMapping{} = mapping, guard_conditions) do
     subject_id = id_properties(mapping, changeset.data)
     subject_label = mapping.label_pair
 
@@ -395,11 +407,18 @@ defmodule AshNeo4j.DataLayer do
 
     remove_property_names = stale_property_names(mapping, update_properties, changeset)
 
+    guarded? = guard_conditions != []
+
     property_update_result =
-      if !Enum.empty?(update_properties) or !Enum.empty?(remove_property_names) do
-        case subject_label |> Neo4jHelper.update_node(subject_id, update_properties, remove_property_names) do
+      if !Enum.empty?(update_properties) or !Enum.empty?(remove_property_names) or guarded? do
+        case subject_label
+             |> Neo4jHelper.update_node(subject_id, update_properties, remove_property_names, guard_conditions) do
+          # No row matched the id + guard: a present guard ⇒ the row is stale
+          # (the predicate no longer holds); otherwise the id itself didn't match.
           {:ok, %Bolty.Response{results: []}} ->
-            {:error, "no result to update node"}
+            if guarded?,
+              do: {:error, Ash.Error.Changes.StaleRecord.exception(resource: resource, filter: changeset.filter)},
+              else: {:error, "no result to update node"}
 
           {:ok, %Bolty.Response{results: [node_map | _]}} ->
             node = Map.get(node_map, "n")
@@ -604,6 +623,22 @@ defmodule AshNeo4j.DataLayer do
     label = mapping.label_pair
     id_properties = id_properties(mapping, changeset.data)
 
+    # A filtered destroy (#361) is not supported yet — the guarded `destroy_query`
+    # path is deferred. Refuse rather than silently delete unguarded now that we
+    # advertise `:changeset_filter`.
+    with :ok <- refuse_destroy_filter(resource, changeset) do
+      destroy_node(resource, label, id_properties)
+    end
+  end
+
+  defp refuse_destroy_filter(_resource, %{filter: nil}), do: :ok
+  defp refuse_destroy_filter(_resource, %{filter: %Ash.Filter{expression: nil}}), do: :ok
+
+  defp refuse_destroy_filter(resource, %{filter: filter}) do
+    {:error, AshNeo4j.Error.UnsupportedChangesetFilter.exception(resource: resource, filter: filter)}
+  end
+
+  defp destroy_node(resource, label, id_properties) do
     result =
       case Neo4jHelper.safe_delete_nodes(label, id_properties, ResourceInfo.preserve_node_relationships(resource)) do
         {:ok, _} ->

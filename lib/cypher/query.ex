@@ -786,10 +786,12 @@ defmodule AshNeo4j.Cypher.Query do
   Handles all combinations of empty/non-empty set_props and remove_props.
   """
   @spec update_node(atom() | [atom()], map(), map(), [atom()]) :: t()
-  def update_node(label, match_props, set_props, remove_props \\ [])
-      when is_map(match_props) and is_map(set_props) and is_list(remove_props) do
+  def update_node(label, match_props, set_props, remove_props \\ [], guard_conditions \\ [])
+      when is_map(match_props) and is_map(set_props) and is_list(remove_props) and
+             is_list(guard_conditions) do
     {match_pattern, match_params} = Cypher.parameterized_node(:n, List.wrap(label), match_props)
     {props_cypher, set_params} = Cypher.parameterized_properties(:n, set_props)
+    {guard_clauses, guard_params} = guard_where(guard_conditions)
 
     set_clauses = if map_size(set_props) > 0, do: [%Set{expression: "n += #{props_cypher}"}], else: []
     remove_clauses =
@@ -798,9 +800,21 @@ defmodule AshNeo4j.Cypher.Query do
         else: []
 
     %__MODULE__{
-      clauses: [%Match{pattern: match_pattern}] ++ set_clauses ++ remove_clauses ++ [%Return{items: ["n"]}],
-      params: Map.merge(match_params, set_params)
+      clauses:
+        [%Match{pattern: match_pattern}] ++
+          guard_clauses ++ set_clauses ++ remove_clauses ++ [%Return{items: ["n"]}],
+      params: match_params |> Map.merge(set_params) |> Map.merge(guard_params)
     }
+  end
+
+  # The `changeset.filter` guard (#361) as a `WHERE` between the `MATCH` and `SET`.
+  # Rendered against the `:n` update alias; params are `g_`-prefixed so they can't
+  # collide with the match/set params on the same alias.
+  defp guard_where([]), do: {[], %{}}
+
+  defp guard_where(conditions) do
+    {where_string, params} = build_conditions(:n, conditions, param_prefix: "g_")
+    {[%Where{conditions: [where_string]}], params}
   end
 
   @doc """
