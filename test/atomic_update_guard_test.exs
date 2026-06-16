@@ -76,7 +76,7 @@ defmodule AshNeo4j.AtomicUpdateGuardTest do
     assert ThingNote |> Ash.get!(note.id) |> Map.get(:body) == "draft"
   end
 
-  test "a filtered destroy is refused, not silently deleted unguarded" do
+  test "a filtered destroy whose lock no longer holds returns StaleRecord, not a delete" do
     note = ThingNote |> Ash.create!(%{body: "draft"})
 
     result =
@@ -86,10 +86,35 @@ defmodule AshNeo4j.AtomicUpdateGuardTest do
       |> Ash.destroy()
 
     assert {:error, error} = result
-    assert Enum.any?(flatten(error), &match?(%UnsupportedChangesetFilter{}, &1))
+    assert Enum.any?(flatten(error), &match?(%Ash.Error.Changes.StaleRecord{}, &1))
 
-    # The guard didn't hold (body is "draft", not "review") and the destroy was
-    # refused — so the row must still exist rather than have been deleted unguarded.
+    # The optimistic lock missed (body is "draft", not "review") — row preserved.
+    assert ThingNote |> Ash.get!(note.id) |> Map.get(:body) == "draft"
+  end
+
+  test "a filtered destroy whose lock holds deletes the row" do
+    note = ThingNote |> Ash.create!(%{body: "draft"})
+
+    assert :ok =
+             note
+             |> Ash.Changeset.for_destroy(:destroy)
+             |> Ash.Changeset.filter(Ash.Expr.expr(body == "draft"))
+             |> Ash.destroy()
+
+    assert {:error, _} = ThingNote |> Ash.get(note.id)
+  end
+
+  test "an un-pushable destroy filter is refused, not applied unguarded" do
+    note = ThingNote |> Ash.create!(%{body: "draft"})
+
+    result =
+      note
+      |> Ash.Changeset.for_destroy(:destroy)
+      |> Ash.Changeset.filter(Ash.Expr.expr(body == "draft" or body == "review"))
+      |> Ash.destroy()
+
+    assert {:error, error} = result
+    assert Enum.any?(flatten(error), &match?(%UnsupportedChangesetFilter{}, &1))
     assert ThingNote |> Ash.get!(note.id) |> Map.get(:body) == "draft"
   end
 end

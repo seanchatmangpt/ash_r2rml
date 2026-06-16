@@ -17,6 +17,7 @@ defmodule AshNeo4j.BulkDestroyTest do
   use ExUnit.Case, async: false
 
   require Ash.Query
+  require Ash.Expr
 
   setup_all do
     BoltyHelper.start()
@@ -59,6 +60,25 @@ defmodule AshNeo4j.BulkDestroyTest do
     assert result.records |> Enum.map(& &1.id) == [free.id]
 
     # The guarded spec survives; the free one is gone.
+    assert Specification |> Ash.read!() |> Enum.map(& &1.id) == [guarded.id]
+  end
+
+  test "a single filtered destroy distinguishes a guard (Unavailable) from a stale lock" do
+    guarded = Specification |> Ash.create!(%{type: :service})
+
+    Sandbox.run(
+      "MATCH (n:SRM:Specification {uuid: $id}) CREATE (n)-[:SPECIFIES]->(:Service)",
+      %{"id" => guarded.id}
+    )
+
+    # Lock holds (type == :service) but the node is guarded ⇒ Unavailable, not Stale.
+    assert {:error, error} =
+             guarded
+             |> Ash.Changeset.for_destroy(:destroy)
+             |> Ash.Changeset.filter(Ash.Expr.expr(type == :service))
+             |> Ash.destroy()
+
+    assert Enum.any?(List.wrap(error.errors), &match?(%Ash.Error.Invalid.Unavailable{}, &1))
     assert Specification |> Ash.read!() |> Enum.map(& &1.id) == [guarded.id]
   end
 end

@@ -783,22 +783,50 @@ defmodule AshNeo4j.DataLayer do
     """)
 
     mapping = ResourceInfo.mapping(resource)
-    label = mapping.label_pair
-    id_properties = id_properties(mapping, changeset.data)
 
-    # A filtered destroy (#361) is not supported yet — the guarded `destroy_query`
-    # path is deferred. Refuse rather than silently delete unguarded now that we
-    # advertise `:changeset_filter`.
-    with :ok <- refuse_destroy_filter(resource, changeset) do
-      destroy_node(resource, label, id_properties)
+    # Honour a `changeset.filter` "only-destroy-if" guard (optimistic lock, #361):
+    # render it (refuse an un-pushable filter, stance a) and route. `{:ok, []}` is
+    # the unfiltered case.
+    with {:ok, conditions} <- QueryHelper.guard_conditions(mapping, changeset.filter) do
+      destroy_with_conditions(resource, mapping, conditions, changeset)
     end
   end
 
-  defp refuse_destroy_filter(_resource, %{filter: nil}), do: :ok
-  defp refuse_destroy_filter(_resource, %{filter: %Ash.Filter{expression: nil}}), do: :ok
+  defp destroy_with_conditions(resource, %ResourceMapping{} = mapping, [], changeset) do
+    destroy_node(resource, mapping.label_pair, id_properties(mapping, changeset.data))
+  end
 
-  defp refuse_destroy_filter(resource, %{filter: filter}) do
-    {:error, AshNeo4j.Error.UnsupportedChangesetFilter.exception(resource: resource, filter: filter)}
+  defp destroy_with_conditions(resource, %ResourceMapping{} = mapping, conditions, changeset) do
+    label = mapping.label_pair
+    id_properties = id_properties(mapping, changeset.data)
+    guards = ResourceInfo.preserve_node_relationships(resource)
+
+    case Neo4jHelper.delete_node_filtered(label, id_properties, conditions, guards) do
+      {:ok, _} ->
+        :ok
+
+      # Nothing deleted: if the node still matches the filter it was held back by a
+      # guard (Unavailable); otherwise the optimistic lock didn't hold (StaleRecord).
+      {:error, "nothing deleted"} ->
+        case Neo4jHelper.node_matching(label, id_properties, conditions) do
+          {:ok, %Bolty.Response{results: [_ | _]}} ->
+            {:error, unavailable_guarded(resource)}
+
+          _ ->
+            {:error, Ash.Error.Changes.StaleRecord.exception(resource: resource, filter: changeset.filter)}
+        end
+
+      {:error, error} ->
+        {:error, error}
+    end
+  end
+
+  defp unavailable_guarded(resource) do
+    Ash.Error.Invalid.Unavailable.exception(
+      resource: resource,
+      source: AshNeo4j.DataLayer,
+      reason: "guarded relationships prevent deletion"
+    )
   end
 
   defp destroy_node(resource, label, id_properties) do
@@ -808,12 +836,7 @@ defmodule AshNeo4j.DataLayer do
           :ok
 
         {:error, "nothing deleted"} ->
-          {:error,
-           Ash.Error.Invalid.Unavailable.exception(
-             resource: resource,
-             source: AshNeo4j.DataLayer,
-             reason: "guarded relationships prevent deletion"
-           )}
+          {:error, unavailable_guarded(resource)}
 
         {:error, error} ->
           {:error, error}

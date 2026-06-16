@@ -887,6 +887,49 @@ defmodule AshNeo4j.Cypher.Query do
   end
 
   @doc """
+  Single guarded + filtered destroy (#361): `MATCH (n:L {id}) WHERE <filter> AND NOT
+  <guard…> DETACH DELETE n`. The `changeset.filter` optimistic-lock conditions are
+  ANDed with the preservation guards. Run via `run_expecting_deletions/1`: zero
+  deletions ⇒ the caller disambiguates filter-miss (StaleRecord) from guard
+  (Unavailable) with `node_matching/3`.
+  """
+  @spec delete_node_filtered(atom() | [atom()], map(), list(), list()) :: t()
+  def delete_node_filtered(label, id_props, filter_conditions, guards)
+      when is_map(id_props) and is_list(filter_conditions) and is_list(guards) do
+    {pattern, id_params} = Cypher.parameterized_node(:n, List.wrap(label), id_props)
+    {filter_where, filter_params} = build_conditions(:n, filter_conditions, param_prefix: "f_")
+
+    guard_conditions =
+      Enum.map(guards, fn {edge_label, direction, dest_label} ->
+        guard_condition(:n, edge_label, direction, dest_label)
+      end)
+
+    where_items = if(filter_where == "", do: [], else: [filter_where]) ++ guard_conditions
+
+    %__MODULE__{
+      clauses: [%Match{pattern: pattern}, %Where{conditions: where_items}, %DetachDelete{items: ["n"]}],
+      params: Map.merge(id_params, filter_params)
+    }
+  end
+
+  @doc """
+  `MATCH (n:L {id}) WHERE <filter> RETURN n` — the optimistic-lock existence check
+  (no guard) used to disambiguate a zero-deletion `delete_node_filtered/4` (#361).
+  """
+  @spec node_matching(atom() | [atom()], map(), list()) :: t()
+  def node_matching(label, id_props, filter_conditions)
+      when is_map(id_props) and is_list(filter_conditions) do
+    {pattern, id_params} = Cypher.parameterized_node(:n, List.wrap(label), id_props)
+    {filter_where, filter_params} = build_conditions(:n, filter_conditions, param_prefix: "f_")
+    where_clauses = if filter_where == "", do: [], else: [%Where{conditions: [filter_where]}]
+
+    %__MODULE__{
+      clauses: [%Match{pattern: pattern}] ++ where_clauses ++ [%Return{items: ["n"]}],
+      params: Map.merge(id_params, filter_params)
+    }
+  end
+
+  @doc """
   Bulk destroy (#361): `MATCH (n:L) WHERE <filter> AND NOT <guard…> DETACH DELETE n`.
   Deletes every node matching `conditions` (the pushed-down query filter) that
   isn't protected by a preservation `guard` — guarded nodes are skipped, not
