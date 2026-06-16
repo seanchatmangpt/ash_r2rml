@@ -887,6 +887,43 @@ defmodule AshNeo4j.Cypher.Query do
   end
 
   @doc """
+  Bulk destroy (#361): `MATCH (n:L) WHERE <filter> AND NOT <guard…> DETACH DELETE n`.
+  Deletes every node matching `conditions` (the pushed-down query filter) that
+  isn't protected by a preservation `guard` — guarded nodes are skipped, not
+  errored ("delete what is safe"). When `return?`, the node's `properties`/`id`/
+  `labels` are captured in a `WITH` *before* the delete (a returned deleted node
+  has empty properties) and returned for record reconstruction.
+  """
+  @spec bulk_detach_delete(atom() | [atom()], list(), list(), boolean()) :: t()
+  def bulk_detach_delete(label, conditions, guards, return?)
+      when is_list(conditions) and is_list(guards) and is_boolean(return?) do
+    {filter_where, params} = build_conditions(:n, conditions, param_prefix: "f_")
+
+    guard_conditions =
+      Enum.map(guards, fn {edge_label, direction, dest_label} ->
+        guard_condition(:n, edge_label, direction, dest_label)
+      end)
+
+    where_items = if(filter_where == "", do: [], else: [filter_where]) ++ guard_conditions
+    where_clauses = if where_items == [], do: [], else: [%Where{conditions: where_items}]
+
+    {capture_clauses, return_clauses} =
+      if return? do
+        {[%With{items: ["n", "properties(n) AS props", "id(n) AS nid", "labels(n) AS labels"]}],
+         [%Return{items: ["props", "nid", "labels"]}]}
+      else
+        {[], []}
+      end
+
+    %__MODULE__{
+      clauses:
+        [%Match{pattern: Cypher.node(:n, List.wrap(label))}] ++
+          where_clauses ++ capture_clauses ++ [%DetachDelete{items: ["n"]}] ++ return_clauses,
+      params: params
+    }
+  end
+
+  @doc """
   `MATCH (s:SrcLabel {s_props}) OPTIONAL MATCH (d:DestLabel {d_props}) MERGE (s)-[r:EDGE]->(d) RETURN s, r, d`
   """
   @spec relate(atom() | [atom()], map(), atom() | [atom()], map(), atom(), atom()) :: t()

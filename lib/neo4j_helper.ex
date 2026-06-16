@@ -88,6 +88,18 @@ defmodule AshNeo4j.Neo4jHelper do
     |> Cypher.run_expecting_deletions()
   end
 
+  @doc """
+  Bulk destroy (#361): deletes every node of `label` matching `conditions` that
+  isn't protected by a preservation `guard`. Returns `{:ok, %Bolty.Response{}}` —
+  with captured pre-delete node data when `return?`.
+  """
+  def bulk_detach_delete(label, conditions, guards, return?)
+      when (is_atom(label) or is_list(label)) and is_list(conditions) and is_list(guards) and
+             is_boolean(return?) do
+    Query.bulk_detach_delete(label, conditions, guards, return?)
+    |> Cypher.run()
+  end
+
   @spec merge_node(atom(), map()) ::
           {:error, %{:__exception__ => true, :__struct__ => atom(), optional(atom()) => any()}}
           | {:ok, any()}

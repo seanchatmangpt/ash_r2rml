@@ -34,6 +34,15 @@ defmodule AshNeo4j.DataLayer do
   # Bulk atomic update (#361): apply the atomics/attributes to every node matching
   # the query in one statement (`Ash.bulk_update` :atomic strategy).
   def can?(_, :update_query), do: true
+  # Bulk destroy (#361): delete every node matching the query in one statement,
+  # skipping `guard`-protected nodes ("delete what is safe").
+  def can?(_, :destroy_query), do: true
+  # Ash gates the atomic bulk-destroy strategy on :update_query AND :expr_error
+  # (#361). We don't render inline `error()` expressions — such an atomic refuses
+  # cleanly via %UnsupportedAtomic{} (stance a) rather than mis-write. NB: with
+  # full atomic support advertised, `manage_relationship` actions need
+  # `require_atomic? false` (standard Ash 3), as they can't be done atomically.
+  def can?(_, :expr_error), do: true
   def can?(_, :upsert), do: true
   def can?(_, :destroy), do: true
   def can?(_, :sort), do: true
@@ -702,6 +711,68 @@ defmodule AshNeo4j.DataLayer do
       end
     else
       :ok
+    end
+  end
+
+  @impl true
+  def destroy_query(query, changeset, resource, opts) do
+    Logger.debug("""
+    AshNeo4j.DataLayer: destroy_query(#{inspect(query)}, #{inspect(changeset)}, #{inspect(resource)})
+    """)
+
+    mapping = ResourceInfo.mapping(resource)
+
+    cond do
+      # Relationship-context destroy — hand to the per-record path (which enforces
+      # the guard as an error, the right semantics for a targeted destroy) (#361).
+      Map.has_key?(changeset.context, :accessing_from) ->
+        single_destroy_query_result(resource, changeset, opts)
+
+      true ->
+        bulk_destroy_query(query, resource, mapping, opts)
+    end
+  end
+
+  defp single_destroy_query_result(resource, changeset, opts) do
+    case destroy(resource, changeset) do
+      :ok -> if Map.get(opts, :return_records?), do: {:ok, [changeset.data]}, else: :ok
+      {:error, _} = error -> error
+    end
+  end
+
+  defp bulk_destroy_query(query, resource, mapping, opts) do
+    # Stance (a): scope must push down in full (no Elixir post-filter on a bulk
+    # delete), else refuse. `guard`-protected nodes are skipped, not deleted.
+    with {:ok, conditions} <- QueryHelper.guard_conditions(mapping, query.filter) do
+      return? = Map.get(opts, :return_records?, false)
+      guards = ResourceInfo.preserve_node_relationships(resource)
+
+      case Neo4jHelper.bulk_detach_delete(mapping.label_pair, conditions, guards, return?) do
+        {:ok, %Bolty.Response{results: results}} ->
+          if return?, do: convert_deleted_nodes(resource, results), else: :ok
+
+        {:error, error} ->
+          {:error, AshNeo4j.Error.Neo4j.from_bolt(error)}
+      end
+    end
+  end
+
+  # Rebuild records from the pre-delete node data captured in the `WITH`.
+  defp convert_deleted_nodes(resource, results) do
+    converted =
+      Enum.map(results, fn row ->
+        node = %Bolty.Types.Node{
+          id: Map.get(row, "nid"),
+          properties: Map.get(row, "props"),
+          labels: Map.get(row, "labels")
+        }
+
+        convert_node_to_resource(resource, node)
+      end)
+
+    case Enum.find(converted, &match?({:error, _}, &1)) do
+      nil -> {:ok, Enum.map(converted, fn {:ok, record} -> record end)}
+      {:error, _} = error -> error
     end
   end
 
