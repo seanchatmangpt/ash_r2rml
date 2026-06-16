@@ -588,9 +588,11 @@ defmodule AshNeo4j.QueryHelper do
 
   Renders: arithmetic (`+ - * /`), comparisons, `if/3` (⇒ `CASE`), string concat
   (`<>` ⇒ `+`) and `string_trim` (⇒ `trim`, Ash's string cast), attribute refs
-  (`n.<prop>`) and scalar literals (bound as params). An expression node it doesn't
-  cover (e.g. another Ash function) is refused rather than mis-written (stance a).
-  Param keys are `am_`-prefixed and threaded across all atomics so they stay unique.
+  (`n.<prop>`) and scalar literals — numbers/strings/booleans/nil, and atoms (e.g.
+  `Ash.Type.Atom` enum values) bound as their stored string form. An expression
+  node it doesn't cover (e.g. another Ash function) is refused rather than
+  mis-written (stance a). Param keys are `am_`-prefixed and threaded across all
+  atomics so they stay unique.
   """
   @spec render_atomic_sets(module(), ResourceMapping.t(), keyword()) ::
           {:ok, {[binary()], map()}} | {:error, struct()}
@@ -653,6 +655,14 @@ defmodule AshNeo4j.QueryHelper do
          {:ok, r, params} <- render_atomic_node(mapping, right, params) do
       {:ok, "(#{l} #{@atomic_binary_ops[op]} #{r})", params}
     end
+  end
+
+  # Atom literal (e.g. an `Ash.Type.Atom` enum value) — stored as its string form,
+  # matching how the data layer writes atom attributes (Neo4j has no atom type).
+  defp render_atomic_node(_mapping, atom, params)
+       when is_atom(atom) and atom not in [nil, true, false] do
+    key = "am_#{map_size(params)}"
+    {:ok, "$#{key}", Map.put(params, key, Atom.to_string(atom))}
   end
 
   defp render_atomic_node(_mapping, literal, params)

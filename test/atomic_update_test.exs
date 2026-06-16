@@ -13,6 +13,7 @@ defmodule AshNeo4j.AtomicUpdateTest do
   alias AshNeo4j.Error.UnsupportedAtomic
   alias AshNeo4j.Sandbox
   alias AshNeo4j.Test.Resource.Comment
+  alias AshNeo4j.Test.Resource.Specification
 
   use ExUnit.Case, async: false
 
@@ -95,6 +96,19 @@ defmodule AshNeo4j.AtomicUpdateTest do
 
     assert {:ok, updated} = atomic(comment, :title, expr)
     assert updated.title == "active"
+  end
+
+  test "an atom (enum) if/3 atomic renders to CASE and transitions against the live value" do
+    spec = Specification |> Ash.create!(%{type: :service})
+    expr = Ash.Expr.expr(if type == :service, do: :resource, else: type)
+
+    assert {:ok, updated} = atomic(spec, :type, expr)
+    assert updated.type == :resource
+
+    # Re-running is a no-op: the live value is now :resource, so the else branch
+    # preserves it (the atom round-trips through its stored string form).
+    assert {:ok, again} = atomic(updated, :type, expr)
+    assert again.type == :resource
   end
 
   test "an atomic using an unsupported function is refused, not mis-written" do
