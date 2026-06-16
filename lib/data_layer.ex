@@ -29,9 +29,11 @@ defmodule AshNeo4j.DataLayer do
   # Advertise the "only-update-if" guard (#361) so Ash threads `changeset.filter`
   # into update/destroy — without this, `Ash.Changeset.filter/2` silently drops it.
   def can?(_, :changeset_filter), do: true
-  # Atomic updates (#361): render `changeset.atomics` against the live node. Single
-  # record only — the bulk `update_query/4` decision point is deferred.
+  # Atomic updates (#361): render `changeset.atomics` against the live node.
   def can?(_, {:atomic, :update}), do: true
+  # Bulk atomic update (#361): apply the atomics/attributes to every node matching
+  # the query in one statement (`Ash.bulk_update` :atomic strategy).
+  def can?(_, :update_query), do: true
   def can?(_, :upsert), do: true
   def can?(_, :destroy), do: true
   def can?(_, :sort), do: true
@@ -620,6 +622,87 @@ defmodule AshNeo4j.DataLayer do
     """)
 
     result
+  end
+
+  @impl true
+  def update_query(query, changeset, resource, opts) do
+    Logger.debug("""
+    AshNeo4j.DataLayer: update_query(#{inspect(query)}, #{inspect(changeset)}, #{inspect(resource)})
+    """)
+
+    mapping = ResourceInfo.mapping(resource)
+
+    cond do
+      # Relationship management (manage_relationship) is routed here as an atomic
+      # FK set, but in the graph the FK is an *edge*, not a property. Hand it to the
+      # per-record path, which creates the edge (and renders the atomic) (#361).
+      Map.has_key?(changeset.context, :accessing_from) ->
+        single_update_query_result(resource, changeset, mapping, opts)
+
+      true ->
+        bulk_update_query(query, changeset, resource, mapping, opts)
+    end
+  end
+
+  defp single_update_query_result(resource, changeset, mapping, opts) do
+    # Ash atomic-ises the relationship FK set, so the edge key arrives in `atomics`
+    # — as a literal (belongs_to) or a guard expression like
+    # `if is_distinct_from(new, fk), do: new, else: fk` (has_one). The per-record
+    # relationship path reads the FK from `attributes`, so evaluate each atomic
+    # against the live record and fold it back, then delegate (creates the edge).
+    with {:ok, changeset} <- fold_atomics_to_attributes(resource, changeset),
+         {:ok, record} <- do_update(resource, changeset, mapping) do
+      if Map.get(opts, :return_records?), do: {:ok, [record]}, else: :ok
+    end
+  end
+
+  defp fold_atomics_to_attributes(resource, changeset) do
+    Enum.reduce_while(changeset.atomics, {:ok, changeset.attributes}, fn {field, expr}, {:ok, acc} ->
+      case Ash.Expr.eval(expr, record: changeset.data, resource: resource) do
+        {:ok, value} -> {:cont, {:ok, Map.put(acc, field, value)}}
+        {:error, error} -> {:halt, {:error, error}}
+      end
+    end)
+    |> case do
+      {:ok, attributes} -> {:ok, %{changeset | attributes: attributes, atomics: []}}
+      error -> error
+    end
+  end
+
+  defp bulk_update_query(query, changeset, resource, mapping, opts) do
+    # `query.filter` already folds in any changeset (optimistic-lock) filter via
+    # Ash's add_changeset_filters/2. Stance (a): the scope must push down in full —
+    # we can't post-filter a bulk SET in Elixir — else refuse (#361).
+    with {:ok, conditions} <- QueryHelper.guard_conditions(mapping, query.filter),
+         {:ok, atomic_sets} <- QueryHelper.render_atomic_sets(resource, mapping, changeset.atomics || []) do
+      set_props = dump_properties(mapping, changeset.attributes)
+
+      case Neo4jHelper.update_node(mapping.label_pair, %{}, set_props, [],
+             guard: conditions,
+             atomics: atomic_sets
+           ) do
+        {:ok, %Bolty.Response{results: results}} ->
+          bulk_update_result(resource, results, opts)
+
+        {:error, error} ->
+          {:error, AshNeo4j.Error.Neo4j.from_bolt(error)}
+      end
+    end
+  end
+
+  # `:ok` when records aren't requested, else `{:ok, records}` — short-circuiting
+  # on the first node that fails to convert.
+  defp bulk_update_result(resource, results, opts) do
+    if Map.get(opts, :return_records?) do
+      converted = Enum.map(results, &convert_node_to_resource(resource, Map.get(&1, "n")))
+
+      case Enum.find(converted, &match?({:error, _}, &1)) do
+        nil -> {:ok, Enum.map(converted, fn {:ok, record} -> record end)}
+        {:error, _} = error -> error
+      end
+    else
+      :ok
+    end
   end
 
   @impl true
