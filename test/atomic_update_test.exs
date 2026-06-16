@@ -5,9 +5,9 @@
 defmodule AshNeo4j.AtomicUpdateTest do
   @moduledoc """
   Atomic updates (#361): `changeset.atomics` are evaluated against the live node in
-  a single `SET`, no read-decide-in-Elixir round-trip. Numeric-first cut —
-  arithmetic and `if/3 ⇒ CASE`. An atomic we can't render is refused with
-  `AshNeo4j.Error.UnsupportedAtomic` rather than mis-written.
+  a single `SET`, no read-decide-in-Elixir round-trip. Renders arithmetic,
+  string concat/`trim` (Ash's string cast), and `if/3 ⇒ CASE`. An atomic we can't
+  render is refused with `AshNeo4j.Error.UnsupportedAtomic` rather than mis-written.
   """
   alias AshNeo4j.BoltyHelper
   alias AshNeo4j.Error.UnsupportedAtomic
@@ -82,11 +82,26 @@ defmodule AshNeo4j.AtomicUpdateTest do
     assert Comment |> Ash.get!(updated.id) |> Map.get(:score) == 6
   end
 
-  test "an unrenderable (string) atomic is refused, not mis-written" do
+  test "a string-concat atomic renders (Ash's trim/empty-⇒-nil cast)" do
     comment = Comment |> Ash.create!(%{title: "draft", score: 1})
 
-    assert {:error, error} = atomic(comment, :title, Ash.Expr.expr(title <> "!"))
+    assert {:ok, updated} = atomic(comment, :title, Ash.Expr.expr(title <> "!"))
+    assert updated.title == "draft!"
+  end
+
+  test "a string if/3 atomic renders to CASE against the live value" do
+    comment = Comment |> Ash.create!(%{title: "draft", score: 1})
+    expr = Ash.Expr.expr(if title == "draft", do: "active", else: title)
+
+    assert {:ok, updated} = atomic(comment, :title, expr)
+    assert updated.title == "active"
+  end
+
+  test "an atomic using an unsupported function is refused, not mis-written" do
+    comment = Comment |> Ash.create!(%{title: "Draft", score: 1})
+
+    assert {:error, error} = atomic(comment, :title, Ash.Expr.expr(string_downcase(title)))
     assert Enum.any?(flatten(error), &match?(%UnsupportedAtomic{}, &1))
-    assert Comment |> Ash.get!(comment.id) |> Map.get(:title) == "draft"
+    assert Comment |> Ash.get!(comment.id) |> Map.get(:title) == "Draft"
   end
 end

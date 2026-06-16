@@ -51,12 +51,12 @@ end
 defmodule AshNeo4j.Error.UnsupportedAtomic do
   @moduledoc """
   **Returned** (never raised) when a `changeset.atomics` expression can't be
-  rendered into the update Cypher `SET` (#361). The numeric-first cut renders
-  arithmetic (`+ - * /`), comparisons, `if/3` (⇒ `CASE`), attribute refs and
-  scalar literals; anything else — notably string/atom atomics that Ash wraps in
-  cast calls (`string_trim/…`) — is refused rather than mis-written.
+  rendered into the update Cypher `SET` (#361). The renderer covers arithmetic
+  (`+ - * /`), comparisons, `if/3` (⇒ `CASE`), string concat / `string_trim`
+  (Ash's string cast), attribute refs and scalar literals; an expression using any
+  other Ash function is refused rather than mis-written.
 
-  Express the change as a numeric atomic, or perform it outside the data layer.
+  Express the change with supported operations, or perform it outside the data layer.
   """
   use Splode.Error, fields: [:resource, :expression], class: :invalid
 

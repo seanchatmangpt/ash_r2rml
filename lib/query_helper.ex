@@ -586,11 +586,11 @@ defmodule AshNeo4j.QueryHelper do
   `{:error, %AshNeo4j.Error.UnsupportedAtomic{}}` when an expression can't be
   rendered.
 
-  Numeric-first cut: arithmetic (`+ - * /`), comparisons, `if/3` (⇒ `CASE`),
-  attribute refs (`n.<prop>`) and scalar literals (bound as params). Anything else
-  — notably string/atom atomics Ash wraps in cast calls — is refused rather than
-  mis-written (stance a). Param keys are `am_`-prefixed and threaded across all
-  atomics so they stay unique.
+  Renders: arithmetic (`+ - * /`), comparisons, `if/3` (⇒ `CASE`), string concat
+  (`<>` ⇒ `+`) and `string_trim` (⇒ `trim`, Ash's string cast), attribute refs
+  (`n.<prop>`) and scalar literals (bound as params). An expression node it doesn't
+  cover (e.g. another Ash function) is refused rather than mis-written (stance a).
+  Param keys are `am_`-prefixed and threaded across all atomics so they stay unique.
   """
   @spec render_atomic_sets(module(), ResourceMapping.t(), keyword()) ::
           {:ok, {[binary()], map()}} | {:error, struct()}
@@ -629,6 +629,21 @@ defmodule AshNeo4j.QueryHelper do
          {:ok, t, params} <- render_atomic_node(mapping, then, params),
          {:ok, e, params} <- render_atomic_else(mapping, rest, params) do
       {:ok, "CASE WHEN #{c} THEN #{t} ELSE #{e} END", params}
+    end
+  end
+
+  # String atomics: Ash casts them as `if trim(expr) == "" then null else trim(expr)`
+  # (empty-string ⇒ nil). `string_trim/1` ⇒ Cypher `trim/1`, and string `<>` ⇒ `+`.
+  defp render_atomic_node(mapping, %Ash.Query.Function.StringTrim{arguments: [inner]}, params) do
+    with {:ok, s, params} <- render_atomic_node(mapping, inner, params) do
+      {:ok, "trim(#{s})", params}
+    end
+  end
+
+  defp render_atomic_node(mapping, %Ash.Query.Operator.Basic.Concat{left: left, right: right}, params) do
+    with {:ok, l, params} <- render_atomic_node(mapping, left, params),
+         {:ok, r, params} <- render_atomic_node(mapping, right, params) do
+      {:ok, "(#{l} + #{r})", params}
     end
   end
 
