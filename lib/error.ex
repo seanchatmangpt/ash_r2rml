@@ -25,6 +25,46 @@ defmodule AshNeo4j.Error.RequiresDynamicLabels do
   def message(_), do: "This operation requires dynamic labels (Neo4j ≥ 5.26)"
 end
 
+defmodule AshNeo4j.Error.UnsupportedChangesetFilter do
+  @moduledoc """
+  **Returned** (never raised) when a `changeset.filter` guard (the "only-update-if"
+  predicate) can't be honoured (#361). We refuse rather than apply the write
+  **unguarded**: silently dropping the guard would write when the predicate says
+  not to (the write-side analogue of the traverse synthesis leaks, #342).
+
+  Two cases today:
+
+    * **update** — the guard doesn't reduce to a conjunction of supported attribute
+      predicates (e.g. it contains `or`/`not`, a calculation, or a predicate the
+      pushdown doesn't cover). Narrow it, or do the conditional update outside the
+      data layer.
+    * **destroy** — a filtered destroy is not supported yet (the `destroy_query`
+      decision point is deferred); the whole guard is refused.
+  """
+  use Splode.Error, fields: [:resource, :filter], class: :invalid
+
+  def message(%{resource: resource, filter: filter}) do
+    "cannot honour the changeset filter guard on #{inspect(resource)} (#{inspect(filter)})"
+  end
+end
+
+defmodule AshNeo4j.Error.UnsupportedAtomic do
+  @moduledoc """
+  **Returned** (never raised) when a `changeset.atomics` expression can't be
+  rendered into the update Cypher `SET` (#361). The renderer covers arithmetic
+  (`+ - * /`), comparisons, `if/3` (⇒ `CASE`), string concat / `string_trim`
+  (Ash's string cast), attribute refs and scalar literals; an expression using any
+  other Ash function is refused rather than mis-written.
+
+  Express the change with supported operations, or perform it outside the data layer.
+  """
+  use Splode.Error, fields: [:resource, :expression], class: :invalid
+
+  def message(%{resource: resource, expression: expression}) do
+    "cannot render atomic update on #{inspect(resource)} into Cypher (#{inspect(expression)})"
+  end
+end
+
 defmodule AshNeo4j.Error.GeoDimensionMismatch do
   @moduledoc """
   Returned (never raised) when a spatial operation combines geometries of

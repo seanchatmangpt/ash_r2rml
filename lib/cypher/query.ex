@@ -781,26 +781,51 @@ defmodule AshNeo4j.Cypher.Query do
   end
 
   @doc """
-  `MATCH (n:L1:L2 {match_props}) SET n += {set_props} REMOVE n.p1, n.p2 RETURN n`
+  `MATCH (n:L1:L2 {match_props}) [WHERE guard] SET n += {set_props} [, n.x = <expr>]
+  REMOVE n.p1, n.p2 RETURN n`
 
-  Handles all combinations of empty/non-empty set_props and remove_props.
+  Handles all combinations of empty/non-empty set_props and remove_props. `opts`:
+
+    * `:guard` — `changeset.filter` conditions (#361); rendered as a `WHERE`
+      between the `MATCH` and `SET`. Zero matched rows ⇒ the caller raises
+      `StaleRecord`.
+    * `:atomics` — `{set_expressions, params}` for `changeset.atomics` (#361):
+      live-node `SET n.<prop> = <expr>` clauses (already rendered against `:n`).
   """
-  @spec update_node(atom() | [atom()], map(), map(), [atom()]) :: t()
-  def update_node(label, match_props, set_props, remove_props \\ [])
-      when is_map(match_props) and is_map(set_props) and is_list(remove_props) do
+  @spec update_node(atom() | [atom()], map(), map(), [atom()], keyword()) :: t()
+  def update_node(label, match_props, set_props, remove_props \\ [], opts \\ [])
+      when is_map(match_props) and is_map(set_props) and is_list(remove_props) and is_list(opts) do
     {match_pattern, match_params} = Cypher.parameterized_node(:n, List.wrap(label), match_props)
     {props_cypher, set_params} = Cypher.parameterized_properties(:n, set_props)
+    {guard_clauses, guard_params} = guard_where(Keyword.get(opts, :guard, []))
+    {atomic_exprs, atomic_params} = Keyword.get(opts, :atomics, {[], %{}})
 
-    set_clauses = if map_size(set_props) > 0, do: [%Set{expression: "n += #{props_cypher}"}], else: []
+    set_exprs =
+      (if(map_size(set_props) > 0, do: ["n += #{props_cypher}"], else: [])) ++ atomic_exprs
+
+    set_clauses = if set_exprs != [], do: [%Set{expression: Enum.join(set_exprs, ", ")}], else: []
+
     remove_clauses =
       if remove_props != [],
         do: [%Remove{items: Enum.map(remove_props, &"n.#{Cypher.quote_if_dotted(&1)}")}],
         else: []
 
     %__MODULE__{
-      clauses: [%Match{pattern: match_pattern}] ++ set_clauses ++ remove_clauses ++ [%Return{items: ["n"]}],
-      params: Map.merge(match_params, set_params)
+      clauses:
+        [%Match{pattern: match_pattern}] ++
+          guard_clauses ++ set_clauses ++ remove_clauses ++ [%Return{items: ["n"]}],
+      params: match_params |> Map.merge(set_params) |> Map.merge(guard_params) |> Map.merge(atomic_params)
     }
+  end
+
+  # The `changeset.filter` guard (#361) as a `WHERE` between the `MATCH` and `SET`.
+  # Rendered against the `:n` update alias; params are `g_`-prefixed so they can't
+  # collide with the match/set params on the same alias.
+  defp guard_where([]), do: {[], %{}}
+
+  defp guard_where(conditions) do
+    {where_string, params} = build_conditions(:n, conditions, param_prefix: "g_")
+    {[%Where{conditions: [where_string]}], params}
   end
 
   @doc """
@@ -857,6 +882,86 @@ defmodule AshNeo4j.Cypher.Query do
 
     %__MODULE__{
       clauses: [%Match{pattern: pattern}, %Where{conditions: conditions}, %DetachDelete{items: ["n"]}],
+      params: params
+    }
+  end
+
+  @doc """
+  Single guarded + filtered destroy (#361): `MATCH (n:L {id}) WHERE <filter> AND NOT
+  <guard…> DETACH DELETE n`. The `changeset.filter` optimistic-lock conditions are
+  ANDed with the preservation guards. Run via `run_expecting_deletions/1`: zero
+  deletions ⇒ the caller disambiguates filter-miss (StaleRecord) from guard
+  (Unavailable) with `node_matching/3`.
+  """
+  @spec delete_node_filtered(atom() | [atom()], map(), list(), list()) :: t()
+  def delete_node_filtered(label, id_props, filter_conditions, guards)
+      when is_map(id_props) and is_list(filter_conditions) and is_list(guards) do
+    {pattern, id_params} = Cypher.parameterized_node(:n, List.wrap(label), id_props)
+    {filter_where, filter_params} = build_conditions(:n, filter_conditions, param_prefix: "f_")
+
+    guard_conditions =
+      Enum.map(guards, fn {edge_label, direction, dest_label} ->
+        guard_condition(:n, edge_label, direction, dest_label)
+      end)
+
+    where_items = if(filter_where == "", do: [], else: [filter_where]) ++ guard_conditions
+
+    %__MODULE__{
+      clauses: [%Match{pattern: pattern}, %Where{conditions: where_items}, %DetachDelete{items: ["n"]}],
+      params: Map.merge(id_params, filter_params)
+    }
+  end
+
+  @doc """
+  `MATCH (n:L {id}) WHERE <filter> RETURN n` — the optimistic-lock existence check
+  (no guard) used to disambiguate a zero-deletion `delete_node_filtered/4` (#361).
+  """
+  @spec node_matching(atom() | [atom()], map(), list()) :: t()
+  def node_matching(label, id_props, filter_conditions)
+      when is_map(id_props) and is_list(filter_conditions) do
+    {pattern, id_params} = Cypher.parameterized_node(:n, List.wrap(label), id_props)
+    {filter_where, filter_params} = build_conditions(:n, filter_conditions, param_prefix: "f_")
+    where_clauses = if filter_where == "", do: [], else: [%Where{conditions: [filter_where]}]
+
+    %__MODULE__{
+      clauses: [%Match{pattern: pattern}] ++ where_clauses ++ [%Return{items: ["n"]}],
+      params: Map.merge(id_params, filter_params)
+    }
+  end
+
+  @doc """
+  Bulk destroy (#361): `MATCH (n:L) WHERE <filter> AND NOT <guard…> DETACH DELETE n`.
+  Deletes every node matching `conditions` (the pushed-down query filter) that
+  isn't protected by a preservation `guard` — guarded nodes are skipped, not
+  errored ("delete what is safe"). When `return?`, the node's `properties`/`id`/
+  `labels` are captured in a `WITH` *before* the delete (a returned deleted node
+  has empty properties) and returned for record reconstruction.
+  """
+  @spec bulk_detach_delete(atom() | [atom()], list(), list(), boolean()) :: t()
+  def bulk_detach_delete(label, conditions, guards, return?)
+      when is_list(conditions) and is_list(guards) and is_boolean(return?) do
+    {filter_where, params} = build_conditions(:n, conditions, param_prefix: "f_")
+
+    guard_conditions =
+      Enum.map(guards, fn {edge_label, direction, dest_label} ->
+        guard_condition(:n, edge_label, direction, dest_label)
+      end)
+
+    where_items = if(filter_where == "", do: [], else: [filter_where]) ++ guard_conditions
+    where_clauses = if where_items == [], do: [], else: [%Where{conditions: where_items}]
+
+    {capture_clauses, return_clauses} =
+      if return? do
+        {[%With{items: ["n", "properties(n) AS props", "id(n) AS nid", "labels(n) AS labels"]}],
+         [%Return{items: ["props", "nid", "labels"]}]}
+      else
+        {[], []}
+      end
+
+    %__MODULE__{
+      clauses:
+        [%Match{pattern: Cypher.node(:n, List.wrap(label))}] ++
+          where_clauses ++ capture_clauses ++ [%DetachDelete{items: ["n"]}] ++ return_clauses,
       params: params
     }
   end

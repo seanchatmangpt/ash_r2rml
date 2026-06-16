@@ -88,6 +88,40 @@ defmodule AshNeo4j.Neo4jHelper do
     |> Cypher.run_expecting_deletions()
   end
 
+  @doc """
+  Single filtered + guarded destroy (#361): deletes the `id`-matched node when it
+  satisfies `filter_conditions` (optimistic lock) and isn't `guard`-protected.
+  `{:ok, _}` when deleted, `{:error, "nothing deleted"}` otherwise.
+  """
+  def delete_node_filtered(label, id_props, filter_conditions, guards)
+      when (is_atom(label) or is_list(label)) and is_map(id_props) and is_list(filter_conditions) and
+             is_list(guards) do
+    Query.delete_node_filtered(label, id_props, filter_conditions, guards)
+    |> Cypher.run_expecting_deletions()
+  end
+
+  @doc """
+  The optimistic-lock existence check (#361): does the `id`-matched node satisfy
+  `filter_conditions`? Returns `{:ok, %Bolty.Response{}}`.
+  """
+  def node_matching(label, id_props, filter_conditions)
+      when (is_atom(label) or is_list(label)) and is_map(id_props) and is_list(filter_conditions) do
+    Query.node_matching(label, id_props, filter_conditions)
+    |> Cypher.run()
+  end
+
+  @doc """
+  Bulk destroy (#361): deletes every node of `label` matching `conditions` that
+  isn't protected by a preservation `guard`. Returns `{:ok, %Bolty.Response{}}` —
+  with captured pre-delete node data when `return?`.
+  """
+  def bulk_detach_delete(label, conditions, guards, return?)
+      when (is_atom(label) or is_list(label)) and is_list(conditions) and is_list(guards) and
+             is_boolean(return?) do
+    Query.bulk_detach_delete(label, conditions, guards, return?)
+    |> Cypher.run()
+  end
+
   @spec merge_node(atom(), map()) ::
           {:error, %{:__exception__ => true, :__struct__ => atom(), optional(atom()) => any()}}
           | {:ok, any()}
@@ -120,9 +154,9 @@ defmodule AshNeo4j.Neo4jHelper do
   :ok
   ```
   """
-  def update_node(label, match_properties, set_properties, remove_properties \\ [])
-      when (is_atom(label) or is_list(label)) and is_map(set_properties) do
-    Query.update_node(label, match_properties, set_properties, remove_properties)
+  def update_node(label, match_properties, set_properties, remove_properties \\ [], opts \\ [])
+      when (is_atom(label) or is_list(label)) and is_map(set_properties) and is_list(opts) do
+    Query.update_node(label, match_properties, set_properties, remove_properties, opts)
     |> Cypher.run()
   end
 

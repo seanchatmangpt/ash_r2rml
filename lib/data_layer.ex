@@ -26,6 +26,23 @@ defmodule AshNeo4j.DataLayer do
   def can?(_, :create), do: true
   def can?(_, :composite_primary_key), do: true
   def can?(_, :update), do: true
+  # Advertise the "only-update-if" guard (#361) so Ash threads `changeset.filter`
+  # into update/destroy — without this, `Ash.Changeset.filter/2` silently drops it.
+  def can?(_, :changeset_filter), do: true
+  # Atomic updates (#361): render `changeset.atomics` against the live node.
+  def can?(_, {:atomic, :update}), do: true
+  # Bulk atomic update (#361): apply the atomics/attributes to every node matching
+  # the query in one statement (`Ash.bulk_update` :atomic strategy).
+  def can?(_, :update_query), do: true
+  # Bulk destroy (#361): delete every node matching the query in one statement,
+  # skipping `guard`-protected nodes ("delete what is safe").
+  def can?(_, :destroy_query), do: true
+  # Ash gates the atomic bulk-destroy strategy on :update_query AND :expr_error
+  # (#361). We don't render inline `error()` expressions — such an atomic refuses
+  # cleanly via %UnsupportedAtomic{} (stance a) rather than mis-write. NB: with
+  # full atomic support advertised, `manage_relationship` actions need
+  # `require_atomic? false` (standard Ash 3), as they can't be done atomically.
+  def can?(_, :expr_error), do: true
   def can?(_, :upsert), do: true
   def can?(_, :destroy), do: true
   def can?(_, :sort), do: true
@@ -388,6 +405,16 @@ defmodule AshNeo4j.DataLayer do
   end
 
   defp do_update(resource, changeset, %ResourceMapping{} = mapping) do
+    # Honour the `changeset.filter` "only-update-if" guard and render
+    # `changeset.atomics` against the live node (#361). Refuse anything we can't
+    # render in full rather than write unguarded / mis-write (stance a).
+    with {:ok, guard_conditions} <- QueryHelper.guard_conditions(mapping, changeset.filter),
+         {:ok, atomic_sets} <- QueryHelper.render_atomic_sets(resource, mapping, changeset.atomics || []) do
+      do_update(resource, changeset, mapping, guard_conditions, atomic_sets)
+    end
+  end
+
+  defp do_update(resource, changeset, %ResourceMapping{} = mapping, guard_conditions, atomic_sets) do
     subject_id = id_properties(mapping, changeset.data)
     subject_label = mapping.label_pair
 
@@ -395,11 +422,23 @@ defmodule AshNeo4j.DataLayer do
 
     remove_property_names = stale_property_names(mapping, update_properties, changeset)
 
+    guarded? = guard_conditions != []
+    {atomic_exprs, _atomic_params} = atomic_sets
+
     property_update_result =
-      if !Enum.empty?(update_properties) or !Enum.empty?(remove_property_names) do
-        case subject_label |> Neo4jHelper.update_node(subject_id, update_properties, remove_property_names) do
+      if !Enum.empty?(update_properties) or !Enum.empty?(remove_property_names) or guarded? or
+           atomic_exprs != [] do
+        case subject_label
+             |> Neo4jHelper.update_node(subject_id, update_properties, remove_property_names,
+               guard: guard_conditions,
+               atomics: atomic_sets
+             ) do
+          # No row matched the id + guard: a present guard ⇒ the row is stale
+          # (the predicate no longer holds); otherwise the id itself didn't match.
           {:ok, %Bolty.Response{results: []}} ->
-            {:error, "no result to update node"}
+            if guarded?,
+              do: {:error, Ash.Error.Changes.StaleRecord.exception(resource: resource, filter: changeset.filter)},
+              else: {:error, "no result to update node"}
 
           {:ok, %Bolty.Response{results: [node_map | _]}} ->
             node = Map.get(node_map, "n")
@@ -595,27 +634,209 @@ defmodule AshNeo4j.DataLayer do
   end
 
   @impl true
+  def update_query(query, changeset, resource, opts) do
+    Logger.debug("""
+    AshNeo4j.DataLayer: update_query(#{inspect(query)}, #{inspect(changeset)}, #{inspect(resource)})
+    """)
+
+    mapping = ResourceInfo.mapping(resource)
+
+    cond do
+      # Relationship management (manage_relationship) is routed here as an atomic
+      # FK set, but in the graph the FK is an *edge*, not a property. Hand it to the
+      # per-record path, which creates the edge (and renders the atomic) (#361).
+      Map.has_key?(changeset.context, :accessing_from) ->
+        single_update_query_result(resource, changeset, mapping, opts)
+
+      true ->
+        bulk_update_query(query, changeset, resource, mapping, opts)
+    end
+  end
+
+  defp single_update_query_result(resource, changeset, mapping, opts) do
+    # Ash atomic-ises the relationship FK set, so the edge key arrives in `atomics`
+    # — as a literal (belongs_to) or a guard expression like
+    # `if is_distinct_from(new, fk), do: new, else: fk` (has_one). The per-record
+    # relationship path reads the FK from `attributes`, so evaluate each atomic
+    # against the live record and fold it back, then delegate (creates the edge).
+    with {:ok, changeset} <- fold_atomics_to_attributes(resource, changeset),
+         {:ok, record} <- do_update(resource, changeset, mapping) do
+      if Map.get(opts, :return_records?), do: {:ok, [record]}, else: :ok
+    end
+  end
+
+  defp fold_atomics_to_attributes(resource, changeset) do
+    Enum.reduce_while(changeset.atomics, {:ok, changeset.attributes}, fn {field, expr}, {:ok, acc} ->
+      case Ash.Expr.eval(expr, record: changeset.data, resource: resource) do
+        {:ok, value} -> {:cont, {:ok, Map.put(acc, field, value)}}
+        {:error, error} -> {:halt, {:error, error}}
+      end
+    end)
+    |> case do
+      {:ok, attributes} -> {:ok, %{changeset | attributes: attributes, atomics: []}}
+      error -> error
+    end
+  end
+
+  defp bulk_update_query(query, changeset, resource, mapping, opts) do
+    # `query.filter` already folds in any changeset (optimistic-lock) filter via
+    # Ash's add_changeset_filters/2. Stance (a): the scope must push down in full —
+    # we can't post-filter a bulk SET in Elixir — else refuse (#361).
+    with {:ok, conditions} <- QueryHelper.guard_conditions(mapping, query.filter),
+         {:ok, atomic_sets} <- QueryHelper.render_atomic_sets(resource, mapping, changeset.atomics || []) do
+      set_props = dump_properties(mapping, changeset.attributes)
+
+      case Neo4jHelper.update_node(mapping.label_pair, %{}, set_props, [],
+             guard: conditions,
+             atomics: atomic_sets
+           ) do
+        {:ok, %Bolty.Response{results: results}} ->
+          bulk_update_result(resource, results, opts)
+
+        {:error, error} ->
+          {:error, AshNeo4j.Error.Neo4j.from_bolt(error)}
+      end
+    end
+  end
+
+  # `:ok` when records aren't requested, else `{:ok, records}` — short-circuiting
+  # on the first node that fails to convert.
+  defp bulk_update_result(resource, results, opts) do
+    if Map.get(opts, :return_records?) do
+      converted = Enum.map(results, &convert_node_to_resource(resource, Map.get(&1, "n")))
+
+      case Enum.find(converted, &match?({:error, _}, &1)) do
+        nil -> {:ok, Enum.map(converted, fn {:ok, record} -> record end)}
+        {:error, _} = error -> error
+      end
+    else
+      :ok
+    end
+  end
+
+  @impl true
+  def destroy_query(query, changeset, resource, opts) do
+    Logger.debug("""
+    AshNeo4j.DataLayer: destroy_query(#{inspect(query)}, #{inspect(changeset)}, #{inspect(resource)})
+    """)
+
+    mapping = ResourceInfo.mapping(resource)
+
+    cond do
+      # Relationship-context destroy — hand to the per-record path (which enforces
+      # the guard as an error, the right semantics for a targeted destroy) (#361).
+      Map.has_key?(changeset.context, :accessing_from) ->
+        single_destroy_query_result(resource, changeset, opts)
+
+      true ->
+        bulk_destroy_query(query, resource, mapping, opts)
+    end
+  end
+
+  defp single_destroy_query_result(resource, changeset, opts) do
+    case destroy(resource, changeset) do
+      :ok -> if Map.get(opts, :return_records?), do: {:ok, [changeset.data]}, else: :ok
+      {:error, _} = error -> error
+    end
+  end
+
+  defp bulk_destroy_query(query, resource, mapping, opts) do
+    # Stance (a): scope must push down in full (no Elixir post-filter on a bulk
+    # delete), else refuse. `guard`-protected nodes are skipped, not deleted.
+    with {:ok, conditions} <- QueryHelper.guard_conditions(mapping, query.filter) do
+      return? = Map.get(opts, :return_records?, false)
+      guards = ResourceInfo.preserve_node_relationships(resource)
+
+      case Neo4jHelper.bulk_detach_delete(mapping.label_pair, conditions, guards, return?) do
+        {:ok, %Bolty.Response{results: results}} ->
+          if return?, do: convert_deleted_nodes(resource, results), else: :ok
+
+        {:error, error} ->
+          {:error, AshNeo4j.Error.Neo4j.from_bolt(error)}
+      end
+    end
+  end
+
+  # Rebuild records from the pre-delete node data captured in the `WITH`.
+  defp convert_deleted_nodes(resource, results) do
+    converted =
+      Enum.map(results, fn row ->
+        node = %Bolty.Types.Node{
+          id: Map.get(row, "nid"),
+          properties: Map.get(row, "props"),
+          labels: Map.get(row, "labels")
+        }
+
+        convert_node_to_resource(resource, node)
+      end)
+
+    case Enum.find(converted, &match?({:error, _}, &1)) do
+      nil -> {:ok, Enum.map(converted, fn {:ok, record} -> record end)}
+      {:error, _} = error -> error
+    end
+  end
+
+  @impl true
   def destroy(resource, changeset) do
     Logger.debug("""
     AshNeo4j.DataLayer: destroy(#{inspect(resource)}, #{inspect(changeset)}})
     """)
 
     mapping = ResourceInfo.mapping(resource)
+
+    # Honour a `changeset.filter` "only-destroy-if" guard (optimistic lock, #361):
+    # render it (refuse an un-pushable filter, stance a) and route. `{:ok, []}` is
+    # the unfiltered case.
+    with {:ok, conditions} <- QueryHelper.guard_conditions(mapping, changeset.filter) do
+      destroy_with_conditions(resource, mapping, conditions, changeset)
+    end
+  end
+
+  defp destroy_with_conditions(resource, %ResourceMapping{} = mapping, [], changeset) do
+    destroy_node(resource, mapping.label_pair, id_properties(mapping, changeset.data))
+  end
+
+  defp destroy_with_conditions(resource, %ResourceMapping{} = mapping, conditions, changeset) do
     label = mapping.label_pair
     id_properties = id_properties(mapping, changeset.data)
+    guards = ResourceInfo.preserve_node_relationships(resource)
 
+    case Neo4jHelper.delete_node_filtered(label, id_properties, conditions, guards) do
+      {:ok, _} ->
+        :ok
+
+      # Nothing deleted: if the node still matches the filter it was held back by a
+      # guard (Unavailable); otherwise the optimistic lock didn't hold (StaleRecord).
+      {:error, "nothing deleted"} ->
+        case Neo4jHelper.node_matching(label, id_properties, conditions) do
+          {:ok, %Bolty.Response{results: [_ | _]}} ->
+            {:error, unavailable_guarded(resource)}
+
+          _ ->
+            {:error, Ash.Error.Changes.StaleRecord.exception(resource: resource, filter: changeset.filter)}
+        end
+
+      {:error, error} ->
+        {:error, error}
+    end
+  end
+
+  defp unavailable_guarded(resource) do
+    Ash.Error.Invalid.Unavailable.exception(
+      resource: resource,
+      source: AshNeo4j.DataLayer,
+      reason: "guarded relationships prevent deletion"
+    )
+  end
+
+  defp destroy_node(resource, label, id_properties) do
     result =
       case Neo4jHelper.safe_delete_nodes(label, id_properties, ResourceInfo.preserve_node_relationships(resource)) do
         {:ok, _} ->
           :ok
 
         {:error, "nothing deleted"} ->
-          {:error,
-           Ash.Error.Invalid.Unavailable.exception(
-             resource: resource,
-             source: AshNeo4j.DataLayer,
-             reason: "guarded relationships prevent deletion"
-           )}
+          {:error, unavailable_guarded(resource)}
 
         {:error, error} ->
           {:error, error}

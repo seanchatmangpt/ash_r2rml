@@ -541,6 +541,157 @@ defmodule AshNeo4j.QueryHelper do
     end
   end
 
+  @doc """
+  Renders an update's `changeset.filter` guard (the "only-update-if" predicate,
+  #361) to `{:ok, conditions}` for the update `WHERE`, or
+  `{:error, %AshNeo4j.Error.UnsupportedUpdateFilter{}}` when it can't be rendered
+  **in full**.
+
+  Stance: never under-guard. The guard is only pushed down when the filter is a
+  conjunction (`and`-only — no `or`/`not`) of supported attribute predicates that
+  each render; a calculation ref or any predicate the pushdown drops makes the
+  whole guard unsupported, so the data layer returns rather than applies the
+  update unguarded. `nil` (no guard) is `{:ok, []}`.
+  """
+  @spec guard_conditions(ResourceMapping.t(), Ash.Filter.t() | nil) ::
+          {:ok, list()} | {:error, struct()}
+  def guard_conditions(%ResourceMapping{}, nil), do: {:ok, []}
+
+  def guard_conditions(%ResourceMapping{module: module} = mapping, filter) do
+    predicates =
+      filter
+      |> Ash.Filter.to_simple_filter(skip_invalid?: true)
+      |> Map.get(:predicates, [])
+
+    if simple_conjunction?(filter) and predicates != [] and not Enum.any?(predicates, &calculation_ref?/1) do
+      case to_conditions(mapping, predicates) do
+        # Every predicate rendered — a `nil` (unhandled) drop shortens the list.
+        {:ok, conditions} when length(conditions) == length(predicates) -> {:ok, conditions}
+        {:ok, _partial} -> {:error, unsupported_changeset_filter(module, filter)}
+        {:error, _} = error -> error
+      end
+    else
+      {:error, unsupported_changeset_filter(module, filter)}
+    end
+  end
+
+  defp unsupported_changeset_filter(module, filter) do
+    AshNeo4j.Error.UnsupportedChangesetFilter.exception(resource: module, filter: filter)
+  end
+
+  @doc """
+  Renders `changeset.atomics` (a keyword of `{field, Ash.Expr}`, #361) into
+  `{:ok, {set_expressions, params}}` for the update `SET`, where each entry is
+  `"n.<prop> = <cypher>"` evaluated against the **live** node — or
+  `{:error, %AshNeo4j.Error.UnsupportedAtomic{}}` when an expression can't be
+  rendered.
+
+  Renders: arithmetic (`+ - * /`), comparisons, `if/3` (⇒ `CASE`), string concat
+  (`<>` ⇒ `+`) and `string_trim` (⇒ `trim`, Ash's string cast), attribute refs
+  (`n.<prop>`) and scalar literals — numbers/strings/booleans/nil, and atoms (e.g.
+  `Ash.Type.Atom` enum values) bound as their stored string form. An expression
+  node it doesn't cover (e.g. another Ash function) is refused rather than
+  mis-written (stance a). Param keys are `am_`-prefixed and threaded across all
+  atomics so they stay unique.
+  """
+  @spec render_atomic_sets(module(), ResourceMapping.t(), keyword()) ::
+          {:ok, {[binary()], map()}} | {:error, struct()}
+  def render_atomic_sets(_resource, %ResourceMapping{}, []), do: {:ok, {[], %{}}}
+
+  def render_atomic_sets(resource, %ResourceMapping{module: module} = mapping, atomics) do
+    Enum.reduce_while(atomics, {:ok, {[], %{}}}, fn {field, expr}, {:ok, {sets, params}} ->
+      with {:ok, hydrated} <- Ash.Filter.hydrate_refs(expr, %{resource: resource, public?: false}),
+           {:ok, cypher, params} <- render_atomic_node(mapping, hydrated, params) do
+        {:cont, {:ok, {sets ++ ["n.#{property_name(mapping, field)} = #{cypher}"], params}}}
+      else
+        _ -> {:halt, {:error, AshNeo4j.Error.UnsupportedAtomic.exception(resource: module, expression: expr)}}
+      end
+    end)
+  end
+
+  # `+ - * /` (parenthesised) and comparisons, dispatched on the `:operator` atom.
+  @atomic_binary_ops %{
+    +: "+",
+    -: "-",
+    *: "*",
+    /: "/",
+    >: ">",
+    >=: ">=",
+    <: "<",
+    <=: "<=",
+    ==: "=",
+    !=: "<>"
+  }
+
+  defp render_atomic_node(mapping, %Ash.Query.Ref{} = ref, params),
+    do: {:ok, "n.#{property_name(mapping, ref)}", params}
+
+  defp render_atomic_node(mapping, %Ash.Query.Function.If{arguments: [condition, then | rest]}, params) do
+    with {:ok, c, params} <- render_atomic_node(mapping, condition, params),
+         {:ok, t, params} <- render_atomic_node(mapping, then, params),
+         {:ok, e, params} <- render_atomic_else(mapping, rest, params) do
+      {:ok, "CASE WHEN #{c} THEN #{t} ELSE #{e} END", params}
+    end
+  end
+
+  # String atomics: Ash casts them as `if trim(expr) == "" then null else trim(expr)`
+  # (empty-string ⇒ nil). `string_trim/1` ⇒ Cypher `trim/1`, and string `<>` ⇒ `+`.
+  defp render_atomic_node(mapping, %Ash.Query.Function.StringTrim{arguments: [inner]}, params) do
+    with {:ok, s, params} <- render_atomic_node(mapping, inner, params) do
+      {:ok, "trim(#{s})", params}
+    end
+  end
+
+  defp render_atomic_node(mapping, %Ash.Query.Operator.Basic.Concat{left: left, right: right}, params) do
+    with {:ok, l, params} <- render_atomic_node(mapping, left, params),
+         {:ok, r, params} <- render_atomic_node(mapping, right, params) do
+      {:ok, "(#{l} + #{r})", params}
+    end
+  end
+
+  defp render_atomic_node(mapping, %{operator: op, left: left, right: right}, params)
+       when is_map_key(@atomic_binary_ops, op) do
+    with {:ok, l, params} <- render_atomic_node(mapping, left, params),
+         {:ok, r, params} <- render_atomic_node(mapping, right, params) do
+      {:ok, "(#{l} #{@atomic_binary_ops[op]} #{r})", params}
+    end
+  end
+
+  # Atom literal (e.g. an `Ash.Type.Atom` enum value) — stored as its string form,
+  # matching how the data layer writes atom attributes (Neo4j has no atom type).
+  defp render_atomic_node(_mapping, atom, params)
+       when is_atom(atom) and atom not in [nil, true, false] do
+    key = "am_#{map_size(params)}"
+    {:ok, "$#{key}", Map.put(params, key, Atom.to_string(atom))}
+  end
+
+  defp render_atomic_node(_mapping, literal, params)
+       when is_number(literal) or is_binary(literal) or is_boolean(literal) or is_nil(literal) do
+    key = "am_#{map_size(params)}"
+    {:ok, "$#{key}", Map.put(params, key, literal)}
+  end
+
+  defp render_atomic_node(_mapping, other, _params), do: {:error, other}
+
+  defp render_atomic_else(_mapping, [], params), do: {:ok, "null", params}
+  defp render_atomic_else(mapping, [else_], params), do: render_atomic_node(mapping, else_, params)
+
+  # True when the filter is an `and`-only tree of leaf predicates — no `or`/`not`,
+  # so `to_simple_filter`'s flattened predicate list represents it faithfully.
+  defp simple_conjunction?(%Ash.Filter{expression: expression}), do: simple_conjunction?(expression)
+  defp simple_conjunction?(nil), do: true
+
+  defp simple_conjunction?(%Ash.Query.BooleanExpression{op: :and, left: left, right: right}),
+    do: simple_conjunction?(left) and simple_conjunction?(right)
+
+  defp simple_conjunction?(%Ash.Query.BooleanExpression{op: :or}), do: false
+  defp simple_conjunction?(%Ash.Query.Not{}), do: false
+  defp simple_conjunction?(_leaf), do: true
+
+  defp calculation_ref?(predicate) do
+    match?(%Ash.Query.Ref{attribute: %Ash.Query.Calculation{}}, Map.get(predicate, :left))
+  end
+
   defp to_conditions(%ResourceMapping{} = mapping, predicates) do
     predicates
     |> Enum.map(fn
