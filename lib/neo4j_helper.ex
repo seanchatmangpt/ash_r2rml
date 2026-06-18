@@ -411,7 +411,7 @@ defmodule AshNeo4j.Neo4jHelper do
   end
 
   @spec relate_nodes(atom() | [atom()], map(), list()) ::
-          {:error, bitstring()}
+          {:error, Exception.t()}
           | :ok
   @doc """
   Creates source neo4j node with label, properties and relationships to existing nodes
