@@ -229,9 +229,7 @@ defmodule AshNeo4j.DataLayer do
   @impl true
   @spec run_query(any(), atom()) :: {:error, any()} | {:ok, any()}
   def run_query(query, resource) do
-    Logger.debug("""
-    AshNeo4j.DataLayer: run_query(#{inspect(query)}, #{inspect(resource)})
-    """)
+    Logger.debug("AshNeo4j.DataLayer: run_query(#{inspect(query)}, #{inspect(resource)})")
 
     result =
       case QueryHelper.query_nodes(query) do
@@ -268,9 +266,7 @@ defmodule AshNeo4j.DataLayer do
           end
       end
 
-    Logger.debug("""
-    AshNeo4j.DataLayer: run_query result #{inspect(result)}
-    """)
+    Logger.debug("AshNeo4j.DataLayer: run_query result #{inspect(result)}")
 
     result
   end
@@ -313,9 +309,7 @@ defmodule AshNeo4j.DataLayer do
           {:error, <<_::64, _::_*8>> | %{:__exception__ => true, :__struct__ => atom(), optional(atom()) => any()}}
           | {:ok, any()}
   def create(resource, changeset) do
-    Logger.debug("""
-    AshNeo4j.DataLayer: create(#{inspect(resource)}, #{inspect(changeset)})
-    """)
+    Logger.debug("AshNeo4j.DataLayer: create(#{inspect(resource)}, #{inspect(changeset)})")
 
     mapping = ResourceInfo.mapping(resource)
     primary_keys = Ash.Resource.Info.primary_key(mapping.module)
@@ -330,18 +324,14 @@ defmodule AshNeo4j.DataLayer do
         end
       end
 
-    Logger.debug("""
-    AshNeo4j.DataLayer: create result #{inspect(result)}
-    """)
+    Logger.debug("AshNeo4j.DataLayer: create result #{inspect(result)}")
 
     result
   end
 
   @impl true
   def upsert(resource, changeset, keys) do
-    Logger.debug("""
-    AshNeo4j.DataLayer: upsert(#{inspect(resource)}, #{inspect(changeset)}, #{inspect(keys)})
-    """)
+    Logger.debug("AshNeo4j.DataLayer: upsert(#{inspect(resource)}, #{inspect(changeset)}, #{inspect(keys)})")
 
     mapping = ResourceInfo.mapping(resource)
     id_properties = id_properties(mapping, changeset.attributes)
@@ -384,18 +374,14 @@ defmodule AshNeo4j.DataLayer do
         end
       end
 
-    Logger.debug("""
-    AshNeo4j.DataLayer: upsert result #{inspect(result)}
-    """)
+    Logger.debug("AshNeo4j.DataLayer: upsert result #{inspect(result)}")
 
     result
   end
 
   @impl true
   def update(resource, changeset) do
-    Logger.debug("""
-    AshNeo4j.DataLayer: update(#{inspect(resource)}, #{inspect(changeset)}})
-    """)
+    Logger.debug("AshNeo4j.DataLayer: update(#{inspect(resource)}, #{inspect(changeset)})")
 
     mapping = ResourceInfo.mapping(resource)
 
@@ -655,18 +641,14 @@ defmodule AshNeo4j.DataLayer do
 
     result = relationship_update_result || property_update_result
 
-    Logger.debug("""
-    AshNeo4j.DataLayer: update result #{inspect(result)}
-    """)
+    Logger.debug("AshNeo4j.DataLayer: update result #{inspect(result)}")
 
     result
   end
 
   @impl true
   def update_query(query, changeset, resource, opts) do
-    Logger.debug("""
-    AshNeo4j.DataLayer: update_query(#{inspect(query)}, #{inspect(changeset)}, #{inspect(resource)})
-    """)
+    Logger.debug("AshNeo4j.DataLayer: update_query(#{inspect(query)}, #{inspect(changeset)}, #{inspect(resource)})")
 
     mapping = ResourceInfo.mapping(resource)
 
@@ -747,9 +729,7 @@ defmodule AshNeo4j.DataLayer do
 
   @impl true
   def destroy_query(query, changeset, resource, opts) do
-    Logger.debug("""
-    AshNeo4j.DataLayer: destroy_query(#{inspect(query)}, #{inspect(changeset)}, #{inspect(resource)})
-    """)
+    Logger.debug("AshNeo4j.DataLayer: destroy_query(#{inspect(query)}, #{inspect(changeset)}, #{inspect(resource)})")
 
     mapping = ResourceInfo.mapping(resource)
 
@@ -809,9 +789,7 @@ defmodule AshNeo4j.DataLayer do
 
   @impl true
   def destroy(resource, changeset) do
-    Logger.debug("""
-    AshNeo4j.DataLayer: destroy(#{inspect(resource)}, #{inspect(changeset)}})
-    """)
+    Logger.debug("AshNeo4j.DataLayer: destroy(#{inspect(resource)}, #{inspect(changeset)})")
 
     mapping = ResourceInfo.mapping(resource)
 
