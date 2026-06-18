@@ -108,7 +108,7 @@ See [Conventional Commits](Https://conventionalcommits.org) for commit guideline
 
 ### Bug Fixes
 
-* **`belongs_to` FK always nil after read** (#258) — `belongs_to` source attributes (e.g. `specification_id`) were correctly populated on create but lost on any subsequent read. The enrichment step now correctly extracts the FK from the destination node returned by the OPTIONAL MATCH traversal when the source resource uses a fragment-inherited relationship whose destination lives in a different domain.
+* **`belongs_to` source attribute always nil after read** (#258) — `belongs_to` source attributes (e.g. `specification_id`) were correctly populated on create but lost on any subsequent read. The enrichment step now correctly extracts the relationship attribute from the destination node returned by the OPTIONAL MATCH traversal when the source resource uses a fragment-inherited relationship whose destination lives in a different domain.
 
 * **Domain fragment label dropped on Ash 3.25+** — `ResourceInfo.all_labels/1` was returning the compile-time persisted label list, which is baked before the domain extension compiles under Ash 3.25's updated compilation order, causing the domain fragment label to be silently omitted. `all_labels/1` now always computes dynamically from the individual label accessors, consistent with how `mapping/1` already worked.
 
