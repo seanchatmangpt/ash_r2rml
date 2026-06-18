@@ -167,7 +167,8 @@ defmodule AshNeo4j.QueryHelper do
     end
   end
 
-  defp classify_combination(_), do: {:error, "AshNeo4j: combination_of must start with :base"}
+  defp classify_combination(_),
+    do: {:error, AshNeo4j.Error.Internal.exception(detail: "combination_of must start with :base")}
 
   # builder: :nodes | :ids — which branch_node_read variant to use.
   # Returns the branch Cypher.Query, or `{:error, _}` if a branch predicate

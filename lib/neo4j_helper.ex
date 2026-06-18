@@ -91,7 +91,7 @@ defmodule AshNeo4j.Neo4jHelper do
   @doc """
   Single filtered + guarded destroy (#361): deletes the `id`-matched node when it
   satisfies `filter_conditions` (optimistic lock) and isn't `guard`-protected.
-  `{:ok, _}` when deleted, `{:error, "nothing deleted"}` otherwise.
+  `{:ok, _}` when deleted, `{:error, :nothing_deleted}` otherwise.
   """
   def delete_node_filtered(label, id_props, filter_conditions, guards)
       when (is_atom(label) or is_list(label)) and is_map(id_props) and is_list(filter_conditions) and
@@ -454,8 +454,8 @@ defmodule AshNeo4j.Neo4jHelper do
       end)
 
     case results do
-      :error -> {:error, "error relating nodes"}
-      [] -> {:error, "unexpected empty result relating nodes"}
+      :error -> {:error, AshNeo4j.Error.Internal.exception(detail: "error relating nodes during create")}
+      [] -> {:error, AshNeo4j.Error.Internal.exception(detail: "unexpected empty result relating nodes during create")}
       _ -> :ok
     end
   end
