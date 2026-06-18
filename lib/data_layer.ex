@@ -499,7 +499,19 @@ defmodule AshNeo4j.DataLayer do
 
           case map_size(object_id) do
             0 ->
-              {:error, "couldn't relate nodes"}
+              # Empty object id ⇒ the inverse-relationship resolution failed. If both sides are
+              # `has_many` over one edge, that's a back-to-back-has_many m2m (#127) —
+              # fail fast with guidance toward a joiner node rather than a bare string.
+              if back_to_back_has_many?(resource, object_resource, object_relationship_name) do
+                {:error,
+                 AshNeo4j.Error.UnsupportedManyToMany.exception(
+                   resource: object_resource,
+                   related: resource,
+                   relationship: object_relationship_name
+                 )}
+              else
+                {:error, "couldn't relate nodes"}
+              end
 
             _ ->
               {_relationship_name, edge_label, object_to_subject_direction, _object_label} = object_node_relationship
@@ -660,8 +672,9 @@ defmodule AshNeo4j.DataLayer do
 
     cond do
       # Relationship management (manage_relationship) is routed here as an atomic
-      # FK set, but in the graph the FK is an *edge*, not a property. Hand it to the
-      # per-record path, which creates the edge (and renders the atomic) (#361).
+      # set of the relationship attribute, but in the graph that relationship is an
+      # *edge*, not a stored property. Hand it to the per-record path, which creates
+      # the edge (and renders the atomic) (#361).
       Map.has_key?(changeset.context, :accessing_from) ->
         single_update_query_result(resource, changeset, mapping, opts)
 
@@ -671,11 +684,12 @@ defmodule AshNeo4j.DataLayer do
   end
 
   defp single_update_query_result(resource, changeset, mapping, opts) do
-    # Ash atomic-ises the relationship FK set, so the edge key arrives in `atomics`
-    # — as a literal (belongs_to) or a guard expression like
-    # `if is_distinct_from(new, fk), do: new, else: fk` (has_one). The per-record
-    # relationship path reads the FK from `attributes`, so evaluate each atomic
-    # against the live record and fold it back, then delegate (creates the edge).
+    # Ash atomic-ises the relationship attribute, so the edge key arrives in
+    # `atomics` — as a literal (belongs_to) or a guard expression like
+    # `if is_distinct_from(new, current), do: new, else: current` (has_one). The
+    # per-record relationship path reads that attribute from `attributes`, so
+    # evaluate each atomic against the live record and fold it back, then delegate
+    # (creates the edge).
     with {:ok, changeset} <- fold_atomics_to_attributes(resource, changeset),
          {:ok, record} <- do_update(resource, changeset, mapping) do
       if Map.get(opts, :return_records?), do: {:ok, [record]}, else: :ok
@@ -1341,6 +1355,21 @@ defmodule AshNeo4j.DataLayer do
     else
       %{}
     end
+  end
+
+  # Detects a many-to-many modelled as back-to-back `has_many` (#127): the source's
+  # relationship is `has_many` AND the accessed resource declares a `has_many` back
+  # to it, so one edge is described by two scalar FKs — which can't represent m2m.
+  # (Their FKs aren't a clean inverse — which is *why* the resolution failed and we
+  # land here — so this scans the relationships directly rather than relying on
+  # `reverse_node_relationship`, which returns nil for exactly this shape.) Used to
+  # turn the failure into an actionable error rather than a bare "couldn't relate
+  # nodes". Joiner nodes are the supported shape; native many_to_many is #370.
+  defp back_to_back_has_many?(resource, object_resource, object_relationship_name) do
+    match?(%{type: :has_many}, Ash.Resource.Info.relationship(object_resource, object_relationship_name)) and
+      Enum.any?(Ash.Resource.Info.relationships(resource), fn rel ->
+        rel.destination == object_resource and rel.type == :has_many
+      end)
   end
 
   # Property names to REMOVE on update: those the OLD value of each changed

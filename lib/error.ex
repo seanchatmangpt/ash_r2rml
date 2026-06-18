@@ -123,6 +123,30 @@ defmodule AshNeo4j.Error.UnresolvableTraversal do
   end
 end
 
+defmodule AshNeo4j.Error.UnsupportedManyToMany do
+  @moduledoc """
+  **Returned** (never raised) when a relationship write resolves to a many-to-many
+  modelled as **back-to-back `has_many`** — two resources each declaring a
+  `has_many` to the other over one edge (#127). Ash anchors a `has_many` by an
+  attribute on the *related* resource; with a `has_many` on both sides there is no
+  to-one side to anchor the connect, so the data layer can't determine which node
+  to relate. The edge itself already represents the many-to-many; the model just
+  needs a to-one side on each hop to anchor the connect.
+
+  Model many-to-many with a **joiner node** instead — two to-one (`belongs_to`)
+  hops through a join resource (`Source →[E1] Join →[E2] Dest`); see the
+  `Party → PlaceRef → Place` example. Native `many_to_many` is tracked in #370.
+  """
+  use Splode.Error, fields: [:resource, :related, :relationship], class: :invalid
+
+  def message(%{resource: resource, related: related, relationship: relationship}) do
+    "cannot relate #{inspect(resource)} to #{inspect(related)} via :#{relationship} — this is a " <>
+      "many-to-many modelled as back-to-back has_many (a has_many on both sides of one edge), which " <>
+      "leaves no to-one side to anchor the connect. Model it with a joiner node (two to-one hops " <>
+      "through a join resource; see Party → PlaceRef → Place). Native many_to_many is tracked in #370."
+  end
+end
+
 defmodule AshNeo4j.Error.Neo4j do
   @moduledoc """
   Wraps a Neo4j server error surfaced from `AshNeo4j.Cypher.run/1` (a

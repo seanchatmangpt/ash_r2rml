@@ -12,8 +12,9 @@ defmodule AshNeo4j.GuardedRelateTest do
   push down in full is refused with `AshNeo4j.Error.UnsupportedChangesetFilter` —
   never applied unguarded. Plain Cypher 5, no gate (sibling of #361).
 
-  `Chain` is a to-one (`belongs_to :head`/`:tail`, FK on the subject), so Ash routes
-  the FK edge write through this data layer's own update — where the guard threads.
+  `Chain` is a to-one (`belongs_to :head`/`:tail`, the relationship attribute on the
+  subject), so Ash routes the edge write through this data layer's own update — where
+  the guard threads.
   has_many appends are delegated by Ash to the related side under a parent
   filter-read, so they keep the same lock semantics without reaching the relate
   render; covered by Ash's own behaviour, not here.
