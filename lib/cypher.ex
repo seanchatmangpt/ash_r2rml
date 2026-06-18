@@ -534,16 +534,12 @@ defmodule AshNeo4j.Cypher do
   def run(cypher, params \\ %{}) when is_bitstring(cypher) do
     cypher = cypher25_prefix() <> cypher
 
-    Logger.debug("""
-    AshNeo4j.Cypher: run(#{cypher}, #{inspect(params)})
-    """)
+    Logger.debug("AshNeo4j.Cypher: run(#{cypher}, #{inspect(params)})")
 
     bolty_result = sandboxed_query(cypher, params)
 
     if elem(bolty_result, 0) == :ok do
-      Logger.debug("""
-      AshNeo4j.Cypher: run result #{inspect(elem(bolty_result, 1).results)}
-      """)
+      Logger.debug("AshNeo4j.Cypher: run result #{inspect(elem(bolty_result, 1).results)}")
     end
 
     bolty_result
@@ -556,7 +552,7 @@ defmodule AshNeo4j.Cypher do
 
   def run_expecting_deletions(cypher, params \\ %{}) when is_bitstring(cypher) do
     cypher = cypher25_prefix() <> cypher
-    Logger.debug("AshNeo4.Cypher: run_expecting_deletions(#{cypher})")
+    Logger.debug("AshNeo4j.Cypher: run_expecting_deletions(#{cypher})")
 
     bolty_result = sandboxed_query(cypher, params)
 

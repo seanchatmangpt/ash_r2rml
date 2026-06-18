@@ -486,7 +486,7 @@ defmodule AshNeo4j.Neo4jHelper do
         length(records) > 0
 
       {:error, error} ->
-        Logger.error("AshNeo4j.Neo4jHelper.Error running query: #{inspect(error)}")
+        Logger.error("AshNeo4j.Neo4jHelper: error running query: #{inspect(error)}")
         :error
     end
   end
@@ -528,7 +528,7 @@ defmodule AshNeo4j.Neo4jHelper do
         length(records) > 0
 
       {:error, error} ->
-        Logger.error("AshNeo4j.Neo4jHelper.Error running query: #{inspect(error)}")
+        Logger.error("AshNeo4j.Neo4jHelper: error running query: #{inspect(error)}")
         :error
     end
   end
