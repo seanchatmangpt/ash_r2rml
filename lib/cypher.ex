@@ -573,7 +573,10 @@ defmodule AshNeo4j.Cypher do
         end
 
       if deleted_nodes == 0 do
-        Logger.error("AshNeo4j.Cypher: nothing deleted")
+        # Expected control flow, not an error: a preservation guard held the node,
+        # or an optimistic-lock destroy missed. The caller disambiguates this into
+        # StaleRecord / Unavailable, so trace it at :debug rather than :error (#373).
+        Logger.debug("AshNeo4j.Cypher: nothing deleted")
         {:error, "nothing deleted"}
       else
         Logger.debug("AshNeo4j.Cypher: run_expecting_deletions deleted #{deleted_nodes} nodes")
