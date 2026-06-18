@@ -147,6 +147,28 @@ defmodule AshNeo4j.Error.UnsupportedManyToMany do
   end
 end
 
+defmodule AshNeo4j.Error.Internal do
+  @moduledoc """
+  **Returned** (never raised) for an internal invariant the data layer couldn't
+  satisfy — an input shape it didn't expect, or a relationship/aggregate path it
+  couldn't resolve (#372). Distinct from the `Unsupported*` / `Requires*` family
+  (deliberate refusals, `:invalid`) and from `Neo4j` (server errors): this is "we
+  reached a state we shouldn't have", so its class is `:unknown`.
+
+  Carries a `:detail` string (and optional `:context`) for diagnosis. A typed,
+  matchable replacement for the bare-string `{:error, "…"}` returns the data layer
+  used to leak — which Ash wrapped as `Ash.Error.Unknown.UnknownError`, unclassified
+  and only substring-matchable.
+  """
+  use Splode.Error, fields: [:detail, :context], class: :unknown
+
+  def message(%{detail: detail, context: context}) when context not in [nil, %{}] do
+    "AshNeo4j internal error: #{detail} (#{inspect(context)})"
+  end
+
+  def message(%{detail: detail}), do: "AshNeo4j internal error: #{detail}"
+end
+
 defmodule AshNeo4j.Error.Neo4j do
   @moduledoc """
   Wraps a Neo4j server error surfaced from `AshNeo4j.Cypher.run/1` (a

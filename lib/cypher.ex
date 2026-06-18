@@ -572,8 +572,9 @@ defmodule AshNeo4j.Cypher do
         # Expected control flow, not an error: a preservation guard held the node,
         # or an optimistic-lock destroy missed. The caller disambiguates this into
         # StaleRecord / Unavailable, so trace it at :debug rather than :error (#373).
+        # `:nothing_deleted` is an internal sentinel (never escapes to Ash), #372.
         Logger.debug("AshNeo4j.Cypher: nothing deleted")
-        {:error, "nothing deleted"}
+        {:error, :nothing_deleted}
       else
         Logger.debug("AshNeo4j.Cypher: run_expecting_deletions deleted #{deleted_nodes} nodes")
         bolty_result

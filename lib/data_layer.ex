@@ -3,7 +3,35 @@
 # SPDX-License-Identifier: MIT
 
 defmodule AshNeo4j.DataLayer do
-  @moduledoc "Ash DataLayer for Neo4j"
+  @moduledoc """
+  Ash DataLayer for Neo4j.
+
+  ## Errors (#372)
+
+  Every error the behaviour callbacks (`create`/`update`/`destroy`/`run_query`/…)
+  return is a **typed struct** — never a bare string (a string becomes
+  `Ash.Error.Unknown.UnknownError`: unclassified and only substring-matchable).
+  Pick by meaning:
+
+    * **Server/Bolt error** → `AshNeo4j.Error.Neo4j` (classifies by category).
+    * **Deliberate refusal** ("can't push this down / won't render it") → the
+      `AshNeo4j.Error.Unsupported*` / `Requires*` family (`class: :invalid`).
+    * **The node/edge we expected to act on wasn't there** → reuse Ash's own:
+      `Ash.Error.Changes.StaleRecord` (the record is gone / a guard no longer holds)
+      or `Ash.Error.Invalid.Unavailable` (a preservation guard blocked a destroy).
+    * **An internal invariant we couldn't satisfy** (unexpected input shape, a
+      relationship/aggregate path that won't resolve) → `AshNeo4j.Error.Internal`
+      (`class: :unknown`).
+
+  Two standing rules: **reuse an Ash error before inventing an `AshNeo4j.Error.*`**,
+  and **return, never raise**, from the behaviour path. Internal sentinels between
+  helpers (e.g. `{:error, :nothing_deleted}` from `run_expecting_deletions/2`) are
+  atoms, not strings, and are converted to a typed error before escaping. The
+  contract is enforced by `test/error_contract_test.exs`.
+
+  `Ash.Type` callbacks (cast/dump/load) are a separate contract — they follow Ash's
+  type-error convention (message strings), not this one.
+  """
 
   @behaviour Ash.DataLayer
 
@@ -187,7 +215,7 @@ defmodule AshNeo4j.DataLayer do
     if Enum.all?(attributes, &is_atom/1) do
       {:ok, attributes}
     else
-      {:error, "Expected all attribute names to be atoms"}
+      {:error, internal("expected all attribute names to be atoms, got #{inspect(attributes)}")}
     end
   end
 
@@ -318,7 +346,7 @@ defmodule AshNeo4j.DataLayer do
     result =
       with :ok <- validate_writable_geo(mapping, changeset.attributes) do
         if Enum.empty?(id_attributes) do
-          {:error, "no values supplied for primary keys #{primary_keys}"}
+          {:error, internal("no values supplied for primary keys #{inspect(primary_keys)}")}
         else
           create_from_attributes(mapping, changeset.attributes)
         end
@@ -370,7 +398,7 @@ defmodule AshNeo4j.DataLayer do
             update(resource, changeset)
 
           {:ok, _} ->
-            {:error, "Multiple records matching keys"}
+            {:error, internal("multiple records match the upsert keys")}
         end
       end
 
@@ -406,6 +434,10 @@ defmodule AshNeo4j.DataLayer do
     Ash.Error.Changes.StaleRecord.exception(resource: resource, filter: changeset.filter)
   end
 
+  # An internal invariant the data layer couldn't satisfy (#372) — typed,
+  # matchable, classified `:unknown`, in place of a bare-string error.
+  defp internal(detail), do: AshNeo4j.Error.Internal.exception(detail: detail)
+
   defp do_update(resource, changeset, %ResourceMapping{} = mapping, guard_conditions, atomic_sets) do
     subject_id = id_properties(mapping, changeset.data)
     subject_label = mapping.label_pair
@@ -425,12 +457,11 @@ defmodule AshNeo4j.DataLayer do
                guard: guard_conditions,
                atomics: atomic_sets
              ) do
-          # No row matched the id + guard: a present guard ⇒ the row is stale
-          # (the predicate no longer holds); otherwise the id itself didn't match.
+          # No row matched: a present guard ⇒ the predicate no longer holds;
+          # otherwise the id itself didn't match. Either way the record we meant to
+          # update is gone — StaleRecord (#372).
           {:ok, %Bolty.Response{results: []}} ->
-            if guarded?,
-              do: {:error, stale_record(resource, changeset)},
-              else: {:error, "no result to update node"}
+            {:error, stale_record(resource, changeset)}
 
           {:ok, %Bolty.Response{results: [node_map | _]}} ->
             node = Map.get(node_map, "n")
@@ -454,7 +485,7 @@ defmodule AshNeo4j.DataLayer do
 
           case map_size(object_id) do
             0 ->
-              {:error, "couldn't unrelate nodes"}
+              {:error, internal("couldn't resolve the node to unrelate from #{inspect(resource)}.#{object_relationship_name}")}
 
             _ ->
               {_relationship_name, edge_label, object_to_subject_direction, _destination_label} =
@@ -470,7 +501,7 @@ defmodule AshNeo4j.DataLayer do
                      guard_conditions
                    ) do
                 {:ok, %Bolty.Response{results: []}} ->
-                  if guarded?, do: {:error, stale_record(resource, changeset)}, else: {:error, "no result to unrelate nodes"}
+                  {:error, stale_record(resource, changeset)}
 
                 {:ok, %Bolty.Response{results: [node_map | _]}} ->
                   node = Map.get(node_map, "s")
@@ -496,7 +527,7 @@ defmodule AshNeo4j.DataLayer do
                    relationship: object_relationship_name
                  )}
               else
-                {:error, "couldn't relate nodes"}
+                {:error, internal("couldn't resolve the node to relate from #{inspect(resource)}.#{object_relationship_name}")}
               end
 
             _ ->
@@ -512,7 +543,7 @@ defmodule AshNeo4j.DataLayer do
                      guard: guard_conditions
                    ) do
                 {:ok, %Bolty.Response{results: []}} ->
-                  if guarded?, do: {:error, stale_record(resource, changeset)}, else: {:error, "no result to relate nodes"}
+                  {:error, stale_record(resource, changeset)}
 
                 {:ok, %Bolty.Response{results: [node_map | _]}} ->
                   node = Map.get(node_map, "s")
@@ -550,7 +581,7 @@ defmodule AshNeo4j.DataLayer do
 
                 case map_size(object_id) do
                   0 ->
-                    {:halt, {:error, "couldn't unrelate nodes"}}
+                    {:halt, {:error, internal("couldn't resolve the node to unrelate for #{inspect(resource)}.#{relationship_name}")}}
 
                   _ ->
                     case Neo4jHelper.unrelate_nodes(
@@ -563,9 +594,7 @@ defmodule AshNeo4j.DataLayer do
                            guard_conditions
                          ) do
                       {:ok, %Bolty.Response{results: []}} ->
-                        if guarded?,
-                          do: {:halt, {:error, stale_record(resource, changeset)}},
-                          else: {:halt, {:error, "no result to unrelate nodes"}}
+                        {:halt, {:error, stale_record(resource, changeset)}}
 
                       {:ok, %Bolty.Response{results: [node_map | _]}} ->
                         node = Map.get(node_map, "s")
@@ -587,7 +616,7 @@ defmodule AshNeo4j.DataLayer do
 
                     case map_size(object_id) do
                       0 ->
-                        {:halt, {:error, "couldn't relate nodes using argument"}}
+                        {:halt, {:error, internal("couldn't resolve the node to relate for #{inspect(resource)}.#{relationship_name} from argument #{inspect(argument)}")}}
 
                       _ ->
                         subject_exclusive? = ResourceInfo.source_exclusive?(resource, relationship_name)
@@ -603,13 +632,11 @@ defmodule AshNeo4j.DataLayer do
                                exclusive: {subject_exclusive?, object_exclusive?},
                                guard: guard_conditions
                              ) do
-                          # With a `changeset.filter` guard (#368), zero rows means the
-                          # live source no longer satisfies it ⇒ StaleRecord (as #361);
-                          # without a guard it's an unmatched id/dest as before.
+                          # Zero rows: with a guard (#368) the live source no longer
+                          # satisfies it; without one the subject/dest didn't match.
+                          # Either way the record is gone ⇒ StaleRecord (#372).
                           {:ok, %Bolty.Response{results: []}} ->
-                            if guarded?,
-                              do: {:halt, {:error, stale_record(resource, changeset)}},
-                              else: {:halt, {:error, "no result to relate nodes"}}
+                            {:halt, {:error, stale_record(resource, changeset)}}
 
                           {:ok, %Bolty.Response{results: [node_map | _]}} ->
                             node = Map.get(node_map, "s")
@@ -635,7 +662,7 @@ defmodule AshNeo4j.DataLayer do
             end
           end)
         else
-          {:error, "changeset not handled"}
+          {:error, internal("update changeset not handled (no attributes, atomics or relationships to apply)")}
         end
       end
 
@@ -816,13 +843,13 @@ defmodule AshNeo4j.DataLayer do
 
       # Nothing deleted: if the node still matches the filter it was held back by a
       # guard (Unavailable); otherwise the optimistic lock didn't hold (StaleRecord).
-      {:error, "nothing deleted"} ->
+      {:error, :nothing_deleted} ->
         case Neo4jHelper.node_matching(label, id_properties, conditions) do
           {:ok, %Bolty.Response{results: [_ | _]}} ->
             {:error, unavailable_guarded(resource)}
 
           _ ->
-            {:error, Ash.Error.Changes.StaleRecord.exception(resource: resource, filter: changeset.filter)}
+            {:error, stale_record(resource, changeset)}
         end
 
       {:error, error} ->
@@ -844,7 +871,7 @@ defmodule AshNeo4j.DataLayer do
         {:ok, _} ->
           :ok
 
-        {:error, "nothing deleted"} ->
+        {:error, :nothing_deleted} ->
           {:error, unavailable_guarded(resource)}
 
         {:error, error} ->
@@ -1282,7 +1309,7 @@ defmodule AshNeo4j.DataLayer do
                     convert_to_resource(query, mapping, hd(consolidated_groups))
 
                   true ->
-                    {:error, "expected groups to consolidate to a single group (resource)"}
+                    {:error, internal("expected enrichment groups to consolidate to a single resource")}
                 end
 
               {:error, error} ->
@@ -1617,7 +1644,7 @@ defmodule AshNeo4j.DataLayer do
             |> Map.new(fn {source_id, dest_nodes} -> {source_id, project_reached(resource, dest_nodes)} end)
 
           {:error, reason} ->
-            raise "AshNeo4j: traverse projection query failed: #{inspect(reason)}"
+            raise AshNeo4j.Error.Internal, detail: "traverse projection query failed: #{inspect(reason)}"
         end
     end
   end
@@ -2149,7 +2176,7 @@ defmodule AshNeo4j.DataLayer do
     Enum.reduce_while(relationship_path, {mapping, []}, fn name, {current_mapping, segments} ->
       case Enum.find(current_mapping.edges, &(&1.relationship == name)) do
         nil ->
-          {:halt, {:error, "relationship #{name} not found on #{current_mapping.module}"}}
+          {:halt, {:error, internal("relationship #{name} not found on #{inspect(current_mapping.module)}")}}
 
         %EdgeDescriptor{label: edge_label, direction: direction, destination_label: dest_label} ->
           relationship = Ash.Resource.Info.relationship(current_mapping.module, name)
