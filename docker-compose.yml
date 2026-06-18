@@ -28,7 +28,10 @@ services:
       retries: 30
 
   neo4j-bolt6:
-    image: neo4j:2026.05
+    # Pin to the UBI build: the floating neo4j:2026.05 tag drifted to a
+    # Temurin-based build that exits 3 on boot (Apple Silicon); the *.0-community-ubi10
+    # build boots cleanly. Pinning also keeps the :cypher25 suite reproducible.
+    image: neo4j:2026.05.0-community-ubi10
     container_name: neo4j-ash-bolt6
     ports:
       - "7689:7687"
