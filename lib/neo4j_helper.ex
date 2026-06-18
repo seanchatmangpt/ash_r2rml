@@ -207,7 +207,7 @@ defmodule AshNeo4j.Neo4jHelper do
     |> Cypher.run()
   end
 
-  @spec unrelate_nodes(atom() | [atom()], map(), atom() | [atom()], map(), atom(), atom()) ::
+  @spec unrelate_nodes(atom() | [atom()], map(), atom() | [atom()], map(), atom(), atom(), list()) ::
           {:error, %{:__exception__ => true, :__struct__ => atom(), optional(atom()) => any()}}
           | {:ok, any()}
   @doc """
@@ -222,15 +222,15 @@ defmodule AshNeo4j.Neo4jHelper do
   :ok
   ```
   """
-  def unrelate_nodes(source_label, source_properties, dest_label, dest_properties, edge_label, edge_direction)
+  def unrelate_nodes(source_label, source_properties, dest_label, dest_properties, edge_label, edge_direction, guard \\ [])
       when (is_atom(source_label) or is_list(source_label)) and is_map(source_properties) and
              is_atom(dest_label) and is_map(dest_properties) and
-             is_atom(edge_label) and is_atom(edge_direction) do
-    Query.unrelate(source_label, source_properties, dest_label, dest_properties, edge_label, edge_direction)
+             is_atom(edge_label) and is_atom(edge_direction) and is_list(guard) do
+    Query.unrelate(source_label, source_properties, dest_label, dest_properties, edge_label, edge_direction, guard: guard)
     |> Cypher.run()
   end
 
-  @spec relate_nodes_unrelating_source(atom(), map(), atom(), map(), atom(), atom()) ::
+  @spec relate_nodes_unrelating_source(atom(), map(), atom(), map(), atom(), atom(), list()) ::
           {:error, %{:__exception__ => true, :__struct__ => atom(), optional(atom()) => any()}}
           | {:ok, any()}
   @doc """
@@ -252,23 +252,25 @@ defmodule AshNeo4j.Neo4jHelper do
         dest_label,
         dest_properties,
         edge_label,
-        edge_direction
+        edge_direction,
+        guard \\ []
       )
       when (is_atom(source_label) or is_list(source_label)) and is_map(source_properties) and
              is_atom(dest_label) and is_map(dest_properties) and
-             is_atom(edge_label) and is_atom(edge_direction) do
+             is_atom(edge_label) and is_atom(edge_direction) and is_list(guard) do
     Query.relate_unrelating_source(
       source_label,
       source_properties,
       dest_label,
       dest_properties,
       edge_label,
-      edge_direction
+      edge_direction,
+      guard: guard
     )
     |> Cypher.run()
   end
 
-  @spec relate_nodes_unrelating_destination(atom(), map(), atom(), map(), atom(), atom()) ::
+  @spec relate_nodes_unrelating_destination(atom(), map(), atom(), map(), atom(), atom(), list()) ::
           {:error, %{:__exception__ => true, :__struct__ => atom(), optional(atom()) => any()}}
           | {:ok, any()}
   @doc """
@@ -290,23 +292,25 @@ defmodule AshNeo4j.Neo4jHelper do
         dest_label,
         dest_properties,
         edge_label,
-        edge_direction
+        edge_direction,
+        guard \\ []
       )
       when (is_atom(source_label) or is_list(source_label)) and is_map(source_properties) and
              is_atom(dest_label) and is_map(dest_properties) and
-             is_atom(edge_label) and is_atom(edge_direction) do
+             is_atom(edge_label) and is_atom(edge_direction) and is_list(guard) do
     Query.relate_unrelating_destination(
       source_label,
       source_properties,
       dest_label,
       dest_properties,
       edge_label,
-      edge_direction
+      edge_direction,
+      guard: guard
     )
     |> Cypher.run()
   end
 
-  @spec relate_nodes_unrelating_source_and_destination(atom(), map(), atom(), map(), atom(), atom()) ::
+  @spec relate_nodes_unrelating_source_and_destination(atom(), map(), atom(), map(), atom(), atom(), list()) ::
           {:error, %{:__exception__ => true, :__struct__ => atom(), optional(atom()) => any()}}
           | {:ok, any()}
   @doc """
@@ -330,29 +334,46 @@ defmodule AshNeo4j.Neo4jHelper do
         dest_label,
         dest_properties,
         edge_label,
-        edge_direction
+        edge_direction,
+        guard \\ []
       )
       when (is_atom(source_label) or is_list(source_label)) and is_map(source_properties) and
              is_atom(dest_label) and is_map(dest_properties) and
-             is_atom(edge_label) and is_atom(edge_direction) do
+             is_atom(edge_label) and is_atom(edge_direction) and is_list(guard) do
     Query.relate_unrelating_both(
       source_label,
       source_properties,
       dest_label,
       dest_properties,
       edge_label,
-      edge_direction
+      edge_direction,
+      guard: guard
     )
     |> Cypher.run()
   end
 
-  def relate_nodes(source_label, source_properties, dest_label, dest_properties, edge_label, edge_direction, options)
+  @doc """
+  Relates two nodes, honouring exclusivity and an optional `changeset.filter` guard.
+
+  `opts`:
+    * `:exclusive` — `{source_exclusive?, destination_exclusive?}` (default `{false, false}`),
+      selecting the plain / unrelate-source / unrelate-destination / unrelate-both render.
+    * `:guard` — a `changeset.filter` condition list (#368) gating the attach on the
+      live source node; a guard miss yields zero rows ⇒ the caller raises `StaleRecord`.
+  """
+  @spec relate_nodes(atom() | [atom()], map(), atom() | [atom()], map(), atom(), atom(), keyword()) ::
+          {:error, %{:__exception__ => true, :__struct__ => atom(), optional(atom()) => any()}}
+          | {:ok, any()}
+  def relate_nodes(source_label, source_properties, dest_label, dest_properties, edge_label, edge_direction, opts)
       when (is_atom(source_label) or is_list(source_label)) and is_map(source_properties) and
              (is_atom(dest_label) or is_list(dest_label)) and is_map(dest_properties) and
-             is_atom(edge_label) and is_atom(edge_direction) and is_tuple(options) do
-    case options do
+             is_atom(edge_label) and is_atom(edge_direction) and is_list(opts) do
+    guard = Keyword.get(opts, :guard, [])
+
+    case Keyword.get(opts, :exclusive, {false, false}) do
       {false, false} ->
-        relate_nodes(source_label, source_properties, dest_label, dest_properties, edge_label, edge_direction)
+        Query.relate(source_label, source_properties, dest_label, dest_properties, edge_label, edge_direction, guard: guard)
+        |> Cypher.run()
 
       {true, false} ->
         relate_nodes_unrelating_source(
@@ -361,7 +382,8 @@ defmodule AshNeo4j.Neo4jHelper do
           dest_label,
           dest_properties,
           edge_label,
-          edge_direction
+          edge_direction,
+          guard
         )
 
       {false, true} ->
@@ -371,7 +393,8 @@ defmodule AshNeo4j.Neo4jHelper do
           dest_label,
           dest_properties,
           edge_label,
-          edge_direction
+          edge_direction,
+          guard
         )
 
       {true, true} ->
@@ -381,7 +404,8 @@ defmodule AshNeo4j.Neo4jHelper do
           dest_label,
           dest_properties,
           edge_label,
-          edge_direction
+          edge_direction,
+          guard
         )
     end
   end

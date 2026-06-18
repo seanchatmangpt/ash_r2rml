@@ -967,22 +967,28 @@ defmodule AshNeo4j.Cypher.Query do
   end
 
   @doc """
-  `MATCH (s:SrcLabel {s_props}) OPTIONAL MATCH (d:DestLabel {d_props}) MERGE (s)-[r:EDGE]->(d) RETURN s, r, d`
+  `MATCH (s:SrcLabel {s_props}) [WHERE guard] OPTIONAL MATCH (d:DestLabel {d_props}) MERGE (s)-[r:EDGE]->(d) RETURN s, r, d`
+
+  `opts[:guard]` is a `changeset.filter` condition list (#368) gating the attach on
+  the live source node; a guard miss yields zero rows ⇒ the caller raises `StaleRecord`.
   """
-  @spec relate(atom() | [atom()], map(), atom() | [atom()], map(), atom(), atom()) :: t()
-  def relate(src_label, src_props, dest_label, dest_props, edge_label, direction)
-      when is_atom(edge_label) and is_atom(direction) do
+  @spec relate(atom() | [atom()], map(), atom() | [atom()], map(), atom(), atom(), keyword()) :: t()
+  def relate(src_label, src_props, dest_label, dest_props, edge_label, direction, opts \\ [])
+      when is_atom(edge_label) and is_atom(direction) and is_list(opts) do
     {src_pattern, src_params} = Cypher.parameterized_node(:s, List.wrap(src_label), src_props)
     {dest_pattern, dest_params} = Cypher.parameterized_node(:d, List.wrap(dest_label), dest_props)
+    {guard_clauses, guard_params} = source_guard_where(Keyword.get(opts, :guard, []))
 
     %__MODULE__{
-      clauses: [
-        %Match{pattern: src_pattern},
-        %OptionalMatch{pattern: dest_pattern},
-        %Merge{pattern: "(s)" <> Cypher.relationship(:r, edge_label, direction) <> "(d)"},
-        %Return{items: ["s", "r", "d"]}
-      ],
-      params: Map.merge(src_params, dest_params)
+      clauses:
+        [%Match{pattern: src_pattern}] ++
+          guard_clauses ++
+          [
+            %OptionalMatch{pattern: dest_pattern},
+            %Merge{pattern: "(s)" <> Cypher.relationship(:r, edge_label, direction) <> "(d)"},
+            %Return{items: ["s", "r", "d"]}
+          ],
+      params: src_params |> Map.merge(dest_params) |> Map.merge(guard_params)
     }
   end
 
@@ -994,15 +1000,18 @@ defmodule AshNeo4j.Cypher.Query do
       DELETE r0 WITH s MATCH (d:DestLabel {d_props})
       MERGE (s)-[r:EDGE]->(d) RETURN s, r, d
   """
-  @spec relate_unrelating_source(atom() | [atom()], map(), atom(), map(), atom(), atom()) :: t()
-  def relate_unrelating_source(src_label, src_props, dest_label, dest_props, edge_label, direction)
-      when is_atom(dest_label) and is_atom(edge_label) and is_atom(direction) do
+  @spec relate_unrelating_source(atom() | [atom()], map(), atom(), map(), atom(), atom(), keyword()) :: t()
+  def relate_unrelating_source(src_label, src_props, dest_label, dest_props, edge_label, direction, opts \\ [])
+      when is_atom(dest_label) and is_atom(edge_label) and is_atom(direction) and is_list(opts) do
     {src_pattern, src_params} = Cypher.parameterized_node(:s, List.wrap(src_label), src_props)
     {dest_pattern, dest_params} = Cypher.parameterized_node(:d, [dest_label], dest_props)
+    {guard_clauses, guard_params} = source_guard_where(Keyword.get(opts, :guard, []))
 
     %__MODULE__{
-      clauses: [
-        %Match{pattern: src_pattern},
+      clauses:
+        [%Match{pattern: src_pattern}] ++
+          guard_clauses ++
+          [
         %With{items: ["s"]},
         %OptionalMatch{
           pattern: "(s)" <> Cypher.relationship(:r0, edge_label, direction) <> Cypher.node(:d0, [dest_label])
@@ -1013,7 +1022,7 @@ defmodule AshNeo4j.Cypher.Query do
         %Merge{pattern: "(s)" <> Cypher.relationship(:r, edge_label, direction) <> "(d)"},
         %Return{items: ["s", "r", "d"]}
       ],
-      params: Map.merge(src_params, dest_params)
+      params: src_params |> Map.merge(dest_params) |> Map.merge(guard_params)
     }
   end
 
@@ -1024,16 +1033,19 @@ defmodule AshNeo4j.Cypher.Query do
       WITH s, d OPTIONAL MATCH (s0:SrcLabel)-[r0:EDGE]->(d) WHERE s0 <> s
       DELETE r0 WITH s, d MERGE (s)-[r:EDGE]->(d) RETURN s, r, d
   """
-  @spec relate_unrelating_destination(atom() | [atom()], map(), atom(), map(), atom(), atom()) :: t()
-  def relate_unrelating_destination(src_label, src_props, dest_label, dest_props, edge_label, direction)
-      when is_atom(dest_label) and is_atom(edge_label) and is_atom(direction) do
+  @spec relate_unrelating_destination(atom() | [atom()], map(), atom(), map(), atom(), atom(), keyword()) :: t()
+  def relate_unrelating_destination(src_label, src_props, dest_label, dest_props, edge_label, direction, opts \\ [])
+      when is_atom(dest_label) and is_atom(edge_label) and is_atom(direction) and is_list(opts) do
     src_labels = List.wrap(src_label)
     {src_pattern, src_params} = Cypher.parameterized_node(:s, src_labels, src_props)
     {dest_pattern, dest_params} = Cypher.parameterized_node(:d, [dest_label], dest_props)
+    {guard_clauses, guard_params} = source_guard_where(Keyword.get(opts, :guard, []))
 
     %__MODULE__{
-      clauses: [
-        %Match{pattern: src_pattern},
+      clauses:
+        [%Match{pattern: src_pattern}] ++
+          guard_clauses ++
+          [
         %OptionalMatch{pattern: dest_pattern},
         %With{items: ["s", "d"]},
         %OptionalMatch{
@@ -1045,7 +1057,7 @@ defmodule AshNeo4j.Cypher.Query do
         %Merge{pattern: "(s)" <> Cypher.relationship(:r, edge_label, direction) <> "(d)"},
         %Return{items: ["s", "r", "d"]}
       ],
-      params: Map.merge(src_params, dest_params)
+      params: src_params |> Map.merge(dest_params) |> Map.merge(guard_params)
     }
   end
 
@@ -1058,16 +1070,19 @@ defmodule AshNeo4j.Cypher.Query do
       OPTIONAL MATCH (s0:SrcLabel)-[r0:EDGE]->(d) WHERE s0 <> s DELETE r0
       WITH s, d MERGE (s)-[r:EDGE]->(d) RETURN s, r, d
   """
-  @spec relate_unrelating_both(atom() | [atom()], map(), atom(), map(), atom(), atom()) :: t()
-  def relate_unrelating_both(src_label, src_props, dest_label, dest_props, edge_label, direction)
-      when is_atom(dest_label) and is_atom(edge_label) and is_atom(direction) do
+  @spec relate_unrelating_both(atom() | [atom()], map(), atom(), map(), atom(), atom(), keyword()) :: t()
+  def relate_unrelating_both(src_label, src_props, dest_label, dest_props, edge_label, direction, opts \\ [])
+      when is_atom(dest_label) and is_atom(edge_label) and is_atom(direction) and is_list(opts) do
     src_labels = List.wrap(src_label)
     {src_pattern, src_params} = Cypher.parameterized_node(:s, src_labels, src_props)
     {dest_pattern, dest_params} = Cypher.parameterized_node(:d, [dest_label], dest_props)
+    {guard_clauses, guard_params} = source_guard_where(Keyword.get(opts, :guard, []))
 
     %__MODULE__{
-      clauses: [
-        %Match{pattern: src_pattern},
+      clauses:
+        [%Match{pattern: src_pattern}] ++
+          guard_clauses ++
+          [
         %With{items: ["s"]},
         %OptionalMatch{pattern: "(s)" <> Cypher.relationship(:r0, edge_label, direction) <> dest_pattern},
         %Delete{items: ["r0"]},
@@ -1083,28 +1098,34 @@ defmodule AshNeo4j.Cypher.Query do
         %Merge{pattern: "(s)" <> Cypher.relationship(:r, edge_label, direction) <> "(d)"},
         %Return{items: ["s", "r", "d"]}
       ],
-      params: Map.merge(src_params, dest_params)
+      params: src_params |> Map.merge(dest_params) |> Map.merge(guard_params)
     }
   end
 
   @doc """
-  `MATCH (s:SrcLabel {s_props})-[r:EDGE]->(d:DestLabel {d_props}) DELETE r RETURN s, d`
+  `MATCH (s:SrcLabel {s_props})-[r:EDGE]->(d:DestLabel {d_props}) [WHERE guard] DELETE r RETURN s, d`
+
+  `opts[:guard]` is a `changeset.filter` condition list (#368) gating the detach on
+  the live source node; a guard miss yields zero rows ⇒ the caller raises `StaleRecord`.
   """
-  @spec unrelate(atom() | [atom()], map(), atom(), map(), atom(), atom()) :: t()
-  def unrelate(src_label, src_props, dest_label, dest_props, edge_label, direction)
-      when is_atom(dest_label) and is_atom(edge_label) and is_atom(direction) do
+  @spec unrelate(atom() | [atom()], map(), atom(), map(), atom(), atom(), keyword()) :: t()
+  def unrelate(src_label, src_props, dest_label, dest_props, edge_label, direction, opts \\ [])
+      when is_atom(dest_label) and is_atom(edge_label) and is_atom(direction) and is_list(opts) do
     {src_pattern, src_params} = Cypher.parameterized_node(:s, List.wrap(src_label), src_props)
     {dest_pattern, dest_params} = Cypher.parameterized_node(:d, [dest_label], dest_props)
+    {guard_clauses, guard_params} = source_guard_where(Keyword.get(opts, :guard, []))
 
     path_pattern = src_pattern <> Cypher.relationship(:r, edge_label, direction) <> dest_pattern
 
     %__MODULE__{
-      clauses: [
-        %Match{pattern: path_pattern},
-        %Delete{items: ["r"]},
-        %Return{items: ["s", "d"]}
-      ],
-      params: Map.merge(src_params, dest_params)
+      clauses:
+        [%Match{pattern: path_pattern}] ++
+          guard_clauses ++
+          [
+            %Delete{items: ["r"]},
+            %Return{items: ["s", "d"]}
+          ],
+      params: src_params |> Map.merge(dest_params) |> Map.merge(guard_params)
     }
   end
 
@@ -1123,6 +1144,17 @@ defmodule AshNeo4j.Cypher.Query do
       end
 
     "NOT (#{variable})#{rel}(:#{dest_label})"
+  end
+
+  # A `changeset.filter` guard (#368) on the source alias `:s` of a relate/unrelate
+  # render — a `WHERE` placed immediately after the source `MATCH`, so a guard miss
+  # yields zero rows (no MERGE/DELETE) and the caller raises `StaleRecord`. Params
+  # are `g_`-prefixed so they can't collide with the `s_`/`d_` pattern params.
+  defp source_guard_where([]), do: {[], %{}}
+
+  defp source_guard_where(conditions) do
+    {where_string, params} = build_conditions(:s, conditions, param_prefix: "g_")
+    {[%Where{conditions: [where_string]}], params}
   end
 
   defp build_dest_conditions([]), do: {[], %{}}

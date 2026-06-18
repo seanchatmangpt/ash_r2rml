@@ -414,6 +414,12 @@ defmodule AshNeo4j.DataLayer do
     end
   end
 
+  # The optimistic-lock failure raised when a `changeset.filter`-guarded write
+  # matches zero rows — the live node no longer satisfies the guard (#361/#368).
+  defp stale_record(resource, changeset) do
+    Ash.Error.Changes.StaleRecord.exception(resource: resource, filter: changeset.filter)
+  end
+
   defp do_update(resource, changeset, %ResourceMapping{} = mapping, guard_conditions, atomic_sets) do
     subject_id = id_properties(mapping, changeset.data)
     subject_label = mapping.label_pair
@@ -437,7 +443,7 @@ defmodule AshNeo4j.DataLayer do
           # (the predicate no longer holds); otherwise the id itself didn't match.
           {:ok, %Bolty.Response{results: []}} ->
             if guarded?,
-              do: {:error, Ash.Error.Changes.StaleRecord.exception(resource: resource, filter: changeset.filter)},
+              do: {:error, stale_record(resource, changeset)},
               else: {:error, "no result to update node"}
 
           {:ok, %Bolty.Response{results: [node_map | _]}} ->
@@ -474,10 +480,11 @@ defmodule AshNeo4j.DataLayer do
                      object_label,
                      object_id,
                      edge_label,
-                     Util.reverse(object_to_subject_direction)
+                     Util.reverse(object_to_subject_direction),
+                     guard_conditions
                    ) do
                 {:ok, %Bolty.Response{results: []}} ->
-                  {:error, "no result to unrelate nodes"}
+                  if guarded?, do: {:error, stale_record(resource, changeset)}, else: {:error, "no result to unrelate nodes"}
 
                 {:ok, %Bolty.Response{results: [node_map | _]}} ->
                   node = Map.get(node_map, "s")
@@ -503,10 +510,11 @@ defmodule AshNeo4j.DataLayer do
                      object_label,
                      object_id,
                      edge_label,
-                     Util.reverse(object_to_subject_direction)
+                     Util.reverse(object_to_subject_direction),
+                     guard: guard_conditions
                    ) do
                 {:ok, %Bolty.Response{results: []}} ->
-                  {:error, "no result to relate nodes"}
+                  if guarded?, do: {:error, stale_record(resource, changeset)}, else: {:error, "no result to relate nodes"}
 
                 {:ok, %Bolty.Response{results: [node_map | _]}} ->
                   node = Map.get(node_map, "s")
@@ -553,10 +561,13 @@ defmodule AshNeo4j.DataLayer do
                            object_label,
                            object_id,
                            subject_edge.label,
-                           subject_edge.direction
+                           subject_edge.direction,
+                           guard_conditions
                          ) do
                       {:ok, %Bolty.Response{results: []}} ->
-                        {:halt, {:error, "no result to unrelate nodes"}}
+                        if guarded?,
+                          do: {:halt, {:error, stale_record(resource, changeset)}},
+                          else: {:halt, {:error, "no result to unrelate nodes"}}
 
                       {:ok, %Bolty.Response{results: [node_map | _]}} ->
                         node = Map.get(node_map, "s")
@@ -591,10 +602,16 @@ defmodule AshNeo4j.DataLayer do
                                object_id,
                                subject_edge.label,
                                subject_edge.direction,
-                               {subject_exclusive?, object_exclusive?}
+                               exclusive: {subject_exclusive?, object_exclusive?},
+                               guard: guard_conditions
                              ) do
+                          # With a `changeset.filter` guard (#368), zero rows means the
+                          # live source no longer satisfies it ⇒ StaleRecord (as #361);
+                          # without a guard it's an unmatched id/dest as before.
                           {:ok, %Bolty.Response{results: []}} ->
-                            {:halt, {:error, "no result to relate nodes"}}
+                            if guarded?,
+                              do: {:halt, {:error, stale_record(resource, changeset)}},
+                              else: {:halt, {:error, "no result to relate nodes"}}
 
                           {:ok, %Bolty.Response{results: [node_map | _]}} ->
                             node = Map.get(node_map, "s")
