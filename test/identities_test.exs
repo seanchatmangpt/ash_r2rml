@@ -28,12 +28,17 @@ defmodule AshNeo4j.IdentitiesTest do
   defp flatten(e), do: [e]
 
   describe "constraint statements" do
-    test "single-property identity → unparenthesised REQUIRE" do
-      assert {:ok, ["CREATE CONSTRAINT post_unique_unique IF NOT EXISTS FOR (n:Post) REQUIRE n.unique IS UNIQUE"]} =
-               Constraint.constraint_statements(Post)
+    test "primary key (#32) + single-property identity → unparenthesised REQUIRE" do
+      assert {:ok,
+              [
+                "CREATE CONSTRAINT post_pk IF NOT EXISTS FOR (n:Post) REQUIRE n.uuid IS UNIQUE",
+                "CREATE CONSTRAINT post_unique_unique IF NOT EXISTS FOR (n:Post) REQUIRE n.unique IS UNIQUE"
+              ]} = Constraint.constraint_statements(Post)
     end
 
-    test "composite identity → parenthesised, camelCased properties" do
+    test "composite identity → parenthesised, camelCased properties; pk dedup'd (pk == identity)" do
+      # Upsert's primary key is [first_name, surname], the same as identity :full_name,
+      # so no separate `_pk` constraint is emitted (#32 dedup).
       assert {:ok,
               [
                 "CREATE CONSTRAINT upsert_full_name IF NOT EXISTS FOR (n:Upsert) REQUIRE (n.firstName, n.surname) IS UNIQUE"

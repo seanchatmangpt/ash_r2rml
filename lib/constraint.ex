@@ -5,13 +5,17 @@
 defmodule AshNeo4j.Constraint do
   @moduledoc """
   Convenience helpers for creating the Neo4j uniqueness constraints that enforce a
-  resource's `identities` at the database level (#20).
+  resource's **primary key** (#32) and its `identities` (#20) at the database level.
 
-      # Create the constraints for every identity on a resource
+      # Create the constraints for a resource (primary key + every identity)
       AshNeo4j.Constraint.create_constraints(AssignmentRelationship)
 
       # Review the Cypher without touching the database
       AshNeo4j.Constraint.constraint_statements(AssignmentRelationship)
+
+  The primary-key constraint enforces uniqueness of the primary key among nodes of
+  the resource's label. It's skipped when an identity already constrains the same
+  attributes (no redundant constraint).
 
   Consistent with AshNeo4j's "no automatic migrations" stance — like
   `AshNeo4j.Vector`, this is an ergonomic tool you call (e.g. from a start-up or
@@ -29,8 +33,9 @@ defmodule AshNeo4j.Constraint do
 
   ## Naming
 
-  Each constraint is named `<label_lower>_<identity_name>`, e.g.
-  `assignmentrelationship_unique_assignment`.
+  Identity constraints are named `<label_lower>_<identity_name>` (e.g.
+  `assignmentrelationship_unique_assignment`); the primary-key constraint is
+  `<label_lower>_pk`.
   """
 
   alias AshNeo4j.Cypher
@@ -38,11 +43,12 @@ defmodule AshNeo4j.Constraint do
   alias AshNeo4j.Resource.Info, as: ResourceInfo
 
   @doc """
-  Runs `CREATE CONSTRAINT … IF NOT EXISTS` for every identity on `resource`.
+  Runs `CREATE CONSTRAINT … IF NOT EXISTS` for `resource`'s primary key and every
+  identity.
 
-  Returns `{:ok, [%Bolty.Response{}]}` (one per identity, empty when the resource
-  has none), or `{:error, %AshNeo4j.Error.UnsupportedIdentity{}}` if any identity
-  can't be enforced — in which case nothing is created.
+  Returns `{:ok, [%Bolty.Response{}]}` (one per constraint), or
+  `{:error, %AshNeo4j.Error.UnsupportedIdentity{}}` if any identity can't be
+  enforced — in which case nothing is created.
   """
   @spec create_constraints(Ash.Resource.t(), keyword()) ::
           {:ok, [Bolty.Response.t()]} | {:error, term()}
@@ -53,9 +59,9 @@ defmodule AshNeo4j.Constraint do
   end
 
   @doc """
-  Runs `DROP CONSTRAINT … IF EXISTS` for every identity on `resource`. A no-op for
-  absent constraints. Unsupported identities are refused (nothing was created for
-  them to drop), consistent with `create_constraints/2`.
+  Runs `DROP CONSTRAINT … IF EXISTS` for `resource`'s primary key and every identity.
+  A no-op for absent constraints. Unsupported identities are refused (nothing was
+  created for them to drop), consistent with `create_constraints/2`.
   """
   @spec drop_constraints(Ash.Resource.t(), keyword()) ::
           {:ok, [Bolty.Response.t()]} | {:error, term()}
@@ -70,7 +76,8 @@ defmodule AshNeo4j.Constraint do
   would run — without touching the database, or `{:error, %UnsupportedIdentity{}}`.
 
       AshNeo4j.Constraint.constraint_statements(Post)
-      #=> {:ok, ["CREATE CONSTRAINT post_unique_unique IF NOT EXISTS FOR (n:Post) REQUIRE n.unique IS UNIQUE"]}
+      #=> {:ok, ["CREATE CONSTRAINT post_pk IF NOT EXISTS FOR (n:Post) REQUIRE n.uuid IS UNIQUE",
+      #         "CREATE CONSTRAINT post_unique_unique IF NOT EXISTS FOR (n:Post) REQUIRE n.unique IS UNIQUE"]}
   """
   @spec constraint_statements(Ash.Resource.t()) :: {:ok, [String.t()]} | {:error, term()}
   def constraint_statements(resource) do
@@ -85,6 +92,12 @@ defmodule AshNeo4j.Constraint do
     label = ResourceInfo.module_label(resource)
     translations = ResourceInfo.translations(resource)
 
+    with {:ok, identity_specs} <- identity_specs(resource, label, translations) do
+      {:ok, primary_key_spec(resource, label, translations, identity_specs) ++ identity_specs}
+    end
+  end
+
+  defp identity_specs(resource, label, translations) do
     Enum.reduce_while(Ash.Resource.Info.identities(resource), {:ok, []}, fn identity, {:ok, acc} ->
       case spec(resource, label, translations, identity) do
         {:ok, spec} -> {:cont, {:ok, [spec | acc]}}
@@ -94,6 +107,26 @@ defmodule AshNeo4j.Constraint do
     |> case do
       {:ok, specs} -> {:ok, Enum.reverse(specs)}
       error -> error
+    end
+  end
+
+  # The primary-key uniqueness constraint (#32). Skipped when an identity already
+  # constrains the same property set (no redundant constraint). Always enforceable:
+  # primary-key attributes are required, so the `nils_distinct?`/`where` limits
+  # never apply.
+  defp primary_key_spec(resource, label, translations, identity_specs) do
+    case Ash.Resource.Info.primary_key(resource) do
+      [] ->
+        []
+
+      keys ->
+        properties = properties_for(keys, translations)
+
+        if Enum.any?(identity_specs, &(MapSet.new(&1.properties) == MapSet.new(properties))) do
+          []
+        else
+          [%{name: constraint_name(label, "pk"), label: label, properties: properties}]
+        end
     end
   end
 
@@ -107,15 +140,17 @@ defmodule AshNeo4j.Constraint do
   end
 
   defp spec(_resource, label, translations, identity) do
-    properties = Enum.map(identity.keys, fn key -> to_string(Keyword.get(translations, key, key)) end)
-
     {:ok,
      %{
-       name: "#{label |> to_string() |> String.downcase()}_#{identity.name}",
+       name: constraint_name(label, identity.name),
        label: label,
-       properties: properties
+       properties: properties_for(identity.keys, translations)
      }}
   end
+
+  defp properties_for(keys, translations), do: Enum.map(keys, &to_string(Keyword.get(translations, &1, &1)))
+
+  defp constraint_name(label, suffix), do: "#{label |> to_string() |> String.downcase()}_#{suffix}"
 
   # --- cypher ------------------------------------------------------------
 

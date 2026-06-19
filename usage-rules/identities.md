@@ -4,12 +4,13 @@ SPDX-FileCopyrightText: 2026 ash_neo4j contributors <https://github.com/diffo-de
 SPDX-License-Identifier: MIT
 -->
 
-# Identities and uniqueness constraints
+# Primary keys, identities and uniqueness constraints
 
 An Ash `identity` declares that a set of attributes is unique. AshNeo4j enforces
 that at the database level with a Neo4j uniqueness constraint, so concurrent writes
 can't create duplicates and you don't need `pre_check?` (an Elixir-side read that
-still leaves a race window).
+still leaves a race window). The resource's **primary key** gets a constraint too,
+enforcing primary-key uniqueness among nodes of the resource's label.
 
 ```elixir
 identities do
@@ -36,9 +37,11 @@ AshNeo4j.Constraint.constraint_statements(AssignmentRelationship)
 AshNeo4j.Constraint.drop_constraints(AssignmentRelationship)
 ```
 
-Single- and multi-attribute identities are both supported (composite `IS UNIQUE`
-constraints work on Neo4j Community Edition). Each constraint is named
-`<label_lower>_<identity_name>`.
+This creates the **primary-key** constraint (`<label_lower>_pk`) and one per
+identity (`<label_lower>_<identity_name>`). Single- and multi-attribute keys are
+both supported (composite `IS UNIQUE` constraints work on Neo4j Community Edition).
+The primary-key constraint is skipped when an identity already constrains the same
+attributes (e.g. a natural composite primary key that's also declared an identity).
 
 ## Conflicts are surfaced in Ash terms
 
