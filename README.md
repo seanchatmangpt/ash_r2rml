@@ -378,6 +378,10 @@ Calculations can be:
 
 Only `expr(...)` calculations are currently supported. Custom `:calculate` callback modules are not.
 
+## Cypher Fragments
+
+`fragment(...)` is a filter escape hatch — embed a snippet of raw Cypher in a filter for a condition AshNeo4j doesn't push down (e.g. an APOC function), so the read stays a normal Ash query instead of being hand-written as a raw Cypher query (and losing authorization, the resource model and composability). `?` arguments are bound safely: an attribute reference renders to `s.<property>`, a literal to a `$param`. The fragment must be the whole filter, and arguments must be attribute references or literals — anything else is refused (`AshNeo4j.Error.UnsupportedFilterFragment`), never silently dropped. (This is the *expression* `fragment/N`, not an Ash *resource* fragment.) See `usage-rules/cypher-fragments.md`.
+
 ## Limitations and Future Work
 
 Ash Neo4j has support for Ash create, update, read, destroy actions, aggregates, expression calculations, spatial types, and vector embeddings. The cypher is now parameterised but is by no means optimised. The DSL is likely to evolve further and this may break back compatibility. Storage formats are subject to infrequent change so upgrade *may* require data migration (not included).

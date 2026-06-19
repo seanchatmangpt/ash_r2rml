@@ -1053,6 +1053,11 @@ defmodule AshNeo4j.DataLayer do
     %{negation | expression: drop_pushdown_only_expr(expression)}
   end
 
+  # A `fragment(...)` that reached the data layer was pushed down (we refuse the
+  # ones we can't push) — and it can't be evaluated in-memory anyway — so drop it
+  # from the in-memory residual (#33).
+  defp drop_pushdown_only_expr(%Ash.Query.Function.Fragment{}), do: true
+
   defp drop_pushdown_only_expr(expression) do
     if contains_pushdown_only?(expression), do: true, else: expression
   end

@@ -123,6 +123,38 @@ defmodule AshNeo4j.Error.UnresolvableTraversal do
   end
 end
 
+defmodule AshNeo4j.Error.UnsupportedFilterFragment do
+  @moduledoc """
+  **Returned** (never raised) when a `fragment(...)` filter (the Cypher escape
+  hatch, #33) can't be pushed down — and, because raw Cypher can't be evaluated in
+  Elixir, it can't fall back to in-memory filtering either, so the data layer
+  refuses rather than silently return wrong results.
+
+  Two cases today:
+
+    * the fragment is **combined with other filter conditions** (it isn't the whole
+      filter) — only a filter that is a single `fragment(...)` is pushed down so far;
+    * a `?` argument is **not a plain attribute reference or a literal** (e.g. a
+      related field, calculation or nested expression).
+
+  Make the fragment the whole filter and reference attributes (`?` with an attribute)
+  or literals, or express the condition without a fragment.
+  """
+  use Splode.Error, fields: [:resource, :reason], class: :invalid
+
+  def message(%{resource: resource, reason: reason}) do
+    "cannot push down a fragment filter on #{inspect(resource)} — #{explain(reason)}."
+  end
+
+  defp explain(:combined),
+    do: "the fragment is combined with other filter conditions; only a filter that is a single fragment(...) is supported"
+
+  defp explain({:unsupported_argument, arg}),
+    do: "a fragment argument must be an attribute reference or a literal, got #{inspect(arg)}"
+
+  defp explain(other), do: inspect(other)
+end
+
 defmodule AshNeo4j.Error.UnsupportedManyToMany do
   @moduledoc """
   **Returned** (never raised) when a relationship write resolves to a many-to-many
