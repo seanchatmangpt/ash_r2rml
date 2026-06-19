@@ -23,6 +23,8 @@ defmodule AshNeo4j.Cypher do
     Where,
     With,
     Set,
+    OnCreateSet,
+    OnMatchSet,
     Remove,
     Delete,
     DetachDelete,
@@ -420,6 +422,8 @@ defmodule AshNeo4j.Cypher do
   defp render_clause(%Where{conditions: conds}), do: "WHERE #{Enum.join(conds, " AND ")}"
   defp render_clause(%With{items: items}), do: "WITH #{Enum.join(items, ", ")}"
   defp render_clause(%Set{expression: e}), do: "SET #{e}"
+  defp render_clause(%OnCreateSet{expression: e}), do: "ON CREATE SET #{e}"
+  defp render_clause(%OnMatchSet{expression: e}), do: "ON MATCH SET #{e}"
   defp render_clause(%Remove{items: items}), do: "REMOVE #{Enum.join(items, ", ")}"
   defp render_clause(%Delete{items: items}), do: "DELETE #{Enum.join(items, ", ")}"
   defp render_clause(%DetachDelete{items: items}), do: "DETACH DELETE #{Enum.join(items, ", ")}"
