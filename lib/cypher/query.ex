@@ -235,6 +235,24 @@ defmodule AshNeo4j.Cypher.Query do
   end
 
   @doc """
+  `MATCH (s:L1:L2) WHERE <where> OPTIONAL MATCH (s)-[r]-(d) RETURN s, r, d` with a
+  pre-rendered `WHERE` string and its params — the `fragment(...)` escape hatch (#33),
+  where the condition is author-supplied Cypher rather than a derived predicate.
+  """
+  @spec node_read_fragment(atom() | [atom()], String.t(), map()) :: t()
+  def node_read_fragment(label, where, params) when is_binary(where) and is_map(params) do
+    %__MODULE__{
+      clauses: [
+        %Match{pattern: Cypher.node(:s, List.wrap(label))},
+        %Where{conditions: [where]},
+        %OptionalMatch{pattern: "(s)-[r]-(d)"},
+        %Return{items: ["s", "r", "d"]}
+      ],
+      params: params
+    }
+  end
+
+  @doc """
   `MATCH (s:L1:L2) [WHERE <conditions>] RETURN s` — a single combination-query
   branch, sized to fit inside a `CALL { … }` block.
 

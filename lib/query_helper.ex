@@ -200,26 +200,102 @@ defmodule AshNeo4j.QueryHelper do
   end
 
   defp build_query(ash_query, %ResourceMapping{} = mapping) do
-    if ash_query.filter == nil do
-      Query.node_read(mapping.label_pair)
-    else
-      simple_filter = Ash.Filter.to_simple_filter(ash_query.filter, skip_invalid?: true)
+    expression = if ash_query.filter, do: Map.get(ash_query.filter, :expression)
 
-      predicates =
-        simple_filter
-        |> Map.get(:predicates, [])
-        |> Enum.reject(fn pred ->
-          match?(%Ash.Query.Ref{attribute: %Ash.Query.Calculation{}}, Map.get(pred, :left))
-        end)
-
-      if predicates == [] do
-        Logger.debug("AshNeo4j.QueryHelper: filter #{inspect(ash_query.filter)} is not a simple filter")
+    cond do
+      ash_query.filter == nil ->
         Query.node_read(mapping.label_pair)
-      else
-        build_filtered_query(mapping, predicates)
-      end
+
+      # A filter that *is* a single `fragment(...)` (the Cypher escape hatch, #33) —
+      # render it straight into the WHERE.
+      match?(%Ash.Query.Function.Fragment{}, expression) ->
+        build_fragment_query(expression, mapping)
+
+      # A fragment combined with other conditions can't be rendered yet, and raw
+      # Cypher can't be evaluated in-memory — refuse rather than silently mis-answer.
+      contains_fragment?(expression) ->
+        {:error, AshNeo4j.Error.UnsupportedFilterFragment.exception(resource: mapping.module, reason: :combined)}
+
+      true ->
+        simple_filter = Ash.Filter.to_simple_filter(ash_query.filter, skip_invalid?: true)
+
+        predicates =
+          simple_filter
+          |> Map.get(:predicates, [])
+          |> Enum.reject(fn pred ->
+            match?(%Ash.Query.Ref{attribute: %Ash.Query.Calculation{}}, Map.get(pred, :left))
+          end)
+
+        if predicates == [] do
+          Logger.debug("AshNeo4j.QueryHelper: filter #{inspect(ash_query.filter)} is not a simple filter")
+          Query.node_read(mapping.label_pair)
+        else
+          build_filtered_query(mapping, predicates)
+        end
     end
   end
+
+  # Renders a single `fragment(...)` (#33) to a node read with the fragment as the
+  # WHERE: `MATCH (s:Label) WHERE <fragment> OPTIONAL MATCH (s)-[r]-(d) RETURN …`.
+  # Refuses (no silent in-memory fallback) when an argument isn't a plain attribute
+  # reference or literal.
+  defp build_fragment_query(%Ash.Query.Function.Fragment{} = fragment, %ResourceMapping{} = mapping) do
+    case render_fragment(fragment, mapping) do
+      {:ok, {where, params}} ->
+        Query.node_read_fragment(mapping.label_pair, where, params)
+
+      {:error, reason} ->
+        {:error, AshNeo4j.Error.UnsupportedFilterFragment.exception(resource: mapping.module, reason: reason)}
+    end
+  end
+
+  @doc false
+  # Walks the fragment tokens — `{:raw, cypher}` literal (author-controlled), an
+  # attribute `{:expr, ref}` → `s.<property>`, a literal `{:expr, value}` → a bound
+  # `$frag_N` param (injection-safe). Other argument shapes are refused. Public for
+  # testing the render of a `fragment(...)` without a live (APOC) server.
+  def render_fragment(%Ash.Query.Function.Fragment{arguments: tokens}, %ResourceMapping{} = mapping) do
+    tokens
+    |> Enum.reduce_while({:ok, {"", %{}, 0}}, fn token, {:ok, {acc_str, acc_params, index}} ->
+      case render_fragment_token(token, mapping, index) do
+        {:ok, piece, params, next_index} ->
+          {:cont, {:ok, {acc_str <> piece, Map.merge(acc_params, params), next_index}}}
+
+        {:error, _} = error ->
+          {:halt, error}
+      end
+    end)
+    |> case do
+      {:ok, {where, params, _index}} -> {:ok, {where, params}}
+      error -> error
+    end
+  end
+
+  defp render_fragment_token({:raw, cypher}, _mapping, index) when is_binary(cypher), do: {:ok, cypher, %{}, index}
+
+  defp render_fragment_token({:expr, %Ash.Query.Ref{attribute: attribute, relationship_path: []}}, mapping, index) do
+    name = Map.get(attribute, :name, attribute)
+
+    if Ash.Resource.Info.attribute(mapping.module, name) do
+      {:ok, "s.#{Keyword.get(mapping.properties, name, name)}", %{}, index}
+    else
+      {:error, {:unsupported_argument, attribute}}
+    end
+  end
+
+  defp render_fragment_token({:expr, value}, _mapping, index)
+       when is_number(value) or is_binary(value) or is_boolean(value) do
+    key = "frag_#{index}"
+    {:ok, "$#{key}", %{key => value}, index + 1}
+  end
+
+  defp render_fragment_token({:expr, other}, _mapping, _index), do: {:error, {:unsupported_argument, other}}
+
+  defp contains_fragment?(%Ash.Query.Function.Fragment{}), do: true
+  defp contains_fragment?(%_struct{} = struct), do: struct |> Map.from_struct() |> Map.values() |> Enum.any?(&contains_fragment?/1)
+  defp contains_fragment?(list) when is_list(list), do: Enum.any?(list, &contains_fragment?/1)
+  defp contains_fragment?(%{} = map), do: map |> Map.values() |> Enum.any?(&contains_fragment?/1)
+  defp contains_fragment?(_), do: false
 
   defp build_filtered_query(%ResourceMapping{} = mapping, predicates) do
     case Enum.find(predicates, &traverse_predicate?/1) do
