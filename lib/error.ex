@@ -147,6 +147,39 @@ defmodule AshNeo4j.Error.UnsupportedManyToMany do
   end
 end
 
+defmodule AshNeo4j.Error.UnsupportedIdentity do
+  @moduledoc """
+  **Returned** (never raised) when an `identity` can't be enforced as a Neo4j
+  uniqueness constraint (#20), so it can't be created by `AshNeo4j.Constraint` —
+  and is refused rather than skipped, since silently leaving it unenforced would
+  permit the duplicate/split records the constraint exists to prevent.
+
+  Two cases Neo4j's `REQUIRE … IS UNIQUE` can't express:
+
+    * `nils_distinct?: false` — Neo4j treats `nil`s as distinct (a node missing a
+      listed property is not constrained) and can't be made to treat them as equal.
+    * a **filtered** identity (`where:`) — Neo4j has no partial/filtered constraint.
+
+  Drop the unsupported option, or enforce that identity another way (it won't fall
+  back to a database constraint). The same refusal is raised at compile time by
+  `AshNeo4j.Verifiers.VerifyIdentities`.
+  """
+  use Splode.Error, fields: [:resource, :identity, :keys, :reason], class: :invalid
+
+  # Framed in Ash terms (resource, identity, attributes, identity options) — the
+  # Ash user shouldn't need to reason about the graph mapping; the *why* (Neo4j's
+  # constraint limitations) lives in the moduledoc above, for maintainers.
+  def message(%{resource: resource, identity: identity, keys: keys, reason: reason}) do
+    "cannot enforce uniqueness for identity :#{identity} (#{inspect(keys)}) on #{inspect(resource)} — " <>
+      "the AshNeo4j data layer doesn't support #{explain(reason)}. Drop the option, or enforce that " <>
+      "identity another way (#20)."
+  end
+
+  defp explain(:nils_not_distinct), do: "identities with `nils_distinct?: false`"
+  defp explain(:filtered), do: "filtered identities (`where:`)"
+  defp explain(other), do: inspect(other)
+end
+
 defmodule AshNeo4j.Error.Internal do
   @moduledoc """
   **Returned** (never raised) for an internal invariant the data layer couldn't

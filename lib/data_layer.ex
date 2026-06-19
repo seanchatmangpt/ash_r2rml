@@ -236,7 +236,8 @@ defmodule AshNeo4j.DataLayer do
       AshNeo4j.Verifiers.VerifyGuard,
       AshNeo4j.Verifiers.VerifyPropertiesCamelCase,
       AshNeo4j.Verifiers.VerifyEnrichable,
-      AshNeo4j.Verifiers.VerifyAttributeType
+      AshNeo4j.Verifiers.VerifyAttributeType,
+      AshNeo4j.Verifiers.VerifyIdentities
     ]
 
   defmodule Query do
@@ -351,10 +352,41 @@ defmodule AshNeo4j.DataLayer do
           create_from_attributes(mapping, changeset.attributes)
         end
       end
+      |> map_identity_conflict(resource, changeset)
 
     Logger.debug("AshNeo4j.DataLayer: create result #{inspect(result)}")
 
     result
+  end
+
+  # A Neo4j uniqueness-constraint violation (#20) means the resource's `identity`
+  # was breached. Surface it as Ash's own identity-conflict error — one
+  # `InvalidAttribute` ("has already been taken") per attribute of the violated
+  # identity — so it reads in Ash terms (resource + attributes), not as a raw graph
+  # error. Through the driver the violation's code is reliable
+  # (`ConstraintValidationFailed`) but its message is generic, so the identity is
+  # found from the changeset: the one whose keys are all set (so could have
+  # collided). Exactly one such identity ⇒ map it; none or ambiguous ⇒ fall back to
+  # the raw error rather than guess.
+  defp map_identity_conflict({:error, %AshNeo4j.Error.Neo4j{category: :constraint}} = error, resource, changeset) do
+    case conflicting_identity(resource, changeset.attributes) do
+      %{keys: keys} ->
+        {:error, Enum.map(keys, &Ash.Error.Changes.InvalidAttribute.exception(field: &1, message: "has already been taken"))}
+
+      nil ->
+        error
+    end
+  end
+
+  defp map_identity_conflict(result, _resource, _changeset), do: result
+
+  defp conflicting_identity(resource, attributes) do
+    case Enum.filter(Ash.Resource.Info.identities(resource), fn identity ->
+           Enum.all?(identity.keys, &(Map.get(attributes, &1) != nil))
+         end) do
+      [identity] -> identity
+      _ -> nil
+    end
   end
 
   @impl true

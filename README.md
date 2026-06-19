@@ -156,6 +156,7 @@ The DSL is verified against misconfiguration and violation of accepted neo4j con
 * relate: relationship_name must match the name of a relationship
 * relate: relationship enrichment not possible, edge_label, edge_direction and destination_label must be unique
 * attribute type requires unsupported term
+* identity cannot be enforced as a uniqueness constraint (`nils_distinct?: false`, or a filtered `where:`)
 
 ## Testing
 
@@ -303,6 +304,10 @@ A few things to note:
 ## Keys
 
 We've generally used :uuid_primary_key, which Ash creates. While it *may* be possible to use other types for primary keys, we haven't done so yet.
+
+## Identities
+
+An Ash `identity` is enforced at the database level with a Neo4j uniqueness constraint, so you don't need `pre_check?` (and its race window). Create the constraints yourself — like vector indexes, AshNeo4j runs no migrations on boot — with `AshNeo4j.Constraint.create_constraints/1` (single and composite identities are both supported on Community Edition). A conflicting create surfaces as Ash's own `Ash.Error.Changes.InvalidAttribute` ("has already been taken"), in Ash terms. Identities Neo4j can't enforce (`nils_distinct?: false`, or a filtered `where:`) are refused — at compile time and by the helper — rather than silently left unenforced. See `usage-rules/identities.md`.
 
 ## Elixir nil and Neo4j Null
 
