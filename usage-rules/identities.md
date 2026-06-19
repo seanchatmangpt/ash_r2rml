@@ -68,3 +68,19 @@ back to a database constraint.
 
 The default `nils_distinct?: true` maps cleanly: a node missing any of the
 constrained attributes is not subject to the constraint (its `nil`s are distinct).
+
+## Atomic upsert
+
+An `upsert?: true` create keyed on an identity is a single, race-free `MERGE`:
+
+```cypher
+MERGE (n:Label {<identity properties>})
+ON CREATE SET n += {<the rest of the node>}
+ON MATCH  SET n += {<set_on_upsert fields>}
+RETURN n
+```
+
+— no read-then-write round-trip and no race window (the identity's uniqueness
+constraint backs it). This is plain Cypher, so it works on any supported server.
+Upserts that also carry `changeset.atomics`, managed relationships, or an upsert
+condition fall back to the read-then-write path.

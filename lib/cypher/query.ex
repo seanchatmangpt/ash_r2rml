@@ -46,6 +46,18 @@ defmodule AshNeo4j.Cypher.Set do
   defstruct [:expression]
 end
 
+defmodule AshNeo4j.Cypher.OnCreateSet do
+  @moduledoc "ON CREATE SET clause (MERGE). `expression` is the full SET expression, e.g. `\"n += {born: $nc_born}\"`."
+  @type t :: %__MODULE__{expression: String.t()}
+  defstruct [:expression]
+end
+
+defmodule AshNeo4j.Cypher.OnMatchSet do
+  @moduledoc "ON MATCH SET clause (MERGE). `expression` is the full SET expression, e.g. `\"n += {touched: $nm_touched}\"`."
+  @type t :: %__MODULE__{expression: String.t()}
+  defstruct [:expression]
+end
+
 defmodule AshNeo4j.Cypher.Remove do
   @moduledoc "REMOVE clause. `items` is a list of property references, e.g. `[\"n.born\"]`."
   @type t :: %__MODULE__{items: [String.t()]}
@@ -138,6 +150,8 @@ defmodule AshNeo4j.Cypher.Query do
     Where,
     With,
     Set,
+    OnCreateSet,
+    OnMatchSet,
     Remove,
     Delete,
     DetachDelete,
@@ -157,6 +171,8 @@ defmodule AshNeo4j.Cypher.Query do
           | Where.t()
           | With.t()
           | Set.t()
+          | OnCreateSet.t()
+          | OnMatchSet.t()
           | Remove.t()
           | Delete.t()
           | DetachDelete.t()
@@ -778,6 +794,33 @@ defmodule AshNeo4j.Cypher.Query do
   def merge_node(label, properties) when is_atom(label) and is_map(properties) do
     {pattern, params} = Cypher.parameterized_node(:n, [label], properties)
     %__MODULE__{clauses: [%Merge{pattern: pattern}, %Return{items: ["n"]}], params: params}
+  end
+
+  @doc """
+  Atomic upsert (#379): `MERGE (n:L1:L2 {merge_props}) [ON CREATE SET n += {create_props}]
+  [ON MATCH SET n += {match_props}] RETURN n`.
+
+  `merge_props` are the upsert identity's properties (matched-or-created on);
+  `create_props` are the rest of the node, set only when a new node is created;
+  `match_props` are the `set_on_upsert` fields, set only when an existing node is
+  matched. With the identity's uniqueness constraint (#20) this is a race-free,
+  single-statement upsert. Param prefixes are distinct (`n_`/`nc_`/`nm_`) so the
+  three property sets on the `:n` alias don't collide.
+  """
+  @spec upsert_node(atom() | [atom()], map(), map(), map()) :: t()
+  def upsert_node(label, merge_props, create_props, match_props)
+      when is_map(merge_props) and is_map(create_props) and is_map(match_props) do
+    {merge_pattern, merge_params} = Cypher.parameterized_node(:n, List.wrap(label), merge_props)
+    {create_cypher, create_params} = Cypher.parameterized_properties(:nc, create_props)
+    {match_cypher, match_params} = Cypher.parameterized_properties(:nm, match_props)
+
+    on_create = if map_size(create_props) > 0, do: [%OnCreateSet{expression: "n += #{create_cypher}"}], else: []
+    on_match = if map_size(match_props) > 0, do: [%OnMatchSet{expression: "n += #{match_cypher}"}], else: []
+
+    %__MODULE__{
+      clauses: [%Merge{pattern: merge_pattern}] ++ on_create ++ on_match ++ [%Return{items: ["n"]}],
+      params: merge_params |> Map.merge(create_params) |> Map.merge(match_params)
+    }
   end
 
   @doc """

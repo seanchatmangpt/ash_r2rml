@@ -140,6 +140,19 @@ defmodule AshNeo4j.Neo4jHelper do
     |> Cypher.run()
   end
 
+  @spec upsert_node(atom() | [atom()], map(), map(), map()) ::
+          {:error, %{:__exception__ => true, :__struct__ => atom(), optional(atom()) => any()}}
+          | {:ok, any()}
+  @doc """
+  Atomic upsert (#379): MERGE on `merge_props` (the identity), `ON CREATE SET` the
+  rest (`create_props`), `ON MATCH SET` the `set_on_upsert` fields (`match_props`).
+  """
+  def upsert_node(label, merge_props, create_props, match_props)
+      when (is_atom(label) or is_list(label)) and is_map(merge_props) and is_map(create_props) and is_map(match_props) do
+    Query.upsert_node(label, merge_props, create_props, match_props)
+    |> Cypher.run()
+  end
+
   @spec update_node(atom() | [atom()], map(), map(), list()) ::
           {:error, %{:__exception__ => true, :__struct__ => atom(), optional(atom()) => any()}}
           | {:ok, any()}

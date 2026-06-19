@@ -394,49 +394,95 @@ defmodule AshNeo4j.DataLayer do
     Logger.debug("AshNeo4j.DataLayer: upsert(#{inspect(resource)}, #{inspect(changeset)}, #{inspect(keys)})")
 
     mapping = ResourceInfo.mapping(resource)
-    id_properties = id_properties(mapping, changeset.attributes)
 
     result =
-      if Enum.any?(Map.values(id_properties), &is_nil(&1)) do
-        create(resource, changeset)
+      if mergeable_upsert?(changeset) do
+        merge_upsert(resource, changeset, keys, mapping)
       else
-        key_filters =
-          Enum.map(keys, fn key ->
-            {key,
-             Ash.Changeset.get_attribute(changeset, key) || Map.get(changeset.params, key) ||
-               Map.get(changeset.params, to_string(key))}
-          end)
-
-        query = Ash.Query.do_filter(resource, and: [key_filters])
-
-        resource
-        |> resource_to_query(changeset.domain)
-        |> Map.put(:filter, query.filter)
-        |> Map.put(:tenant, changeset.tenant)
-        |> run_query(resource)
-        |> case do
-          {:ok, []} ->
-            create(resource, changeset)
-
-          {:ok, [result]} ->
-            to_set = Ash.Changeset.set_on_upsert(changeset, keys)
-
-            changeset =
-              changeset
-              |> Map.put(:attributes, %{})
-              |> Map.put(:data, result)
-              |> Ash.Changeset.force_change_attributes(to_set)
-
-            update(resource, changeset)
-
-          {:ok, _} ->
-            {:error, internal("multiple records match the upsert keys")}
-        end
+        # Atomics, managed relationships or an upsert condition can't be expressed
+        # in a single MERGE — keep the read-then-write path for those.
+        legacy_upsert(resource, changeset, keys, mapping)
       end
 
     Logger.debug("AshNeo4j.DataLayer: upsert result #{inspect(result)}")
 
     result
+  end
+
+  # Only a plain attribute upsert can be a single atomic MERGE (#379).
+  defp mergeable_upsert?(changeset) do
+    changeset.atomics in [nil, []] and
+      (changeset.relationships == nil or changeset.relationships == %{}) and
+      is_nil(changeset.filter)
+  end
+
+  # Atomic, race-free, single-statement upsert (#379): MERGE on the upsert
+  # identity's properties, ON CREATE SET the rest of the node, ON MATCH SET the
+  # `set_on_upsert` fields. Backed by the identity's uniqueness constraint (#20).
+  defp merge_upsert(resource, changeset, keys, mapping) do
+    key_values = Map.new(keys, fn key -> {key, Ash.Changeset.get_attribute(changeset, key)} end)
+
+    if Enum.any?(Map.values(key_values), &is_nil/1) do
+      # No identity to merge on — a plain create.
+      create(resource, changeset)
+    else
+      merge_props = dump_properties(mapping, key_values)
+      create_props = dump_properties(mapping, Map.drop(changeset.attributes, keys))
+      match_props = dump_properties(mapping, Map.new(Ash.Changeset.set_on_upsert(changeset, keys)))
+
+      case Neo4jHelper.upsert_node(mapping.label_pair, merge_props, create_props, match_props) do
+        {:ok, %Bolty.Response{results: [node_map | _]}} ->
+          convert_node_to_resource(resource, Map.get(node_map, "n"))
+
+        {:ok, %Bolty.Response{results: []}} ->
+          {:error, internal("upsert affected no node")}
+
+        {:error, error} ->
+          {:error, AshNeo4j.Error.Neo4j.from_bolt(error)}
+      end
+      |> map_identity_conflict(resource, changeset)
+    end
+  end
+
+  defp legacy_upsert(resource, changeset, keys, mapping) do
+    id_properties = id_properties(mapping, changeset.attributes)
+
+    if Enum.any?(Map.values(id_properties), &is_nil(&1)) do
+      create(resource, changeset)
+    else
+      key_filters =
+        Enum.map(keys, fn key ->
+          {key,
+           Ash.Changeset.get_attribute(changeset, key) || Map.get(changeset.params, key) ||
+             Map.get(changeset.params, to_string(key))}
+        end)
+
+      query = Ash.Query.do_filter(resource, and: [key_filters])
+
+      resource
+      |> resource_to_query(changeset.domain)
+      |> Map.put(:filter, query.filter)
+      |> Map.put(:tenant, changeset.tenant)
+      |> run_query(resource)
+      |> case do
+        {:ok, []} ->
+          create(resource, changeset)
+
+        {:ok, [result]} ->
+          to_set = Ash.Changeset.set_on_upsert(changeset, keys)
+
+          changeset =
+            changeset
+            |> Map.put(:attributes, %{})
+            |> Map.put(:data, result)
+            |> Ash.Changeset.force_change_attributes(to_set)
+
+          update(resource, changeset)
+
+        {:ok, _} ->
+          {:error, internal("multiple records match the upsert keys")}
+      end
+    end
   end
 
   @impl true
