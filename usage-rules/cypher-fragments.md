@@ -38,7 +38,9 @@ The raw text between the `?`s is author-supplied Cypher, written as-is. So
 
 You are responsible for what the server can run — e.g. APOC must be installed for an
 `apoc.*` fragment. AshNeo4j renders the call faithfully; it doesn't load or require
-APOC.
+APOC. Check from a deploy/start-up healthcheck with
+`AshNeo4j.BoltyHelper.apoc_available?/0` (it introspects the server; installing APOC
+is the operator's job).
 
 ## Scope and limits
 

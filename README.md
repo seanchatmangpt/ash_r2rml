@@ -210,13 +210,13 @@ The data layer talks to a configurable Bolty pool — `AshNeo4j.BoltyHelper.curr
 
 ### Running the suite
 
-The suite needs a Neo4j at `bolt://localhost:7687` (`neo4j` / `password`, the `Bolt` block in `config/test.exs`). The `:cypher25` / `:bolt6` tests — excluded by default — additionally need a Neo4j ≥ 2025.06 at `bolt://localhost:7689` (the `Bolt6` block). The bundled `docker-compose.yml` brings both up (community edition is deliberate — it runs everything the suite needs, including vector search and Cypher 25):
+The suite needs a Neo4j at `bolt://localhost:7687` (`neo4j` / `password`, the `Bolt` block in `config/test.exs`). The `:cypher25` / `:bolt6` tests — excluded by default — additionally need a Neo4j ≥ 2025.06 at `bolt://localhost:7689` (the `Bolt6` block), and the `:apoc` test needs a Neo4j + APOC at `bolt://localhost:7691` (the `BoltApoc` block). The bundled `docker-compose.yml` brings all three up (community edition is deliberate — it runs everything the suite needs, including vector search and Cypher 25; APOC is on its own opt-in server since it's not part of the default surface):
 
 ```sh
-docker compose up -d --wait                    # neo4j-bolt5 → 7687, neo4j-bolt6 → 7689
-mix test                                        # default suite (7687 only)
-mix test --include cypher25 --include bolt6     # full suite (7687 + 7689)
-docker compose down                             # tear down
+docker compose up -d --wait                          # bolt5 → 7687, bolt6 → 7689, apoc → 7691
+mix test                                              # default suite (7687 only)
+mix test --include cypher25 --include bolt6 --include apoc   # full suite
+docker compose down                                   # tear down
 ```
 
 Elixir/Erlang versions are pinned in `.tool-versions` (read by [mise](https://mise.jdx.dev) or asdf): `mise install` (or `asdf install`).

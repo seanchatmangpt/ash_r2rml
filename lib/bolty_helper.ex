@@ -37,6 +37,17 @@ defmodule AshNeo4j.BoltyHelper do
     end
   end
 
+  @doc """
+  Starts the BoltApoc pool (Neo4j 5.x Community + APOC, #386). Returns :ok,
+  {:error, error}, or {:error, :not_configured} when no BoltApoc config is present.
+  """
+  def start_bolt_apoc() do
+    case Application.get_env(:bolty, BoltApoc) do
+      nil -> {:error, :not_configured}
+      config -> start(config)
+    end
+  end
+
   @default_pool Bolt
 
   @doc """
@@ -137,5 +148,39 @@ defmodule AshNeo4j.BoltyHelper do
       %{dynamic_labels: dynamic_labels} -> dynamic_labels
       nil -> false
     end
+  end
+
+  @doc """
+  Returns `true` when the current pool (see `current_pool/0`) is connected to a
+  Neo4j server with **APOC** installed (#386) — useful as a deploy/start-up
+  healthcheck before relying on an `apoc.*` `fragment(...)`.
+
+  Unlike `cypher25?/0` / `dynamic_labels?/0` (negotiated server features), APOC is
+  a plugin, so this introspects the server with `SHOW PROCEDURES`. Cached in
+  `:persistent_term` per pool after the first call. `false` when the pool is not
+  started. Installing APOC is the operator's job — this only reports it.
+  """
+  def apoc_available?(), do: apoc_available?(current_pool())
+
+  @doc "APOC availability for an explicit `pool`."
+  def apoc_available?(pool) do
+    case :persistent_term.get({__MODULE__, :apoc, pool}, :not_cached) do
+      :not_cached ->
+        available = query_apoc_available?(pool)
+        :persistent_term.put({__MODULE__, :apoc, pool}, available)
+        available
+
+      cached ->
+        cached
+    end
+  end
+
+  defp query_apoc_available?(pool) do
+    case Bolty.query(pool, "SHOW PROCEDURES YIELD name WHERE name STARTS WITH 'apoc' RETURN count(name) > 0 AS available") do
+      {:ok, %Bolty.Response{results: [%{"available" => available} | _]}} -> available == true
+      _ -> false
+    end
+  rescue
+    _ -> false
   end
 end
