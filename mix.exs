@@ -40,12 +40,12 @@ defmodule AshNeo4j.MixProject do
 
   defp usage_rules do
     [
-    skills: [
-      location: ".claude/skills",
-      # Pull in pre-built skills shipped directly by packages
-      package_skills: [:bolty, ~r/^bolty/]
+      skills: [
+        location: ".claude/skills",
+        # Pull in pre-built skills shipped directly by packages
+        package_skills: [:bolty, ~r/^bolty/]
+      ]
     ]
-  ]
   end
 
   def cli do
@@ -99,6 +99,7 @@ defmodule AshNeo4j.MixProject do
         Utilities: [
           AshNeo4j.BoltyHelper,
           AshNeo4j.Neo4jHelper,
+          AshNeo4j.Mermaid,
           AshNeo4j.QueryHelper,
           AshNeo4j.Util
         ],
@@ -143,6 +144,7 @@ defmodule AshNeo4j.MixProject do
       {:topo, "~> 1.0"},
       {:nx, "~> 0.9"},
       {:jason, "~> 1.4"},
+      {:telemetry, "~> 1.0"},
       {:igniter, ">= 0.6.29 and < 1.0.0-0", [env: :prod, hex: "igniter", repo: "hexpm", optional: true]},
       {:ex_doc, "~> 0.37", only: [:dev, :test], runtime: false},
       {:ex_check, "~> 0.12", only: [:dev, :test]},

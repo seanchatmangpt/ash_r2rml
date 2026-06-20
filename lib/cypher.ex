@@ -540,7 +540,18 @@ defmodule AshNeo4j.Cypher do
 
     Logger.debug("AshNeo4j.Cypher: run(#{cypher}, #{inspect(params)})")
 
+    start = System.monotonic_time()
     bolty_result = sandboxed_query(cypher, params)
+
+    # Telemetry seam (#60): emit every query with its rendered Cypher, params and
+    # raw bolty result. No handlers are attached by default, so this is ~free; it
+    # lets opt-in tooling (e.g. `AshNeo4j.Mermaid.tap/0`) observe the last result
+    # without `Cypher.run` knowing anything about its consumers.
+    :telemetry.execute(
+      [:ash_neo4j, :query],
+      %{duration: System.monotonic_time() - start},
+      %{cypher: cypher, params: params, result: bolty_result}
+    )
 
     if elem(bolty_result, 0) == :ok do
       Logger.debug("AshNeo4j.Cypher: run result #{inspect(elem(bolty_result, 1).results)}")
