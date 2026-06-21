@@ -430,7 +430,12 @@ defmodule AshNeo4j.DataLayer do
       create_props = dump_properties(mapping, Map.drop(changeset.attributes, keys))
       match_props = dump_properties(mapping, Map.new(Ash.Changeset.set_on_upsert(changeset, keys)))
 
-      case Neo4jHelper.upsert_node(mapping.label_pair, merge_props, create_props, match_props) do
+      # MERGE matches on the `label_pair` identity, but a newly created node must end
+      # up with the same labels a plain create writes (#392) — the fragment/base-type
+      # and domain-fragment labels in `all_labels` beyond the pair, added ON CREATE.
+      create_labels = mapping.all_labels -- mapping.label_pair
+
+      case Neo4jHelper.upsert_node(mapping.label_pair, merge_props, create_props, match_props, create_labels) do
         {:ok, %Bolty.Response{results: [node_map | _]}} ->
           convert_node_to_resource(resource, Map.get(node_map, "n"))
 
