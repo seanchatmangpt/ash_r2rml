@@ -4,8 +4,11 @@
 
 defmodule AshNeo4j.Type.NxTensor do
   @moduledoc """
-  Ash attribute type for a rank-generic typed tensor (#309), backed by
+  Ash attribute type for a typed tensor of rank 1 to 3 (#309), backed by
   `Nx.Tensor`.
+
+  The flat row-major encoding with a declared shape covers vectors, matrices
+  and 3-tensors; rank > 3 is not supported this release.
 
   The Elixir-side value is an `Nx.Tensor` — so the value-blind structural ops
   (`Nx.transpose/2` (lazy), `Nx.reshape/2`, `Nx.slice/3`, `Nx.stack/2`,
@@ -32,8 +35,9 @@ defmodule AshNeo4j.Type.NxTensor do
     * `:type` — Nx element type, one of a closed set of shorthands (`:u8`,
       `:s64`, `:f32`, `:f8`, `:c64`, …). Defaults to `:u8`. Declared, never
       inferred — input is cast to it, read reconstructs from it.
-    * `:shape` — **required** tensor shape (e.g. `[9, 9]`). Declared schema, used
-      on write and read; never stored or inferred (no honest default exists).
+    * `:shape` — **required** tensor shape (e.g. `[9, 9]`), rank 1 to 3. Declared
+      schema, used on write and read; never stored or inferred (no honest default
+      exists).
     * `:store` — `:property` (default) or `:packed`.
 
   ## Usage
@@ -89,7 +93,7 @@ defmodule AshNeo4j.Type.NxTensor do
       shape: [
         type: {:list, :pos_integer},
         required: true,
-        doc: "The tensor shape (e.g. `[9, 9]`). Declared schema — used on write and read; never stored or inferred."
+        doc: "The tensor shape (e.g. `[9, 9]`), rank 1 to 3. Declared schema — used on write and read; never stored or inferred."
       ],
       store: [
         type: {:one_of, [:property, :packed]},

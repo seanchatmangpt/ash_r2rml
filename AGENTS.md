@@ -69,15 +69,25 @@ lib/
   bolty_helper.ex              — Pool lifecycle + capability detection: current_pool/0,
                                  with_pool/2, policy/1, cypher25?/1 (cached per pool)
   error.ex                     — AshNeo4j.Error.{RequiresCypher25, GeoDimensionMismatch,
-                                 Unsupported3DGeometry}
+                                 Unsupported3DGeometry, UnresolvableTraversal,
+                                 UnsupportedFilterFragment} + typed data-layer errors (#372).
+                                 Data-layer paths return {:error, Splode}, never raise
+  unknown.ex                   — AshNeo4j.Unknown: the "reached but couldn't determine" value
+                                 (NotLoaded-tradition); never collapse into nil (#329)
   spatial.ex                   — AshNeo4j.Spatial: POINT index lifecycle (operator-invoked)
   vector.ex                    — AshNeo4j.Vector: VECTOR index lifecycle (operator-invoked)
-  types/vector.ex              — AshNeo4j.Type.Vector: embedding attribute (LIST<FLOAT>)
+  constraint.ex                — AshNeo4j.Constraint: identity + PK uniqueness constraint
+                                 lifecycle (operator-invoked, #20/#32)
+  mermaid.ex                   — AshNeo4j.Mermaid: render a query result as a Mermaid graph (#60)
+  type/vector.ex               — AshNeo4j.Type.Vector: embedding attribute (LIST<FLOAT>)
+  type/nx_tensor.ex            — AshNeo4j.Type.NxTensor: rank-generic tensor, Nx-backed (#309)
   geo.ex                       — AshNeo4j.Geo: haversine_meters/2 + 3D variant (match
                                  Neo4j point.distance), force_2d/1 (3D→2D projection)
   functions/                   — Ash.Query.Function modules pushed down to Cypher:
                                  st_* (spatial), vector_similarity / vector_cosine_distance,
+                                 traverse (multi-hop path expression, #321; pushdown-only),
                                  and vector_math.ex (shared in-memory cosine for evaluate/1)
+  calculations/projected_traversal.ex — read-time polymorphic traverse projection (#329)
   resource/info.ex             — All DSL introspection: label/1, module_label/1, domain_label/1,
                                  domain_fragment_label/1, all_labels/1, label_pair/1,
                                  mapping/1, relate/1, translations/1, and relationship helpers

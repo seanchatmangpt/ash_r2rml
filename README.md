@@ -378,13 +378,40 @@ Calculations can be:
 
 Only `expr(...)` calculations are currently supported. Custom `:calculate` callback modules are not.
 
+## Graph Traversal Expressions
+
+`traverse(^hop_chain, projection)` expresses a multi-hop graph traversal as an `Ash.Expr` value and pushes it down to a single Cypher path pattern — so a multi-hop reach composes inside a `filter` instead of being an imperative load-time walk. A relational data layer models relationships as joins and has no notion of a path as an expression value; this is something a graph data layer can offer that the relational ones structurally cannot.
+
+```elixir
+require Ash.Query
+import Ash.Expr
+
+chain = [{:forward, :posts}]                 # {:forward | :reverse, relationship_or_edge}
+
+# reached-node field comparison
+Author |> Ash.Query.filter(traverse(^chain, :score) > 50) |> Ash.read!()
+
+# compose with spatial — "services within 5 km of their site", one query
+Service |> Ash.Query.filter(st_dwithin(traverse(^chain, :location), ^point, 5_000)) |> Ash.read!()
+
+# membership / cardinality / aggregate over the reached set
+Service |> Ash.Query.filter(traverse(^chain, :exists) == true)
+Party   |> Ash.Query.filter(traverse(^chain, {:max, :population}) <= 5_200_000)
+```
+
+`traverse` is pushdown-only (it needs the graph) and lands in `filter` first — `sort`, `calculate`/policy and variable-length are tracked on epic [#321](https://github.com/diffo-dev/ash_neo4j/issues/321). To *return* a reached value rather than filter on it, use `AshNeo4j.Calculations.ProjectedTraversal`, which late-binds the reached node's type and yields `AshNeo4j.Unknown` when it can't be determined. See `usage-rules/traverse.md`.
+
+## Atomic and Bulk Writes
+
+AshNeo4j renders Ash atomics straight to Cypher — the new value is computed by the database in a `SET`, with no read-modify-write round trip. `Ash.bulk_update` / `Ash.bulk_destroy` with `strategy: :atomic` run as a single `update_query` / `destroy_query`; a create-or-update keyed on an identity renders an atomic `MERGE` so concurrent upserts converge on one node. A single filtered (optimistic-lock) update or destroy whose guard no longer holds returns `Ash.Error.Changes.StaleRecord` rather than a silent no-op, so lost updates are observable. See `usage-rules/atomics.md`.
+
 ## Cypher Fragments
 
 `fragment(...)` is a filter escape hatch — embed a snippet of raw Cypher in a filter for a condition AshNeo4j doesn't push down (e.g. an APOC function), so the read stays a normal Ash query instead of being hand-written as a raw Cypher query (and losing authorization, the resource model and composability). `?` arguments are bound safely: an attribute reference renders to `s.<property>`, a literal to a `$param`. The fragment must be the whole filter, and arguments must be attribute references or literals — anything else is refused (`AshNeo4j.Error.UnsupportedFilterFragment`), never silently dropped. (This is the *expression* `fragment/N`, not an Ash *resource* fragment.) See `usage-rules/cypher-fragments.md`.
 
 ## Limitations and Future Work
 
-Ash Neo4j has support for Ash create, update, read, destroy actions, aggregates, expression calculations, spatial types, and vector embeddings. The cypher is now parameterised but is by no means optimised. The DSL is likely to evolve further and this may break back compatibility. Storage formats are subject to infrequent change so upgrade *may* require data migration (not included).
+Ash Neo4j has support for Ash create, update, read, destroy actions (including atomic and bulk writes with optimistic locking), aggregates, expression calculations, graph traversal expressions, spatial types, and vector embeddings. The cypher is now parameterised but is by no means optimised. The DSL is likely to evolve further and this may break back compatibility. Storage formats are subject to infrequent change so upgrade *may* require data migration (not included).
 
 Vector similarity search is currently a full scan — Neo4j does not use the HNSW vector index for `vector.similarity.cosine` in a `WHERE`/`ORDER BY`. Indexed top-K (via `db.index.vector.queryNodes` / the Cypher 25 `SEARCH` clause) is tracked in [#297](https://github.com/diffo-dev/ash_neo4j/issues/297).
 
