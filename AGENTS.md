@@ -327,7 +327,8 @@ Published to hex.pm as `ash_neo4j`. **`dev` is the integration branch (and GitHu
 3. **Promote `dev` → `main`.** Open a PR with base `main`, head `dev` (e.g. #390 for v0.10.0, #394 for v0.10.1) and merge with a **merge commit** (never squash — squashing orphans the release commit and breaks `compare` links).
 4. **Tag on `main`.** Check out `main`, fast-forward, and tag the `dev`→`main` merge commit:
    `git tag -a vX.Y.Z <merge-sha> -m "vX.Y.Z"` then `git push origin vX.Y.Z`. Verify it landed on the right commit with `git rev-parse "vX.Y.Z^{commit}"` (tags are annotated, so dereference with `^{commit}`). Reference: `v0.10.0^{commit}` = `eb522ae` = "Merge pull request #390 from diffo-dev/dev"; that commit is reachable from `main` and is **not** in `dev`.
-5. **Publish from `main`:** `mix hex.publish` (no CI auto-publish — it is a manual step).
+5. **Publish from `main`:** `mix hex.publish` (no CI auto-publish — it is a manual step). This publishes the package **and** the HexDocs.
+6. **Create the GitHub release** on the pushed tag: `gh release create vX.Y.Z --title vX.Y.Z --notes-file <body>`, marking it latest. The body matches the existing releases — a `[Full changelog](https://github.com/diffo-dev/ash_neo4j/compare/vPREV...vX.Y.Z)` link line followed by the `CHANGELOG.md` section for this version (drop the changelog's own `## [vX.Y.Z]` heading line). Reference the v0.10.0 release for the exact shape.
 
 Release gotchas:
 
