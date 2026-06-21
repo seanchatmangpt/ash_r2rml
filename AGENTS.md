@@ -318,6 +318,23 @@ The sandbox uses `Process` dictionary flags (`ash_neo4j_in_sandbox_tx`,
 interfere with isolation — check the sandbox implementation before adding transaction logic
 in tests.
 
+## Releasing
+
+Published to hex.pm as `ash_neo4j`. **`dev` is the integration branch (and GitHub default); `main` is the release branch.** The version tag lives on `main`, on the `dev`→`main` merge commit — *not* on the `git_ops` release commit. Getting the tag onto the wrong branch/commit is the recurring mistake; follow these steps exactly.
+
+1. **Land the work on `dev`.** Each fix/feature goes via its own branch and PR into `dev`. `Closes #N` keywords must target `dev` (the default branch) to auto-close.
+2. **Cut the release on a `release-vX.Y.Z` branch off `dev`.** Make any final commits, then `mix git_ops.release --yes` (config in `config/dev.exs`): it bumps `@version` in `mix.exs`, prepends the `CHANGELOG.md` entry, makes a `chore: release version vX.Y.Z` commit, and creates an **annotated tag**. **Delete that tag immediately** (`git tag -d vX.Y.Z`) — git_ops puts it on the dev-side release commit, which is the wrong place (step 4). PR the `release-vX.Y.Z` branch into `dev` and merge once CI is green.
+3. **Promote `dev` → `main`.** Open a PR with base `main`, head `dev` (e.g. #390 for v0.10.0, #394 for v0.10.1) and merge with a **merge commit** (never squash — squashing orphans the release commit and breaks `compare` links).
+4. **Tag on `main`.** Check out `main`, fast-forward, and tag the `dev`→`main` merge commit:
+   `git tag -a vX.Y.Z <merge-sha> -m "vX.Y.Z"` then `git push origin vX.Y.Z`. Verify it landed on the right commit with `git rev-parse "vX.Y.Z^{commit}"` (tags are annotated, so dereference with `^{commit}`). Reference: `v0.10.0^{commit}` = `eb522ae` = "Merge pull request #390 from diffo-dev/dev"; that commit is reachable from `main` and is **not** in `dev`.
+5. **Publish from `main`:** `mix hex.publish` (no CI auto-publish — it is a manual step).
+
+Release gotchas:
+
+- **CI `types` (dialyzer) runs on OTP 29.** `ash` 3.29 gates `@type Ash.Resource.record/0` to OTP < 29, so on OTP 29 it is an unknown type. Reference `Ash.Resource.Record.t()` in specs instead — equivalent and OTP-portable.
+- **The README install pin is `~> MINOR`** (e.g. `~> 0.10`). `git_ops` `manage_readme_version` only rewrites an *exact* version string, so it never bumps the `~>` pin — update it by hand on a minor bump.
+- **`release-vX.Y.Z` branches are disposable** — force-push them freely while preparing. Never force-push `dev` or `main`.
+
 ## Raising upstream bugs
 
 When a bug is found in a dependency (Bolty, Ash, Spark), raise a GitHub issue on that
