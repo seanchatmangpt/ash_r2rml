@@ -125,6 +125,69 @@ Calculations on embedded struct fields (`Ash.TypedStruct`, nested types) work th
 
 Custom calculation modules (`:calculate` callback) are not currently supported — only expression (`expr(...)`) calculations.
 
+## Graph traversal expressions — `traverse/2` (#321)
+
+**This is the graph-native differentiator — reach for it before a join-shaped load or an imperative multi-query walk.** `traverse(^hop_chain, projection)` expresses a multi-hop, direction-and-type-selected path *inside* an `Ash.Expr`, and the data layer pushes it down to a single Cypher path pattern. A relational data layer can't do this — it models relationships as joins and has no notion of a path as an expression value.
+
+```elixir
+require Ash.Query
+import Ash.Expr
+
+# hop_chain — a list of {:forward | :reverse, edge_selector}.
+# :forward walks an outgoing edge, :reverse an incoming one.
+# edge_selector is an Ash relationship name (resolved on the source resource
+# to its edge label + destination), or {:edge, LABEL} / {:edge, LABEL, DEST}.
+chain = [{:forward, :posts}]
+
+# reached-node field comparison — authors who wrote a post scoring > 50
+Author
+|> Ash.Query.filter(traverse(^chain, :score) > 50)
+|> Ash.read!()
+```
+
+Projection (the second argument, default `:node`) selects what to pull from the reached set:
+
+```elixir
+# compose with spatial — "services whose site is within 5 km of a point", one query
+Service |> Ash.Query.filter(st_dwithin(traverse(^chain, :location), ^point, 5_000))
+
+# membership / cardinality over the reached set (#334)
+Service |> Ash.Query.filter(traverse(^chain, :exists) == true)    # reaches a node
+Service |> Ash.Query.filter(traverse(^chain, :exists) == false)   # reaches none
+Service |> Ash.Query.filter(traverse(^chain, :count) > 0)
+
+# field aggregates over the reached set (#338)
+Party |> Ash.Query.filter(traverse(^chain, {:min, :population}) > 5_200_000)
+```
+
+`traverse` is **pushdown-only** — it needs the graph, so it has no in-memory value and is recognised in **`filter`** in this slice. `sort` (#335), `calculate`/policy, and variable-length are fast-follows (open epic #321). A chain that can't be formed (unknown relationship, missing field, unreachable type) returns `{:error, %AshNeo4j.Error.UnresolvableTraversal{}}` — it never fabricates an edge. To **return** a reached value (not filter on it), use `AshNeo4j.Calculations.ProjectedTraversal` (below). Full rules in `usage-rules/traverse.md`.
+
+## Atomic and bulk writes (#361, #379)
+
+AshNeo4j renders Ash atomics straight to Cypher — no read-modify-write round trip.
+
+```elixir
+require Ash.Query
+import Ash.Expr
+
+# atomic update — changeset.atomics render to a Cypher SET (numeric, string
+# concat/trim, enum/atom forms)
+post |> Ash.Changeset.for_update(:update) |> Ash.Changeset.atomic_update(:score, expr(score + 1)) |> Ash.update!()
+
+# bulk atomic update — one UPDATE query, not N round-trips
+Post |> Ash.Query.filter(draft == true) |> Ash.bulk_update!(:publish, %{}, strategy: :atomic)
+
+# bulk atomic destroy — "delete what matches"; a guarded node is skipped, not deleted
+Specification |> Ash.bulk_destroy!(:destroy, %{}, strategy: :atomic)
+
+# atomic upsert — create-or-update keyed on an identity renders a Cypher MERGE,
+# so concurrent upserts converge on one node
+Ash.create!(Upsert, %{first_name: "Donald", surname: "Duck", field: "two"},
+  upsert?: true, upsert_identity: :full_name)
+```
+
+A single **filtered (optimistic-lock) update or destroy** whose guard no longer holds returns `Ash.Error.Changes.StaleRecord` — not a silent no-op — so a lost update is observable. The same guard-on-miss → `StaleRecord` rule applies to guarded relationship attach/detach (#368). Full rules in `usage-rules/atomics.md`.
+
 ## Spatial types and expressions
 
 AshNeo4j stores geometries using [`ash_geo`](https://hex.pm/packages/ash_geo) types — declare attributes as `AshGeo.GeoJson` with a `geo_types` constraint, carrying [`%Geo.*{}`](https://hex.pm/packages/geo) structs. `st_*` expression functions (`st_contains`, `st_within`, `st_intersects`, `st_distance`, `st_distance_in_meters`, `st_dwithin`, `st_closest_point`) match ash_geo / PostGIS signatures. Predicates push down to Neo4j's native `point.distance` and `point.withinBBox` wherever possible.

@@ -6,7 +6,7 @@ defmodule AshNeo4j.MixProject do
   @moduledoc false
   use Mix.Project
 
-  @version "0.9.0"
+  @version "0.10.0"
   @name "AshNeo4j"
   @description "Ash DataLayer for Neo4j"
   @github_url "https://github.com/diffo-dev/ash_neo4j"
@@ -70,6 +70,7 @@ defmodule AshNeo4j.MixProject do
         {"README.md", title: "Home"},
         {"LICENSES/MIT.md", title: "License"},
         {"ash_neo4j_datalayer.livemd", title: "AshNeo4j Livebook"},
+        {"documentation/how_to/managing_schema.livemd", title: "Managing Neo4j Schema"},
         {"documentation/dsls/DSL-AshNeo4j.DataLayer.md", search_data: Spark.Docs.search_data_for(AshNeo4j.DataLayer)},
         "CHANGELOG.md"
       ],
