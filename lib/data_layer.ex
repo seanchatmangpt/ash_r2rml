@@ -1706,7 +1706,7 @@ defmodule AshNeo4j.DataLayer do
   record, an `AshNeo4j.Unknown` (a node was reached but its labels resolve to no
   loaded world), or `nil` (genuinely nothing reached). v1 is single-valued.
   """
-  @spec project_traversal(module(), [Ash.Resource.record()], list()) :: %{optional(any()) => any()}
+  @spec project_traversal(module(), [Ash.Resource.Record.t()], list()) :: %{optional(any()) => any()}
   def project_traversal(resource, records, chain) do
     mapping = ResourceInfo.mapping(resource)
     pk_field = hd(Ash.Resource.Info.primary_key(resource))
