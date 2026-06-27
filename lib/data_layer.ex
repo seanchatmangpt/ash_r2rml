@@ -287,7 +287,8 @@ defmodule AshNeo4j.DataLayer do
               with {:ok, records} <- apply_calculations_to_records(records, calculations, resource),
                    records <- filter_matches(records, drop_pushdown_only(query.filter), query.domain),
                    {:ok, records} <- apply_aggregates_to_records(records, aggregates, resource) do
-                {:ok, apply_calculation_sort(records, query.sort, query.domain)}
+                sorted = apply_calculation_sort(records, query.sort, query.domain)
+                {:ok, apply_deferred_pagination(sorted, query)}
               end
 
             {:error, reason} ->
@@ -1779,6 +1780,22 @@ defmodule AshNeo4j.DataLayer do
       end
     end)
   end
+
+  # When a sort can't be pushed to Cypher (an in-memory calculation), its
+  # LIMIT/OFFSET were withheld from the query so they wouldn't truncate unordered
+  # rows — apply them here, after the in-memory sort above (#407).
+  defp apply_deferred_pagination(records, query) do
+    case QueryHelper.deferred_pagination(query) do
+      {nil, nil} -> records
+      {skip, limit} -> records |> drop_offset(skip) |> take_limit(limit)
+    end
+  end
+
+  defp drop_offset(records, skip) when skip in [nil, 0], do: records
+  defp drop_offset(records, skip), do: Enum.drop(records, skip)
+
+  defp take_limit(records, nil), do: records
+  defp take_limit(records, limit), do: Enum.take(records, limit)
 
   defp apply_calculation_sort(records, sort, _domain) when sort in [nil, []], do: records
 

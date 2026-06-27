@@ -33,10 +33,12 @@ defmodule AshNeo4j.QueryHelper do
     # through rather than running a fabricated query.
     with %Query{} = base <- build_query(ash_query, mapping),
          {:ok, {terms, sort_params}} <- sort_terms(ash_query, mapping) do
+      {push_skip, push_limit} = cypher_pagination(ash_query, terms)
+
       query =
         base
         |> Query.merge_params(sort_params)
-        |> Query.paginate_nodes(terms, ash_query.offset, ash_query.limit)
+        |> Query.paginate_nodes(terms, push_skip, push_limit)
         |> Query.add_order_by(terms)
 
       run_cypher_query(query)
@@ -68,11 +70,13 @@ defmodule AshNeo4j.QueryHelper do
 
     with nil <- Enum.find(branch_queries, &match?({:error, _}, &1)),
          {:ok, {terms, sort_params}} <- sort_terms(ash_query, mapping) do
+      {push_skip, push_limit} = cypher_pagination(ash_query, terms)
+
       query =
         branch_queries
         |> Query.combination_block(union_type: union_type)
         |> Query.merge_params(sort_params)
-        |> Query.paginate_nodes(terms, ash_query.offset, ash_query.limit)
+        |> Query.paginate_nodes(terms, push_skip, push_limit)
         |> Query.add_order_by(terms)
 
       run_cypher_query(query)
@@ -101,11 +105,13 @@ defmodule AshNeo4j.QueryHelper do
           {:ok, []}
         else
           with {:ok, {terms, sort_params}} <- sort_terms(ash_query, mapping) do
+            {push_skip, push_limit} = cypher_pagination(ash_query, terms)
+
             final =
               mapping.label_pair
               |> Query.node_read_by_ids(keep_ids)
               |> Query.merge_params(sort_params)
-              |> Query.paginate_nodes(terms, ash_query.offset, ash_query.limit)
+              |> Query.paginate_nodes(terms, push_skip, push_limit)
               |> Query.add_order_by(terms)
 
             run_cypher_query(final)
@@ -966,6 +972,43 @@ defmodule AshNeo4j.QueryHelper do
   defp attribute_name(atom) when is_atom(atom), do: atom
   defp attribute_name(_), do: nil
 
+  @doc """
+  The `{offset, limit}` to apply **in Elixir** for this query, or `{nil, nil}`
+  when pagination was pushed to Cypher.
+
+  A `LIMIT`/`OFFSET` may only be pushed down when every `sort` term renders to an
+  `ORDER BY` (`sort_terms/2` keeps as many terms as the query has sort entries).
+  When a sort falls back to in-memory evaluation (a non-pushable calculation),
+  pushing `LIMIT` would truncate *unordered* rows, so the data layer instead
+  applies offset/limit after its in-memory sort (#407).
+  """
+  @spec deferred_pagination(Ash.Query.t() | map()) :: {non_neg_integer() | nil, pos_integer() | nil}
+  def deferred_pagination(ash_query) do
+    mapping = ResourceInfo.mapping(ash_query.resource)
+
+    case sort_terms(ash_query, mapping) do
+      {:ok, {terms, _}} ->
+        if fully_pushed_down?(ash_query.sort, terms),
+          do: {nil, nil},
+          else: {ash_query.offset, ash_query.limit}
+
+      _ ->
+        {nil, nil}
+    end
+  end
+
+  # Pagination to push into Cypher: the query's offset/limit when the sort is
+  # fully pushed down, otherwise nothing (deferred to the data layer, #407).
+  defp cypher_pagination(ash_query, terms) do
+    if fully_pushed_down?(ash_query.sort, terms),
+      do: {ash_query.offset, ash_query.limit},
+      else: {nil, nil}
+  end
+
+  # A plain-property sort always renders a term, so a shortfall means a sort
+  # term was dropped to in-memory evaluation.
+  defp fully_pushed_down?(sort, terms), do: length(terms) == length(sort || [])
+
   # Builds the ORDER BY terms and any params they reference.
   #
   # Returns `{terms, params}` where each term is `{order_expression, :asc | :desc}`
@@ -995,8 +1038,8 @@ defmodule AshNeo4j.QueryHelper do
   # vector_similarity / vector_cosine_distance sort — pushed down as the scalar
   # expression, with the query embedding bound as a param.
   defp sort_term(mapping, %Ash.Query.Calculation{module: Ash.Resource.Calculation.Expression, opts: opts}, order, index) do
-    case Keyword.get(opts, :expr) do
-      %Ash.Query.Call{name: fname, args: [ref, query_vec]} when fname in [:vector_similarity, :vector_cosine_distance] ->
+    case vector_call(Keyword.get(opts, :expr)) do
+      {fname, ref, query_vec} ->
         with :ok <- AshNeo4j.Cypher.require_cypher25() do
           prop = property_name(mapping, ref)
           key = "sort_#{Cypher.sanitize_param(prop)}_#{index}_vec"
@@ -1004,7 +1047,7 @@ defmodule AshNeo4j.QueryHelper do
           {{expr, order}, %{key => to_vector_param(query_vec)}}
         end
 
-      _ ->
+      nil ->
         nil
     end
   end
@@ -1017,6 +1060,24 @@ defmodule AshNeo4j.QueryHelper do
     prop = Keyword.get(mapping.properties, name, name)
     {{"s.#{prop}", order}, %{}}
   end
+
+  # Extracts `{fname, ref, query_vec}` from a vector-distance sort expression.
+  #
+  # `calc(vector_*(field, q), type: …)` arrives prepared as a `type(inner, …)`
+  # wrapper around the function struct (`AshNeo4j.Functions.Vector*`, carrying
+  # `name`/`arguments`); peel the `type` wrapper so the inner function matches.
+  # The bare `Ash.Query.Call` form (`args`) is also accepted for the unwrapped /
+  # untyped case. Anything else returns nil → Ash sorts it in-memory (#407).
+  @vector_sort_fns [:vector_similarity, :vector_cosine_distance]
+  defp vector_call(%Ash.Query.Function.Type{arguments: [inner | _]}), do: vector_call(inner)
+
+  defp vector_call(%Ash.Query.Call{name: fname, args: [ref, query_vec]}) when fname in @vector_sort_fns,
+    do: {fname, ref, query_vec}
+
+  defp vector_call(%{name: fname, arguments: [ref, query_vec]}) when fname in @vector_sort_fns,
+    do: {fname, ref, query_vec}
+
+  defp vector_call(_), do: nil
 
   defp ref_or_atom?(%Ash.Query.Ref{}), do: true
   defp ref_or_atom?(value) when is_atom(value), do: true

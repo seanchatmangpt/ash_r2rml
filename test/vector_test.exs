@@ -73,6 +73,12 @@ defmodule AshNeo4j.VectorSearchTest do
     #   a → identical (similarity 1.0, distance 0.0)
     #   b → orthogonal (similarity 0.5, distance 1.0)
     #   c → opposite   (similarity 0.0, distance 2.0)
+    #
+    # Each search below scopes to these three ids (`id in [...]`) so the ordering
+    # is over a known universe — `ThingNote` has nothing partitioning the search,
+    # so any other note on the shared Bolt6 server would otherwise creep into the
+    # ranking (and silently displace `b` under `limit`), making the exact-order
+    # assertions flaky (#407).
     defp seed_notes do
       a = ThingNote |> Ash.create!(%{body: "a", embedding: [1.0, 0.0, 0.0]})
       b = ThingNote |> Ash.create!(%{body: "b", embedding: [0.0, 1.0, 0.0]})
@@ -87,12 +93,12 @@ defmodule AshNeo4j.VectorSearchTest do
     end
 
     test "filters by vector_cosine_distance threshold" do
-      {a, b, _c} = seed_notes()
+      {a, b, c} = seed_notes()
       q = [1.0, 0.0, 0.0]
 
       {:ok, results} =
         ThingNote
-        |> Ash.Query.filter(vector_cosine_distance(embedding, ^q) < 1.5)
+        |> Ash.Query.filter(id in ^[a.id, b.id, c.id] and vector_cosine_distance(embedding, ^q) < 1.5)
         |> Ash.read()
 
       ids = MapSet.new(results, & &1.id)
@@ -106,6 +112,7 @@ defmodule AshNeo4j.VectorSearchTest do
 
       {:ok, results} =
         ThingNote
+        |> Ash.Query.filter(id in ^[a.id, b.id, c.id])
         |> Ash.Query.sort({calc(vector_cosine_distance(embedding, ^q), type: :float), :asc})
         |> Ash.read()
 
@@ -118,6 +125,7 @@ defmodule AshNeo4j.VectorSearchTest do
 
       {:ok, results} =
         ThingNote
+        |> Ash.Query.filter(id in ^[a.id, b.id, c.id])
         |> Ash.Query.sort({calc(vector_similarity(embedding, ^q), type: :float), :desc})
         |> Ash.read()
 
@@ -125,11 +133,12 @@ defmodule AshNeo4j.VectorSearchTest do
     end
 
     test "sort + limit returns the top-k nearest" do
-      {a, b, _c} = seed_notes()
+      {a, b, c} = seed_notes()
       q = [1.0, 0.0, 0.0]
 
       {:ok, results} =
         ThingNote
+        |> Ash.Query.filter(id in ^[a.id, b.id, c.id])
         |> Ash.Query.sort({calc(vector_cosine_distance(embedding, ^q), type: :float), :asc})
         |> Ash.Query.limit(2)
         |> Ash.read()
