@@ -6,16 +6,19 @@ name: CI
 
 on: [push, pull_request]
 
-# Type-check gates only — no database. The test suite needs a Neo4j and is run
-# locally / separately. `mix compile --warnings-as-errors` runs Elixir 1.20's
-# set-theoretic type checker; `mix dialyzer` adds success typing.
+# Two gates: `types` is database-free — `mix compile --warnings-as-errors` runs
+# Elixir 1.20's set-theoretic type checker and `mix dialyzer` adds success
+# typing. `test` runs the full suite against the three Neo4j servers from the
+# bundled docker-compose.yml (bolt5 5.26.27 → 7687, bolt6 2026.05 → 7689,
+# apoc 5.26.27 → 7691), matching the Bolt / Bolt6 / BoltApoc blocks in
+# config/test.exs.
 jobs:
   types:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Elixir / Erlang (from mise.toml)
+      - name: Set up Elixir / Erlang (from .tool-versions)
         uses: jdx/mise-action@v2
 
       - name: Cache deps and build (incl. Dialyzer PLT)
@@ -35,3 +38,33 @@ jobs:
 
       - name: Dialyzer
         run: mix dialyzer
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Elixir / Erlang (from .tool-versions)
+        uses: jdx/mise-action@v2
+
+      - name: Cache deps and build
+        uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
+          restore-keys: ${{ runner.os }}-mix-
+
+      - name: Install dependencies
+        run: mix deps.get
+
+      - name: Start Neo4j test databases (bolt5 → 7687, bolt6 → 7689, apoc → 7691)
+        run: docker compose up -d --wait --wait-timeout 300
+
+      - name: Test (default + cypher25 + bolt6 + apoc)
+        run: mix test --include cypher25 --include bolt6 --include apoc
+
+      - name: Stop Neo4j test databases
+        if: always()
+        run: docker compose down
