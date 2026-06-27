@@ -531,7 +531,9 @@ defmodule AshNeo4j.Cypher do
   ```
   """
   def run(%Query{} = query) do
-    {cypher, params} = render(query)
+    # Render without the selector — the arity-2 string clause is the single place
+    # that prepends `cypher25_prefix/0`, otherwise it would be doubled (#397).
+    {cypher, params} = render(query, prefix?: false)
     run(cypher, params)
   end
 
@@ -561,7 +563,8 @@ defmodule AshNeo4j.Cypher do
   end
 
   def run_expecting_deletions(%Query{} = query) do
-    {cypher, params} = render(query)
+    # Same as run/1: let the string clause add the single selector (#397).
+    {cypher, params} = render(query, prefix?: false)
     run_expecting_deletions(cypher, params)
   end
 
