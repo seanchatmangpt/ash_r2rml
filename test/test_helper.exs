@@ -26,4 +26,6 @@ AshNeo4j.BoltyHelper.start_bolt_apoc()
 # `connection_info` checkouts).
 bolt_pool_size = Application.get_env(:bolty, Bolt)[:pool_size] || 15
 
-ExUnit.start(exclude: [:show_neo4j, :bolt6, :cypher25, :apoc], max_cases: bolt_pool_size)
+# `:slow` — long-running guards (e.g. the >15s sandbox-timeout regression, #398);
+# excluded by default, run in CI via `--include slow`.
+ExUnit.start(exclude: [:show_neo4j, :bolt6, :cypher25, :apoc, :slow], max_cases: bolt_pool_size)

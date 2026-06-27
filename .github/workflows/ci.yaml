@@ -62,8 +62,8 @@ jobs:
       - name: Start Neo4j test databases (bolt5 → 7687, bolt6 → 7689, apoc → 7691)
         run: docker compose up -d --wait --wait-timeout 300
 
-      - name: Test (default + cypher25 + bolt6 + apoc)
-        run: mix test --include cypher25 --include bolt6 --include apoc
+      - name: Test (default + cypher25 + bolt6 + apoc + slow)
+        run: mix test --include cypher25 --include bolt6 --include apoc --include slow
 
       - name: Stop Neo4j test databases
         if: always()

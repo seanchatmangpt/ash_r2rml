@@ -55,6 +55,13 @@ defmodule AshNeo4j.Sandbox do
 
   @pdict_key :ash_neo4j_sandbox
 
+  # The holder transaction stays checked out for the *whole* test, so it must
+  # not inherit DBConnection's 15s default checkout timeout — a test whose
+  # wall-clock exceeds that would otherwise be force-disconnected mid-run
+  # (#398). Default to :infinity; ExUnit's own per-test timeout still bounds a
+  # genuinely stuck test (its exit signals the holder to roll back).
+  @default_holder_timeout :infinity
+
   @doc """
   Checks out a sandbox connection and begins a Neo4j transaction.
 
@@ -62,10 +69,18 @@ defmodule AshNeo4j.Sandbox do
   executed within the open transaction. The transaction is rolled back
   automatically when the calling process exits.
 
+  ## Options
+
+    * `:timeout` — the DBConnection checkout timeout for the holder transaction,
+      in milliseconds or `:infinity`. The holder is held for the entire test, so
+      this must not be DBConnection's 15s default. Defaults to the application
+      env `config :ash_neo4j, #{inspect(__MODULE__)}, timeout: …`, or
+      `#{inspect(@default_holder_timeout)}` if unset.
+
   Raises if called more than once without an intervening `rollback/0`.
   """
-  @spec checkout() :: :ok
-  def checkout do
+  @spec checkout(keyword()) :: :ok
+  def checkout(opts \\ []) do
     if Process.get(@pdict_key) do
       raise "AshNeo4j.Sandbox already checked out for this process — call rollback/0 first"
     end
@@ -75,6 +90,7 @@ defmodule AshNeo4j.Sandbox do
     # parent's process dictionary, so a `:bolt6` test's pool override has to be
     # read here and passed in.
     pool = AshNeo4j.BoltyHelper.current_pool()
+    timeout = Keyword.get(opts, :timeout, configured_timeout())
 
     holder =
       spawn_link(fn ->
@@ -82,10 +98,14 @@ defmodule AshNeo4j.Sandbox do
         # killing the holder before Bolty.rollback/2 can be called.
         Process.flag(:trap_exit, true)
 
-        Bolty.transaction(pool, fn conn ->
-          send(parent, {:ash_neo4j_sandbox_ready, self()})
-          holder_loop(conn)
-        end)
+        Bolty.transaction(
+          pool,
+          fn conn ->
+            send(parent, {:ash_neo4j_sandbox_ready, self()})
+            holder_loop(conn)
+          end,
+          timeout: timeout
+        )
       end)
 
     receive do
@@ -148,6 +168,12 @@ defmodule AshNeo4j.Sandbox do
           30_000 -> {:error, "AshNeo4j.Sandbox query timed out after 30s"}
         end
     end
+  end
+
+  defp configured_timeout do
+    :ash_neo4j
+    |> Application.get_env(__MODULE__, [])
+    |> Keyword.get(:timeout, @default_holder_timeout)
   end
 
   defp holder_loop(conn) do
