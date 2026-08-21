@@ -219,7 +219,8 @@ defmodule AshR2RML.OBDA.Ontop do
   defp hash_file_or_value(_, fallback) when is_binary(fallback), do: sha256(fallback)
   defp hash_file_or_value(_, _), do: nil
 
-  defp get(opts, key, default \\ nil) when is_list(opts), do: Keyword.get(opts, key, default)
+  defp get(opts, key, default \\ nil)
+  defp get(opts, key, default) when is_list(opts), do: Keyword.get(opts, key, default)
 
   defp get(opts, key, default) when is_map(opts) do
     Map.get(opts, key, Map.get(opts, Atom.to_string(key), default))
