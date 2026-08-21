@@ -16,6 +16,18 @@ defmodule AshR2ml.Compilation do
     :receipt,
     refusals: []
   ]
+
+  @type t :: %__MODULE__{
+          status: atom(),
+          standing: atom(),
+          ir: AshR2ml.SemanticIR.t() | nil,
+          ash_source: String.t() | nil,
+          postgres_ddl: String.t() | nil,
+          r2rml: String.t() | nil,
+          shacl: String.t() | nil,
+          receipt: AshR2ml.CompilationReceipt.t() | nil,
+          refusals: [AshR2ml.Refusal.t()]
+        }
 end
 
 defmodule AshR2ml.CompilationReceipt do
@@ -34,6 +46,7 @@ defmodule AshR2ml.CompilationReceipt do
     :shacl_sha256,
     :query_parity,
     :neo4j_postgres_parity,
+    :cutover_authority,
     classes_admitted: 0,
     attributes_admitted: 0,
     relationships_admitted: 0,
@@ -46,6 +59,33 @@ defmodule AshR2ml.CompilationReceipt do
     blocked: [],
     refusals: []
   ]
+
+  @type t :: %__MODULE__{
+          status: atom(),
+          standing: atom(),
+          ontology_hash: String.t() | nil,
+          profile_hash: String.t() | nil,
+          shacl_input_hash: String.t() | nil,
+          ir_sha256: String.t() | nil,
+          ash_sha256: String.t() | nil,
+          postgres_sha256: String.t() | nil,
+          r2rml_sha256: String.t() | nil,
+          shacl_sha256: String.t() | nil,
+          query_parity: :UNKNOWN | :VERIFIED,
+          neo4j_postgres_parity: :UNKNOWN | :VERIFIED,
+          cutover_authority: :UNAUTHORIZED | :AUTHORIZED | nil,
+          classes_admitted: non_neg_integer(),
+          attributes_admitted: non_neg_integer(),
+          relationships_admitted: non_neg_integer(),
+          actions_admitted: non_neg_integer(),
+          policies_admitted: non_neg_integer(),
+          storage_candidates: map(),
+          selected_storage: map(),
+          executed: list(),
+          verified: list(),
+          blocked: list(),
+          refusals: [AshR2ml.Refusal.t()]
+        }
 end
 
 defmodule AshR2ml.Compiler do
@@ -97,10 +137,11 @@ defmodule AshR2ml.Compiler do
     end
   end
 
-  @doc "Cutover is impossible from a compile receipt alone; parity witnesses must be attached explicitly."
+  @doc "Cutover requires both observed parity witnesses and an explicit authority receipt."
   def cutover_ready?(%CompilationReceipt{
         query_parity: :VERIFIED,
         neo4j_postgres_parity: :VERIFIED,
+        cutover_authority: :AUTHORIZED,
         blocked: []
       }),
       do: true
@@ -108,11 +149,11 @@ defmodule AshR2ml.Compiler do
   def cutover_ready?(_), do: false
 
   @doc """
-  Upgrade a compilation receipt with an externally observed parity witness.
+  Attach an externally observed parity receipt.
 
   The witness is data only; this function never executes SQL, SPARQL, or Cypher.
-  It therefore requires explicit `verified?: true` from the verifier that performed
-  the comparison and preserves the witness identity in the receipt's verified set.
+  It requires `verified?: true` and a stable receipt identity from the verifier
+  that actually executed the comparison.
   """
   def attach_parity_witness(%CompilationReceipt{} = receipt, kind, witness)
       when kind in [:sparql_sql, :neo4j_postgres] and is_map(witness) do
@@ -140,6 +181,31 @@ defmodule AshR2ml.Compiler do
           kind,
           "parity witness must be observed, verified, and carry a stable receipt_sha256",
           %{witness: witness}
+        )
+
+      %{receipt | refusals: [refusal | receipt.refusals]}
+    end
+  end
+
+  @doc "Attach explicit cutover authority without conflating it with technical parity."
+  def authorize_cutover(%CompilationReceipt{} = receipt, authority) when is_map(authority) do
+    authorized? = Map.get(authority, :authorized?, Map.get(authority, "authorized?", false))
+    authority_id = Map.get(authority, :receipt_sha256, Map.get(authority, "receipt_sha256"))
+
+    if authorized? and is_binary(authority_id) and authority_id != "" do
+      %{
+        receipt
+        | cutover_authority: :AUTHORIZED,
+          blocked: List.delete(receipt.blocked, :cutover_authority),
+          verified: Enum.uniq([{:cutover_authority, authority_id} | receipt.verified])
+      }
+    else
+      refusal =
+        Refusal.new(
+          :REFUSED_UNPROVEN_EQUIVALENCE,
+          :cutover_authority,
+          "cutover authority requires authorized?: true and a stable receipt_sha256",
+          %{authority: authority}
         )
 
       %{receipt | refusals: [refusal | receipt.refusals]}
@@ -219,6 +285,7 @@ defmodule AshR2ml.Compiler do
       shacl_sha256: sha256(shacl),
       query_parity: :UNKNOWN,
       neo4j_postgres_parity: :UNKNOWN,
+      cutover_authority: :UNAUTHORIZED,
       classes_admitted: length(resources),
       attributes_admitted: Enum.sum(Enum.map(resources, &length(&1.attributes))),
       relationships_admitted: Enum.sum(Enum.map(resources, &length(&1.relationships))),
@@ -242,6 +309,7 @@ defmodule AshR2ml.Compiler do
       shacl_input_hash: ir && ir.shacl_hash,
       query_parity: :UNKNOWN,
       neo4j_postgres_parity: :UNKNOWN,
+      cutover_authority: :UNAUTHORIZED,
       blocked: [:semantic_projection, :sparql_sql_behavioral_parity, :neo4j_postgres_semantic_parity, :cutover_authority],
       refusals: refusals
     }
