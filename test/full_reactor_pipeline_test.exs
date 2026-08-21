@@ -94,7 +94,7 @@ defmodule AshR2RML.FullReactorPipelineTest do
   describe "AshR2RML.Reactor.Pipeline — full facet coverage" do
     test "pipeline compiles real Ash resources through all 7 steps and emits valid R2RML Turtle" do
       inputs = %{
-        profile: [PipelineUser, PipelineOrg],
+        resources: [PipelineUser, PipelineOrg],
         actor: %{id: "actor_42", role: :admin},
         observations: build_observations(),
         metadata: %{workflow: "full_pipeline_test"}
@@ -108,7 +108,7 @@ defmodule AshR2RML.FullReactorPipelineTest do
 
     test "pipeline attaches W3C PROV-O provenance predicate maps to rendered Turtle" do
       inputs = %{
-        profile: [PipelineUser, PipelineOrg],
+        resources: [PipelineUser, PipelineOrg],
         actor: nil,
         observations: [],
         metadata: %{}
@@ -121,7 +121,7 @@ defmodule AshR2RML.FullReactorPipelineTest do
 
     test "pipeline completes when actor is nil (no policy filtering applied)" do
       inputs = %{
-        profile: [PipelineUser],
+        resources: [PipelineUser],
         actor: nil,
         observations: [],
         metadata: %{}

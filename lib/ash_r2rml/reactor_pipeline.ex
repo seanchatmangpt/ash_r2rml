@@ -4,167 +4,100 @@
 
 defmodule AshR2RML.Reactor.Pipeline do
   @moduledoc """
-  Full end-to-end `Reactor`-style pipeline exercising every public facet of AshR2RML
-  in a declarative saga with 7 named steps:
+  Full end-to-end Zach Daniel–style `Reactor` pipeline exercising every public
+  facet of AshR2RML through 6 named, module-backed steps:
 
-  1. **Compile** — compile one or more Ash resource modules (or a map-based profile) via
-     `AshR2RML.Compiler.compile/1` or `AshR2RML.Compiler.compile_resources/1` into a
-     normalized `AshR2RML.Mapping.Bundle`.
-  2. **Align** — fail-closed schema alignment verification over every resource in the
-     mapping bundle (`AshR2RML.VerifyMapping.Alignment.verify/1`).
-  3. **Provenance** — attach W3C PROV-O `prov:generatedAtTime` and `prov:wasDerivedFrom`
-     predicate-object maps to every resource (`AshR2RML.Mapping.Provenance`).
-  4. **Policy** — filter the bundle through actor/policy projections
-     (`AshR2RML.Policy.filter_for_actor/3`).
-  5. **Introspect** — derive relational table names and join columns for every resource
-     via `AshR2RML.DataLayer.table_name/1`.
-  6. **Render** — render the enriched, filtered bundle into final W3C R2RML Turtle via
-     `AshR2RML.R2RML.render/1`.
-  7. **Differential** — optionally evaluate SPARQL behavioral parity across two execution
-     strategies (`AshR2RML.SPARQL.Differential.compare/3`).
+  1. **compile_resources** — compile Ash resource modules into a normalized
+     `AshR2RML.Mapping.Bundle` (`AshR2RML.Reactor.Steps.CompileResources`).
+  2a. **verify_alignment** — fail-closed schema alignment verification
+      (`AshR2RML.Reactor.Steps.VerifyAlignment`), runs concurrently with 2b.
+  2b. **evaluate_differential** — optional SPARQL behavioral parity evaluation
+      (`AshR2RML.Reactor.Steps.EvaluateDifferential`), runs concurrently with 2a.
+  3. **attach_provenance** — attach W3C PROV-O `prov:generatedAtTime` and
+     `prov:wasDerivedFrom` predicate-object maps after alignment clears
+     (`AshR2RML.Reactor.Steps.AttachProvenance`).
+  4. **apply_policy** — actor-scoped Ash policy filtering (nil-safe)
+     (`AshR2RML.Reactor.Steps.ApplyPolicy`).
+  5. **render_r2rml_turtle** — render final W3C R2RML Turtle string
+     (`AshR2RML.Reactor.Steps.RenderTurtle`).
 
   Returns the final W3C R2RML Turtle string.
 
   ## Inputs
 
-  - `:profile` — a single Ash resource module, a list of modules, or a map-based semantic profile.
-  - `:actor` — optional actor map used for Ash policy-based projection filtering.
-  - `:observations` — optional list of `%AshR2RML.SPARQL.Observation{}` structs (>= 2 required for differential).
-  - `:metadata` — optional map passed to the differential evaluator.
+  - `:resources`    — a single Ash resource module or a list of modules.
+  - `:actor`        — optional actor map for policy-based projection filtering.
+  - `:observations` — optional list of `%AshR2RML.SPARQL.Observation{}` structs
+                      (>= 2 required for the differential step to be active).
+  - `:metadata`     — optional map forwarded to the differential evaluator.
+
+  ## Example
+
+      Reactor.run(AshR2RML.Reactor.Pipeline, %{
+        resources: [MyApp.User, MyApp.Org],
+        actor: %{id: "alice", role: :admin},
+        observations: [],
+        metadata: %{}
+      })
   """
 
   use Reactor
 
-  input(:profile)
+  middlewares do
+    middleware(AshR2RML.Reactor.Middleware.TelemetryLogger)
+    middleware(Reactor.Middleware.Telemetry)
+  end
+
+  input(:resources)
   input(:actor)
   input(:observations)
   input(:metadata)
 
   ##
-  ## Step 1 — Compile profile/resources → %AshR2RML.Mapping.Bundle{}
+  ## Step 1 — Compile resource modules → %AshR2RML.Mapping.Bundle{}
   ##
-  step :compile_bundle do
-    argument :profile, input(:profile)
-
-    run fn %{profile: profile}, _ctx ->
-      result =
-        cond do
-          is_atom(profile) ->
-            AshR2RML.Compiler.compile_resources(profile)
-
-          is_list(profile) ->
-            AshR2RML.Compiler.compile_resources(profile)
-
-          is_map(profile) ->
-            # Map profile → full Compilation struct; extract bundle
-            case AshR2RML.Compiler.compile(profile) do
-              {:ok, %AshR2RML.Compilation{mapping_bundle: bundle}} -> {:ok, bundle}
-              {:ok, bundle} -> {:ok, bundle}
-              error -> error
-            end
-        end
-
-      case result do
-        {:ok, bundle} -> {:ok, bundle}
-        {:error, reason} -> {:error, reason}
-      end
-    end
+  step :compile_resources, AshR2RML.Reactor.Steps.CompileResources do
+    argument :resources, input(:resources)
+    max_retries 1
   end
 
   ##
-  ## Step 2 — Fail-closed schema alignment verification
+  ## Step 2a — Fail-closed schema alignment verification (concurrent with 2b)
   ##
-  step :verify_alignment do
-    argument :bundle, result(:compile_bundle)
-
-    run fn %{bundle: bundle}, _ctx ->
-      resources = bundle.resources || []
-      results = Enum.map(resources, &AshR2RML.VerifyMapping.Alignment.verify/1)
-
-      case Enum.find(results, &match?({:error, _}, &1)) do
-        {:error, refusal} -> {:error, refusal}
-        nil -> {:ok, :alignment_verified}
-      end
-    end
+  step :verify_alignment, AshR2RML.Reactor.Steps.VerifyAlignment do
+    argument :bundle, result(:compile_resources)
   end
 
   ##
-  ## Step 3 — Attach W3C PROV-O provenance predicate maps to every resource
+  ## Step 2b — Optional SPARQL differential evaluation (concurrent with 2a)
   ##
-  step :attach_provenance do
-    argument :bundle, result(:compile_bundle)
-    wait_for :verify_alignment
-
-    run fn %{bundle: bundle}, _ctx ->
-      updated_resources =
-        Enum.map(bundle.resources || [], fn res ->
-          res
-          |> AshR2RML.Mapping.Provenance.attach_generated_at_time(:updated_at)
-          |> AshR2RML.Mapping.Provenance.attach_was_derived_from("https://example.org/prov/source/{id}")
-        end)
-
-      {:ok, %{bundle | resources: updated_resources}}
-    end
-  end
-
-  ##
-  ## Step 4 — Filter bundle through actor / Ash policy projections
-  ##
-  step :apply_policy_filter do
-    argument :bundle, result(:attach_provenance)
-    argument :actor, input(:actor)
-
-    run fn %{bundle: bundle, actor: actor}, _ctx ->
-      if is_nil(actor) do
-        {:ok, bundle}
-      else
-        {:ok, AshR2RML.Policy.filter_for_actor(bundle, actor, [])}
-      end
-    end
-  end
-
-  ##
-  ## Step 5 — Relational DataLayer introspection (table names)
-  ##
-  step :introspect_data_layer do
-    argument :bundle, result(:apply_policy_filter)
-
-    run fn %{bundle: bundle}, _ctx ->
-      table_index =
-        Map.new(bundle.resources || [], fn res ->
-          table = AshR2RML.DataLayer.table_name(res.ash_resource)
-          {res.ash_resource, table}
-        end)
-
-      {:ok, %{bundle: bundle, table_index: table_index}}
-    end
-  end
-
-  ##
-  ## Step 6 — Render final W3C R2RML Turtle
-  ##
-  step :render_r2rml_turtle do
-    argument :introspected, result(:introspect_data_layer)
-
-    run fn %{introspected: %{bundle: bundle}}, _ctx ->
-      AshR2RML.R2RML.render(bundle)
-    end
-  end
-
-  ##
-  ## Step 7 — SPARQL behavioral differential evaluation (optional)
-  ##
-  step :evaluate_differential do
+  step :evaluate_differential, AshR2RML.Reactor.Steps.EvaluateDifferential do
     argument :observations, input(:observations)
     argument :metadata, input(:metadata)
+    max_retries 0
+  end
 
-    run fn %{observations: obs, metadata: meta}, _ctx ->
-      if is_list(obs) and length(obs) >= 2 do
-        AshR2RML.SPARQL.Differential.compare("PipelineSubject", obs, meta || %{})
-      else
-        {:ok, nil}
-      end
-    end
+  ##
+  ## Step 3 — Attach W3C PROV-O provenance maps (waits for alignment to clear)
+  ##
+  step :attach_provenance, AshR2RML.Reactor.Steps.AttachProvenance do
+    argument :bundle, result(:compile_resources)
+    wait_for :verify_alignment
+  end
+
+  ##
+  ## Step 4 — Actor-scoped policy filter (nil actor is a no-op in the step module)
+  ##
+  step :apply_policy, AshR2RML.Reactor.Steps.ApplyPolicy do
+    argument :bundle, result(:attach_provenance)
+    argument :actor, input(:actor)
+  end
+
+  ##
+  ## Step 5 — Render final W3C R2RML Turtle string
+  ##
+  step :render_r2rml_turtle, AshR2RML.Reactor.Steps.RenderTurtle do
+    argument :bundle, result(:apply_policy)
   end
 
   return :render_r2rml_turtle
