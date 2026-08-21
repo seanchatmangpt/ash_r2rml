@@ -440,20 +440,24 @@ defmodule AshR2RML.Resource.Persist do
       |> Enum.find(fn r -> r.name == rel_name end)
 
     if rel do
-      source_attr = to_string(rel.source_attribute || "#{rel_name}_id")
-      dest_attr = to_string(rel.destination_attribute || "id")
+      if Map.get(rel, :type) == :many_to_many do
+        Introspection.many_to_many_metadata(resource, rel)
+      else
+        source_attr = to_string(rel.source_attribute || "#{rel_name}_id")
+        dest_attr = to_string(rel.destination_attribute || "id")
 
-      {:ok,
-       %{
-         kind: rel.type,
-         cardinality: Map.get(rel, :cardinality, :one),
-         source: resource,
-         destination: rel.destination,
-         source_attribute: rel.source_attribute,
-         destination_attribute: rel.destination_attribute,
-         joins: [%AshR2RML.Mapping.JoinCondition{child: source_attr, parent: dest_attr}],
-         through: nil
-       }}
+        {:ok,
+         %{
+           kind: rel.type,
+           cardinality: Map.get(rel, :cardinality, :one),
+           source: resource,
+           destination: rel.destination,
+           source_attribute: rel.source_attribute,
+           destination_attribute: rel.destination_attribute,
+           joins: [%AshR2RML.Mapping.JoinCondition{child: source_attr, parent: dest_attr}],
+           through: nil
+         }}
+      end
     else
       {:error,
        Refusal.new(

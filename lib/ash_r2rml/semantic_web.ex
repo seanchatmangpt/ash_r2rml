@@ -78,16 +78,6 @@ defmodule AshR2RML.SPARQL.Query do
     end
   end
 
-  def admit(%Elixir.SPARQL.Query{} = parsed, source) when is_binary(source) do
-    {:ok,
-     %__MODULE__{
-       source: source,
-       parsed: parsed,
-       form: parsed.form,
-       sha256: sha256(source)
-     }}
-  end
-
   def admit(other) do
     {:error,
      Refusal.new(
@@ -96,6 +86,16 @@ defmodule AshR2RML.SPARQL.Query do
        "expected SPARQL query text or SPARQL.Query",
        %{got: inspect(other)}
      )}
+  end
+
+  def admit(%Elixir.SPARQL.Query{} = parsed, source) when is_binary(source) do
+    {:ok,
+     %__MODULE__{
+       source: source,
+       parsed: parsed,
+       form: parsed.form,
+       sha256: sha256(source)
+     }}
   end
 
   defp sha256(value), do: :crypto.hash(:sha256, value) |> Base.encode16(case: :lower)
@@ -174,8 +174,13 @@ defmodule AshR2RML.SPARQL.Result do
   end
 
   defp normalize_binding(binding) when is_map(binding) do
-    Map.new(binding, fn {key, value} -> {to_string(key), normalize_term(value)} end)
+    Map.new(binding, fn {key, value} -> {normalize_var_name(key), normalize_term(value)} end)
   end
+
+  defp normalize_var_name(%{name: name}), do: to_string(name)
+  defp normalize_var_name(key) when is_atom(key), do: Atom.to_string(key) |> String.trim_leading("?")
+  defp normalize_var_name(key) when is_binary(key), do: String.trim_leading(key, "?")
+  defp normalize_var_name(other), do: other |> to_string() |> String.trim_leading("?")
 
   defp normalize_statement({subject, predicate, object}) do
     %{

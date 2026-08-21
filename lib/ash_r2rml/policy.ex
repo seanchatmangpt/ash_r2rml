@@ -25,7 +25,12 @@ defmodule AshR2RML.Policy do
   def filter_for_actor(%Resource{} = resource_mapping, actor, opts) do
     resource_module = Map.get(resource_mapping, :ash_resource) || Map.get(resource_mapping, :module)
 
-    if Code.ensure_loaded?(Ash.Can) and is_atom(resource_module) and function_exported?(resource_module, :ash_can, 3) do
+    has_authorizers? =
+      is_atom(resource_module) and Code.ensure_loaded?(resource_module) and
+        function_exported?(Ash.Resource.Info, :authorizers, 1) and
+        Ash.Resource.Info.authorizers(resource_module) != []
+
+    if has_authorizers? and not is_nil(actor) do
       allowed_attributes =
         Enum.filter(resource_mapping.predicate_object_maps, fn %PredicateObjectMap{attribute: attr} ->
           is_nil(attr) or authorized_field?(resource_module, attr, actor, opts)
@@ -38,18 +43,63 @@ defmodule AshR2RML.Policy do
 
       %{resource_mapping | predicate_object_maps: allowed_attributes, reference_object_maps: allowed_references}
     else
-      # Fallback when policies are not configured or Ash.Can is not present
+      # Fallback when policies are not configured or actor is nil
       resource_mapping
     end
   end
 
-  defp authorized_field?(resource, field, actor, opts) do
-    action = Keyword.get(opts, :action, :read)
+  @doc false
+  def authorized_field?(resource, field, actor, _opts \\ []) do
+    if Code.ensure_loaded?(Ash.Policy.Info) and function_exported?(Ash.Policy.Info, :field_policies_for_field, 2) do
+      case Ash.Policy.Info.field_policies_for_field(resource, field) do
+        [] ->
+          true
 
-    case Ash.Can.can(resource, action, actor, field: field) do
-      {:ok, true} -> true
-      {:ok, false} -> false
-      _ -> true
+        policies when is_list(policies) and policies != [] ->
+          evaluate_field_policies(policies, actor)
+
+        _ ->
+          true
+      end
+    else
+      true
+    end
+  end
+
+  defp evaluate_field_policies(policies, actor) do
+    Enum.any?(policies, fn policy ->
+      checks = Map.get(policy, :policies, [])
+
+      if checks == [] do
+        true
+      else
+        Enum.all?(checks, fn
+          %{check: {module, opts}, type: :authorize_if} ->
+            check_match?(module, actor, opts)
+
+          %{check: {module, opts}, type: :forbid_if} ->
+            not check_match?(module, actor, opts)
+
+          {module, opts} ->
+            check_match?(module, actor, opts)
+
+          _ ->
+            true
+        end)
+      end
+    end)
+  end
+
+  defp check_match?(module, actor, opts) do
+    cond do
+      module == Ash.Policy.Check.Static ->
+        Keyword.get(opts, :result, true)
+
+      function_exported?(module, :match?, 3) ->
+        module.match?(actor, %{}, opts)
+
+      true ->
+        true
     end
   rescue
     _ -> true

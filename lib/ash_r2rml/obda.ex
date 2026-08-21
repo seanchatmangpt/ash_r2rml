@@ -85,30 +85,86 @@ defmodule AshR2RML.OBDA.Ontop do
   def parse_csv(output) when is_binary(output) do
     clean_lines =
       output
-      |> String.split("\n", trim: true)
-      |> Enum.reject(fn line ->
-        trimmed = String.trim(line)
-
-        trimmed == "" or
-          String.contains?(trimmed, "|-INFO") or
-          String.contains?(trimmed, "|-WARN") or
-          String.contains?(trimmed, "|-ERROR") or
-          String.contains?(trimmed, "it.unibz.inf.ontop") or
-          String.contains?(trimmed, "org.eclipse.rdf4j")
-      end)
+      |> String.split("\n")
+      |> Enum.map(&String.trim_trailing(&1, "\r"))
+      |> Enum.reject(fn line -> log_or_ignorable_line?(line) end)
 
     records =
-      Enum.map(clean_lines, fn line ->
-        line
-        |> String.replace_prefix("\uFEFF", "")
-        |> String.split(",")
-        |> Enum.map(&String.trim/1)
-      end)
+      clean_lines
+      |> Enum.map(fn line -> parse_csv_line(line) end)
       |> Enum.reject(&(&1 == [] or Enum.all?(&1, fn field -> field == "" end)))
 
     case records do
-      [] -> []
-      [headers | rows] -> Enum.map(rows, fn row -> Map.new(Enum.zip(headers, row)) end)
+      [] ->
+        []
+
+      [headers | rows] ->
+        clean_headers = Enum.map(headers, fn field -> clean_field(field) end)
+
+        Enum.map(rows, fn row ->
+          clean_fields = Enum.map(row, fn field -> clean_field(field) end)
+          pairs = Enum.zip(clean_headers, clean_fields)
+          Map.new(pairs)
+        end)
+    end
+  end
+
+  defp log_or_ignorable_line?(line) do
+    trimmed = String.trim(line)
+
+    trimmed == "" or
+      String.starts_with?(trimmed, "Picked up ") or
+      String.starts_with?(trimmed, "SLF4J:") or
+      String.starts_with?(trimmed, "target atoms:") or
+      String.starts_with?(trimmed, "source query:") or
+      String.starts_with?(trimmed, "WARNING:") or
+      String.starts_with?(trimmed, "WARN:") or
+      String.starts_with?(trimmed, "INFO:") or
+      String.starts_with?(trimmed, "DEBUG:") or
+      String.starts_with?(trimmed, "ERROR:") or
+      String.contains?(trimmed, "|-INFO") or
+      String.contains?(trimmed, "|-WARN") or
+      String.contains?(trimmed, "|-ERROR") or
+      String.contains?(trimmed, "|-DEBUG") or
+      String.contains?(trimmed, "it.unibz.inf.ontop") or
+      String.contains?(trimmed, "org.eclipse.rdf4j") or
+      String.contains?(trimmed, "ch.qos.logback") or
+      Regex.match?(~r/^\d{2}:\d{2}:\d{2}\.\d{3}\s+/, trimmed)
+  end
+
+  defp parse_csv_line(line) do
+    line
+    |> String.replace_prefix("\uFEFF", "")
+    |> tokenize_csv_line([], "", false)
+  end
+
+  defp tokenize_csv_line("", acc, current, _in_quotes) do
+    Enum.reverse([current | acc])
+  end
+
+  defp tokenize_csv_line("\"\"" <> rest, acc, current, true) do
+    tokenize_csv_line(rest, acc, current <> "\"", true)
+  end
+
+  defp tokenize_csv_line("\"" <> rest, acc, current, in_quotes) do
+    tokenize_csv_line(rest, acc, current, not in_quotes)
+  end
+
+  defp tokenize_csv_line("," <> rest, acc, current, false) do
+    tokenize_csv_line(rest, [current | acc], "", false)
+  end
+
+  defp tokenize_csv_line(<<char::utf8, rest::binary>>, acc, current, in_quotes) do
+    tokenize_csv_line(rest, acc, current <> <<char::utf8>>, in_quotes)
+  end
+
+  defp clean_field(field) do
+    trimmed = String.trim(field)
+
+    if String.starts_with?(trimmed, "\"") and String.ends_with?(trimmed, "\"") and byte_size(trimmed) >= 2 do
+      trimmed |> String.slice(1..-2//1) |> String.trim()
+    else
+      trimmed
     end
   end
 

@@ -186,11 +186,24 @@ defmodule AshR2RML.Telemetry.OcelAshEmitter do
 
     omap = Enum.uniq([primary_object_id | related_objects ++ actor_object])
 
+    e2o =
+      [
+        %{"ocel:oid" => primary_object_id, "ocel:qualifier" => "target"}
+      ] ++
+        Enum.map(related_objects, fn r_oid ->
+          %{"ocel:oid" => r_oid, "ocel:qualifier" => "context"}
+        end) ++
+        Enum.map(actor_object, fn a_oid ->
+          %{"ocel:oid" => a_oid, "ocel:qualifier" => "actor"}
+        end)
+
     %{
       "ocel:eid" => Ash.UUIDv7.generate(),
       "ocel:activity" => "#{resource_short_name}.#{action}",
       "ocel:timestamp" => DateTime.utc_now() |> DateTime.to_iso8601(),
+      "ocel:lifecycle" => to_string(outcome),
       "ocel:omap" => omap,
+      "ocel:e2o" => e2o,
       "ocel:vmap" => %{
         "domain" => inspect(metadata[:domain]),
         "resource" => inspect(resource),
@@ -217,11 +230,15 @@ defmodule AshR2RML.Telemetry.OcelAshEmitter do
         native -> System.convert_time_unit(native, :native, :millisecond)
       end
 
+    res_str = to_string(resource)
+
     %{
       "ocel:eid" => Ash.UUIDv7.generate(),
       "ocel:activity" => "ash.notification.#{action}",
       "ocel:timestamp" => DateTime.utc_now() |> DateTime.to_iso8601(),
-      "ocel:omap" => [to_string(resource)],
+      "ocel:lifecycle" => to_string(outcome),
+      "ocel:omap" => [res_str],
+      "ocel:e2o" => [%{"ocel:oid" => res_str, "ocel:qualifier" => "resource"}],
       "ocel:vmap" => %{
         "kind" => "ash_notification",
         "resource" => inspect(resource),
@@ -245,11 +262,19 @@ defmodule AshR2RML.Telemetry.OcelAshEmitter do
     formatted_step = safe_step_name(step_name)
     {omap, enriched_vmap} = extract_step_facts(step_name, result)
 
+    e2o =
+      Enum.map(omap, fn oid ->
+        qualifier = if(outcome == :error, do: "compensates", else: "target")
+        %{"ocel:oid" => oid, "ocel:qualifier" => qualifier}
+      end)
+
     %{
       "ocel:eid" => Ash.UUIDv7.generate(),
       "ocel:activity" => "ash_r2rml.reactor.#{formatted_step}",
       "ocel:timestamp" => DateTime.utc_now() |> DateTime.to_iso8601(),
+      "ocel:lifecycle" => to_string(outcome),
       "ocel:omap" => omap,
+      "ocel:e2o" => e2o,
       "ocel:vmap" =>
         Map.merge(
           %{
@@ -275,7 +300,9 @@ defmodule AshR2RML.Telemetry.OcelAshEmitter do
       "ocel:eid" => Ash.UUIDv7.generate(),
       "ocel:activity" => "ash_r2rml.reactor.pipeline_completed",
       "ocel:timestamp" => DateTime.utc_now() |> DateTime.to_iso8601(),
+      "ocel:lifecycle" => to_string(outcome),
       "ocel:omap" => ["AshR2RML.GrandExample.PublishingReactor"],
+      "ocel:e2o" => [%{"ocel:oid" => "AshR2RML.GrandExample.PublishingReactor", "ocel:qualifier" => "target"}],
       "ocel:vmap" => %{
         "pipeline" => "AshR2RML.GrandExample.PublishingReactor",
         "outcome" => to_string(outcome),

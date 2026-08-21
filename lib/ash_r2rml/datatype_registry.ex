@@ -89,6 +89,15 @@ defmodule AshR2RML.Datatype.Registry do
            storage_type: storage_override || :text
          }}
 
+      is_atom(ash_type) and Code.ensure_loaded?(ash_type) and function_exported?(ash_type, :values, 0) and
+          (Spark.implements_behaviour?(ash_type, Ash.Type.Enum) or function_exported?(ash_type, :storage_type, 0)) ->
+        {:ok,
+         %Datatype{
+           ash_type: ash_type,
+           rdf_datatype: @xsd <> "string",
+           storage_type: storage_override || :text
+         }}
+
       Map.has_key?(@builtins, normalized) ->
         {rdf_datatype, storage} = Map.fetch!(@builtins, normalized)
 
@@ -113,6 +122,8 @@ defmodule AshR2RML.Datatype.Registry do
   @spec supported?(term()) :: boolean()
   def supported?(ash_type) do
     (is_atom(ash_type) and Code.ensure_loaded?(ash_type) and function_exported?(ash_type, :xsd_datatype, 0)) or
+      (is_atom(ash_type) and Code.ensure_loaded?(ash_type) and function_exported?(ash_type, :values, 0) and
+         (Spark.implements_behaviour?(ash_type, Ash.Type.Enum) or function_exported?(ash_type, :storage_type, 0))) or
       Map.has_key?(@builtins, normalize_ash_type(ash_type))
   end
 

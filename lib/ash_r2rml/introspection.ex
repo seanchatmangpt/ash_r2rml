@@ -43,9 +43,16 @@ defmodule AshR2RML.Introspection do
 
   @spec column(module(), atom()) :: {:ok, String.t()} | {:error, Refusal.t()}
   def column(resource, attribute_name) when is_atom(attribute_name) do
-    case Ash.Resource.Info.attribute(resource, attribute_name) do
+    attribute =
+      try do
+        Ash.Resource.Info.attribute(resource, attribute_name)
+      rescue
+        _ -> nil
+      end
+
+    case attribute do
       nil -> {:ok, to_string(attribute_name)}
-      attribute -> {:ok, to_string(attribute.source || attribute.name)}
+      attr -> {:ok, to_string(attr.source || attr.name)}
     end
   end
 
@@ -61,7 +68,16 @@ defmodule AshR2RML.Introspection do
   end
 
   defp extract_identities(resource, dsl) do
-    primary_from_ash = if resource, do: List.wrap(Ash.Resource.Info.primary_key(resource)), else: []
+    primary_from_ash =
+      if resource do
+        try do
+          List.wrap(Ash.Resource.Info.primary_key(resource))
+        rescue
+          _ -> []
+        end
+      else
+        []
+      end
 
     primary_from_dsl =
       if dsl,
@@ -73,19 +89,27 @@ defmodule AshR2RML.Introspection do
 
     primary = Enum.uniq(primary_from_ash ++ primary_from_dsl)
 
-    declared =
-      cond do
-        resource && function_exported?(Ash.Resource.Info, :identities, 1) ->
+    declared_from_dsl =
+      if dsl do
+        Spark.Dsl.Transformer.get_entities(dsl, [:identities])
+        |> Enum.map(&List.wrap(&1.keys))
+      else
+        []
+      end
+
+    declared_from_ash =
+      if resource && function_exported?(Ash.Resource.Info, :identities, 1) do
+        try do
           Ash.Resource.Info.identities(resource)
           |> Enum.map(&List.wrap(&1.keys))
-
-        dsl ->
-          Spark.Dsl.Transformer.get_entities(dsl, [:identities])
-          |> Enum.map(&List.wrap(&1.keys))
-
-        true ->
-          []
+        rescue
+          _ -> []
+        end
+      else
+        []
       end
+
+    declared = declared_from_dsl ++ declared_from_ash
 
     [primary | declared]
     |> Enum.reject(&(&1 == []))
@@ -158,7 +182,8 @@ defmodule AshR2RML.Introspection do
     end
   end
 
-  defp many_to_many_metadata(resource, relationship) do
+  @doc false
+  def many_to_many_metadata(resource, relationship) do
     through = Map.get(relationship, :through)
     source_join_attribute = Map.get(relationship, :source_attribute_on_join_resource)
     destination_join_attribute = Map.get(relationship, :destination_attribute_on_join_resource)
@@ -182,6 +207,12 @@ defmodule AshR2RML.Introspection do
              {:ok, join_source_column} <- column(through, source_join_attribute),
              {:ok, join_destination_column} <- column(through, destination_join_attribute),
              {:ok, destination_parent_column} <- column(relationship.destination, relationship.destination_attribute) do
+          through_table =
+            case logical_table(through) do
+              {:ok, table} -> table
+              _ -> %LogicalTable{table_name: to_string(through)}
+            end
+
           {:ok,
            %{
              kind: :many_to_many,
@@ -189,10 +220,15 @@ defmodule AshR2RML.Introspection do
              source: resource,
              destination: relationship.destination,
              through: through,
+             through_logical_table: through_table,
              source_attribute: relationship.source_attribute,
              destination_attribute: relationship.destination_attribute,
              source_join_attribute: source_join_attribute,
              destination_join_attribute: destination_join_attribute,
+             source_parent_column: source_parent_column,
+             source_join_column: join_source_column,
+             destination_join_column: join_destination_column,
+             destination_parent_column: destination_parent_column,
              source_to_join: %JoinCondition{child: source_parent_column, parent: join_source_column},
              join_to_destination: %JoinCondition{child: join_destination_column, parent: destination_parent_column},
              joins: []

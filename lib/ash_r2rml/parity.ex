@@ -89,22 +89,62 @@ defmodule AshR2RML.Parity do
     |> Enum.sort_by(&:erlang.term_to_binary(&1, [:deterministic]))
   end
 
-  defp canonical(%Decimal{} = decimal), do: Decimal.to_string(decimal, :normal)
+  defp canonical(%Decimal{} = decimal) do
+    decimal
+    |> Decimal.normalize()
+    |> Decimal.to_string(:normal)
+  end
+
   defp canonical(%DateTime{} = datetime), do: DateTime.to_iso8601(datetime)
   defp canonical(%NaiveDateTime{} = datetime), do: NaiveDateTime.to_iso8601(datetime)
   defp canonical(%Date{} = date), do: Date.to_iso8601(date)
+  defp canonical(%RDF.IRI{value: value}), do: canonical(to_string(value))
+  defp canonical(%RDF.Literal{} = literal), do: literal |> RDF.Literal.value() |> canonical()
   defp canonical(%_{} = struct), do: struct |> Map.from_struct() |> canonical()
 
   defp canonical(map) when is_map(map) do
     map
-    |> Enum.map(fn {key, value} -> {to_string(key), canonical(value)} end)
+    |> Enum.reject(fn {_key, value} -> is_nil(value) or value == "" end)
+    |> Enum.map(fn {key, value} -> {normalize_key(key), canonical(value)} end)
     |> Enum.sort_by(&elem(&1, 0))
   end
 
   defp canonical(list) when is_list(list), do: Enum.map(list, &canonical/1)
   defp canonical(tuple) when is_tuple(tuple), do: tuple |> Tuple.to_list() |> Enum.map(&canonical/1)
   defp canonical(value) when is_atom(value) and value not in [true, false, nil], do: Atom.to_string(value)
+  defp canonical(value) when is_integer(value), do: Integer.to_string(value)
+  defp canonical(value) when is_float(value), do: Float.to_string(value)
+  defp canonical(value) when is_boolean(value), do: to_string(value)
+
+  defp canonical(value) when is_binary(value) do
+    trimmed = String.trim(value)
+
+    cond do
+      String.starts_with?(trimmed, "<") and String.ends_with?(trimmed, ">") and byte_size(trimmed) >= 2 ->
+        trimmed |> String.slice(1..-2//1)
+
+      match?({_, ""}, Decimal.parse(trimmed)) ->
+        case Decimal.parse(trimmed) do
+          {%Decimal{} = dec, ""} ->
+            dec
+            |> Decimal.normalize()
+            |> Decimal.to_string(:normal)
+
+          _ ->
+            trimmed
+        end
+
+      true ->
+        trimmed
+    end
+  end
+
   defp canonical(value), do: value
+
+  defp normalize_key(%{name: name}), do: to_string(name)
+  defp normalize_key(key) when is_atom(key), do: Atom.to_string(key) |> String.trim_leading("?")
+  defp normalize_key(key) when is_binary(key), do: String.trim_leading(key, "?")
+  defp normalize_key(other), do: other |> to_string() |> String.trim_leading("?")
 
   defp query_hash(nil), do: nil
   defp query_hash(query), do: sha256(to_string(query))

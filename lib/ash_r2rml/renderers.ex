@@ -29,7 +29,7 @@ defmodule AshR2RML.R2RML do
 
   """
 
-  @spec render(Bundle.t() | module() | [module()]) :: {:ok, String.t()} | {:error, term()}
+  @spec render(Bundle.t() | Resource.t() | module() | [module()]) :: {:ok, String.t()} | {:error, term()}
   def render(%Bundle{} = bundle) do
     bundle = AshR2RML.Mapping.normalize(bundle)
 
@@ -37,6 +37,10 @@ defmodule AshR2RML.R2RML do
          {:ok, body} <- render_bundle(bundle) do
       {:ok, @prefixes <> body}
     end
+  end
+
+  def render(%Resource{} = resource) do
+    render(%Bundle{resources: [resource]})
   end
 
   def render(resources) do
