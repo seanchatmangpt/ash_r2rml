@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 ash_r2rml contributors <https://github.com/seanchatmangpt/ash_r2rml/graphs/contributors>
+SPDX-License-Identifier: MIT
+-->
+
 # Ontop 5.5.0 compliance contract
 
 AshR2RML pins Ontop 5.5.0 as the external OBDA conformance engine used by the real PostgreSQL/R2RML crown. AshR2RML does not absorb Ontop's execution authority: the compiler remains SELECT/CONSTRUCT-only, while Ontop owns SPARQL-to-SQL rewriting and virtual RDF query execution.
@@ -8,7 +13,7 @@ The machine-readable contract lives in `AshR2RML.OBDA.Ontop.Compliance`. It is d
 
 | Surface | Contract |
 |---|---|
-| SPARQL 1.1 | 93 listed supported features and 8 listed unsupported features, with DBMS-dependent limitations retained |
+| SPARQL 1.1 | 94 named supported features and 8 named unsupported features; the published row numerators sum to 93 because the aggregate row declares `6/6` while naming seven functions |
 | GeoSPARQL 1.0 | 37 listed supported functions/terms and 32 listed unsupported properties/terms; metre, radian, and degree units retained |
 | R2RML | documented as almost fully compliant; Base IRIs, default mapping generation, and binary SQL datatype normalization remain explicit exceptions |
 | RDF 1.1 | simple-literal `xsd:string` and language-literal `rdf:langString` behavior retained |
