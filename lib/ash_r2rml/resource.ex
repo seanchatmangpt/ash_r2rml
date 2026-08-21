@@ -250,8 +250,26 @@ defmodule AshR2RML.Resource.Persist do
       ]
       |> Enum.reject(fn {_strategy, value} -> is_nil(value) end)
 
-    case configured do
-      [{:column, attribute}] when is_atom(attribute) ->
+    case {subject.term_type, configured} do
+      {:blank_node, []} ->
+        {:ok,
+         %SubjectMap{
+           strategy: :blank_node,
+           value: "bnode_{id}",
+           term_type: :blank_node,
+           graph_maps: compile_graphs(graphs, :subject)
+         }}
+
+      {:blank_node, [{:template, value}]} ->
+        {:ok,
+         %SubjectMap{
+           strategy: :blank_node,
+           value: value,
+           term_type: :blank_node,
+           graph_maps: compile_graphs(graphs, :subject)
+         }}
+
+      {_term_type, [{:column, attribute}]} when is_atom(attribute) ->
         with {:ok, column} <- Introspection.column(resource, attribute) do
           {:ok,
            %SubjectMap{
@@ -262,7 +280,7 @@ defmodule AshR2RML.Resource.Persist do
            }}
         end
 
-      [{strategy, value}] when strategy in [:template, :constant] and is_binary(value) ->
+      {_term_type, [{strategy, value}]} when strategy in [:template, :constant] and is_binary(value) ->
         {:ok,
          %SubjectMap{
            strategy: strategy,
