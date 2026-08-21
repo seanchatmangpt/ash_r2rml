@@ -7,17 +7,15 @@ defmodule AshR2ML.Introspection do
   Data-layer-aware Ash introspection used before semantic mapping serialization.
 
   AshR2ML never owns persistence. This module asks Ash and, when present, the
-  active relational data layer for the table/schema/column/join facts needed by
-  the normalized mapping IR. Optional adapters are invoked dynamically so
-  AshR2ML does not make AshPostgres a runtime requirement for non-relational
-  consumers.
+  active relational data layer for table/schema/column/join facts. Optional
+  adapters are resolved dynamically so AshPostgres is not a mandatory runtime
+  dependency merely to use the semantic core.
   """
 
   alias AshR2ML.Mapping.{JoinCondition, LogicalTable}
   alias AshR2ML.Refusal
 
-  @spec logical_table(module(), keyword()) ::
-          {:ok, LogicalTable.t()} | {:error, Refusal.t()}
+  @spec logical_table(module(), keyword()) :: {:ok, LogicalTable.t()} | {:error, Refusal.t()}
   def logical_table(resource, opts \\ []) do
     explicit_table = Keyword.get(opts, :table_name)
     explicit_query = Keyword.get(opts, :sql_query)
@@ -48,11 +46,7 @@ defmodule AshR2ML.Introspection do
     case Ash.Resource.Info.attribute(resource, attribute_name) do
       nil ->
         {:error,
-         Refusal.new(
-           :REFUSED_UNKNOWN_ATTRIBUTE,
-           {resource, attribute_name},
-           "Ash attribute does not exist"
-         )}
+         Refusal.new(:REFUSED_UNKNOWN_ATTRIBUTE, {resource, attribute_name}, "Ash attribute does not exist")}
 
       attribute ->
         {:ok, to_string(attribute.source || attribute.name)}
@@ -84,15 +78,10 @@ defmodule AshR2ML.Introspection do
       Ash.Resource.Info.attributes(resource)
       |> Map.new(fn attribute -> {to_string(attribute.source || attribute.name), attribute.name} end)
 
-    template_keys =
-      template_fields
-      |> Enum.map(&Map.get(columns_by_attribute, &1))
+    template_keys = Enum.map(template_fields, &Map.get(columns_by_attribute, &1))
 
     Enum.all?(template_keys, &is_atom/1) and
-      Enum.any?(identities(resource), fn identity ->
-        MapSet.subset?(MapSet.new(template_keys), MapSet.new(identity)) or
-          MapSet.subset?(MapSet.new(identity), MapSet.new(template_keys))
-      end)
+      Enum.any?(identities(resource), &(MapSet.new(&1) == MapSet.new(template_keys)))
   end
 
   @spec relationship(module(), atom()) :: {:ok, map()} | {:error, Refusal.t()}
@@ -112,12 +101,10 @@ defmodule AshR2ML.Introspection do
   end
 
   defp relationship_metadata(resource, relationship) do
-    type = Map.get(relationship, :type)
-
-    case type do
+    case Map.get(relationship, :type) do
       :many_to_many -> many_to_many_metadata(resource, relationship)
       type when type in [:belongs_to, :has_one, :has_many] -> simple_relationship_metadata(resource, relationship)
-      _ ->
+      type ->
         {:error,
          Refusal.new(
            :REFUSED_AMBIGUOUS_RELATIONSHIP,
@@ -134,7 +121,7 @@ defmodule AshR2ML.Introspection do
       {:ok,
        %{
          kind: relationship.type,
-         cardinality: relationship.cardinality,
+         cardinality: Map.get(relationship, :cardinality),
          source: resource,
          destination: relationship.destination,
          source_attribute: relationship.source_attribute,
@@ -189,26 +176,39 @@ defmodule AshR2ML.Introspection do
   end
 
   defp infer_logical_table(resource) do
-    data_layer = Ash.Resource.Info.data_layer(resource)
-
-    cond do
-      postgres_data_layer?(data_layer) -> infer_postgres_table(resource)
-      true ->
-        {:error,
-         Refusal.new(
-           :REFUSED_INVALID_LOGICAL_TABLE,
-           resource,
-           "active Ash data layer does not expose a supported relational logical table; configure an explicit read-only logical table",
-           %{data_layer: data_layer}
-         )}
+    case persisted_logical_table(resource) do
+      %LogicalTable{} = logical -> {:ok, logical}
+      nil -> infer_logical_table_from_data_layer(resource)
     end
   end
 
-  defp postgres_data_layer?(data_layer),
-    do: inspect(data_layer) == "AshPostgres.DataLayer"
+  defp persisted_logical_table(resource) do
+    case Spark.Dsl.Extension.get_persisted(resource, :ash_r2ml_public_mapping, nil) do
+      %AshR2ML.Mapping.Resource{logical_table: %LogicalTable{} = logical} -> logical
+      _ -> nil
+    end
+  rescue
+    _ -> nil
+  end
+
+  defp infer_logical_table_from_data_layer(resource) do
+    data_layer = Ash.Resource.Info.data_layer(resource)
+
+    if inspect(data_layer) == "AshPostgres.DataLayer" do
+      infer_postgres_table(resource)
+    else
+      {:error,
+       Refusal.new(
+         :REFUSED_INVALID_LOGICAL_TABLE,
+         resource,
+         "active Ash data layer does not expose a supported relational logical table; configure an explicit read-only logical table",
+         %{data_layer: data_layer}
+       )}
+    end
+  end
 
   defp infer_postgres_table(resource) do
-    info = Module.concat([AshPostgres, DataLayer, Info])
+    info = Module.concat(["AshPostgres", "DataLayer", "Info"])
 
     if Code.ensure_loaded?(info) and function_exported?(info, :table, 1) do
       table = apply(info, :table, [resource])
