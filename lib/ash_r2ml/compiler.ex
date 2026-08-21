@@ -13,6 +13,7 @@ defmodule AshR2ml.CompilationReceipt do
     :shacl_input_hash,
     :ir_sha256,
     :ash_sha256,
+    :ecto_sha256,
     :postgres_sha256,
     :r2rml_sha256,
     :shacl_sha256,
@@ -40,6 +41,7 @@ defmodule AshR2ml.CompilationReceipt do
           shacl_input_hash: String.t() | nil,
           ir_sha256: String.t() | nil,
           ash_sha256: String.t() | nil,
+          ecto_sha256: String.t() | nil,
           postgres_sha256: String.t() | nil,
           r2rml_sha256: String.t() | nil,
           shacl_sha256: String.t() | nil,
@@ -68,6 +70,7 @@ defmodule AshR2ml.Compilation do
     :standing,
     :ir,
     :ash_source,
+    :ecto_migration,
     :postgres_ddl,
     :r2rml,
     :shacl,
@@ -80,6 +83,7 @@ defmodule AshR2ml.Compilation do
           standing: atom(),
           ir: AshR2ml.SemanticIR.t() | nil,
           ash_source: String.t() | nil,
+          ecto_migration: String.t() | nil,
           postgres_ddl: String.t() | nil,
           r2rml: String.t() | nil,
           shacl: String.t() | nil,
@@ -97,7 +101,7 @@ defmodule AshR2ml.Compiler do
       ontology/profile/SHACL-normalized input
           -> Admission
           -> SemanticIR
-          -> Ash + PostgreSQL + R2RML + SHACL
+          -> Ash + Ecto + PostgreSQL + R2RML + SHACL
           -> CompilationReceipt
 
   This is CONSTRUCT only. It neither applies migrations nor starts an OBDA
@@ -220,10 +224,12 @@ defmodule AshR2ml.Compiler do
 
   defp render_all(ir) do
     with {:ok, ash_source} <- AshR2ml.Semantic.Ash.render(ir),
+         {:ok, ecto_migration} <- AshR2ml.Semantic.Ecto.render(ir),
          {:ok, postgres_ddl} <- AshR2ml.Semantic.SQL.render(ir),
          {:ok, r2rml} <- AshR2ml.Semantic.R2RML.render(ir),
          {:ok, shacl} <- AshR2ml.Semantic.SHACL.render(ir) do
-      compilation_receipt = receipt(ir, ash_source, postgres_ddl, r2rml, shacl)
+      compilation_receipt =
+        receipt(ir, ash_source, ecto_migration, postgres_ddl, r2rml, shacl)
 
       {:ok,
        %Compilation{
@@ -231,6 +237,7 @@ defmodule AshR2ml.Compiler do
          standing: :constructed_not_actuated,
          ir: ir,
          ash_source: ash_source,
+         ecto_migration: ecto_migration,
          postgres_ddl: postgres_ddl,
          r2rml: r2rml,
          shacl: shacl,
@@ -238,6 +245,8 @@ defmodule AshR2ml.Compiler do
          refusals: []
        }}
     else
+      {:error, %Refusal{} = refusal} -> refusal_compilation(ir, refusal)
+
       {:error, reason} ->
         refusal =
           Refusal.new(
@@ -247,15 +256,19 @@ defmodule AshR2ml.Compiler do
             %{reason: inspect(reason)}
           )
 
-        {:error,
-         %Compilation{
-           status: :REFUSED,
-           standing: :semantic_ir_only,
-           ir: ir,
-           refusals: [refusal],
-           receipt: refusal_receipt([refusal], ir)
-         }}
+        refusal_compilation(ir, refusal)
     end
+  end
+
+  defp refusal_compilation(ir, refusal) do
+    {:error,
+     %Compilation{
+       status: :REFUSED,
+       standing: :semantic_ir_only,
+       ir: ir,
+       refusals: [refusal],
+       receipt: refusal_receipt([refusal], ir)
+     }}
   end
 
   defp projection_refusals(ir) do
@@ -289,7 +302,7 @@ defmodule AshR2ml.Compiler do
     end)
   end
 
-  defp receipt(ir, ash_source, postgres_ddl, r2rml, shacl) do
+  defp receipt(ir, ash_source, ecto_migration, postgres_ddl, r2rml, shacl) do
     resources = ir.resources
 
     %CompilationReceipt{
@@ -300,6 +313,7 @@ defmodule AshR2ml.Compiler do
       shacl_input_hash: ir.shacl_hash,
       ir_sha256: sha256(canonical_ir(ir)),
       ash_sha256: sha256(ash_source),
+      ecto_sha256: sha256(ecto_migration),
       postgres_sha256: sha256(postgres_ddl),
       r2rml_sha256: sha256(r2rml),
       shacl_sha256: sha256(shacl),
@@ -317,6 +331,7 @@ defmodule AshR2ml.Compiler do
         :admission,
         :semantic_ir,
         :ash_render,
+        :ecto_render,
         :postgres_render,
         :r2rml_render,
         :shacl_render
