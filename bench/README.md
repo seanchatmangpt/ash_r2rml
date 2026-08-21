@@ -1,20 +1,20 @@
 <!--
-SPDX-FileCopyrightText: 2026 ash_r2ml contributors
+SPDX-FileCopyrightText: 2026 ash_r2rml contributors
 
 SPDX-License-Identifier: MIT
 -->
 
-# AshR2ML benchmarks
+# AshR2RML benchmarks
 
-AshR2ML benchmarks measure semantic compilation and virtual-RDF integration costs. They do not benchmark Neo4j, Cypher, graph indexes, vector search, or spatial pushdown.
+AshR2RML benchmarks measure semantic compilation and virtual-RDF integration costs. They do not benchmark Neo4j, Cypher, graph indexes, vector search, or spatial pushdown.
 
-The donor-era benchmark scripts currently present in this directory are historical implementation artifacts and are not part of the finished AshR2ML benchmark contract. They should be removed or replaced as the runtime migration lands.
+The donor-era benchmark scripts currently present in this directory are historical implementation artifacts and are not part of the finished AshR2RML benchmark contract. They should be removed or replaced as the runtime migration lands.
 
 ## Benchmark classes
 
 ### Mapping compilation
 
-Measure compilation from Ash resources into the normalized `AshR2ML.Mapping` IR.
+Measure compilation from Ash resources into the normalized `AshR2RML.Mapping` IR.
 
 Dimensions:
 
@@ -51,7 +51,7 @@ Record:
 
 Measure SPARQL query latency only as an integration benchmark and always name the external OBDA engine, database, dataset, query corpus, indexes, and warm/cold conditions.
 
-Do not attribute OBDA query-planning performance to AshR2ML itself. AshR2ML's responsibility is the correctness and quality of the generated mapping.
+Do not attribute OBDA query-planning performance to AshR2RML itself. AshR2RML's responsibility is the correctness and quality of the generated mapping.
 
 ## Correctness before speed
 
@@ -83,7 +83,7 @@ Every published benchmark result must include:
 
 - exact commit SHA;
 - Elixir/OTP versions;
-- Ash/AshR2ML versions;
+- Ash/AshR2RML versions;
 - ggen version when involved;
 - PostgreSQL and OBDA versions when involved;
 - fixture digest;
@@ -91,4 +91,4 @@ Every published benchmark result must include:
 - warmup/sample methodology;
 - correctness verifier run before timing.
 
-Performance without semantic equivalence evidence is not an AshR2ML result.
+Performance without semantic equivalence evidence is not an AshR2RML result.

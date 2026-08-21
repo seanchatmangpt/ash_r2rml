@@ -1,6 +1,6 @@
 # Legacy path: spatial
 
-AshR2ML does not provide a spatial query engine, spatial index manager, or graph-database geometry storage format.
+AshR2RML does not provide a spatial query engine, spatial index manager, or graph-database geometry storage format.
 
 Spatial/geographic Ash types can participate in RDF mapping only through an explicit, lawful datatype or structured-resource mapping.
 

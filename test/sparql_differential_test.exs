@@ -1,11 +1,11 @@
-# SPDX-FileCopyrightText: 2026 ash_r2ml contributors <https://github.com/seanchatmangpt/ash_r2ml/graphs/contributors>
+# SPDX-FileCopyrightText: 2026 ash_r2rml contributors <https://github.com/seanchatmangpt/ash_r2rml/graphs/contributors>
 #
 # SPDX-License-Identifier: MIT
 
-defmodule AshR2ML.SparqlDifferentialTest do
+defmodule AshR2RML.SparqlDifferentialTest do
   use ExUnit.Case, async: true
 
-  alias AshR2ML.SPARQL.{Differential, Observation}
+  alias AshR2RML.SPARQL.{Differential, Observation}
 
   defp observation(strategy, rows, query_sha256 \\ "query-sha") do
     %Observation{
@@ -17,7 +17,7 @@ defmodule AshR2ML.SparqlDifferentialTest do
       evidence_kind: :test_fixture,
       rows: rows,
       result_kind: :bindings,
-      result_sha256: AshR2ML.SPARQL.Result.hash_rows(rows)
+      result_sha256: AshR2RML.SPARQL.Result.hash_rows(rows)
     }
   end
 

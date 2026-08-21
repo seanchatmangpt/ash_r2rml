@@ -1,4 +1,0 @@
-[pack]
-name = "ash-r2ml-pack"
-version = "0.1.0"
-description = "Ontology-first AshR2ML manufacturer. SHACL NodeShapes plus explicit operational mapping facts generate Ash resources that compile through AshR2ML.Mapping; fail-closed gates reject missing identity, class, datatype, target, join, or storage facts before writes."

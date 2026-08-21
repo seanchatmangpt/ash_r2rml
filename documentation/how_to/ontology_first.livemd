@@ -1,12 +1,12 @@
 <!--
-SPDX-FileCopyrightText: 2026 ash_r2ml contributors
+SPDX-FileCopyrightText: 2026 ash_r2rml contributors
 
 SPDX-License-Identifier: MIT
 -->
 
 # Ontology-first Ash with ggen
 
-AshR2ML's ontology-first workflow treats generated Ash resources as projections of an admitted semantic model.
+AshR2RML's ontology-first workflow treats generated Ash resources as projections of an admitted semantic model.
 
 The source of truth is not the generated Elixir file.
 
@@ -21,7 +21,7 @@ ggen
       ↓
 generated Ash resources
       ↓
-AshR2ML.Mapping
+AshR2RML.Mapping
       ↓
 R2RML
 ```
@@ -43,7 +43,7 @@ which relation owns the foreign key?
 
 The application profile and SHACL shapes provide that closure.
 
-AshR2ML does not claim arbitrary OWL-to-SQL compilation.
+AshR2RML does not claim arbitrary OWL-to-SQL compilation.
 
 ## Start with a domain vocabulary
 
@@ -107,9 +107,9 @@ ex:PersonShape
 
 The operational shape now gives the compiler enough information to manufacture a required scalar and a required to-one relationship.
 
-## Compile with the AshR2ML ggen pack
+## Compile with the AshR2RML ggen pack
 
-The project imports the AshR2ML pack and runs the standard ggen synchronization path.
+The project imports the AshR2RML pack and runs the standard ggen synchronization path.
 
 Conceptually:
 
@@ -130,12 +130,12 @@ project normalized resource/attribute/relationship facts
   ↓
 render Ash resources
   ↓
-render AshR2ML semantic annotations
+render AshR2RML semantic annotations
   ↓
 write deterministic projections
 ```
 
-The exact project configuration is ordinary ggen configuration; there is no second bespoke generator runtime inside AshR2ML.
+The exact project configuration is ordinary ggen configuration; there is no second bespoke generator runtime inside AshR2RML.
 
 ## Generated resource shape
 
@@ -146,7 +146,7 @@ defmodule MyApp.Person do
   use Ash.Resource,
     domain: MyApp.Domain,
     data_layer: AshPostgres.DataLayer,
-    extensions: [AshR2ML.Resource]
+    extensions: [AshR2RML.Resource]
 
   postgres do
     table "people"
@@ -235,7 +235,7 @@ These are candidates until the application profile determines direction, ownersh
 
 ## Datatype correspondence
 
-The pack maps supported RDF datatypes to Ash types through the same datatype registry used by AshR2ML runtime mapping.
+The pack maps supported RDF datatypes to Ash types through the same datatype registry used by AshR2RML runtime mapping.
 
 For example:
 
@@ -329,7 +329,7 @@ Ash resources
       ↓
 AshPostgres / relational DB
       ↓
-AshR2ML R2RML
+AshR2RML R2RML
       ↓
 OBDA engine
       ↓

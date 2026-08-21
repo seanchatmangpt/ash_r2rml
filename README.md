@@ -1,17 +1,17 @@
 <!--
 SPDX-FileCopyrightText: 2025 ash_neo4j contributors <https://github.com/diffo-dev/ash_neo4j/graphs.contributors>
-SPDX-FileCopyrightText: 2026 ash_r2ml contributors
+SPDX-FileCopyrightText: 2026 ash_r2rml contributors
 
 SPDX-License-Identifier: MIT
 -->
 
-# AshR2ML
+# AshR2RML
 
 **Ontology-first semantic mappings for Ash. Keep PostgreSQL relational; expose the same admitted subject as RDF.**
 
-AshR2ML is an Ash extension that compiles Ash resources and relationships into standards-valid W3C R2RML mappings. It lets an Ash application persist through its normal data layer—typically AshPostgres—while exposing the same relational state as a virtual RDF graph through any compatible OBDA/R2RML engine.
+AshR2RML is an Ash extension that compiles Ash resources and relationships into standards-valid W3C R2RML mappings. It lets an Ash application persist through its normal data layer—typically AshPostgres—while exposing the same relational state as a virtual RDF graph through any compatible OBDA/R2RML engine.
 
-AshR2ML is **not** a graph database, **not** an `Ash.DataLayer`, and **not** a SPARQL engine.
+AshR2RML is **not** a graph database, **not** an `Ash.DataLayer`, and **not** a SPARQL engine.
 
 Its job is narrower and more useful:
 
@@ -19,7 +19,7 @@ Its job is narrower and more useful:
 Ash.Resource + semantic mapping
              │
              ▼
-      AshR2ML.Mapping
+      AshR2RML.Mapping
          ╱         ╲
         ▼           ▼
   AshPostgres     R2RML
@@ -35,7 +35,7 @@ Ash.Resource + semantic mapping
 
 The same facts are not synchronized between two databases. PostgreSQL remains the operational store; R2RML defines a semantic projection over it.
 
-## Why AshR2ML
+## Why AshR2RML
 
 A conventional semantic integration often starts too late:
 
@@ -43,7 +43,7 @@ A conventional semantic integration often starts too late:
 application schema → database tables → retrofit RDF mapping
 ```
 
-AshR2ML supports both that pragmatic direction and an ontology-first direction:
+AshR2RML supports both that pragmatic direction and an ontology-first direction:
 
 ```text
 RDF/OWL + SHACL
@@ -55,7 +55,7 @@ RDF/OWL + SHACL
 generated Ash resources
        │
        ▼
- AshR2ML.Mapping
+ AshR2RML.Mapping
     ╱        ╲
    ▼          ▼
 AshPostgres  R2RML
@@ -71,26 +71,26 @@ That gives an application three lawful query surfaces over one admitted subject:
 
 ## Installation
 
-Add AshR2ML beside the Ash data layer you already use:
+Add AshR2RML beside the Ash data layer you already use:
 
 ```elixir
 def deps do
   [
     {:ash, "~> 3.0"},
     {:ash_postgres, "~> 2.0"},
-    {:ash_r2ml, "~> 1.0"}
+    {:ash_r2rml, "~> 1.0"}
   ]
 end
 ```
 
-AshR2ML does not replace AshPostgres. A resource continues to use its normal data layer:
+AshR2RML does not replace AshPostgres. A resource continues to use its normal data layer:
 
 ```elixir
 defmodule MyApp.Person do
   use Ash.Resource,
     domain: MyApp.Domain,
     data_layer: AshPostgres.DataLayer,
-    extensions: [AshR2ML.Resource]
+    extensions: [AshR2RML.Resource]
 end
 ```
 
@@ -103,7 +103,7 @@ defmodule MyApp.Person do
   use Ash.Resource,
     domain: MyApp.Domain,
     data_layer: AshPostgres.DataLayer,
-    extensions: [AshR2ML.Resource]
+    extensions: [AshR2RML.Resource]
 
   postgres do
     table "people"
@@ -134,16 +134,16 @@ defmodule MyApp.Person do
 end
 ```
 
-AshR2ML introspects the Ash resource, its data layer metadata, attributes, identities, and relationships and compiles them into a normalized mapping.
+AshR2RML introspects the Ash resource, its data layer metadata, attributes, identities, and relationships and compiles them into a normalized mapping.
 
 ```elixir
-mapping = AshR2ML.Resource.Info.mapping(MyApp.Person)
+mapping = AshR2RML.Resource.Info.mapping(MyApp.Person)
 ```
 
 Generate R2RML:
 
 ```elixir
-{:ok, turtle} = AshR2ML.R2RML.render([MyApp.Person])
+{:ok, turtle} = AshR2RML.R2RML.render([MyApp.Person])
 File.write!("priv/r2rml/application.ttl", turtle)
 ```
 
@@ -183,7 +183,7 @@ relationships do
 end
 ```
 
-For a relational data layer, AshR2ML derives the join from the relationship metadata and emits an R2RML reference object map:
+For a relational data layer, AshR2RML derives the join from the relationship metadata and emits an R2RML reference object map:
 
 ```turtle
 rr:predicateObjectMap [
@@ -207,13 +207,13 @@ Ash relationship
       └── R2RML RefObjectMap / RDF object property
 ```
 
-AshR2ML refuses mappings that cannot be derived without inventing semantics.
+AshR2RML refuses mappings that cannot be derived without inventing semantics.
 
 ## Semantic identity
 
 Database identity and RDF identity are separate concerns.
 
-AshR2ML supports subject maps based on:
+AshR2RML supports subject maps based on:
 
 - IRI templates,
 - a column,
@@ -237,7 +237,7 @@ Every template field must resolve to an admitted Ash attribute. Subject construc
 
 ## Datatypes
 
-AshR2ML maps Ash types to RDF datatypes through an explicit datatype registry.
+AshR2RML maps Ash types to RDF datatypes through an explicit datatype registry.
 
 Typical built-ins include:
 
@@ -253,30 +253,30 @@ Typical built-ins include:
 
 A type with no lawful mapping is `UNSUPPORTED`; it is never silently coerced to a string.
 
-Custom Ash types can implement the AshR2ML datatype contract to define their RDF lexical form and datatype IRI.
+Custom Ash types can implement the AshR2RML datatype contract to define their RDF lexical form and datatype IRI.
 
 ## The mapping intermediate representation
 
 Every public entry path compiles to the same IR:
 
 ```text
-AshR2ML.Mapping.Resource
-AshR2ML.Mapping.SubjectMap
-AshR2ML.Mapping.PredicateObjectMap
-AshR2ML.Mapping.ReferenceObjectMap
-AshR2ML.Mapping.JoinCondition
-AshR2ML.Mapping.Datatype
-AshR2ML.Mapping.GraphMap
+AshR2RML.Mapping.Resource
+AshR2RML.Mapping.SubjectMap
+AshR2RML.Mapping.PredicateObjectMap
+AshR2RML.Mapping.ReferenceObjectMap
+AshR2RML.Mapping.JoinCondition
+AshR2RML.Mapping.Datatype
+AshR2RML.Mapping.GraphMap
 ```
 
 This representation is deliberately close to R2RML terminology. It is inspectable, deterministic, and independent of any one application ontology.
 
 ```elixir
-%AshR2ML.Mapping.Resource{
+%AshR2RML.Mapping.Resource{
   resource: MyApp.Person,
   class_iris: ["http://xmlns.com/foaf/0.1/Person"],
   logical_table: "people",
-  subject_map: %AshR2ML.Mapping.SubjectMap{...},
+  subject_map: %AshR2RML.Mapping.SubjectMap{...},
   properties: [...],
   relationships: [...]
 }
@@ -284,7 +284,7 @@ This representation is deliberately close to R2RML terminology. It is inspectabl
 
 ## Ontology-first Ash with ggen
 
-AshR2ML ships a ggen pack for generating ordinary Ash resources from an admitted RDF/SHACL application profile.
+AshR2RML ships a ggen pack for generating ordinary Ash resources from an admitted RDF/SHACL application profile.
 
 The source of truth is the ontology/profile, not the generated Elixir:
 
@@ -301,7 +301,7 @@ public ontology / application ontology
        generated Ash.Resource
                │
                ▼
-         AshR2ML.Mapping
+         AshR2RML.Mapping
                │
                ▼
              R2RML
@@ -330,7 +330,7 @@ See [Ontology-first generation](documentation/how_to/ontology_first.livemd).
 
 ## SHACL as the operational closure boundary
 
-AshR2ML does not claim that arbitrary OWL can be deterministically compiled into a relational schema.
+AshR2RML does not claim that arbitrary OWL can be deterministically compiled into a relational schema.
 
 OWL describes open-world semantics. Ash resources and relational schemas need operationally closed decisions about cardinality, datatype, identity, and storage.
 
@@ -350,7 +350,7 @@ If the shape does not provide enough information to choose one lawful Ash/relati
 
 ## Typed refusals
 
-AshR2ML fails closed at semantic boundaries. Representative failures include:
+AshR2RML fails closed at semantic boundaries. Representative failures include:
 
 ```text
 REFUSED_INVALID_CLASS_IRI
@@ -366,11 +366,11 @@ UNSUPPORTED_TERM_TYPE
 UNSUPPORTED_ASH_TYPE
 ```
 
-The exact Elixir error is a typed AshR2ML/Spark error. No mapping path silently drops a resource, attribute, relationship, or identity.
+The exact Elixir error is a typed AshR2RML/Spark error. No mapping path silently drops a resource, attribute, relationship, or identity.
 
 ## Virtual RDF, not RDF synchronization
 
-AshR2ML generates mappings; an OBDA engine executes SPARQL against the relational database.
+AshR2RML generates mappings; an OBDA engine executes SPARQL against the relational database.
 
 ```text
 SPARQL
@@ -396,7 +396,7 @@ RDF triples            == semantic projection of that state
 
 ## Architecture invariant
 
-AshR2ML follows this correspondence:
+AshR2RML follows this correspondence:
 
 | Semantic construct | Ash | Relational projection | R2RML |
 |---|---|---|---|
@@ -429,7 +429,7 @@ A semantic change should require one authoritative edit and zero manual synchron
 
 ## Verification model
 
-AshR2ML treats compile success as a checkpoint, not the crown.
+AshR2RML treats compile success as a checkpoint, not the crown.
 
 The integration contract is:
 
@@ -438,7 +438,7 @@ Ash resources
     ↓
 PostgreSQL fixture
     ↓
-AshR2ML-generated R2RML
+AshR2RML-generated R2RML
     ↓
 real R2RML/OBDA engine
     ↓
@@ -463,9 +463,9 @@ R2RML
 SPARQL
 ```
 
-## What AshR2ML does not do
+## What AshR2RML does not do
 
-AshR2ML deliberately does not:
+AshR2RML deliberately does not:
 
 - replace AshPostgres, AshSql, Ecto, or another Ash data layer;
 - store RDF triples itself;
@@ -485,7 +485,7 @@ AshR2ML deliberately does not:
 
 ## Development
 
-AshR2ML uses ggen to manufacture generated semantic compiler surfaces. Generated artifacts are projections; change their owning ontology/query/template and regenerate rather than hand-editing them.
+AshR2RML uses ggen to manufacture generated semantic compiler surfaces. Generated artifacts are projections; change their owning ontology/query/template and regenerate rather than hand-editing them.
 
 The repository's `AGENTS.md` is the authoritative contributor contract.
 

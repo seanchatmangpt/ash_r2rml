@@ -1,4 +1,4 @@
-# AshR2ML support matrix
+# AshR2RML support matrix
 
 This reference defines the finished public capability boundary. A capability is supported only when its compiler, verifier, renderer, and applicable integration tests agree.
 
@@ -76,7 +76,7 @@ Ambiguous open-world constructs are refused rather than guessed.
 
 ## Data layers
 
-AshR2ML is data-layer independent at the semantic API boundary, but relational R2RML compilation requires enough data-layer metadata to identify logical tables, columns, and joins.
+AshR2RML is data-layer independent at the semantic API boundary, but relational R2RML compilation requires enough data-layer metadata to identify logical tables, columns, and joins.
 
 AshPostgres/PostgreSQL is the canonical conformance implementation.
 
@@ -90,8 +90,8 @@ A different Ash data layer is supported only for the subset for which an adapter
 | SQL | relational database |
 | SPARQL | external compatible OBDA/R2RML engine |
 | SPARQL-to-SQL rewriting | external OBDA engine |
-| OWL reasoning | external reasoner/OBDA capability, not AshR2ML core |
+| OWL reasoning | external reasoner/OBDA capability, not AshR2RML core |
 
 ## Explicit non-goals
 
-AshR2ML does not provide Neo4j persistence, Cypher rendering, graph traversal expressions, vector indexes, spatial indexes, or a graph-database sandbox.
+AshR2RML does not provide Neo4j persistence, Cypher rendering, graph traversal expressions, vector indexes, spatial indexes, or a graph-database sandbox.

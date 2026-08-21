@@ -1,22 +1,22 @@
 <!--
-SPDX-FileCopyrightText: 2026 ash_r2ml contributors
+SPDX-FileCopyrightText: 2026 ash_r2rml contributors
 
 SPDX-License-Identifier: MIT
 -->
 
-# AshR2ML Architecture
+# AshR2RML Architecture
 
-AshR2ML is a semantic compilation layer between Ash's domain model and W3C R2RML. It does not replace the application's data layer and it does not execute SPARQL.
+AshR2RML is a semantic compilation layer between Ash's domain model and W3C R2RML. It does not replace the application's data layer and it does not execute SPARQL.
 
 ## The one-subject model
 
-AshR2ML exists to preserve one operational subject across several query models:
+AshR2RML exists to preserve one operational subject across several query models:
 
 ```text
                    semantic model
                          │
                          ▼
-                  AshR2ML.Mapping
+                  AshR2RML.Mapping
                     ╱           ╲
                    ▼             ▼
              Ash.Resource       R2RML
@@ -39,7 +39,7 @@ The architecture therefore avoids:
 
 ## Compiler boundaries
 
-AshR2ML is intentionally split into five layers.
+AshR2RML is intentionally split into five layers.
 
 ### 1. Ash introspection
 
@@ -80,13 +80,13 @@ The DSL should be sparse. Duplicating relational information here creates a drif
 All mapping inputs compile to a normalized intermediate representation:
 
 ```text
-AshR2ML.Mapping.Resource
-AshR2ML.Mapping.SubjectMap
-AshR2ML.Mapping.PredicateObjectMap
-AshR2ML.Mapping.ReferenceObjectMap
-AshR2ML.Mapping.JoinCondition
-AshR2ML.Mapping.GraphMap
-AshR2ML.Mapping.Datatype
+AshR2RML.Mapping.Resource
+AshR2RML.Mapping.SubjectMap
+AshR2RML.Mapping.PredicateObjectMap
+AshR2RML.Mapping.ReferenceObjectMap
+AshR2RML.Mapping.JoinCondition
+AshR2RML.Mapping.GraphMap
+AshR2RML.Mapping.Datatype
 ```
 
 This is the semantic center of the library.
@@ -127,9 +127,9 @@ SQL
 relational database
 ```
 
-AshR2ML generates and validates the mapping consumed by this engine. It does not implement query planning for SPARQL.
+AshR2RML generates and validates the mapping consumed by this engine. It does not implement query planning for SPARQL.
 
-## AshR2ML is not a DataLayer
+## AshR2RML is not a DataLayer
 
 The storage boundary remains ordinary Ash:
 
@@ -137,7 +137,7 @@ The storage boundary remains ordinary Ash:
 use Ash.Resource,
   domain: MyApp.Domain,
   data_layer: AshPostgres.DataLayer,
-  extensions: [AshR2ML.Resource]
+  extensions: [AshR2RML.Resource]
 ```
 
 This separation is deliberate.
@@ -151,7 +151,7 @@ This separation is deliberate.
 - database constraints,
 - relational query execution.
 
-`AshR2ML` owns:
+`AshR2RML` owns:
 
 - semantic mapping metadata,
 - semantic identity construction,
@@ -187,7 +187,7 @@ Ash attribute storage/value semantics
 RDF predicate + RDF term semantics
 ```
 
-AshR2ML derives storage metadata and type information where possible, then adds semantic metadata.
+AshR2RML derives storage metadata and type information where possible, then adds semantic metadata.
 
 Example:
 
@@ -228,7 +228,7 @@ and semantically as:
 
 The same Ash relationship drives both sides of the correspondence.
 
-For a to-one relationship, AshR2ML derives the R2RML join from Ash relationship metadata.
+For a to-one relationship, AshR2RML derives the R2RML join from Ash relationship metadata.
 
 For many-to-many relationships, the compiler follows the declared join relationship/resource.
 
@@ -236,7 +236,7 @@ If the relation itself carries facts, it should remain a first-class resource ra
 
 ## Ontology-first manufacturing
 
-AshR2ML supports ontology-first projects through ggen.
+AshR2RML supports ontology-first projects through ggen.
 
 The public ontology is not edited to contain application storage details. The layers are:
 
@@ -253,7 +253,7 @@ SHACL operational shapes
            ggen
              │
              ▼
-generated Ash + AshR2ML metadata
+generated Ash + AshR2RML metadata
 ```
 
 SHACL is the operational closure boundary because relational generation needs explicit decisions about cardinality, requiredness, datatype, and identity that open-world OWL alone may not provide.
@@ -302,7 +302,7 @@ There are four proof levels.
 
 ### Structural
 
-The Spark DSL compiles and the resource produces an `AshR2ML.Mapping.Resource`.
+The Spark DSL compiles and the resource produces an `AshR2RML.Mapping.Resource`.
 
 ### Serialization
 
@@ -320,7 +320,7 @@ Only the final level proves the complete semantic path.
 
 ## Failure model
 
-AshR2ML refuses ambiguity instead of manufacturing false precision.
+AshR2RML refuses ambiguity instead of manufacturing false precision.
 
 Representative failure families:
 
@@ -341,7 +341,7 @@ unsupported R2RML term type
 
 ## Non-goals
 
-AshR2ML does not:
+AshR2RML does not:
 
 - implement a graph database;
 - provide graph traversal storage semantics;

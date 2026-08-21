@@ -1,13 +1,13 @@
-# AshR2ML documentation
+# AshR2RML documentation
 
-AshR2ML maps ordinary Ash resources to a normalized semantic mapping IR and standards-valid W3C R2RML while leaving persistence to the active Ash data layer.
+AshR2RML maps ordinary Ash resources to a normalized semantic mapping IR and standards-valid W3C R2RML while leaving persistence to the active Ash data layer.
 
 ## Start here
 
-- [Canonical Livebook](../ash_r2ml.livemd) — runnable end-to-end mental model.
+- [Canonical Livebook](../ash_r2rml.livemd) — runnable end-to-end mental model.
 - [Architecture](topics/architecture.md) — one-subject architecture, compiler layers, and boundaries.
 - [Ash-first mapping](how_to/ash_first.livemd) — annotate an existing Ash/AshPostgres application.
-- [Ontology-first generation](how_to/ontology_first.livemd) — RDF/OWL + SHACL + ggen → AshR2ML.
+- [Ontology-first generation](how_to/ontology_first.livemd) — RDF/OWL + SHACL + ggen → AshR2RML.
 - [Relational schema and R2RML](how_to/managing_schema.livemd) — keep relational schema and semantic projection aligned.
 
 ## Reference
@@ -35,16 +35,16 @@ AshR2ML maps ordinary Ash resources to a normalized semantic mapping IR and stan
 ## Project history
 
 - [Migration from the AshNeo4j donor](topics/migration_from_ash_neo4j.md)
-- [`CHANGELOG.md`](../CHANGELOG.md) preserves donor release history rather than rewriting historical Neo4j releases as AshR2ML releases.
+- [`CHANGELOG.md`](../CHANGELOG.md) preserves donor release history rather than rewriting historical Neo4j releases as AshR2RML releases.
 
 ## Product boundary
 
-AshR2ML does not replace AshPostgres, implement a database driver, store triples, execute SPARQL, or require a graph database. Its job is deterministic semantic correspondence:
+AshR2RML does not replace AshPostgres, implement a database driver, store triples, execute SPARQL, or require a graph database. Its job is deterministic semantic correspondence:
 
 ```text
 Ash.Resource + RDF metadata
           ↓
-   AshR2ML.Mapping
+   AshR2RML.Mapping
       ╱       ╲
 relational    R2RML
    state        │

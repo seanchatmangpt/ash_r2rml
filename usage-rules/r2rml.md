@@ -1,6 +1,6 @@
 # R2RML
 
-AshR2ML renders the normalized mapping IR as W3C R2RML Turtle.
+AshR2RML renders the normalized mapping IR as W3C R2RML Turtle.
 
 ## Mapping model
 
@@ -51,7 +51,7 @@ Generated Turtle must be parsed by an independent RDF parser in the test suite. 
 
 ## Non-goals
 
-AshR2ML does not:
+AshR2RML does not:
 
 - materialize triples as its persistence strategy;
 - implement SPARQL execution;

@@ -1,6 +1,6 @@
 # OBDA and virtual RDF
 
-AshR2ML stops at R2RML generation. A compatible Ontology-Based Data Access engine executes SPARQL by rewriting it into SQL over the relational database.
+AshR2RML stops at R2RML generation. A compatible Ontology-Based Data Access engine executes SPARQL by rewriting it into SQL over the relational database.
 
 ## Architecture
 
@@ -22,7 +22,7 @@ Ash, SQL, and SPARQL must observe the same underlying persisted subject. There i
 
 ## Engine boundary
 
-AshR2ML does not implement:
+AshR2RML does not implement:
 
 - SPARQL parsing;
 - SPARQL algebra;

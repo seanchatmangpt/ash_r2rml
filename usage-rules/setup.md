@@ -1,33 +1,33 @@
 # Setup
 
-AshR2ML is a semantic mapping extension for Ash. It does not replace your data layer.
+AshR2RML is a semantic mapping extension for Ash. It does not replace your data layer.
 
 ## Dependencies
 
-A typical relational application uses AshR2ML beside AshPostgres:
+A typical relational application uses AshR2RML beside AshPostgres:
 
 ```elixir
 def deps do
   [
     {:ash, "~> 3.0"},
     {:ash_postgres, "~> 2.0"},
-    {:ash_r2ml, "~> 1.0"}
+    {:ash_r2rml, "~> 1.0"}
   ]
 end
 ```
 
-AshR2ML itself owns no database connection pool and requires no graph database.
+AshR2RML itself owns no database connection pool and requires no graph database.
 
 ## Resource configuration
 
-Keep the existing data layer and add the AshR2ML extension:
+Keep the existing data layer and add the AshR2RML extension:
 
 ```elixir
 defmodule MyApp.Person do
   use Ash.Resource,
     domain: MyApp.Domain,
     data_layer: AshPostgres.DataLayer,
-    extensions: [AshR2ML.Resource]
+    extensions: [AshR2RML.Resource]
 
   postgres do
     table "people"
@@ -47,7 +47,7 @@ end
 
 ## Formatter and docs
 
-Add AshR2ML's Spark extension to formatter/cheat-sheet generation when the package installer has not already done so. Prefer the package's Igniter installer when available so formatter and documentation configuration stay synchronized with the installed version.
+Add AshR2RML's Spark extension to formatter/cheat-sheet generation when the package installer has not already done so. Prefer the package's Igniter installer when available so formatter and documentation configuration stay synchronized with the installed version.
 
 ## R2RML output
 
@@ -55,7 +55,7 @@ Compile one or more resources to the normalized mapping IR and render Turtle:
 
 ```elixir
 resources = [MyApp.Person]
-{:ok, ttl} = AshR2ML.R2RML.render(resources)
+{:ok, ttl} = AshR2RML.R2RML.render(resources)
 File.write!("priv/r2rml/application.ttl", ttl)
 ```
 
@@ -63,7 +63,7 @@ Generated R2RML is a projection. Do not hand-edit it when the owning Ash resourc
 
 ## OBDA engine
 
-AshR2ML generates mappings but does not execute SPARQL. Configure a compatible R2RML/OBDA engine separately and point it at:
+AshR2RML generates mappings but does not execute SPARQL. Configure a compatible R2RML/OBDA engine separately and point it at:
 
 1. the same relational database used by the Ash application; and
 2. the generated R2RML mapping.
@@ -81,7 +81,7 @@ ontology/profile + SHACL
         ↓
 generated Ash resources
         ↓
-     AshR2ML
+     AshR2RML
 ```
 
 ggen is not required merely to execute a normal Ash application using already-generated resources.

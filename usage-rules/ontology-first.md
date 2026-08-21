@@ -1,6 +1,6 @@
 # Ontology-first generation
 
-Ontology-first AshR2ML starts from an admitted RDF/OWL vocabulary plus an application profile and SHACL operational shapes.
+Ontology-first AshR2RML starts from an admitted RDF/OWL vocabulary plus an application profile and SHACL operational shapes.
 
 ## Compilation boundary
 
@@ -19,7 +19,7 @@ ggen
    ↓
 generated Ash resources
    ↓
-AshR2ML.Mapping
+AshR2RML.Mapping
 ```
 
 OWL/RDFS supplies semantics. SHACL/profile facts provide the operational closure required to choose attributes, relationship cardinalities, identities, and storage strategies.

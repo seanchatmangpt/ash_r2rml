@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2026 ash_r2ml contributors <https://github.com/seanchatmangpt/ash_r2ml/graphs/contributors>
+# SPDX-FileCopyrightText: 2026 ash_r2rml contributors <https://github.com/seanchatmangpt/ash_r2rml/graphs/contributors>
 #
 # SPDX-License-Identifier: MIT
 
@@ -10,9 +10,9 @@
 # - Neo4j remains the inherited control graph
 # Technical parity never grants cutover authority.
 
-defmodule AshR2ml.ObdaCrown do
-  @workspace "tmp/ash_r2ml_obda"
-  @postgres_db "ash_r2ml"
+defmodule AshR2RML.ObdaCrown do
+  @workspace "tmp/ash_r2rml_obda"
+  @postgres_db "ash_r2rml"
   @postgres_user "postgres"
   @postgres_password "postgres"
   @neo4j_url "http://127.0.0.1:7474/db/neo4j/tx/commit"
@@ -25,7 +25,7 @@ defmodule AshR2ml.ObdaCrown do
   @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
   @prefix ex: <https://example.com/ontology/> .
   @prefix shapes: <https://example.com/shapes/> .
-  @prefix r2ml: <https://seanchatmangpt.github.io/ash_r2ml#> .
+  @prefix r2ml: <https://seanchatmangpt.github.io/ash_r2rml#> .
 
   shapes:OrganizationShape
       a sh:NodeShape ;
@@ -123,22 +123,22 @@ defmodule AshR2ml.ObdaCrown do
     File.rm_rf!(@workspace)
     File.mkdir_p!(@workspace)
 
-    {:ok, admitted_query} = AshR2ML.admit_sparql(@sparql)
+    {:ok, admitted_query} = AshR2RML.admit_sparql(@sparql)
     unless admitted_query.form == :select, do: raise("SPARQL.ex did not admit crown SELECT query")
 
-    {:ok, compilation} = AshR2ml.compile_turtle(@profile, ontology_hash: sha256(@profile))
+    {:ok, compilation} = AshR2RML.compile_turtle(@profile, ontology_hash: sha256(@profile))
 
     # The exact same RDF/SHACL subject must survive a JSON-LD serialization round-trip.
     profile_graph = RDF.Turtle.read_string!(@profile)
-    {:ok, profile_jsonld} = AshR2ML.JSONLD.encode_rdf(profile_graph, pretty: false)
-    {:ok, jsonld_bundle} = AshR2ML.compile_jsonld(profile_jsonld, ontology_hash: sha256(@profile))
-    {:ok, jsonld_r2rml} = AshR2ML.R2RML.render(jsonld_bundle)
+    {:ok, profile_jsonld} = AshR2RML.JSONLD.encode_rdf(profile_graph, pretty: false)
+    {:ok, jsonld_bundle} = AshR2RML.compile_jsonld(profile_jsonld, ontology_hash: sha256(@profile))
+    {:ok, jsonld_r2rml} = AshR2RML.R2RML.render(jsonld_bundle)
 
     unless jsonld_r2rml == compilation.r2rml,
       do: raise("Turtle/JSON-LD mapping manufacture diverged")
 
     {:ok, jsonld_ggen_bundle} =
-      AshR2ML.Ggen.compile_jsonld_bundle(profile_jsonld, ontology_hash: sha256(@profile))
+      AshR2RML.Ggen.compile_jsonld_bundle(profile_jsonld, ontology_hash: sha256(@profile))
 
     unless jsonld_ggen_bundle.files["priv/r2rml/mapping.ttl"] == compilation.r2rml,
       do: raise("ggen JSON-LD input path diverged from Turtle mapping manufacture")
@@ -179,7 +179,7 @@ defmodule AshR2ml.ObdaCrown do
 
     # Execution topology 1: official Ontop CLI process.
     {:ok, cli_observation} =
-      AshR2ML.OBDA.Ontop.query(%{
+      AshR2RML.OBDA.Ontop.query(%{
         binary: "docker",
         prefix_args:
           ["run", "--rm"] ++
@@ -197,7 +197,7 @@ defmodule AshR2ml.ObdaCrown do
     fixture_sha256 = sha256(fixture_sql)
 
     cli_sql =
-      AshR2ml.Parity.compare(
+      AshR2RML.Parity.compare(
         :sparql_sql,
         :organization_account_cli,
         cli_observation.rows,
@@ -220,7 +220,7 @@ defmodule AshR2ml.ObdaCrown do
     protocol_observation =
       try do
         {:ok, observation} =
-          AshR2ML.SPARQL.Protocol.query(
+          AshR2RML.SPARQL.Protocol.query(
             @ontop_endpoint,
             @sparql,
             request_method: :get,
@@ -237,7 +237,7 @@ defmodule AshR2ml.ObdaCrown do
       do: raise("SPARQL.Client crown requires a real protocol observation")
 
     protocol_sql =
-      AshR2ml.Parity.compare(
+      AshR2RML.Parity.compare(
         :sparql_sql,
         :organization_account_protocol,
         protocol_observation.rows,
@@ -255,15 +255,15 @@ defmodule AshR2ml.ObdaCrown do
     unless protocol_sql.verified?, do: raise("SPARQL.Client/PostgreSQL parity mismatch")
 
     unless protocol_observation.result_sha256 ==
-             AshR2ML.SPARQL.Result.hash_rows(cli_observation.rows),
+             AshR2RML.SPARQL.Result.hash_rows(cli_observation.rows),
       do: raise("SPARQL.Client and Ontop CLI normalized result identities differ")
 
     # Execution topology 3: SPARQL.ex over a local RDF.ex graph describing the same fixture.
     local_graph = local_fixture_graph()
-    {:ok, local_observation} = AshR2ML.SPARQL.Local.query(local_graph, @local_sparql)
+    {:ok, local_observation} = AshR2RML.SPARQL.Local.query(local_graph, @local_sparql)
 
     local_sql =
-      AshR2ml.Parity.compare(
+      AshR2RML.Parity.compare(
         :sparql_sql,
         :organization_account_local_rdf,
         local_observation.rows,
@@ -285,7 +285,7 @@ defmodule AshR2ml.ObdaCrown do
     neo4j_rows = neo4j_query!(@neo4j_query)
 
     neo4j_postgres =
-      AshR2ml.Parity.compare(
+      AshR2RML.Parity.compare(
         :neo4j_postgres,
         :organization_account,
         neo4j_rows,
@@ -304,8 +304,8 @@ defmodule AshR2ml.ObdaCrown do
 
     technical_receipt =
       compilation.receipt
-      |> AshR2ml.Compiler.attach_parity_witness(:sparql_sql, Map.from_struct(protocol_sql))
-      |> AshR2ml.Compiler.attach_parity_witness(
+      |> AshR2RML.Compiler.attach_parity_witness(:sparql_sql, Map.from_struct(protocol_sql))
+      |> AshR2RML.Compiler.attach_parity_witness(
         :neo4j_postgres,
         Map.from_struct(neo4j_postgres)
       )
@@ -316,7 +316,7 @@ defmodule AshR2ml.ObdaCrown do
     unless technical_receipt.neo4j_postgres_parity == :VERIFIED,
       do: raise("Neo4j/Postgres witness was not admitted")
 
-    if AshR2ml.Compiler.cutover_ready?(technical_receipt),
+    if AshR2RML.Compiler.cutover_ready?(technical_receipt),
       do: raise("technical parity must not manufacture cutover authority")
 
     File.write!(
@@ -403,12 +403,12 @@ defmodule AshR2ml.ObdaCrown do
 
   defp verify_pgjdbc! do
     directory =
-      System.get_env("ASH_R2ML_ONTOP_JDBC_DIR") ||
-        raise "ASH_R2ML_ONTOP_JDBC_DIR must point to the admitted Ontop JDBC directory"
+      System.get_env("ASH_R2RML_ONTOP_JDBC_DIR") ||
+        raise "ASH_R2RML_ONTOP_JDBC_DIR must point to the admitted Ontop JDBC directory"
 
     expected_sha256 =
-      System.get_env("ASH_R2ML_PGJDBC_SHA256") ||
-        raise "ASH_R2ML_PGJDBC_SHA256 must pin the admitted PostgreSQL JDBC artifact"
+      System.get_env("ASH_R2RML_PGJDBC_SHA256") ||
+        raise "ASH_R2RML_PGJDBC_SHA256 must pin the admitted PostgreSQL JDBC artifact"
 
     jars = Path.wildcard(Path.join(directory, "postgresql-*.jar")) |> Enum.sort()
 
@@ -506,7 +506,7 @@ defmodule AshR2ml.ObdaCrown do
         env: [{"PGPASSWORD", @postgres_password}]
       )
 
-    AshR2ML.OBDA.Ontop.parse_csv(output)
+    AshR2RML.OBDA.Ontop.parse_csv(output)
   end
 
   defp seed_neo4j! do
@@ -578,4 +578,4 @@ defmodule AshR2ml.ObdaCrown do
   defp sha256(value), do: :crypto.hash(:sha256, value) |> Base.encode16(case: :lower)
 end
 
-AshR2ml.ObdaCrown.run!()
+AshR2RML.ObdaCrown.run!()

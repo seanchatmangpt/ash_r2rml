@@ -1,11 +1,11 @@
-# SPDX-FileCopyrightText: 2026 ash_r2ml contributors <https://github.com/seanchatmangpt/ash_r2ml/graphs/contributors>
+# SPDX-FileCopyrightText: 2026 ash_r2rml contributors <https://github.com/seanchatmangpt/ash_r2rml/graphs/contributors>
 #
 # SPDX-License-Identifier: MIT
 
-defmodule AshR2ML.PublicMappingTest do
+defmodule AshR2RML.PublicMappingTest do
   use ExUnit.Case, async: true
 
-  alias AshR2ML.Mapping.{
+  alias AshR2RML.Mapping.{
     Bundle,
     Datatype,
     JoinCondition,
@@ -43,8 +43,8 @@ defmodule AshR2ML.PublicMappingTest do
   test "subject identity may use a mapped Ash column without emitting it as a scalar RDF predicate" do
     mapping = resource("Person", "people", "https://schema.org/Person")
 
-    assert :ok = AshR2ML.Mapping.validate(mapping)
-    assert AshR2ML.Mapping.stable_subject_identity?(mapping)
+    assert :ok = AshR2RML.Mapping.validate(mapping)
+    assert AshR2RML.Mapping.stable_subject_identity?(mapping)
   end
 
   test "subject template refuses columns absent from the admitted resource mapping" do
@@ -52,7 +52,7 @@ defmodule AshR2ML.PublicMappingTest do
       resource("Person", "people", "https://schema.org/Person")
       |> put_in([Access.key!(:subject_map), Access.key!(:value)], "https://example.test/people/{missing}")
 
-    assert {:error, refusals} = AshR2ML.Mapping.validate(mapping)
+    assert {:error, refusals} = AshR2RML.Mapping.validate(mapping)
     assert Enum.any?(refusals, &(&1.code == :REFUSED_MISSING_SUBJECT_MAP))
   end
 
@@ -76,8 +76,8 @@ defmodule AshR2ML.PublicMappingTest do
       )
 
     bundle = %Bundle{resources: [organization, account]}
-    assert :ok = AshR2ML.Mapping.validate(bundle)
-    assert {:ok, ttl} = AshR2ML.R2RML.render(bundle)
+    assert :ok = AshR2RML.Mapping.validate(bundle)
+    assert {:ok, ttl} = AshR2RML.R2RML.render(bundle)
     assert ttl =~ ~s(rr:joinCondition [ rr:child "id"; rr:parent "organization_id" ])
   end
 
@@ -106,8 +106,8 @@ defmodule AshR2ML.PublicMappingTest do
       )
 
     bundle = %Bundle{resources: [person, organization]}
-    assert :ok = AshR2ML.Mapping.validate(bundle)
-    assert {:ok, ttl} = AshR2ML.R2RML.render(bundle)
+    assert :ok = AshR2RML.Mapping.validate(bundle)
+    assert {:ok, ttl} = AshR2RML.R2RML.render(bundle)
 
     assert ttl =~ ~s(rr:tableName "memberships")
     assert ttl =~ ~s(rr:predicate <https://schema.org/memberOf>)
@@ -133,17 +133,17 @@ defmodule AshR2ML.PublicMappingTest do
         attribute_columns: %{id: "id", name: "display_name"}
       )
 
-    assert {:ok, ttl} = AshR2ML.R2RML.render(%Bundle{resources: [mapping]})
+    assert {:ok, ttl} = AshR2RML.R2RML.render(%Bundle{resources: [mapping]})
     assert ttl =~ ~s(rr:column "display_name")
     assert ttl =~ "rr:datatype <#{@xsd_string}>"
   end
 
   test "unknown custom Ash type refuses implicit stringification" do
-    assert {:error, refusal} = AshR2ML.Datatype.Registry.resolve(MyApp.Money)
+    assert {:error, refusal} = AshR2RML.Datatype.Registry.resolve(MyApp.Money)
     assert refusal.code == :UNSUPPORTED_ASH_TYPE
 
     assert {:ok, datatype} =
-             AshR2ML.Datatype.Registry.resolve(
+             AshR2RML.Datatype.Registry.resolve(
                MyApp.Money,
                "https://example.test/datatype/Money",
                :decimal
@@ -173,7 +173,7 @@ defmodule AshR2ML.PublicMappingTest do
 
     second = %{first | predicate_object_maps: Enum.reverse(first.predicate_object_maps)}
 
-    assert AshR2ML.Mapping.mapping_identity(first) == AshR2ML.Mapping.mapping_identity(second)
-    assert AshR2ML.Mapping.normalize(first) == AshR2ML.Mapping.normalize(second)
+    assert AshR2RML.Mapping.mapping_identity(first) == AshR2RML.Mapping.mapping_identity(second)
+    assert AshR2RML.Mapping.normalize(first) == AshR2RML.Mapping.normalize(second)
   end
 end

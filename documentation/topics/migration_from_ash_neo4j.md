@@ -1,6 +1,6 @@
-# From AshNeo4j donor code to AshR2ML
+# From AshNeo4j donor code to AshR2RML
 
-AshR2ML began from a fork of AshNeo4j. That ancestry matters for licensing, changelog history, and understanding which architectural patterns were reused, but it does not define the finished product.
+AshR2RML began from a fork of AshNeo4j. That ancestry matters for licensing, changelog history, and understanding which architectural patterns were reused, but it does not define the finished product.
 
 ## What was retained conceptually
 
@@ -14,7 +14,7 @@ The donor contained mature patterns worth preserving:
 - typed error discipline;
 - test fixtures around Ash resource semantics.
 
-AshR2ML adapts those patterns toward standards-based semantic mapping.
+AshR2RML adapts those patterns toward standards-based semantic mapping.
 
 ## What was replaced
 
@@ -22,23 +22,23 @@ The finished product does not use Neo4j as its persistence target.
 
 The conceptual substitutions are:
 
-| AshNeo4j donor concept | AshR2ML finished concept |
+| AshNeo4j donor concept | AshR2RML finished concept |
 |---|---|
 | Neo4j node label | RDF class IRI |
 | Neo4j property mapping | RDF predicate/object mapping |
 | Neo4j edge descriptor | R2RML reference object map |
 | node identifier | semantic subject map |
 | Cypher rendering | R2RML rendering |
-| Bolty connection | no AshR2ML database connection |
+| Bolty connection | no AshR2RML database connection |
 | Neo4j `Ash.DataLayer` | consumer's existing Ash data layer |
 | graph persistence | virtual RDF over relational persistence |
 | graph query execution | external OBDA/SPARQL execution |
 
 ## Why the changelog still mentions AshNeo4j
 
-`CHANGELOG.md` preserves the repository's historical donor releases. Those entries are historical evidence and are not rewritten as though they were AshR2ML releases.
+`CHANGELOG.md` preserves the repository's historical donor releases. Those entries are historical evidence and are not rewritten as though they were AshR2RML releases.
 
-The AshR2ML release line begins only when the package/runtime implementation actually changes identity and is released under the AshR2ML contract.
+The AshR2RML release line begins only when the package/runtime implementation actually changes identity and is released under the AshR2RML contract.
 
 ## Compatibility tombstones
 
@@ -50,7 +50,7 @@ Examples include legacy filenames for atomics, traversal, spatial, vector, and C
 
 The fork-to-product migration is complete when:
 
-- public package/module metadata identifies AshR2ML;
+- public package/module metadata identifies AshR2RML;
 - no public runtime API requires Neo4j/Bolty/Cypher;
 - the generic semantic mapping IR is canonical;
 - R2RML rendering and verifiers are complete;

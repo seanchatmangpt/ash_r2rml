@@ -1,6 +1,6 @@
 # Semantic mapping IR
 
-Every AshR2ML entry path converges on one normalized intermediate representation before serialization.
+Every AshR2RML entry path converges on one normalized intermediate representation before serialization.
 
 ## Why an IR exists
 
@@ -11,13 +11,13 @@ Do not let resource DSL, ontology-first generation, and R2RML rendering each car
 The public model includes equivalents of:
 
 ```text
-AshR2ML.Mapping.Resource
-AshR2ML.Mapping.SubjectMap
-AshR2ML.Mapping.PredicateObjectMap
-AshR2ML.Mapping.ReferenceObjectMap
-AshR2ML.Mapping.JoinCondition
-AshR2ML.Mapping.Datatype
-AshR2ML.Mapping.GraphMap
+AshR2RML.Mapping.Resource
+AshR2RML.Mapping.SubjectMap
+AshR2RML.Mapping.PredicateObjectMap
+AshR2RML.Mapping.ReferenceObjectMap
+AshR2RML.Mapping.JoinCondition
+AshR2RML.Mapping.Datatype
+AshR2RML.Mapping.GraphMap
 ```
 
 ## Resource mapping
@@ -42,7 +42,7 @@ IR equality must not depend on map iteration order, loaded-module order, or proc
 
 ## Introspection
 
-`AshR2ML.Resource.Info.mapping/1` exposes the normalized mapping so callers and tests can inspect semantic structure without depending on raw Spark DSL internals.
+`AshR2RML.Resource.Info.mapping/1` exposes the normalized mapping so callers and tests can inspect semantic structure without depending on raw Spark DSL internals.
 
 ## Renderer isolation
 

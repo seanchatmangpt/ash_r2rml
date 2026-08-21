@@ -1,5 +1,5 @@
 <!--
-SPDX-FileCopyrightText: 2026 ash_r2ml contributors
+SPDX-FileCopyrightText: 2026 ash_r2rml contributors
 
 SPDX-License-Identifier: MIT
 -->
@@ -15,20 +15,20 @@ Mix.install(
   [
     {:ash, "~> 3.0"},
     {:ash_postgres, "~> 2.0"},
-    {:ash_r2ml, "~> 1.0"}
+    {:ash_r2rml, "~> 1.0"}
   ],
   consolidate_protocols: false
 )
 ```
 
-AshR2ML is an extension, not a data layer.
+AshR2RML is an extension, not a data layer.
 
 ```elixir
 defmodule Example.Person do
   use Ash.Resource,
     domain: Example.Domain,
     data_layer: AshPostgres.DataLayer,
-    extensions: [AshR2ML.Resource]
+    extensions: [AshR2RML.Resource]
 end
 ```
 
@@ -52,7 +52,7 @@ defmodule Example.Organization do
   use Ash.Resource,
     domain: Example.Domain,
     data_layer: AshPostgres.DataLayer,
-    extensions: [AshR2ML.Resource]
+    extensions: [AshR2RML.Resource]
 
   postgres do
     table "organizations"
@@ -93,7 +93,7 @@ Ash/AshPostgres knows:
   nullability
   identity
 
-AshR2ML adds:
+AshR2RML adds:
   RDF class
   predicate
   subject IRI construction
@@ -106,7 +106,7 @@ defmodule Example.Person do
   use Ash.Resource,
     domain: Example.Domain,
     data_layer: AshPostgres.DataLayer,
-    extensions: [AshR2ML.Resource]
+    extensions: [AshR2RML.Resource]
 
   postgres do
     table "people"
@@ -154,7 +154,7 @@ AshPostgres owns the relational relationship:
 people.organization_id → organizations.id
 ```
 
-AshR2ML compiles the semantic relationship:
+AshR2RML compiles the semantic relationship:
 
 ```text
 <PersonIRI> schema:memberOf <OrganizationIRI>
@@ -165,8 +165,8 @@ No second relationship declaration is needed.
 ## Inspect the normalized mapping
 
 ```elixir
-person_mapping = AshR2ML.Resource.Info.mapping(Example.Person)
-organization_mapping = AshR2ML.Resource.Info.mapping(Example.Organization)
+person_mapping = AshR2RML.Resource.Info.mapping(Example.Person)
+organization_mapping = AshR2RML.Resource.Info.mapping(Example.Organization)
 
 {person_mapping, organization_mapping}
 ```
@@ -187,7 +187,7 @@ parent triples map: Organization
 
 ```elixir
 {:ok, turtle} =
-  AshR2ML.R2RML.render([
+  AshR2RML.R2RML.render([
     Example.Organization,
     Example.Person
   ])
@@ -212,11 +212,11 @@ r2rml do
 end
 ```
 
-AshR2ML verifies both fields exist. If the configured subject construction is not deterministic for the resource, compilation fails.
+AshR2RML verifies both fields exist. If the configured subject construction is not deterministic for the resource, compilation fails.
 
 ## Override an RDF datatype
 
-AshR2ML normally derives RDF datatypes from Ash types.
+AshR2RML normally derives RDF datatypes from Ash types.
 
 Use an override only when the semantic datatype differs from the default registry and the conversion is lawful:
 
@@ -233,7 +233,7 @@ An incompatible override is refused.
 
 ## Many-to-many
 
-A standard Ash many-to-many relationship can be mapped when AshR2ML can introspect the join resource/relationship and both semantic identities.
+A standard Ash many-to-many relationship can be mapped when AshR2RML can introspect the join resource/relationship and both semantic identities.
 
 ```text
 Post --taggedWith--> Tag
@@ -249,15 +249,15 @@ post_tags
 tags
 ```
 
-AshR2ML emits a semantic object-property mapping that follows the join rather than exposing the join table as accidental RDF structure.
+AshR2RML emits a semantic object-property mapping that follows the join rather than exposing the join table as accidental RDF structure.
 
 When the join carries real domain facts, model it as a first-class mapped resource instead.
 
 ## Validate before publishing mappings
 
 ```elixir
-:ok = AshR2ML.verify([Example.Organization, Example.Person])
-{:ok, turtle} = AshR2ML.R2RML.render([Example.Organization, Example.Person])
+:ok = AshR2RML.verify([Example.Organization, Example.Person])
+{:ok, turtle} = AshR2RML.R2RML.render([Example.Organization, Example.Person])
 ```
 
 Verification checks include:

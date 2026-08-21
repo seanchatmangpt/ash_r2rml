@@ -1,6 +1,6 @@
 # Custom Ash types
 
-AshR2ML supports custom Ash types only through an explicit semantic datatype contract.
+AshR2RML supports custom Ash types only through an explicit semantic datatype contract.
 
 ## Contract
 
@@ -28,11 +28,11 @@ Maps, embedded resources, vectors, geometry values, money values, units, and oth
 - a standards-defined lexical representation;
 - explicit unsupported status.
 
-AshR2ML does not preserve structure by hiding it inside an opaque literal unless that is the admitted semantic representation.
+AshR2RML does not preserve structure by hiding it inside an opaque literal unless that is the admitted semantic representation.
 
 ## Registry
 
-Custom mappings register through the public AshR2ML datatype extension/registry rather than patching the R2RML renderer.
+Custom mappings register through the public AshR2RML datatype extension/registry rather than patching the R2RML renderer.
 
 The renderer consumes normalized datatype mapping IR and should not contain application-specific type branches.
 

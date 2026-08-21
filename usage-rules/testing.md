@@ -1,6 +1,6 @@
-# Testing AshR2ML
+# Testing AshR2RML
 
-AshR2ML testing is layered because different claims require different evidence.
+AshR2RML testing is layered because different claims require different evidence.
 
 ## Unit tests
 
@@ -18,7 +18,7 @@ Unit tests are appropriate for pure functions and compile-time invariants.
 
 ## DSL compilation tests
 
-Compile representative Ash resources and assert that `AshR2ML.Resource.Info.mapping/1` returns the expected normalized IR.
+Compile representative Ash resources and assert that `AshR2RML.Resource.Info.mapping/1` returns the expected normalized IR.
 
 Fixtures should exercise:
 

@@ -1,6 +1,6 @@
 # Logical tables
 
-R2RML maps RDF subjects and properties over a logical relational source. AshR2ML derives that source from the active relational data-layer configuration whenever possible.
+R2RML maps RDF subjects and properties over a logical relational source. AshR2RML derives that source from the active relational data-layer configuration whenever possible.
 
 ## Table-backed resources
 
@@ -16,7 +16,7 @@ Views are useful for relational projections that are stable, typed, and already 
 
 ## SQL-query logical tables
 
-Explicit `rr:sqlQuery` mappings are advanced and read-only from AshR2ML's perspective. They require:
+Explicit `rr:sqlQuery` mappings are advanced and read-only from AshR2RML's perspective. They require:
 
 - deterministic SQL;
 - explicit column contract;
@@ -26,7 +26,7 @@ Explicit `rr:sqlQuery` mappings are advanced and read-only from AshR2ML's perspe
 
 ## Data-layer boundary
 
-AshR2ML does not generate or execute migrations merely because it knows the desired RDF mapping. Persistence/schema lifecycle stays with the active Ash data layer and its migration tooling.
+AshR2RML does not generate or execute migrations merely because it knows the desired RDF mapping. Persistence/schema lifecycle stays with the active Ash data layer and its migration tooling.
 
 ## Drift
 

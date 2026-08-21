@@ -1,5 +1,5 @@
 <!--
-SPDX-FileCopyrightText: 2026 ash_r2ml contributors <https://github.com/seanchatmangpt/ash_r2ml/graphs/contributors>
+SPDX-FileCopyrightText: 2026 ash_r2rml contributors <https://github.com/seanchatmangpt/ash_r2rml/graphs/contributors>
 
 SPDX-License-Identifier: MIT
 -->
@@ -8,7 +8,7 @@ SPDX-License-Identifier: MIT
 
 ## Architectural invariant
 
-AshR2ML does not define a new RDF syntax, SPARQL language, SPARQL protocol, JSON-LD processor, or triplestore.
+AshR2RML does not define a new RDF syntax, SPARQL language, SPARQL protocol, JSON-LD processor, or triplestore.
 
 It composes standards implementations around one admitted semantic subject:
 
@@ -39,7 +39,7 @@ No execution surface becomes a second source of semantic truth.
 
 ## DfCM dimensions
 
-AshR2ML preserves independent choices until an admitted use case closes them.
+AshR2RML preserves independent choices until an admitted use case closes them.
 
 ### RDF serialization
 
@@ -48,7 +48,7 @@ AshR2ML preserves independent choices until an admitted use case closes them.
 | Turtle via RDF.ex | RDF/SHACL authoring and interchange | lawful |
 | JSON-LD 1.1 via JSON-LD.ex | RDF/SHACL authoring and interchange | lawful |
 
-Both formats are decoded to RDF and enter the same `AshR2ml.Ingestion.from_graph/2` boundary. A serialization must not create a different `AshR2ML.Mapping.Bundle` for the same admitted RDF graph.
+Both formats are decoded to RDF and enter the same `AshR2RML.Ingestion.from_graph/2` boundary. A serialization must not create a different `AshR2RML.Mapping.Bundle` for the same admitted RDF graph.
 
 Remote JSON-LD contexts are not ambient authority. HTTP(S) context resolution is refused by default because remote mutable content would make compilation dependent on an unreceipted external observation. Callers may explicitly opt in when that external dependency is itself admitted.
 
@@ -60,15 +60,15 @@ Remote JSON-LD contexts are not ambient authority. HTTP(S) context resolution is
 | `:protocol` | SPARQL.Client over W3C SPARQL Protocol | arbitrary compatible remote query endpoints |
 | `:ontop_cli` | Ontop CLI over generated R2RML + PostgreSQL | direct OBDA execution and CI evidence |
 
-Candidate membership is not equivalence. The SPARQL.ex local execution engine intentionally supports a bounded subset of SPARQL execution semantics; SPARQL.Client can send query forms to a remote SPARQL service that the local engine cannot itself execute. Therefore AshR2ML preserves both instead of pretending one replaces the other.
+Candidate membership is not equivalence. The SPARQL.ex local execution engine intentionally supports a bounded subset of SPARQL execution semantics; SPARQL.Client can send query forms to a remote SPARQL service that the local engine cannot itself execute. Therefore AshR2RML preserves both instead of pretending one replaces the other.
 
-`AshR2ML.SPARQL.explore/2` carries all supplied lawful candidates. If more than one candidate remains, execution refuses until a caller explicitly selects a strategy. A uniquely available candidate may be selected mechanically.
+`AshR2RML.SPARQL.explore/2` carries all supplied lawful candidates. If more than one candidate remains, execution refuses until a caller explicitly selects a strategy. A uniquely available candidate may be selected mechanically.
 
 ## Query admission
 
-`AshR2ML.SPARQL.Query.admit/1` parses queries through SPARQL.ex before execution and records the SHA-256 identity of the exact lexical query.
+`AshR2RML.SPARQL.Query.admit/1` parses queries through SPARQL.ex before execution and records the SHA-256 identity of the exact lexical query.
 
-The lexical hash is an evidence identity, not a claim that two lexically different SPARQL queries are semantically inequivalent. AshR2ML does not currently manufacture a canonical normal form for arbitrary SPARQL algebra.
+The lexical hash is an evidence identity, not a claim that two lexically different SPARQL queries are semantically inequivalent. AshR2RML does not currently manufacture a canonical normal form for arbitrary SPARQL algebra.
 
 ## Result normalization
 
@@ -78,21 +78,21 @@ Every supported execution path is lowered to parity-ready rows:
 - `ASK` becomes a boolean row;
 - RDF graph/dataset results become deterministic subject/predicate/object[/graph] rows.
 
-Normalization uses RDF.ex term semantics and then the existing AshR2ML multiset canonicalization. Result ordering is therefore not confused with semantic result multiplicity.
+Normalization uses RDF.ex term semantics and then the existing AshR2RML multiset canonicalization. Result ordering is therefore not confused with semantic result multiplicity.
 
 ## SPARQL Update fence
 
-SPARQL.Client is capable of SPARQL Update. AshR2ML deliberately does not expose remote update actuation through its semantic verification API.
+SPARQL.Client is capable of SPARQL Update. AshR2RML deliberately does not expose remote update actuation through its semantic verification API.
 
 ```text
-client capability != AshR2ML authority
+client capability != AshR2RML authority
 ```
 
-AshR2ML owns semantic compilation and evidence production. A consumer that needs SPARQL Update must establish a separate DO authority path and its own receipts. Query verification never manufactures mutation authority.
+AshR2RML owns semantic compilation and evidence production. A consumer that needs SPARQL Update must establish a separate DO authority path and its own receipts. Query verification never manufactures mutation authority.
 
 ## JSON-LD closure
 
-JSON-LD.ex is used as the JSON-LD 1.1 processor. AshR2ML adds only application-level admission around it:
+JSON-LD.ex is used as the JSON-LD 1.1 processor. AshR2RML adds only application-level admission around it:
 
 1. decode JSON text;
 2. reject unadmitted remote context dependencies;
@@ -114,7 +114,7 @@ JSON-LD ---/
 
 The generated Ash, SQL, R2RML, SHACL, semantic catalog, and compilation receipt therefore cannot depend on which lawful RDF serialization was used to supply an equivalent admitted graph.
 
-AshR2ML does not currently claim byte-for-byte canonical JSON-LD serialization. Blank-node labeling and JSON document presentation are not promoted to semantic identity. The crown is canonical mapping/R2RML equivalence, not JSON text equality.
+AshR2RML does not currently claim byte-for-byte canonical JSON-LD serialization. Blank-node labeling and JSON document presentation are not promoted to semantic identity. The crown is canonical mapping/R2RML equivalence, not JSON text equality.
 
 ## Multi-engine crown
 

@@ -1,8 +1,8 @@
-# SPDX-FileCopyrightText: 2026 ash_r2ml contributors <https://github.com/seanchatmangpt/ash_r2ml/graphs/contributors>
+# SPDX-FileCopyrightText: 2026 ash_r2rml contributors <https://github.com/seanchatmangpt/ash_r2rml/graphs/contributors>
 #
 # SPDX-License-Identifier: MIT
 
-defmodule AshR2ml.ParityAndGgenTest do
+defmodule AshR2RML.ParityAndGgenTest do
   use ExUnit.Case, async: true
 
   defp profile do
@@ -46,7 +46,7 @@ defmodule AshR2ml.ParityAndGgenTest do
   end
 
   test "ggen bundle contains every projection, catalog, and machine-readable receipt" do
-    assert {:ok, bundle} = AshR2ml.compile_bundle(profile())
+    assert {:ok, bundle} = AshR2RML.compile_bundle(profile())
 
     assert bundle.status == :PARTIAL_ALIVE
     assert Map.has_key?(bundle.files, "generated/ash/ontology_resources.ex")
@@ -79,7 +79,7 @@ defmodule AshR2ml.ParityAndGgenTest do
     ]
 
     receipt =
-      AshR2ml.Parity.compare(:sparql_sql, "cloud:belongsToAccount", left, right, %{
+      AshR2RML.Parity.compare(:sparql_sql, "cloud:belongsToAccount", left, right, %{
         fixture_sha256: "fixture",
         mapping_sha256: "mapping",
         left_query:
@@ -93,45 +93,45 @@ defmodule AshR2ml.ParityAndGgenTest do
   end
 
   test "technical equivalence and cutover authority remain separate receipts" do
-    assert {:ok, compilation} = AshR2ml.compile(profile())
+    assert {:ok, compilation} = AshR2RML.Compiler.compile(profile())
 
     sparql_sql =
-      AshR2ml.Parity.compare(:sparql_sql, :organization, [%{id: "1"}], [%{"id" => "1"}])
+      AshR2RML.Parity.compare(:sparql_sql, :organization, [%{id: "1"}], [%{"id" => "1"}])
 
     neo4j_postgres =
-      AshR2ml.Parity.compare(:neo4j_postgres, :organization, [%{id: "1"}], [%{"id" => "1"}])
+      AshR2RML.Parity.compare(:neo4j_postgres, :organization, [%{id: "1"}], [%{"id" => "1"}])
 
     receipt =
       compilation.receipt
-      |> AshR2ml.Compiler.attach_parity_witness(:sparql_sql, Map.from_struct(sparql_sql))
-      |> AshR2ml.Compiler.attach_parity_witness(
+      |> AshR2RML.Compiler.attach_parity_witness(:sparql_sql, Map.from_struct(sparql_sql))
+      |> AshR2RML.Compiler.attach_parity_witness(
         :neo4j_postgres,
         Map.from_struct(neo4j_postgres)
       )
 
-    refute AshR2ml.Compiler.cutover_ready?(receipt)
+    refute AshR2RML.Compiler.cutover_ready?(receipt)
     assert receipt.cutover_authority == :UNAUTHORIZED
 
     authorized =
-      AshR2ml.Compiler.authorize_cutover(receipt, %{
+      AshR2RML.Compiler.authorize_cutover(receipt, %{
         authorized?: true,
         receipt_sha256: "authority-receipt"
       })
 
     assert authorized.cutover_authority == :AUTHORIZED
-    assert AshR2ml.Compiler.cutover_ready?(authorized)
+    assert AshR2RML.Compiler.cutover_ready?(authorized)
   end
 
   test "mismatched observed results never become a verified parity witness" do
     mismatch =
-      AshR2ml.Parity.compare(:sparql_sql, :organization, [%{id: "1"}], [%{id: "2"}])
+      AshR2RML.Parity.compare(:sparql_sql, :organization, [%{id: "1"}], [%{id: "2"}])
 
     refute mismatch.verified?
 
-    assert {:ok, compilation} = AshR2ml.compile(profile())
+    assert {:ok, compilation} = AshR2RML.Compiler.compile(profile())
 
     receipt =
-      AshR2ml.Compiler.attach_parity_witness(
+      AshR2RML.Compiler.attach_parity_witness(
         compilation.receipt,
         :sparql_sql,
         Map.from_struct(mismatch)

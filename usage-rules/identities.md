@@ -1,6 +1,6 @@
 # Semantic identities
 
-AshR2ML treats database identity and RDF subject identity as related but distinct concepts.
+AshR2RML treats database identity and RDF subject identity as related but distinct concepts.
 
 ## Subject identity
 
@@ -33,7 +33,7 @@ A mapping may build an IRI from those fields when the semantic contract explicit
 
 ## Primary keys
 
-Primary keys are physical/application identity. They may be used in a subject template, but AshR2ML never assumes that every primary key should be published as a semantic IRI.
+Primary keys are physical/application identity. They may be used in a subject template, but AshR2RML never assumes that every primary key should be published as a semantic IRI.
 
 This distinction matters when internal UUIDs, tenant-local keys, natural keys, and public identifiers have different lifetimes.
 

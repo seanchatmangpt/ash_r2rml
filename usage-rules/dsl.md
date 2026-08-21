@@ -1,4 +1,4 @@
-# AshR2ML DSL
+# AshR2RML DSL
 
 The DSL describes semantic information that Ash and the active data layer cannot infer on their own. It should not duplicate relational metadata unnecessarily.
 
@@ -28,7 +28,7 @@ Supported subject strategies are:
 
 A template may reference only real mapped attributes. Missing fields are compile-time errors.
 
-Subject identity is semantic identity, not merely Ash's primary key. AshR2ML may use an Ash identity to prove uniqueness, but it does not assume every database key is automatically the correct public RDF identifier.
+Subject identity is semantic identity, not merely Ash's primary key. AshR2RML may use an Ash identity to prove uniqueness, but it does not assume every database key is automatically the correct public RDF identifier.
 
 ## Attribute mapping
 
@@ -40,7 +40,7 @@ attribute :name, :string do
 end
 ```
 
-AshR2ML derives the relational column/source and default RDF datatype when that information is provable. Override the RDF datatype only when the semantic type differs lawfully from the default registry mapping.
+AshR2RML derives the relational column/source and default RDF datatype when that information is provable. Override the RDF datatype only when the semantic type differs lawfully from the default registry mapping.
 
 Representative options:
 
@@ -64,7 +64,7 @@ belongs_to :organization, MyApp.Organization do
 end
 ```
 
-AshR2ML introspects the Ash relationship and data-layer metadata to derive a reference object map and join. Users should not repeat `source_attribute`, `destination_attribute`, or parent map identity unless inference is impossible or an explicit override is required.
+AshR2RML introspects the Ash relationship and data-layer metadata to derive a reference object map and join. Users should not repeat `source_attribute`, `destination_attribute`, or parent map identity unless inference is impossible or an explicit override is required.
 
 If a relationship cannot be mapped without inventing a join or identity, compilation fails.
 
@@ -76,19 +76,19 @@ Graph configuration changes RDF placement, not relational persistence.
 
 ## Logical tables
 
-For ordinary AshPostgres resources, AshR2ML derives the logical table from the resource/data-layer configuration.
+For ordinary AshPostgres resources, AshR2RML derives the logical table from the resource/data-layer configuration.
 
-Explicit logical SQL views/queries are an advanced mapping surface and must be deterministic, read-only semantic projections. They do not grant AshR2ML authority to mutate database schema or bypass the active data layer.
+Explicit logical SQL views/queries are an advanced mapping surface and must be deterministic, read-only semantic projections. They do not grant AshR2RML authority to mutate database schema or bypass the active data layer.
 
 ## Introspection
 
 The public introspection entry point exposes the normalized mapping rather than raw Spark DSL state:
 
 ```elixir
-mapping = AshR2ML.Resource.Info.mapping(MyApp.Person)
+mapping = AshR2RML.Resource.Info.mapping(MyApp.Person)
 ```
 
-Consumers that need to inspect semantics should depend on `AshR2ML.Mapping` structures, not implementation-specific Spark entities.
+Consumers that need to inspect semantics should depend on `AshR2RML.Mapping` structures, not implementation-specific Spark entities.
 
 ## Validation
 

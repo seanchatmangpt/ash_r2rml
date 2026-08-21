@@ -1,12 +1,12 @@
 # Actions and mutations
 
-AshR2ML maps semantic structure. It does not grant execution authority and does not redefine Ash actions.
+AshR2RML maps semantic structure. It does not grant execution authority and does not redefine Ash actions.
 
 ## Ash actions remain application behavior
 
 Create, update, destroy, read, custom actions, atomics, policies, and transactions continue to belong to Ash and the active data layer.
 
-AshR2ML may describe the RDF classes/properties of resources affected by those actions, but an RDF predicate or ontology class never becomes an executable capability by implication.
+AshR2RML may describe the RDF classes/properties of resources affected by those actions, but an RDF predicate or ontology class never becomes an executable capability by implication.
 
 ## No action-to-class collapse
 
@@ -16,13 +16,13 @@ For example, `approve` is ordinarily an Ash action. If the domain also models an
 
 ## Provenance
 
-Applications may explicitly model executions, requests, decisions, receipts, or provenance entities and map them using ordinary AshR2ML resource/relationship mappings. AshR2ML does not synthesize a provenance ledger for every action automatically.
+Applications may explicitly model executions, requests, decisions, receipts, or provenance entities and map them using ordinary AshR2RML resource/relationship mappings. AshR2RML does not synthesize a provenance ledger for every action automatically.
 
 ## Writes and virtual RDF
 
 When an Ash action changes relational state, subsequent SPARQL queries through the OBDA/R2RML path observe the new relational state because the RDF graph is a virtual projection over the same database.
 
-AshR2ML does not dual-write triples to keep a graph database synchronized.
+AshR2RML does not dual-write triples to keep a graph database synchronized.
 
 ## Authority
 

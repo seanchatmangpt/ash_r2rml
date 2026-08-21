@@ -1,6 +1,6 @@
 # Legacy path: Cypher fragments
 
-AshR2ML does not render or execute Cypher.
+AshR2RML does not render or execute Cypher.
 
 The finished product maps Ash resources to relational logical tables and W3C R2RML. Advanced read-only relational projections use explicit logical-table/view/SQL-query mappings where supported.
 

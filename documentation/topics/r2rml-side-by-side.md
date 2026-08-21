@@ -1,5 +1,5 @@
 <!--
-SPDX-FileCopyrightText: 2026 ash_r2ml contributors <https://github.com/seanchatmangpt/ash_r2ml/graphs/contributors>
+SPDX-FileCopyrightText: 2026 ash_r2rml contributors <https://github.com/seanchatmangpt/ash_r2rml/graphs/contributors>
 
 SPDX-License-Identifier: MIT
 -->
@@ -8,7 +8,7 @@ SPDX-License-Identifier: MIT
 
 ## Status
 
-This document defines the first migration PR for the `ash_r2ml` fork. The fork remains an AshNeo4j repository at the base revision; the new R2RML work is intentionally additive until behavioral equivalence is demonstrated.
+This document defines the first migration PR for the `ash_r2rml` fork. The fork remains an AshNeo4j repository at the base revision; the new R2RML work is intentionally additive until behavioral equivalence is demonstrated.
 
 ## System invariant
 
@@ -21,7 +21,7 @@ Public ontologies / XAAS application profile / SHACL
                          |
                     Ash resource
                    /            \
-       storage data layer      AshR2ml
+       storage data layer      AshR2RML
        (control/authority)   (semantic compiler)
               |                   |
        SQL / Neo4j today     canonical mapping IR
@@ -40,9 +40,9 @@ The fork contains valuable, already-tested extension machinery: Spark DSL sectio
 DfCM therefore keeps both topologies:
 
 - **Control topology:** existing `AshNeo4j.DataLayer`, Bolt, Cypher, and its full tests.
-- **Candidate topology:** `AshR2ml` Spark extension, canonical mapping IR, R2RML renderer, SHACL renderer, and validation receipt.
+- **Candidate topology:** `AshR2RML` Spark extension, canonical mapping IR, R2RML renderer, SHACL renderer, and validation receipt.
 
-A resource can carry both the `neo4j` and `r2rml` DSL blocks. Presence of both mappings is observable through `AshR2ml.Resource.Info`.
+A resource can carry both the `neo4j` and `r2rml` DSL blocks. Presence of both mappings is observable through `AshR2RML.Resource.Info`.
 
 ## R2RML projection
 
@@ -91,7 +91,7 @@ No hand-synchronized second schema is introduced.
 
 ## Validation receipt
 
-`AshR2ml.validate/1` executes deterministic R2RML and SHACL rendering and records hashes. Successful rendering is intentionally reported as:
+`AshR2RML.validate/1` executes deterministic R2RML and SHACL rendering and records hashes. Successful rendering is intentionally reported as:
 
 - status: `PARTIAL_ALIVE`
 - standing: `semantic_projection_only`

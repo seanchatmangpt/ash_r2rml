@@ -1,12 +1,12 @@
 # Query surfaces
 
-AshR2ML enables multiple query surfaces over one persisted relational subject.
+AshR2RML enables multiple query surfaces over one persisted relational subject.
 
 ## Ash
 
 Ash queries remain the application-native interface for loading resources, relationships, calculations, aggregates, authorization-aware reads, and actions.
 
-AshR2ML does not intercept ordinary Ash query execution.
+AshR2RML does not intercept ordinary Ash query execution.
 
 ## SQL
 
@@ -14,7 +14,7 @@ The relational database remains directly queryable with SQL for operations, anal
 
 ## SPARQL
 
-SPARQL is executed by a compatible OBDA/R2RML engine against the generated mapping. AshR2ML itself does not parse or optimize SPARQL.
+SPARQL is executed by a compatible OBDA/R2RML engine against the generated mapping. AshR2RML itself does not parse or optimize SPARQL.
 
 ```text
 Ash query ───────────────┐

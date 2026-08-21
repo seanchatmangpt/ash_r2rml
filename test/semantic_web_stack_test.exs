@@ -1,8 +1,8 @@
-# SPDX-FileCopyrightText: 2026 ash_r2ml contributors <https://github.com/seanchatmangpt/ash_r2ml/graphs/contributors>
+# SPDX-FileCopyrightText: 2026 ash_r2rml contributors <https://github.com/seanchatmangpt/ash_r2rml/graphs/contributors>
 #
 # SPDX-License-Identifier: MIT
 
-defmodule AshR2ML.SemanticWebStackTest do
+defmodule AshR2RML.SemanticWebStackTest do
   use ExUnit.Case, async: true
 
   @query """
@@ -16,7 +16,7 @@ defmodule AshR2ML.SemanticWebStackTest do
   @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
   @prefix ex: <https://example.com/ontology/> .
   @prefix shapes: <https://example.com/shapes/> .
-  @prefix r2ml: <https://seanchatmangpt.github.io/ash_r2ml#> .
+  @prefix r2ml: <https://seanchatmangpt.github.io/ash_r2rml#> .
 
   shapes:ThingShape
       a sh:NodeShape ;
@@ -48,13 +48,13 @@ defmodule AshR2ML.SemanticWebStackTest do
   """
 
   test "SPARQL.ex admission gives a stable lexical query identity" do
-    assert {:ok, admitted} = AshR2ML.admit_sparql(@query)
+    assert {:ok, admitted} = AshR2RML.admit_sparql(@query)
     assert admitted.form == :select
     assert admitted.source == @query
     assert is_binary(admitted.sha256)
     assert byte_size(admitted.sha256) == 64
 
-    assert {:ok, second} = AshR2ML.admit_sparql(@query)
+    assert {:ok, second} = AshR2RML.admit_sparql(@query)
     assert second.sha256 == admitted.sha256
   end
 
@@ -65,7 +65,7 @@ defmodule AshR2ML.SemanticWebStackTest do
          RDF.iri("https://example.com/b")}
       ])
 
-    assert {:ok, observation} = AshR2ML.SPARQL.Local.query(graph, @query)
+    assert {:ok, observation} = AshR2RML.SPARQL.Local.query(graph, @query)
     assert observation.strategy == :local_rdf
     assert observation.evidence_kind == :in_memory_execution
     assert observation.result_kind == :bindings
@@ -84,7 +84,7 @@ defmodule AshR2ML.SemanticWebStackTest do
     graph = RDF.Graph.new()
 
     assert {:ok, plan} =
-             AshR2ML.plan_sparql(@query,
+             AshR2RML.plan_sparql(@query,
                data: graph,
                endpoint: "https://example.com/sparql",
                ontop: %{mapping_path: "mapping.ttl"}
@@ -93,11 +93,11 @@ defmodule AshR2ML.SemanticWebStackTest do
     assert plan.candidates == [:local_rdf, :protocol, :ontop_cli]
     assert plan.selected == nil
 
-    assert {:error, refusal} = AshR2ML.execute_sparql(plan)
+    assert {:error, refusal} = AshR2RML.execute_sparql(plan)
     assert refusal.code == :REFUSED_UNPROVEN_EQUIVALENCE
     assert refusal.evidence.candidates == [:local_rdf, :protocol, :ontop_cli]
 
-    assert {:ok, local_plan} = AshR2ML.plan_sparql(@query, data: graph, strategy: :local_rdf)
+    assert {:ok, local_plan} = AshR2RML.plan_sparql(@query, data: graph, strategy: :local_rdf)
     assert local_plan.selected == :local_rdf
   end
 
@@ -111,7 +111,7 @@ defmodule AshR2ML.SemanticWebStackTest do
     end
 
     assert {:ok, observation} =
-             AshR2ML.SPARQL.Protocol.query_with(
+             AshR2RML.SPARQL.Protocol.query_with(
                "https://example.com/sparql",
                @query,
                [],
@@ -126,22 +126,22 @@ defmodule AshR2ML.SemanticWebStackTest do
 
   test "Turtle and JSON-LD representations converge on the same canonical mapping bundle" do
     graph = RDF.Turtle.read_string!(@profile_turtle)
-    assert {:ok, jsonld} = AshR2ML.JSONLD.encode_rdf(graph, pretty: false)
+    assert {:ok, jsonld} = AshR2RML.JSONLD.encode_rdf(graph, pretty: false)
 
-    assert {:ok, turtle_bundle} = AshR2ML.compile_turtle(@profile_turtle)
-    assert {:ok, jsonld_bundle} = AshR2ML.compile_jsonld(jsonld)
+    assert {:ok, turtle_bundle} = AshR2RML.compile_turtle(@profile_turtle)
+    assert {:ok, jsonld_bundle} = AshR2RML.compile_jsonld(jsonld)
 
-    assert AshR2ML.Mapping.normalize(turtle_bundle) == AshR2ML.Mapping.normalize(jsonld_bundle)
+    assert AshR2RML.Mapping.normalize(turtle_bundle) == AshR2RML.Mapping.normalize(jsonld_bundle)
 
-    assert {:ok, turtle_r2rml} = AshR2ML.R2RML.render(turtle_bundle)
-    assert {:ok, jsonld_r2rml} = AshR2ML.R2RML.render(jsonld_bundle)
+    assert {:ok, turtle_r2rml} = AshR2RML.R2RML.render(turtle_bundle)
+    assert {:ok, jsonld_r2rml} = AshR2RML.R2RML.render(jsonld_bundle)
     assert turtle_r2rml == jsonld_r2rml
   end
 
   test "ggen manufactures the same output graph from JSON-LD input" do
     graph = RDF.Turtle.read_string!(@profile_turtle)
-    assert {:ok, jsonld} = AshR2ML.JSONLD.encode_rdf(graph, pretty: false)
-    assert {:ok, bundle} = AshR2ML.Ggen.compile_jsonld_bundle(jsonld)
+    assert {:ok, jsonld} = AshR2RML.JSONLD.encode_rdf(graph, pretty: false)
+    assert {:ok, bundle} = AshR2RML.Ggen.compile_jsonld_bundle(jsonld)
 
     assert bundle.status == :PARTIAL_ALIVE
     assert Map.has_key?(bundle.files, "priv/r2rml/mapping.ttl")
@@ -156,7 +156,7 @@ defmodule AshR2ML.SemanticWebStackTest do
         "@id" => "https://example.com/id/1"
       })
 
-    assert {:error, refusal} = AshR2ML.JSONLD.to_rdf(jsonld)
+    assert {:error, refusal} = AshR2RML.JSONLD.to_rdf(jsonld)
     assert refusal.code == :REFUSED_UNPROVEN_EQUIVALENCE
     assert refusal.subject == :jsonld_context
     assert refusal.evidence.remote_contexts == ["https://example.com/context.jsonld"]

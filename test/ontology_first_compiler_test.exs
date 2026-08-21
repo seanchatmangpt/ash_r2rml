@@ -1,8 +1,8 @@
-# SPDX-FileCopyrightText: 2026 ash_r2ml contributors <https://github.com/seanchatmangpt/ash_r2ml/graphs/contributors>
+# SPDX-FileCopyrightText: 2026 ash_r2rml contributors <https://github.com/seanchatmangpt/ash_r2rml/graphs/contributors>
 #
 # SPDX-License-Identifier: MIT
 
-defmodule AshR2ml.OntologyFirstCompilerTest do
+defmodule AshR2RML.OntologyFirstCompilerTest do
   use ExUnit.Case, async: true
 
   @xsd_string "http://www.w3.org/2001/XMLSchema#string"
@@ -122,11 +122,11 @@ defmodule AshR2ml.OntologyFirstCompilerTest do
   end
 
   test "one admitted profile converges on canonical mapping before all projections" do
-    assert {:ok, compilation} = AshR2ml.Compiler.compile(profile())
+    assert {:ok, compilation} = AshR2RML.Compiler.compile(profile())
 
     assert compilation.status == :PARTIAL_ALIVE
     assert compilation.standing == :constructed_not_actuated
-    assert %AshR2ML.Mapping.Bundle{} = compilation.mapping_bundle
+    assert %AshR2RML.Mapping.Bundle{} = compilation.mapping_bundle
     assert length(compilation.mapping_bundle.resources) == 2
 
     assert compilation.ash_source =~ "defmodule Xaas.Account"
@@ -139,12 +139,12 @@ defmodule AshR2ml.OntologyFirstCompilerTest do
     assert compilation.postgres_ddl =~ ~s(CREATE TABLE IF NOT EXISTS "accounts")
 
     assert compilation.postgres_ddl =~
-             ~s(FOREIGN KEY ("organization_id") REFERENCES "organizations" ("id"))
+             ~s{FOREIGN KEY ("organization_id") REFERENCES "organizations" ("id")}
 
     organization_mapping =
       Enum.find(compilation.mapping_bundle.resources, &(&1.ash_resource == "Xaas.Organization"))
 
-    organization_map_iri = AshR2ML.Mapping.mapping_identity(organization_mapping)
+    organization_map_iri = AshR2RML.Mapping.mapping_identity(organization_mapping)
 
     assert compilation.r2rml =~ "rr:TriplesMap"
     assert compilation.r2rml =~ "rr:parentTriplesMap <#{organization_map_iri}>"
@@ -165,7 +165,7 @@ defmodule AshR2ml.OntologyFirstCompilerTest do
     assert :canonical_mapping_ir in compilation.receipt.executed
     assert :canonical_mapping_ir_projection in compilation.receipt.verified
     assert compilation.receipt.query_parity == :UNKNOWN
-    refute AshR2ml.Compiler.cutover_ready?(compilation.receipt)
+    refute AshR2RML.Compiler.cutover_ready?(compilation.receipt)
   end
 
   test "DfCM preserves ambiguous lawful storage candidates and refuses premature projection" do
@@ -181,7 +181,7 @@ defmodule AshR2ml.OntologyFirstCompilerTest do
         end)
       end)
 
-    assert {:ok, ir} = AshR2ml.Compiler.explore(ambiguous)
+    assert {:ok, ir} = AshR2RML.Compiler.explore(ambiguous)
     account = Enum.find(ir.resources, &(&1.module == "Xaas.Account"))
     relationship = hd(account.relationships)
 
@@ -189,7 +189,7 @@ defmodule AshR2ml.OntologyFirstCompilerTest do
     assert :foreign_key in relationship.storage_candidates
     assert :association_resource in relationship.storage_candidates
 
-    assert {:error, compilation} = AshR2ml.Compiler.compile(ambiguous)
+    assert {:error, compilation} = AshR2RML.Compiler.compile(ambiguous)
     assert compilation.status == :REFUSED
     assert Enum.any?(compilation.refusals, &(&1.code == :REFUSED_UNPROVEN_EQUIVALENCE))
   end
@@ -210,7 +210,7 @@ defmodule AshR2ml.OntologyFirstCompilerTest do
         end)
       end)
 
-    assert {:error, compilation} = AshR2ml.Compiler.compile(broken)
+    assert {:error, compilation} = AshR2RML.Compiler.compile(broken)
     assert Enum.any?(compilation.refusals, &(&1.code == :REFUSED_DATATYPE_CAST_NOT_LOSSLESS))
   end
 
@@ -222,7 +222,7 @@ defmodule AshR2ml.OntologyFirstCompilerTest do
         |> Map.put(:identities, [%{name: :primary, keys: [:id, :name], primary?: true}])
       end)
 
-    assert {:error, compilation} = AshR2ml.Compiler.compile(broken)
+    assert {:error, compilation} = AshR2RML.Compiler.compile(broken)
     assert Enum.any?(compilation.refusals, &(&1.code == :REFUSED_R2RML_JOIN_KEY_NOT_UNIQUE))
   end
 
@@ -235,7 +235,7 @@ defmodule AshR2ml.OntologyFirstCompilerTest do
         ])
       end)
 
-    assert {:error, compilation} = AshR2ml.Compiler.compile(broken)
+    assert {:error, compilation} = AshR2RML.Compiler.compile(broken)
     assert Enum.any?(compilation.refusals, &(&1.code == :REFUSED_NON_UNIQUE_SEMANTIC_IDENTITY))
   end
 
@@ -250,12 +250,12 @@ defmodule AshR2ml.OntologyFirstCompilerTest do
         end)
       end)
 
-    assert {:error, compilation} = AshR2ml.Compiler.compile(broken)
+    assert {:error, compilation} = AshR2RML.Compiler.compile(broken)
     assert Enum.any?(compilation.refusals, &(&1.code == :REFUSED_CARDINALITY_STORAGE_MISMATCH))
   end
 
   test "projection identity is deterministic independent of input ordering" do
-    assert {:ok, first} = AshR2ml.Compiler.compile(profile())
+    assert {:ok, first} = AshR2RML.Compiler.compile(profile())
 
     reordered =
       profile()
@@ -272,7 +272,7 @@ defmodule AshR2ml.OntologyFirstCompilerTest do
         end)
       end)
 
-    assert {:ok, second} = AshR2ml.Compiler.compile(reordered)
+    assert {:ok, second} = AshR2RML.Compiler.compile(reordered)
 
     assert first.receipt.ir_sha256 == second.receipt.ir_sha256
     assert first.receipt.mapping_sha256 == second.receipt.mapping_sha256
@@ -284,22 +284,22 @@ defmodule AshR2ml.OntologyFirstCompilerTest do
   end
 
   test "cutover requires external parity witnesses and separate authority" do
-    assert {:ok, compilation} = AshR2ml.Compiler.compile(profile())
+    assert {:ok, compilation} = AshR2RML.Compiler.compile(profile())
 
     receipt =
       compilation.receipt
-      |> AshR2ml.Compiler.attach_parity_witness(:sparql_sql, %{
+      |> AshR2RML.Compiler.attach_parity_witness(:sparql_sql, %{
         verified?: true,
         receipt_sha256: "sparql-sql-receipt"
       })
-      |> AshR2ml.Compiler.attach_parity_witness(:neo4j_postgres, %{
+      |> AshR2RML.Compiler.attach_parity_witness(:neo4j_postgres, %{
         verified?: true,
         receipt_sha256: "neo4j-postgres-receipt"
       })
 
     assert receipt.query_parity == :VERIFIED
     assert receipt.neo4j_postgres_parity == :VERIFIED
-    refute AshR2ml.Compiler.cutover_ready?(receipt)
+    refute AshR2RML.Compiler.cutover_ready?(receipt)
     assert :cutover_authority in receipt.blocked
   end
 

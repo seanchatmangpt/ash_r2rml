@@ -1,27 +1,27 @@
 <!--
 SPDX-FileCopyrightText: 2025 ash_neo4j contributors <https://github.com/diffo-dev/ash_neo4j/graphs.contributors>
-SPDX-FileCopyrightText: 2026 ash_r2ml contributors
+SPDX-FileCopyrightText: 2026 ash_r2rml contributors
 
 SPDX-License-Identifier: MIT
 -->
 
-# AGENTS.md — AshR2ML
+# AGENTS.md — AshR2RML
 
 This repository is the generic semantic mapping layer between Ash resources and W3C R2RML.
 
-The historical codebase was forked from AshNeo4j. Treat that implementation as donor material, not as the product definition. The public contract is AshR2ML.
+The historical codebase was forked from AshNeo4j. Treat that implementation as donor material, not as the product definition. The public contract is AshR2RML.
 
 ## Product invariant
 
-AshR2ML is **not** an `Ash.DataLayer`, graph database, triplestore, SPARQL engine, or application ontology.
+AshR2RML is **not** an `Ash.DataLayer`, graph database, triplestore, SPARQL engine, or application ontology.
 
-AshR2ML compiles Ash resource metadata plus explicit semantic annotations into a normalized mapping IR and standards-valid R2RML. Existing Ash data layers continue to own persistence.
+AshR2RML compiles Ash resource metadata plus explicit semantic annotations into a normalized mapping IR and standards-valid R2RML. Existing Ash data layers continue to own persistence.
 
 ```text
 Ash.Resource + semantic metadata
              │
              ▼
-      AshR2ML.Mapping
+      AshR2RML.Mapping
          ╱         ╲
         ▼           ▼
  relational DB     R2RML
@@ -45,7 +45,7 @@ ggen
    ↓
 generated Ash.Resource
    ↓
-AshR2ML.Mapping
+AshR2RML.Mapping
    ↓
 R2RML
 ```
@@ -59,7 +59,7 @@ Keep boundaries explicit:
 - **Ash** owns resource/action/domain semantics.
 - **AshPostgres or another Ash data layer** owns persistence.
 - **Ecto/AshPostgres migration machinery** owns relational DDL where applicable.
-- **AshR2ML** owns semantic mapping metadata, introspection, validation, normalized mapping IR, and R2RML rendering.
+- **AshR2RML** owns semantic mapping metadata, introspection, validation, normalized mapping IR, and R2RML rendering.
 - **ggen** is the development/manufacturing path for ontology-first Ash and generated compiler surfaces; it is not automatically a runtime dependency.
 - **SHACL** supplies operational closure for ontology-first generation.
 - **An OBDA/R2RML engine** owns SPARQL-to-SQL rewriting and virtual RDF execution.
@@ -88,13 +88,13 @@ A mapping is correct only if the same admitted relationship or value survives ac
 All public compilation paths must converge on a deterministic, inspectable IR. The canonical concepts are:
 
 ```text
-AshR2ML.Mapping.Resource
-AshR2ML.Mapping.SubjectMap
-AshR2ML.Mapping.PredicateObjectMap
-AshR2ML.Mapping.ReferenceObjectMap
-AshR2ML.Mapping.JoinCondition
-AshR2ML.Mapping.Datatype
-AshR2ML.Mapping.GraphMap
+AshR2RML.Mapping.Resource
+AshR2RML.Mapping.SubjectMap
+AshR2RML.Mapping.PredicateObjectMap
+AshR2RML.Mapping.ReferenceObjectMap
+AshR2RML.Mapping.JoinCondition
+AshR2RML.Mapping.Datatype
+AshR2RML.Mapping.GraphMap
 ```
 
 Names may evolve only if the replacement is demonstrably clearer and the public docs/tests are changed in the same PR.
@@ -159,7 +159,7 @@ Never silently create an RDF IRI from an Elixir module name.
 
 Datatype conversion must be explicit and loss-aware.
 
-Built-in mappings should cover common Ash scalar types. Custom types need an explicit AshR2ML datatype contract/registry entry.
+Built-in mappings should cover common Ash scalar types. Custom types need an explicit AshR2RML datatype contract/registry entry.
 
 Never implement a fallback of:
 
@@ -251,7 +251,7 @@ Before changing inherited AshNeo4j code, classify it:
 - `PRESERVE`: generally useful Ash/Spark/error/testing architecture.
 - `ADAPT`: reusable concept with Neo4j-specific vocabulary or assumptions.
 - `TEMPORARILY_KEEP`: needed only while extracting/validating replacement behavior.
-- `REMOVE`: Neo4j/Cypher/Bolty-specific implementation that has no role in finished AshR2ML.
+- `REMOVE`: Neo4j/Cypher/Bolty-specific implementation that has no role in finished AshR2RML.
 - `UNSUPPORTED`: behavior intentionally outside the product.
 
 Expected direction:
@@ -278,7 +278,7 @@ Do not mass-delete donor code before its useful architecture and tests have been
 For substantial implementation work, proceed in this order unless evidence requires a different dependency order:
 
 1. Establish exact base SHA and baseline tests.
-2. Introduce the generic `AshR2ML.Mapping` IR with pure unit tests.
+2. Introduce the generic `AshR2RML.Mapping` IR with pure unit tests.
 3. Adapt Spark DSL and resource introspection to compile into that IR.
 4. Implement deterministic standards-valid R2RML rendering.
 5. Add datatype, identity, relationship, join, graph-map, and logical-table verifiers.
@@ -331,7 +331,7 @@ The repository is not done when it compiles or when the DSL renders a Turtle str
 
 ### Semantic core done
 
-- `AshR2ML.Mapping` is the single normalized IR.
+- `AshR2RML.Mapping` is the single normalized IR.
 - Resource, subject, scalar property, relationship, join, datatype, identity, and graph mappings are represented.
 - Spark DSL/introspection deterministically compile Ash resources into the IR.
 - Unsupported or ambiguous mappings are typed failures.
@@ -346,7 +346,7 @@ The repository is not done when it compiles or when the DSL renders a Turtle str
 
 ### Ontology-first done
 
-- a shipped ggen pack compiles a generic RDF/SHACL application profile into ordinary Ash resources carrying AshR2ML metadata;
+- a shipped ggen pack compiles a generic RDF/SHACL application profile into ordinary Ash resources carrying AshR2RML metadata;
 - shapes cover scalar, to-one, to-many, association-resource, identity, and datatype cases;
 - ambiguous/open-world shapes fail closed;
 - two identical ggen runs produce identical generated projections.
@@ -377,11 +377,11 @@ This is `ALIVE` only for the admitted fixture/query fragment actually executed.
 
 ### Fork migration done
 
-- package/module/public docs describe AshR2ML, not AshNeo4j;
+- package/module/public docs describe AshR2RML, not AshNeo4j;
 - Neo4j, Bolty, Cypher, Neo4j schema/index/sandbox functionality is removed from the target runtime unless explicitly retained as an optional independently justified adapter;
 - no public API requires a graph database;
 - no hidden donor terminology remains in public docs or package metadata except historical changelog/license attribution;
-- release/test/docs tooling targets AshR2ML.
+- release/test/docs tooling targets AshR2RML.
 
 ## Standing vocabulary
 

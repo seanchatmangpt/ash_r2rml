@@ -77,11 +77,11 @@ jobs:
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: ash_r2ml
+          POSTGRES_DB: ash_r2rml
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U postgres -d ash_r2ml"
+          --health-cmd "pg_isready -U postgres -d ash_r2rml"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 30
@@ -133,8 +133,8 @@ jobs:
       - name: Execute RDF/SHACL → Postgres/R2RML → Ontop + Neo4j parity crown
         env:
           MIX_ENV: test
-          ASH_R2ML_ONTOP_JDBC_DIR: ${{ runner.temp }}/ontop-jdbc
-          ASH_R2ML_PGJDBC_SHA256: "6e0e4cc2d8cae902084f8a2b18728b073a6fd9d1f87c9d8bff8f298c18185b93"
+          ASH_R2RML_ONTOP_JDBC_DIR: ${{ runner.temp }}/ontop-jdbc
+          ASH_R2RML_PGJDBC_SHA256: "6e0e4cc2d8cae902084f8a2b18728b073a6fd9d1f87c9d8bff8f298c18185b93"
         run: mix run test/integration/obda_crown.exs
 
       - name: Publish bounded parity receipt
@@ -142,7 +142,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ash-r2ml-obda-parity
-          path: tmp/ash_r2ml_obda/parity-receipt.json
+          path: tmp/ash_r2rml_obda/parity-receipt.json
           if-no-files-found: ignore
 
       - name: Stop Neo4j control database

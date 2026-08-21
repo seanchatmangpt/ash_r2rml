@@ -1,18 +1,18 @@
-# SPDX-FileCopyrightText: 2026 ash_r2ml contributors <https://github.com/seanchatmangpt/ash_r2ml/graphs/contributors>
+# SPDX-FileCopyrightText: 2026 ash_r2rml contributors <https://github.com/seanchatmangpt/ash_r2rml/graphs/contributors>
 #
 # SPDX-License-Identifier: MIT
 
-defmodule AshR2ml.RdfIngestionAndObdaTest do
+defmodule AshR2RML.RdfIngestionAndObdaTest do
   use ExUnit.Case, async: true
 
-  alias AshR2ml.SemanticIR.Relationship
+  alias AshR2RML.SemanticIR.Relationship
 
   @profile """
   @prefix sh: <http://www.w3.org/ns/shacl#> .
   @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
   @prefix ex: <https://example.com/ontology/> .
   @prefix shapes: <https://example.com/shapes/> .
-  @prefix r2ml: <https://seanchatmangpt.github.io/ash_r2ml#> .
+  @prefix r2ml: <https://seanchatmangpt.github.io/ash_r2rml#> .
 
   shapes:OrganizationShape
       a sh:NodeShape ;
@@ -87,7 +87,7 @@ defmodule AshR2ml.RdfIngestionAndObdaTest do
   """
 
   test "RDF/Turtle + SHACL is ingested into the normalized profile and compiled" do
-    assert {:ok, profile} = AshR2ml.ingest_turtle(@profile, ontology_hash: "ontology:test")
+    assert {:ok, profile} = AshR2RML.ingest_turtle(@profile, ontology_hash: "ontology:test")
     assert profile.ontology_hash == "ontology:test"
     assert is_binary(profile.profile_hash)
     assert is_binary(profile.shacl_hash)
@@ -104,29 +104,30 @@ defmodule AshR2ml.RdfIngestionAndObdaTest do
     assert relationship.source_key == :organization_id
     assert relationship.destination_key == :id
 
-    assert {:ok, compilation} = AshR2ml.compile_turtle(@profile)
+    assert {:ok, profile} = AshR2RML.Ingestion.from_turtle(@profile)
+    assert {:ok, compilation} = AshR2RML.Compiler.compile(profile)
     assert compilation.status == :PARTIAL_ALIVE
     assert compilation.ash_source =~ "defmodule Example.Account"
-    assert compilation.postgres_ddl =~ ~s(FOREIGN KEY ("organization_id"))
+    assert compilation.postgres_ddl =~ ~s{FOREIGN KEY ("organization_id")}
 
     organization_mapping =
       Enum.find(compilation.mapping_bundle.resources, fn resource ->
         "https://example.com/ontology/Organization" in resource.class_iris
       end)
 
-    organization_map_iri = AshR2ML.Mapping.mapping_identity(organization_mapping)
+    organization_map_iri = AshR2RML.Mapping.mapping_identity(organization_mapping)
     assert compilation.r2rml =~ "rr:parentTriplesMap <#{organization_map_iri}>"
 
     {organization_create, _} = :binary.match(compilation.postgres_ddl, ~s(CREATE TABLE IF NOT EXISTS "organizations"))
     {account_fk, _} = :binary.match(compilation.postgres_ddl, ~s(ALTER TABLE "accounts"))
     assert organization_create < account_fk
 
-    assert {:ok, public_bundle} = AshR2ML.Ingestion.compile_turtle(@profile)
+    assert {:ok, public_bundle} = AshR2RML.Ingestion.compile_turtle(@profile)
     assert length(public_bundle.resources) == 2
   end
 
   test "ggen can manufacture the generic bundle directly from Turtle" do
-    assert {:ok, bundle} = AshR2ml.compile_turtle_bundle(@profile)
+    assert {:ok, bundle} = AshR2RML.compile_turtle_bundle(@profile)
     assert Map.has_key?(bundle.files, "priv/r2rml/mapping.ttl")
     refute Map.has_key?(bundle.files, "priv/r2rml/xaas.ttl")
     assert bundle.files["generated/shacl/operational-profile.ttl"] =~ "sh:NodeShape"
@@ -142,7 +143,7 @@ defmodule AshR2ml.RdfIngestionAndObdaTest do
       properties: []
     }
 
-    candidates = AshR2ml.DfCM.storage_candidates(relationship)
+    candidates = AshR2RML.DfCM.storage_candidates(relationship)
 
     assert :join_table in candidates
     assert :association_resource in candidates
@@ -150,12 +151,12 @@ defmodule AshR2ml.RdfIngestionAndObdaTest do
     assert :jsonb in candidates
     assert :computed_projection in candidates
 
-    assert {:ok, explored} = AshR2ml.DfCM.select(relationship)
+    assert {:ok, explored} = AshR2RML.DfCM.select(relationship)
     assert explored.storage_strategy == nil
     assert explored.storage_candidates == candidates
 
     assert {:error, refusal} =
-             AshR2ml.DfCM.select(%{relationship | storage_strategy: :array})
+             AshR2RML.DfCM.select(%{relationship | storage_strategy: :array})
 
     assert refusal.code == :REFUSED_PROJECTION_NOT_IMPLEMENTED
   end
@@ -164,7 +165,7 @@ defmodule AshR2ml.RdfIngestionAndObdaTest do
     turtle = """
     @prefix sh: <http://www.w3.org/ns/shacl#> .
     @prefix ex: <https://example.com/> .
-    @prefix r2ml: <https://seanchatmangpt.github.io/ash_r2ml#> .
+    @prefix r2ml: <https://seanchatmangpt.github.io/ash_r2rml#> .
 
     ex:Shape a sh:NodeShape ;
       sh:targetClass ex:Thing ;
@@ -180,13 +181,13 @@ defmodule AshR2ml.RdfIngestionAndObdaTest do
       ] .
     """
 
-    assert {:error, refusals} = AshR2ml.ingest_turtle(turtle)
+    assert {:error, refusals} = AshR2RML.ingest_turtle(turtle)
     assert Enum.any?(refusals, &(&1.code == :REFUSED_UNSUPPORTED_SHACL_PATH))
   end
 
   test "Ontop adapter constructs the real CLI shape while injected execution stays test-double evidence" do
     assert {:ok, {"ontop", args}} =
-             AshR2ml.OBDA.Ontop.command(
+             AshR2RML.OBDA.Ontop.command(
                mapping_path: "mapping.ttl",
                query_path: "query.rq",
                properties_path: "postgres.properties"
@@ -208,7 +209,7 @@ defmodule AshR2ml.RdfIngestionAndObdaTest do
     end
 
     assert {:ok, observation} =
-             AshR2ml.OBDA.Ontop.query(
+             AshR2RML.OBDA.Ontop.query(
                [
                  mapping_path: "mapping.ttl",
                  query_path: "query.rq",

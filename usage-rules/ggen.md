@@ -1,6 +1,6 @@
 # ggen manufacturing
 
-AshR2ML uses ggen as a development-time semantic manufacturer. ggen is not required merely to run an Ash application that already contains generated resources.
+AshR2RML uses ggen as a development-time semantic manufacturer. ggen is not required merely to run an Ash application that already contains generated resources.
 
 ## Pack shape
 
@@ -64,8 +64,8 @@ If ggen lacks a required generic transformation:
 1. prove the limitation with a focused fixture;
 2. add the smallest general capability to ggen;
 3. verify it in ggen;
-4. consume it from the AshR2ML pack.
+4. consume it from the AshR2RML pack.
 
 ## Runtime boundary
 
-The generated Ash code and AshR2ML runtime mapping must not require ggen to answer normal application queries. ggen participates in construction, not ordinary request-time persistence or SPARQL execution.
+The generated Ash code and AshR2RML runtime mapping must not require ggen to answer normal application queries. ggen participates in construction, not ordinary request-time persistence or SPARQL execution.

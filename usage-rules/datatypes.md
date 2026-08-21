@@ -1,6 +1,6 @@
 # Datatypes
 
-AshR2ML maps Ash values to RDF terms through an explicit datatype registry.
+AshR2RML maps Ash values to RDF terms through an explicit datatype registry.
 
 ## Built-in scalar correspondence
 

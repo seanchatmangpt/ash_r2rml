@@ -16,7 +16,7 @@ relationships do
 end
 ```
 
-AshR2ML compiles the relationship into a reference object map when the active data layer exposes a deterministic relational join.
+AshR2RML compiles the relationship into a reference object map when the active data layer exposes a deterministic relational join.
 
 Conceptually:
 
@@ -30,7 +30,7 @@ Ash relationship
 
 ## What is inferred
 
-Prefer introspection over repeated configuration. AshR2ML should derive, when available:
+Prefer introspection over repeated configuration. AshR2RML should derive, when available:
 
 - destination resource;
 - source attribute;
@@ -86,7 +86,7 @@ Refuse when:
 
 ## Cardinality
 
-R2RML itself describes mapping, not all SHACL cardinality semantics. AshR2ML preserves Ash's actual relationship shape and, in ontology-first workflows, ggen uses SHACL to select the Ash/relational projection before R2RML compilation.
+R2RML itself describes mapping, not all SHACL cardinality semantics. AshR2RML preserves Ash's actual relationship shape and, in ontology-first workflows, ggen uses SHACL to select the Ash/relational projection before R2RML compilation.
 
 Do not claim that `rr:RefObjectMap` alone enforces `sh:minCount` or `sh:maxCount`.
 

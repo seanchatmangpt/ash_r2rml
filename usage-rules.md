@@ -1,15 +1,15 @@
 <!--
 SPDX-FileCopyrightText: 2025 ash_neo4j contributors <https://github.com/diffo-dev/ash_neo4j/graphs.contributors>
-SPDX-FileCopyrightText: 2026 ash_r2ml contributors
+SPDX-FileCopyrightText: 2026 ash_r2rml contributors
 
 SPDX-License-Identifier: MIT
 -->
 
-# Rules for working with AshR2ML
+# Rules for working with AshR2RML
 
-AshR2ML is a generic semantic mapping extension for Ash. It compiles Ash resource semantics into a normalized mapping IR and standards-valid W3C R2RML while leaving persistence to the resource's existing Ash data layer.
+AshR2RML is a generic semantic mapping extension for Ash. It compiles Ash resource semantics into a normalized mapping IR and standards-valid W3C R2RML while leaving persistence to the resource's existing Ash data layer.
 
-AshR2ML is **not** an `Ash.DataLayer`, graph database, triplestore, migration engine, or SPARQL engine.
+AshR2RML is **not** an `Ash.DataLayer`, graph database, triplestore, migration engine, or SPARQL engine.
 
 ## Core invariant
 
@@ -17,7 +17,7 @@ AshR2ML is **not** an `Ash.DataLayer`, graph database, triplestore, migration en
 Ash.Resource + semantic metadata
              │
              ▼
-      AshR2ML.Mapping
+      AshR2RML.Mapping
          ╱         ╲
         ▼           ▼
  relational DB     R2RML
@@ -50,18 +50,18 @@ The RDF graph is normally virtual. A compatible OBDA engine rewrites SPARQL into
 | Ash actions/mutation boundary | [actions.md](usage-rules/actions.md) |
 | Verification and semantic round trips | [testing.md](usage-rules/testing.md) |
 
-Legacy donor-era filenames remain only as compatibility tombstones and must not be treated as active AshR2ML features.
+Legacy donor-era filenames remain only as compatibility tombstones and must not be treated as active AshR2RML features.
 
 ## Resource configuration
 
-A normal relational resource keeps its data layer and adds AshR2ML as an extension:
+A normal relational resource keeps its data layer and adds AshR2RML as an extension:
 
 ```elixir
 defmodule MyApp.Person do
   use Ash.Resource,
     domain: MyApp.Domain,
     data_layer: AshPostgres.DataLayer,
-    extensions: [AshR2ML.Resource]
+    extensions: [AshR2RML.Resource]
 
   postgres do
     table "people"
@@ -91,11 +91,11 @@ defmodule MyApp.Person do
 end
 ```
 
-AshR2ML should infer relational facts already known by Ash/data-layer metadata and require explicit semantic facts only where inference would be unsafe.
+AshR2RML should infer relational facts already known by Ash/data-layer metadata and require explicit semantic facts only where inference would be unsafe.
 
 ## Mapping compiler
 
-All entry paths converge on `AshR2ML.Mapping` structures before rendering. The renderer must not rediscover Ash metadata independently.
+All entry paths converge on `AshR2RML.Mapping` structures before rendering. The renderer must not rediscover Ash metadata independently.
 
 Canonical mapping concepts include:
 
@@ -121,7 +121,7 @@ Blank nodes are explicit, never a fallback for missing identity.
 
 ## Relationships
 
-An Ash relationship with an RDF predicate must survive compilation as a semantic relationship. For relational resources, AshR2ML derives reference object maps and join conditions from proven Ash/data-layer metadata.
+An Ash relationship with an RDF predicate must survive compilation as a semantic relationship. For relational resources, AshR2RML derives reference object maps and join conditions from proven Ash/data-layer metadata.
 
 Never silently omit a relationship because the join is difficult to derive. Refuse instead.
 
@@ -152,7 +152,7 @@ ggen
    ↓
 generated Ash.Resource
    ↓
-AshR2ML.Mapping
+AshR2RML.Mapping
 ```
 
 SHACL supplies operational closure. Arbitrary OWL is not deterministically compiled directly into SQL.
@@ -167,13 +167,13 @@ Generated Ash/R2RML surfaces are projections owned by ontology/profile/shapes, S
 
 ## OBDA
 
-AshR2ML does not implement SPARQL-to-SQL rewriting. A compatible external OBDA/R2RML engine owns that boundary.
+AshR2RML does not implement SPARQL-to-SQL rewriting. A compatible external OBDA/R2RML engine owns that boundary.
 
 The crown integration proves that a subject written/read through Ash is exposed with the same semantic identity, values, and relationships through SPARQL over generated R2RML.
 
 ## Typed failures
 
-AshR2ML fails closed at semantic boundaries. Representative classifications include:
+AshR2RML fails closed at semantic boundaries. Representative classifications include:
 
 ```text
 REFUSED_INVALID_CLASS_IRI
@@ -210,7 +210,7 @@ A lower checkpoint can be `PARTIAL_ALIVE`. `ALIVE` requires the exact claimed ex
 
 ## Non-goals
 
-AshR2ML does not:
+AshR2RML does not:
 
 - replace AshPostgres or another Ash data layer;
 - write triples as its persistence model;

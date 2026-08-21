@@ -1,6 +1,6 @@
 # Legacy path: vectors
 
-AshR2ML does not own vector storage, vector indexes, or similarity-query execution.
+AshR2RML does not own vector storage, vector indexes, or similarity-query execution.
 
 If an application maps vector-like data into RDF, it must do so through an explicit custom datatype or structured semantic representation with deterministic lexical semantics.
 

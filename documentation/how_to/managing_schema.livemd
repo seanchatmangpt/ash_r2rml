@@ -1,21 +1,21 @@
 <!--
-SPDX-FileCopyrightText: 2026 ash_r2ml contributors
+SPDX-FileCopyrightText: 2026 ash_r2rml contributors
 
 SPDX-License-Identifier: MIT
 -->
 
 # Managing relational schema and R2RML
 
-AshR2ML does not manage a database schema itself. The Ash data layer—normally AshPostgres—continues to own relational persistence and migrations.
+AshR2RML does not manage a database schema itself. The Ash data layer—normally AshPostgres—continues to own relational persistence and migrations.
 
-AshR2ML manages the **semantic correspondence** between that relational schema and the virtual RDF graph exposed through R2RML.
+AshR2RML manages the **semantic correspondence** between that relational schema and the virtual RDF graph exposed through R2RML.
 
 ```text
 Ash.Resource
     │
     ├── AshPostgres → Ecto migration → PostgreSQL
     │
-    └── AshR2ML → R2RML mapping → virtual RDF
+    └── AshR2RML → R2RML mapping → virtual RDF
 ```
 
 The two branches must describe the same admitted subject.
@@ -27,7 +27,7 @@ Mix.install(
   [
     {:ash, "~> 3.0"},
     {:ash_postgres, "~> 2.0"},
-    {:ash_r2ml, "~> 1.0"}
+    {:ash_r2rml, "~> 1.0"}
   ],
   consolidate_protocols: false
 )
@@ -40,7 +40,7 @@ defmodule Schema.Account do
   use Ash.Resource,
     domain: Schema.Domain,
     data_layer: AshPostgres.DataLayer,
-    extensions: [AshR2ML.Resource]
+    extensions: [AshR2RML.Resource]
 
   postgres do
     table "accounts"
@@ -84,7 +84,7 @@ defmodule Schema.Account do
 end
 ```
 
-AshPostgres derives and enforces the relational structure. AshR2ML derives the semantic mapping.
+AshPostgres derives and enforces the relational structure. AshR2RML derives the semantic mapping.
 
 ## Generate relational migrations with AshPostgres
 
@@ -99,7 +99,7 @@ mix ash.migrate
 
 or the application's documented AshPostgres migration commands.
 
-AshR2ML deliberately does not duplicate this functionality.
+AshR2RML deliberately does not duplicate this functionality.
 
 The resulting relational schema is expected to contain structures equivalent to:
 
@@ -119,7 +119,7 @@ The exact SQL remains the responsibility of the relational data layer and migrat
 ## Generate the semantic mapping
 
 ```elixir
-{:ok, ttl} = AshR2ML.R2RML.render([Schema.Account])
+{:ok, ttl} = AshR2RML.R2RML.render([Schema.Account])
 File.write!("priv/r2rml/schema.ttl", ttl)
 ```
 
@@ -150,7 +150,7 @@ The mapping is equivalent to:
     ] .
 ```
 
-No table or column is re-declared by hand in the semantic layer when AshR2ML can derive it from the resource/data layer.
+No table or column is re-declared by hand in the semantic layer when AshR2RML can derive it from the resource/data layer.
 
 ## Add a relational relationship
 
@@ -159,7 +159,7 @@ defmodule Schema.Transaction do
   use Ash.Resource,
     domain: Schema.Domain,
     data_layer: AshPostgres.DataLayer,
-    extensions: [AshR2ML.Resource]
+    extensions: [AshR2RML.Resource]
 
   postgres do
     table "transactions"
@@ -205,7 +205,7 @@ The relational schema owns the foreign key:
 transactions.account_id → accounts.id
 ```
 
-AshR2ML converts that relationship to an R2RML reference object map:
+AshR2RML converts that relationship to an R2RML reference object map:
 
 ```turtle
 rr:predicateObjectMap [
@@ -256,16 +256,16 @@ The relational table may remain unchanged.
 
 ### Relationship ownership change
 
-Moving a foreign key or replacing a join table changes the relational path. AshR2ML must re-introspect the Ash relationship and regenerate the corresponding `rr:joinCondition`.
+Moving a foreign key or replacing a join table changes the relational path. AshR2RML must re-introspect the Ash relationship and regenerate the corresponding `rr:joinCondition`.
 
 Do not preserve a stale hand-authored join in R2RML.
 
 ## Validate relational correspondence
 
-AshR2ML verifies that mapping references correspond to known Ash/data-layer structure before rendering.
+AshR2RML verifies that mapping references correspond to known Ash/data-layer structure before rendering.
 
 ```elixir
-:ok = AshR2ML.verify([
+:ok = AshR2RML.verify([
   Schema.Account,
   Schema.Transaction
 ])
@@ -329,7 +329,7 @@ Ash resources
       ↓
 AshPostgres migrations
       +
-AshR2ML R2RML
+AshR2RML R2RML
 ```
 
 Do not modify the generated Ash resource to repair a migration or mapping. Repair the application profile, SHACL shape, ggen query/template, or compiler logic and regenerate.
@@ -354,7 +354,7 @@ Detect with the application's normal AshPostgres/Ecto migration verification.
 
 Generated R2RML no longer corresponds to the current Ash relationship, source column, datatype, or subject identity.
 
-Detect with `AshR2ML.verify/1`, deterministic regeneration, and the OBDA integration suite.
+Detect with `AshR2RML.verify/1`, deterministic regeneration, and the OBDA integration suite.
 
 ## Release artifact
 
@@ -372,7 +372,7 @@ A receipt can bind:
 application commit
 Ash resource digest
 migration digest
-AshR2ML mapping digest
+AshR2RML mapping digest
 R2RML artifact digest
 ```
 
