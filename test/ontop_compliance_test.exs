@@ -18,7 +18,9 @@ defmodule AshR2RML.OntopComplianceTest do
   end
 
   test "preserves the complete published SPARQL feature list without hiding exclusions" do
-    assert Compliance.counts(:sparql_1_1) == %{supported: 93, unsupported: 8}
+    # Ontop names 94 supported features. Summing its declared row numerators yields
+    # 93 because the aggregate row says 6/6 while naming seven aggregate functions.
+    assert Compliance.counts(:sparql_1_1) == %{supported: 94, unsupported: 8}
 
     assert Compliance.feature_status(:sparql_1_1, "BGP") == :supported
     assert Compliance.feature_status(:sparql_1_1, "DESCRIBE") == :supported
