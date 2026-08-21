@@ -5,7 +5,58 @@
 defmodule AshR2RML.GgenAshTTLTest do
   use ExUnit.Case, async: true
 
-  alias AshR2RML.ResourceTest.Account
+  defmodule Organization do
+    use Ash.Resource,
+      domain: nil,
+      data_layer: Ash.DataLayer.Ets,
+      extensions: [AshR2RML.Resource]
+
+    attributes do
+      uuid_primary_key :id
+      attribute :name, :string, allow_nil?: false, public?: true
+    end
+
+    r2rml do
+      table_name("organizations")
+      class("https://www.w3.org/ns/org#Organization")
+
+      subject do
+        template("https://example.test/organization/{id}")
+      end
+
+      property(:name, "http://xmlns.com/foaf/0.1/name")
+    end
+  end
+
+  defmodule Account do
+    use Ash.Resource,
+      domain: nil,
+      data_layer: Ash.DataLayer.Ets,
+      extensions: [AshR2RML.Resource]
+
+    attributes do
+      uuid_primary_key :id
+      attribute :account_number, :string, allow_nil?: false, public?: true
+    end
+
+    relationships do
+      belongs_to :organization, Organization,
+        allow_nil?: false,
+        public?: true
+    end
+
+    r2rml do
+      table_name("accounts")
+      class("https://example.test/ontology/Account")
+
+      subject do
+        template("https://example.test/account/{id}")
+      end
+
+      property(:account_number, "https://example.test/ontology/accountNumber")
+      reference(:organization, "https://www.w3.org/ns/org#memberOf")
+    end
+  end
 
   test "cloud ggen TTL is emitted from the admitted Ash dependency closure" do
     assert {:ok, result} = AshR2RML.compile_ash_ttl_bundle(Account)
