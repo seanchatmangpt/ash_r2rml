@@ -43,7 +43,6 @@ defmodule AshR2ML.Mapping.JoinCondition do
   @moduledoc "Explicit child/parent join used by an R2RML reference object map."
   @enforce_keys [:child, :parent]
   defstruct [:child, :parent]
-
   @type t :: %__MODULE__{child: String.t(), parent: String.t()}
 end
 
@@ -64,7 +63,6 @@ defmodule AshR2ML.Mapping.GraphMap do
   @moduledoc "Named-graph placement for a subject or predicate-object mapping."
   @enforce_keys [:strategy, :value]
   defstruct [:strategy, :value]
-
   @type strategy :: :constant | :template | :column
   @type t :: %__MODULE__{strategy: strategy(), value: String.t()}
 end
@@ -73,9 +71,9 @@ defmodule AshR2ML.Mapping.SubjectMap do
   @moduledoc "Semantic RDF subject manufacture, independent of database identity."
   @enforce_keys [:strategy, :value]
   defstruct [:strategy, :value, term_type: :iri, graph_maps: []]
-
   @type strategy :: :template | :column | :constant | :blank_node
   @type term_type :: :iri | :blank_node
+
   @type t :: %__MODULE__{
           strategy: strategy(),
           value: String.t(),
@@ -87,17 +85,10 @@ end
 defmodule AshR2ML.Mapping.ObjectMap do
   @moduledoc "Scalar RDF object manufacture for one predicate-object mapping."
   @enforce_keys [:strategy, :value]
-  defstruct [
-    :strategy,
-    :value,
-    :datatype,
-    :language,
-    term_type: :literal,
-    graph_maps: []
-  ]
-
+  defstruct [:strategy, :value, :datatype, :language, term_type: :literal, graph_maps: []]
   @type strategy :: :column | :template | :constant
   @type term_type :: :literal | :iri | :blank_node
+
   @type t :: %__MODULE__{
           strategy: strategy(),
           value: String.t(),
@@ -187,7 +178,6 @@ end
 defmodule AshR2ML.Mapping.Bundle do
   @moduledoc "Dependency-closed set of normalized resource mappings."
   defstruct resources: []
-
   @type t :: %__MODULE__{resources: [AshR2ML.Mapping.Resource.t()]}
 end
 
@@ -235,12 +225,12 @@ defmodule AshR2ML.Mapping do
 
   @spec normalize(Bundle.t()) :: Bundle.t()
   def normalize(%Bundle{} = bundle) do
-    resources =
-      bundle.resources
-      |> Enum.map(&normalize/1)
-      |> Enum.sort_by(&mapping_identity/1)
-
-    %Bundle{resources: resources}
+    %Bundle{
+      resources:
+        bundle.resources
+        |> Enum.map(&normalize/1)
+        |> Enum.sort_by(&mapping_identity/1)
+    }
   end
 
   @spec validate(Resource.t() | Bundle.t()) :: :ok | {:error, [Refusal.t()]}
@@ -258,17 +248,17 @@ defmodule AshR2ML.Mapping do
 
   def validate(%Bundle{} = bundle) do
     bundle = normalize(bundle)
-    resources = bundle.resources
-    by_resource = Map.new(resources, &{&1.ash_resource, &1})
+    by_resource = Map.new(bundle.resources, &{&1.ash_resource, &1})
 
     refusals =
-      Enum.flat_map(resources, fn resource ->
-        own = case validate(resource) do
-          :ok -> []
-          {:error, values} -> values
-        end
+      Enum.flat_map(bundle.resources, fn resource ->
+        own =
+          case validate(resource) do
+            :ok -> []
+            {:error, values} -> values
+          end
 
-        target_refusals =
+        targets =
           Enum.flat_map(resource.reference_object_maps, fn reference ->
             case Map.get(by_resource, reference.parent_resource) do
               nil ->
@@ -282,12 +272,12 @@ defmodule AshR2ML.Mapping do
                 ]
 
               parent ->
-                validate_parent_identity(resource, reference, parent)
+                validate_parent_subject_identity(resource, reference, parent)
             end
           end)
 
-        own ++ target_refusals
-      end) ++ validate_duplicate_subject_contracts(resources)
+        own ++ targets
+      end) ++ validate_duplicate_subject_contracts(bundle.resources)
 
     if refusals == [], do: :ok, else: {:error, refusals}
   end
@@ -297,11 +287,7 @@ defmodule AshR2ML.Mapping do
     normalized = normalize(resource)
 
     digest =
-      {
-        normalized.class_iris,
-        normalized.logical_table,
-        normalized.subject_map
-      }
+      {normalized.class_iris, normalized.logical_table, normalized.subject_map}
       |> :erlang.term_to_binary([:deterministic])
       |> then(&:crypto.hash(:sha256, &1))
       |> Base.encode16(case: :lower)
@@ -320,12 +306,29 @@ defmodule AshR2ML.Mapping do
 
   def template_fields(_), do: []
 
+  @spec subject_identity_columns(Resource.t()) :: [String.t()]
+  def subject_identity_columns(%Resource{subject_map: %SubjectMap{strategy: :template, value: value}}),
+    do: template_fields(value)
+
+  def subject_identity_columns(%Resource{subject_map: %SubjectMap{strategy: :column, value: value}}),
+    do: [value]
+
+  def subject_identity_columns(_), do: []
+
+  @spec stable_subject_identity?(Resource.t()) :: boolean()
+  def stable_subject_identity?(%Resource{subject_map: %SubjectMap{strategy: :constant, term_type: :iri, value: value}}),
+    do: absolute_iri?(value)
+
+  def stable_subject_identity?(%Resource{subject_map: %SubjectMap{term_type: :blank_node}}), do: true
+
+  def stable_subject_identity?(%Resource{} = resource) do
+    columns = subject_identity_columns(resource)
+    identity_columns = identity_column_sets(resource)
+    columns != [] and Enum.any?(identity_columns, &(MapSet.new(&1) == MapSet.new(columns)))
+  end
+
   defp normalize_predicate_object_map(%PredicateObjectMap{} = mapping) do
-    %{
-      mapping
-      | graph_maps: sort_graph_maps(mapping.graph_maps),
-        object_map: normalize_object_map(mapping.object_map)
-    }
+    %{mapping | graph_maps: sort_graph_maps(mapping.graph_maps), object_map: normalize_object_map(mapping.object_map)}
   end
 
   defp normalize_reference_object_map(%ReferenceObjectMap{} = mapping) do
@@ -339,11 +342,8 @@ defmodule AshR2ML.Mapping do
     }
   end
 
-  defp normalize_subject_map(%SubjectMap{} = map),
-    do: %{map | graph_maps: sort_graph_maps(map.graph_maps)}
-
-  defp normalize_object_map(%ObjectMap{} = map),
-    do: %{map | graph_maps: sort_graph_maps(map.graph_maps)}
+  defp normalize_subject_map(%SubjectMap{} = map), do: %{map | graph_maps: sort_graph_maps(map.graph_maps)}
+  defp normalize_object_map(%ObjectMap{} = map), do: %{map | graph_maps: sort_graph_maps(map.graph_maps)}
 
   defp sort_graph_maps(values) do
     values
@@ -368,13 +368,7 @@ defmodule AshR2ML.Mapping do
   end
 
   defp validate_logical_table(%Resource{} = resource) do
-    [
-      Refusal.new(
-        :REFUSED_INVALID_LOGICAL_TABLE,
-        resource.ash_resource,
-        "mapping logical_table is missing"
-      )
-    ]
+    [Refusal.new(:REFUSED_INVALID_LOGICAL_TABLE, resource.ash_resource, "mapping logical_table is missing")]
   end
 
   defp validate_classes(resource) do
@@ -397,37 +391,35 @@ defmodule AshR2ML.Mapping do
 
   defp validate_subject(%Resource{subject_map: %SubjectMap{} = subject} = resource) do
     allowed = [:template, :column, :constant, :blank_node]
-    term_types = [:iri, :blank_node]
 
     []
     |> maybe_add(subject.strategy not in allowed, fn ->
       Refusal.new(:REFUSED_INVALID_TERM_MAP, resource.ash_resource, "unsupported subject strategy", %{strategy: subject.strategy})
     end)
-    |> maybe_add(subject.term_type not in term_types, fn ->
+    |> maybe_add(subject.term_type not in [:iri, :blank_node], fn ->
       Refusal.new(:UNSUPPORTED_TERM_TYPE, resource.ash_resource, "unsupported subject term type", %{term_type: subject.term_type})
     end)
-    |> maybe_add(not is_binary(subject.value) or subject.value == "", fn ->
+    |> maybe_add(not non_empty_string?(subject.value), fn ->
       Refusal.new(:REFUSED_MISSING_SUBJECT_MAP, resource.ash_resource, "subject map value must be non-empty")
     end)
     |> maybe_add(subject.strategy == :constant and subject.term_type == :iri and not absolute_iri?(subject.value), fn ->
       Refusal.new(:REFUSED_MISSING_SUBJECT_MAP, resource.ash_resource, "constant IRI subject must be absolute", %{value: subject.value})
     end)
-    |> Kernel.++(validate_template_fields(resource, subject))
+    |> Kernel.++(validate_subject_columns(resource, subject))
     |> Kernel.++(validate_graph_maps_list(resource.ash_resource, subject.graph_maps))
+    |> maybe_add(not stable_subject_identity?(resource), fn ->
+      Refusal.new(
+        :REFUSED_NON_UNIQUE_SEMANTIC_IDENTITY,
+        resource.ash_resource,
+        "subject mapping is not proven by an admitted Ash/semantic identity",
+        %{subject_map: subject, identities: resource.identities}
+      )
+    end)
   end
 
-  defp validate_template_fields(resource, %SubjectMap{strategy: :template, value: template}) do
-    mapped_columns =
-      resource.predicate_object_maps
-      |> Enum.flat_map(fn mapping ->
-        case mapping.object_map do
-          %ObjectMap{strategy: :column, value: value} -> [value]
-          _ -> []
-        end
-      end)
-      |> MapSet.new()
-
-    missing = Enum.reject(template_fields(template), &MapSet.member?(mapped_columns, &1))
+  defp validate_subject_columns(resource, %SubjectMap{strategy: :template, value: template}) do
+    available = available_columns(resource)
+    missing = Enum.reject(template_fields(template), &MapSet.member?(available, &1))
 
     if missing == [] do
       []
@@ -436,14 +428,29 @@ defmodule AshR2ML.Mapping do
         Refusal.new(
           :REFUSED_MISSING_SUBJECT_MAP,
           resource.ash_resource,
-          "subject template references columns not present in scalar property maps",
+          "subject template references columns absent from the admitted resource mapping",
           %{missing: missing, template: template}
         )
       ]
     end
   end
 
-  defp validate_template_fields(_resource, _subject), do: []
+  defp validate_subject_columns(resource, %SubjectMap{strategy: :column, value: column}) do
+    if MapSet.member?(available_columns(resource), column) do
+      []
+    else
+      [
+        Refusal.new(
+          :REFUSED_MISSING_SUBJECT_MAP,
+          resource.ash_resource,
+          "subject column is absent from the admitted resource mapping",
+          %{column: column}
+        )
+      ]
+    end
+  end
+
+  defp validate_subject_columns(_resource, _subject), do: []
 
   defp validate_properties(resource) do
     Enum.flat_map(resource.predicate_object_maps, fn mapping ->
@@ -456,7 +463,7 @@ defmodule AshR2ML.Mapping do
       |> maybe_add(object.term_type not in [:literal, :iri, :blank_node], fn ->
         Refusal.new(:UNSUPPORTED_TERM_TYPE, {resource.ash_resource, mapping.attribute}, "unsupported object term type", %{term_type: object.term_type})
       end)
-      |> maybe_add(not is_binary(object.value) or object.value == "", fn ->
+      |> maybe_add(not non_empty_string?(object.value), fn ->
         Refusal.new(:REFUSED_INVALID_TERM_MAP, {resource.ash_resource, mapping.attribute}, "object map value must be non-empty")
       end)
       |> maybe_add(object.language && object.datatype, fn ->
@@ -471,12 +478,7 @@ defmodule AshR2ML.Mapping do
     case mapping.object_map.datatype do
       nil -> []
       %{rdf_datatype: iri} when is_binary(iri) ->
-        if absolute_iri?(iri) do
-          []
-        else
-          [Refusal.new(:REFUSED_UNMAPPED_DATATYPE, {resource.ash_resource, mapping.attribute}, "RDF datatype IRI must be absolute", %{datatype: iri})]
-        end
-
+        if absolute_iri?(iri), do: [], else: [Refusal.new(:REFUSED_UNMAPPED_DATATYPE, {resource.ash_resource, mapping.attribute}, "RDF datatype IRI must be absolute", %{datatype: iri})]
       value ->
         [Refusal.new(:REFUSED_UNMAPPED_DATATYPE, {resource.ash_resource, mapping.attribute}, "invalid datatype mapping", %{datatype: inspect(value)})]
     end
@@ -484,18 +486,53 @@ defmodule AshR2ML.Mapping do
 
   defp validate_references(resource) do
     Enum.flat_map(resource.reference_object_maps, fn reference ->
-      []
-      |> maybe_add(not absolute_iri?(reference.predicate_iri), fn ->
-        Refusal.new(:REFUSED_RELATIONSHIP_WITHOUT_PREDICATE, {resource.ash_resource, reference.relationship}, "relationship predicate IRI must be absolute", %{predicate_iri: reference.predicate_iri})
-      end)
-      |> maybe_add(reference.inverse_predicate && not absolute_iri?(reference.inverse_predicate), fn ->
-        Refusal.new(:REFUSED_UNPROVEN_EQUIVALENCE, {resource.ash_resource, reference.relationship}, "inverse predicate must be an absolute IRI when supplied", %{inverse_predicate: reference.inverse_predicate})
-      end)
-      |> maybe_add(reference.joins == [], fn ->
-        Refusal.new(:REFUSED_INVALID_JOIN_CONDITION, {resource.ash_resource, reference.relationship}, "reference object map requires at least one join condition")
-      end)
-      |> Kernel.++(Enum.flat_map(reference.joins, &validate_join(resource, reference, &1)))
-      |> Kernel.++(validate_graph_maps_list({resource.ash_resource, reference.relationship}, reference.graph_maps))
+      base =
+        []
+        |> maybe_add(not absolute_iri?(reference.predicate_iri), fn ->
+          Refusal.new(:REFUSED_RELATIONSHIP_WITHOUT_PREDICATE, {resource.ash_resource, reference.relationship}, "relationship predicate IRI must be absolute", %{predicate_iri: reference.predicate_iri})
+        end)
+        |> maybe_add(reference.inverse_predicate && not absolute_iri?(reference.inverse_predicate), fn ->
+          Refusal.new(:REFUSED_UNPROVEN_EQUIVALENCE, {resource.ash_resource, reference.relationship}, "inverse predicate must be an absolute IRI when supplied", %{inverse_predicate: reference.inverse_predicate})
+        end)
+
+      join_validation =
+        if many_to_many?(reference) do
+          validate_many_to_many_bridge(resource, reference)
+        else
+          []
+          |> maybe_add(reference.joins == [], fn ->
+            Refusal.new(:REFUSED_INVALID_JOIN_CONDITION, {resource.ash_resource, reference.relationship}, "reference object map requires at least one join condition")
+          end)
+          |> Kernel.++(Enum.flat_map(reference.joins, &validate_join(resource, reference, &1)))
+        end
+
+      base ++ join_validation ++ validate_graph_maps_list({resource.ash_resource, reference.relationship}, reference.graph_maps)
+    end)
+  end
+
+  defp validate_many_to_many_bridge(resource, reference) do
+    metadata = reference.metadata
+    through = Map.get(metadata, :through_logical_table)
+
+    bridge_columns =
+      cond do
+        Enum.all?([:source_parent_column, :source_join_column, :destination_join_column, :destination_parent_column], &Map.has_key?(metadata, &1)) ->
+          [metadata.source_parent_column, metadata.source_join_column, metadata.destination_join_column, metadata.destination_parent_column]
+
+        match?(%JoinCondition{}, Map.get(metadata, :source_to_join)) and match?(%JoinCondition{}, Map.get(metadata, :join_to_destination)) ->
+          a = metadata.source_to_join
+          b = metadata.join_to_destination
+          [a.child, a.parent, b.child, b.parent]
+
+        true -> []
+      end
+
+    []
+    |> maybe_add(not match?(%LogicalTable{}, through), fn ->
+      Refusal.new(:REFUSED_INVALID_LOGICAL_TABLE, {resource.ash_resource, reference.relationship}, "many_to_many reference requires a normalized through logical table")
+    end)
+    |> maybe_add(bridge_columns == [] or Enum.any?(bridge_columns, &(not non_empty_string?(&1))), fn ->
+      Refusal.new(:REFUSED_INVALID_JOIN_CONDITION, {resource.ash_resource, reference.relationship}, "many_to_many reference requires complete source/bridge/destination join columns", %{metadata: metadata})
     end)
   end
 
@@ -503,78 +540,41 @@ defmodule AshR2ML.Mapping do
     if non_empty_string?(child) and non_empty_string?(parent) do
       []
     else
-      [
-        Refusal.new(
-          :REFUSED_INVALID_JOIN_CONDITION,
-          {resource.ash_resource, reference.relationship},
-          "join child and parent columns must both be non-empty",
-          %{child: child, parent: parent}
-        )
-      ]
+      [Refusal.new(:REFUSED_INVALID_JOIN_CONDITION, {resource.ash_resource, reference.relationship}, "join child and parent columns must both be non-empty", %{child: child, parent: parent})]
     end
   end
 
   defp validate_join(resource, reference, other) do
-    [
-      Refusal.new(
-        :REFUSED_INVALID_JOIN_CONDITION,
-        {resource.ash_resource, reference.relationship},
-        "join must be a JoinCondition",
-        %{join: inspect(other)}
-      )
-    ]
+    [Refusal.new(:REFUSED_INVALID_JOIN_CONDITION, {resource.ash_resource, reference.relationship}, "join must be a JoinCondition", %{join: inspect(other)})]
   end
 
-  defp validate_graph_maps(resource),
-    do: validate_graph_maps_list(resource.ash_resource, resource.graph_maps)
+  defp validate_graph_maps(resource), do: validate_graph_maps_list(resource.ash_resource, resource.graph_maps)
 
   defp validate_graph_maps_list(subject, graph_maps) do
     Enum.flat_map(graph_maps, fn
       %GraphMap{strategy: :constant, value: value} ->
-        if absolute_iri?(value) do
-          []
-        else
-          [Refusal.new(:REFUSED_INVALID_GRAPH_MAP, subject, "constant graph IRI must be absolute", %{value: value})]
-        end
+        if absolute_iri?(value), do: [], else: [Refusal.new(:REFUSED_INVALID_GRAPH_MAP, subject, "constant graph IRI must be absolute", %{value: value})]
 
       %GraphMap{strategy: strategy, value: value} when strategy in [:template, :column] ->
-        if non_empty_string?(value) do
-          []
-        else
-          [Refusal.new(:REFUSED_INVALID_GRAPH_MAP, subject, "graph map value must be non-empty", %{strategy: strategy})]
-        end
+        if non_empty_string?(value), do: [], else: [Refusal.new(:REFUSED_INVALID_GRAPH_MAP, subject, "graph map value must be non-empty", %{strategy: strategy})]
 
       other ->
         [Refusal.new(:REFUSED_INVALID_GRAPH_MAP, subject, "unsupported graph map", %{graph_map: inspect(other)})]
     end)
   end
 
-  defp validate_parent_identity(resource, reference, parent) do
-    parent_columns = MapSet.new(parent.identities |> List.flatten() |> Enum.map(&to_string/1))
-    joined_parent_columns = MapSet.new(Enum.map(reference.joins, & &1.parent))
-
-    cond do
-      parent.identities == [] ->
-        [
-          Refusal.new(
-            :REFUSED_R2RML_JOIN_WITHOUT_IDENTITY,
-            {resource.ash_resource, reference.relationship},
-            "parent mapping has no admitted stable identity",
-            %{parent_resource: parent.ash_resource}
-          )
-        ]
-
-      MapSet.disjoint?(parent_columns, joined_parent_columns) ->
-        [
-          Refusal.new(
-            :REFUSED_R2RML_JOIN_WITHOUT_IDENTITY,
-            {resource.ash_resource, reference.relationship},
-            "join does not target any admitted parent identity column",
-            %{parent_resource: parent.ash_resource, joins: reference.joins, identities: parent.identities}
-          )
-        ]
-
-      true -> []
+  defp validate_parent_subject_identity(resource, reference, parent) do
+    if stable_subject_identity?(parent) do
+      []
+    else
+      [
+        Refusal.new(
+          :REFUSED_R2RML_JOIN_WITHOUT_IDENTITY,
+          {resource.ash_resource, reference.relationship},
+          "parent triples map has no stable semantic subject identity",
+          %{parent_resource: parent.ash_resource, subject_map: parent.subject_map, identities: parent.identities}
+        )
+      ]
     end
   end
 
@@ -584,10 +584,9 @@ defmodule AshR2ML.Mapping do
     |> Enum.flat_map(fn
       {_key, [_one]} -> []
       {key, many} ->
-        class_sets = many |> Enum.map(&MapSet.new(&1.class_iris))
-        overlap? = pairwise_overlap?(class_sets)
+        class_sets = Enum.map(many, &MapSet.new(&1.class_iris))
 
-        if overlap? do
+        if pairwise_overlap?(class_sets) do
           [
             Refusal.new(
               :REFUSED_NON_UNIQUE_SEMANTIC_IDENTITY,
@@ -602,10 +601,33 @@ defmodule AshR2ML.Mapping do
     end)
   end
 
-  defp pairwise_overlap?([]), do: false
-  defp pairwise_overlap?([head | tail]) do
-    Enum.any?(tail, &(not MapSet.disjoint?(head, &1))) or pairwise_overlap?(tail)
+  defp identity_column_sets(resource) do
+    columns = Map.get(resource.metadata, :attribute_columns, %{})
+
+    Enum.map(resource.identities, fn identity ->
+      Enum.map(identity, fn attribute -> Map.get(columns, attribute, to_string(attribute)) end)
+    end)
   end
+
+  defp available_columns(resource) do
+    metadata_columns = Map.get(resource.metadata, :attribute_columns, %{}) |> Map.values()
+
+    property_columns =
+      Enum.flat_map(resource.predicate_object_maps, fn mapping ->
+        case mapping.object_map do
+          %ObjectMap{strategy: :column, value: value} -> [value]
+          _ -> []
+        end
+      end)
+
+    MapSet.new(metadata_columns ++ property_columns)
+  end
+
+  defp many_to_many?(%ReferenceObjectMap{metadata: %{kind: :many_to_many}}), do: true
+  defp many_to_many?(_), do: false
+
+  defp pairwise_overlap?([]), do: false
+  defp pairwise_overlap?([head | tail]), do: Enum.any?(tail, &(not MapSet.disjoint?(head, &1))) or pairwise_overlap?(tail)
 
   defp absolute_iri?(value) when is_binary(value) do
     case URI.parse(value) do
@@ -616,7 +638,6 @@ defmodule AshR2ML.Mapping do
 
   defp absolute_iri?(_), do: false
   defp non_empty_string?(value), do: is_binary(value) and value != ""
-
   defp maybe_add(acc, true, fun), do: acc ++ [fun.()]
   defp maybe_add(acc, false, _fun), do: acc
 end
