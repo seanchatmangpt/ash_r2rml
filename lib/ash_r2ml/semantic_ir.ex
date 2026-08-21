@@ -55,7 +55,8 @@ defmodule AshR2ml.SemanticIR.Relationship do
 
   `storage_candidates` preserves reversible lawful relational representations.
   `storage_strategy` is populated only when the profile or deterministic
-  constraints authorize selection.
+  constraints authorize selection. Candidate membership does not imply that the
+  current compiler implements the selected representation.
   """
 
   @enforce_keys [:name, :predicate_iri, :source_class, :target_class]
@@ -80,7 +81,13 @@ defmodule AshR2ml.SemanticIR.Relationship do
     provenance: %{}
   ]
 
-  @type storage_strategy :: :foreign_key | :join_table | :association_resource
+  @type storage_strategy ::
+          :foreign_key
+          | :join_table
+          | :association_resource
+          | :array
+          | :jsonb
+          | :computed_projection
 
   @type t :: %__MODULE__{
           name: atom(),
