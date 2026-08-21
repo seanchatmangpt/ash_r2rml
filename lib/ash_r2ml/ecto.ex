@@ -58,11 +58,7 @@ defmodule AshR2ml.Semantic.Ecto do
   defp verify_types(resources) do
     case Enum.find_value(resources, fn resource ->
            Enum.find_value(resource.attributes, fn attribute ->
-             if ecto_type(attribute.ash_type) do
-               nil
-             else
-               {resource, attribute}
-             end
+             if ecto_type(attribute.ash_type), do: nil, else: {resource, attribute}
            end)
          end) do
       nil ->
@@ -99,17 +95,17 @@ defmodule AshR2ml.Semantic.Ecto do
               destination = Enum.find(resources, &(&1.class_iri == relationship.target_class))
               destination_attribute = Enum.find(destination.attributes, &(&1.name == relationship.destination_key))
 
-              "references(#{inspect(String.to_atom(destination.table))}, " <>
-                "column: #{inspect(String.to_atom(destination_attribute.column))}, " <>
+              "references(#{atom_literal(destination.table)}, " <>
+                "column: #{atom_literal(destination_attribute.column)}, " <>
                 "type: #{inspect(ecto_type(destination_attribute.ash_type))}, on_delete: :nothing)"
           end
 
-        "add #{inspect(String.to_atom(attribute.column))}, #{type_expression}, " <>
+        "add #{atom_literal(attribute.column)}, #{type_expression}, " <>
           "null: #{inspect(null?)}, primary_key: #{inspect(primary?)}"
       end)
 
     """
-    create table(#{inspect(String.to_atom(resource.table))}, primary_key: false) do
+    create table(#{atom_literal(resource.table)}, primary_key: false) do
     #{indent(fields, 2)}
     end
     """
@@ -123,14 +119,14 @@ defmodule AshR2ml.Semantic.Ecto do
       destination_attribute = Enum.find(destination.attributes, &(&1.name == relationship.destination_key))
 
       """
-      create table(#{inspect(String.to_atom(relationship.join_table))}, primary_key: false) do
-        add #{inspect(String.to_atom(relationship.source_join_column))},
-          references(#{inspect(String.to_atom(resource.table))}, column: #{inspect(String.to_atom(source_attribute.column))}, type: #{inspect(ecto_type(source_attribute.ash_type))}, on_delete: :nothing),
+      create table(#{atom_literal(relationship.join_table)}, primary_key: false) do
+        add #{atom_literal(relationship.source_join_column)},
+          references(#{atom_literal(resource.table)}, column: #{atom_literal(source_attribute.column)}, type: #{inspect(ecto_type(source_attribute.ash_type))}, on_delete: :nothing),
           null: false,
           primary_key: true
 
-        add #{inspect(String.to_atom(relationship.destination_join_column))},
-          references(#{inspect(String.to_atom(destination.table))}, column: #{inspect(String.to_atom(destination_attribute.column))}, type: #{inspect(ecto_type(destination_attribute.ash_type))}, on_delete: :nothing),
+        add #{atom_literal(relationship.destination_join_column)},
+          references(#{atom_literal(destination.table)}, column: #{atom_literal(destination_attribute.column)}, type: #{inspect(ecto_type(destination_attribute.ash_type))}, on_delete: :nothing),
           null: false,
           primary_key: true
       end
@@ -146,11 +142,11 @@ defmodule AshR2ml.Semantic.Ecto do
       columns =
         identity.keys
         |> Enum.map(fn key -> Enum.find(resource.attributes, &(&1.name == key)).column end)
-        |> Enum.map(&String.to_atom/1)
+        |> Enum.map_join(", ", &atom_literal/1)
 
-      name = String.to_atom(resource.table <> "_" <> to_string(identity.name) <> "_index")
+      name = resource.table <> "_" <> to_string(identity.name) <> "_index"
 
-      "create unique_index(#{inspect(String.to_atom(resource.table))}, #{inspect(columns)}, name: #{inspect(name)})"
+      "create unique_index(#{atom_literal(resource.table)}, [#{columns}], name: #{atom_literal(name)})"
     end)
   end
 
@@ -163,6 +159,8 @@ defmodule AshR2ml.Semantic.Ecto do
 
   defp ecto_type(type) when is_atom(type), do: Map.get(@types, type)
   defp ecto_type(_), do: nil
+
+  defp atom_literal(value), do: ":" <> inspect(to_string(value))
 
   defp indent(text, spaces) do
     prefix = String.duplicate(" ", spaces)
