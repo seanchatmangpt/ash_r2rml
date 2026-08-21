@@ -5,15 +5,14 @@
 defmodule AshR2RML.Telemetry.OcelAshEmitter do
   @moduledoc """
   Real Object-Centric Event Log (OCEL v2) event emission for every real Ash action,
-  enriched via real Ash introspection (`Ash.Resource.Info`), `AshR2RML` semantic mapping
-  metadata, and correlated with OpenTelemetry-compatible `:telemetry` events.
+  Ash notification, and AshR2RML Reactor workflow execution step.
 
   Conforms to the standard IEEE/W3C OCEL 2.0 JSON specification:
-  - `ocel:eid` - Unique event identifier (UUID)
-  - `ocel:activity` - Canonical activity name (`resource.action`)
+  - `ocel:eid` - Unique event identifier (UUIDv7)
+  - `ocel:activity` - Canonical activity name (`resource.action` or `ash_r2rml.reactor.step`)
   - `ocel:timestamp` - ISO 8601 UTC timestamp
-  - `ocel:omap` - List of object identifiers associated with the event
-  - `ocel:vmap` - Map of event attributes enriched with Ash introspection
+  - `ocel:omap` - List of object identifiers participating in the event
+  - `ocel:vmap` - Map of event attributes enriched with genuine Ash and semantic introspection
   """
 
   require Logger
@@ -23,7 +22,7 @@ defmodule AshR2RML.Telemetry.OcelAshEmitter do
 
   @doc """
   Attaches `:telemetry` handlers for every configured Ash domain, for all CRUD action types,
-  generic actions, and Ash notification events.
+  generic actions, Ash notifications, and AshR2RML Reactor pipeline steps.
   """
   @spec attach!(keyword()) :: [tuple()]
   def attach!(opts \\ []) do
@@ -32,7 +31,7 @@ defmodule AshR2RML.Telemetry.OcelAshEmitter do
 
     domains = Keyword.get(opts, :domains, Application.get_env(:ash_r2rml, :ash_domains, []))
 
-    handler_ids =
+    ash_action_handlers =
       for domain <- domains,
           action_type <- @action_types do
         short_name = Ash.Domain.Info.short_name(domain)
@@ -51,7 +50,7 @@ defmodule AshR2RML.Telemetry.OcelAshEmitter do
         handler_id
       end
 
-    # Also attach to Ash notification events
+    # Ash Notification Handler
     notification_event = [:ash, :notification, :stop]
     notification_handler_id = {__MODULE__, :ash, :notification, :stop}
     :telemetry.detach(notification_handler_id)
@@ -63,7 +62,31 @@ defmodule AshR2RML.Telemetry.OcelAshEmitter do
       %{outcome: :stop, log_path: log_path}
     )
 
-    [notification_handler_id | handler_ids]
+    # AshR2RML Reactor Step Handler
+    reactor_step_event = [:ash_r2rml, :reactor, :step, :stop]
+    reactor_step_handler_id = {__MODULE__, :ash_r2rml, :reactor, :step, :stop}
+    :telemetry.detach(reactor_step_handler_id)
+
+    :telemetry.attach(
+      reactor_step_handler_id,
+      reactor_step_event,
+      &__MODULE__.handle_reactor_step_event/4,
+      %{outcome: :stop, log_path: log_path}
+    )
+
+    # AshR2RML Reactor Pipeline Completion Handler
+    reactor_pipe_event = [:ash_r2rml, :reactor, :pipeline, :stop]
+    reactor_pipe_handler_id = {__MODULE__, :ash_r2rml, :reactor, :pipeline, :stop}
+    :telemetry.detach(reactor_pipe_handler_id)
+
+    :telemetry.attach(
+      reactor_pipe_handler_id,
+      reactor_pipe_event,
+      &__MODULE__.handle_reactor_pipeline_event/4,
+      %{outcome: :stop, log_path: log_path}
+    )
+
+    [reactor_pipe_handler_id, reactor_step_handler_id, notification_handler_id | ash_action_handlers]
   end
 
   @doc """
@@ -85,6 +108,20 @@ defmodule AshR2RML.Telemetry.OcelAshEmitter do
   @doc false
   def handle_notification_event(_event, measurements, metadata, %{outcome: outcome, log_path: log_path}) do
     event = build_notification_ocel_event(measurements, metadata, outcome)
+    append_ocel_event!(event, log_path)
+    :ok
+  end
+
+  @doc false
+  def handle_reactor_step_event(_event, measurements, metadata, %{outcome: outcome, log_path: log_path}) do
+    event = build_reactor_step_ocel_event(measurements, metadata, outcome)
+    append_ocel_event!(event, log_path)
+    :ok
+  end
+
+  @doc false
+  def handle_reactor_pipeline_event(_event, measurements, metadata, %{outcome: outcome, log_path: log_path}) do
+    event = build_reactor_pipeline_event(measurements, metadata, outcome)
     append_ocel_event!(event, log_path)
     :ok
   end
@@ -156,6 +193,123 @@ defmodule AshR2RML.Telemetry.OcelAshEmitter do
       }
     }
   end
+
+  defp build_reactor_step_ocel_event(measurements, metadata, outcome) do
+    step_name = metadata[:step]
+    result = metadata[:result]
+
+    duration_ms =
+      case measurements[:duration] do
+        nil -> nil
+        native -> System.convert_time_unit(native, :native, :millisecond)
+      end
+
+    formatted_step = safe_step_name(step_name)
+    {omap, enriched_vmap} = extract_step_facts(step_name, result)
+
+    %{
+      "ocel:eid" => Ash.UUIDv7.generate(),
+      "ocel:activity" => "ash_r2rml.reactor.#{formatted_step}",
+      "ocel:timestamp" => DateTime.utc_now() |> DateTime.to_iso8601(),
+      "ocel:omap" => omap,
+      "ocel:vmap" =>
+        Map.merge(
+          %{
+            "step" => formatted_step,
+            "outcome" => to_string(outcome),
+            "duration_ms" => duration_ms
+          },
+          enriched_vmap
+        )
+    }
+  end
+
+  defp build_reactor_pipeline_event(measurements, metadata, outcome) do
+    result = metadata[:result]
+
+    duration_ms =
+      case measurements[:duration] do
+        nil -> nil
+        native -> System.convert_time_unit(native, :native, :millisecond)
+      end
+
+    %{
+      "ocel:eid" => Ash.UUIDv7.generate(),
+      "ocel:activity" => "ash_r2rml.reactor.pipeline_completed",
+      "ocel:timestamp" => DateTime.utc_now() |> DateTime.to_iso8601(),
+      "ocel:omap" => ["AshR2RML.GrandExample.PublishingReactor"],
+      "ocel:vmap" => %{
+        "pipeline" => "AshR2RML.GrandExample.PublishingReactor",
+        "outcome" => to_string(outcome),
+        "duration_ms" => duration_ms,
+        "title" => if(is_map(result), do: Map.get(result, :title), else: nil),
+        "status" => if(is_map(result), do: to_string(Map.get(result, :status)), else: nil)
+      }
+    }
+  end
+
+  defp extract_step_facts(:verify_inputs, result) do
+    case result do
+      %{resource_count: count} -> {["InputVerifier"], %{"resource_count" => count, "valid?" => true}}
+      _ -> {["InputVerifier"], %{}}
+    end
+  end
+
+  defp extract_step_facts(:compile_bundle, result) do
+    case result do
+      %AshR2RML.Mapping.Bundle{resources: res_list} ->
+        omap = Enum.map(res_list, &to_string(&1.ash_resource))
+        classes = Enum.flat_map(res_list, & &1.class_iris)
+        {omap, %{"resource_count" => length(res_list), "class_iris" => classes}}
+
+      _ ->
+        {["Compiler"], %{}}
+    end
+  end
+
+  defp extract_step_facts(:attach_provenance, result) do
+    case result do
+      %AshR2RML.Mapping.Bundle{resources: res_list} ->
+        omap = Enum.map(res_list, &to_string(&1.ash_resource))
+        {omap, %{"provenance_namespaces" => ["http://www.w3.org/ns/prov#"], "resource_count" => length(res_list)}}
+
+      _ ->
+        {["Provenance"], %{}}
+    end
+  end
+
+  defp extract_step_facts(:render_r2rml_turtle, turtle) when is_binary(turtle) do
+    {["W3CR2RMLRenderer"], %{"r2rml_turtle_byte_size" => byte_size(turtle), "format" => "text/turtle"}}
+  end
+
+  defp extract_step_facts(:evaluate_differential, result) do
+    case result do
+      %AshR2RML.SPARQL.DifferentialReceipt{verified?: v?, strategies: strats, query_sha256: hash} ->
+        {["SPARQLDifferential"],
+         %{"verified?" => v?, "strategies" => Enum.map(strats, &to_string/1), "query_sha256" => hash}}
+
+      _ ->
+        {["SPARQLDifferential"], %{"verified?" => false}}
+    end
+  end
+
+  defp extract_step_facts(:manifest_banner, banner) when is_binary(banner) do
+    {["ManifestBanner"], %{"banner_length" => String.length(banner)}}
+  end
+
+  defp extract_step_facts(:publication_package, result) when is_map(result) do
+    {["PublicationPackage"], %{"status" => to_string(result[:status]), "title" => result[:title]}}
+  end
+
+  defp extract_step_facts(step, _result) do
+    {[safe_step_name(step)], %{}}
+  end
+
+  defp safe_step_name(step) when is_atom(step), do: to_string(step)
+  defp safe_step_name(step) when is_binary(step), do: step
+  defp safe_step_name({Reactor.Step.Map, map_name, inner_step, idx}), do: "#{map_name}.#{inner_step}.#{idx}"
+  defp safe_step_name({:compose, sub_name}), do: "compose.#{sub_name}"
+  defp safe_step_name(step), do: inspect(step)
 
   defp get_r2rml_class(resource) do
     if function_exported?(Spark.Dsl.Extension, :get_opt, 4) do
