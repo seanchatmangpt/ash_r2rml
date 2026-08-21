@@ -33,7 +33,8 @@ defmodule AshNeo4j.Functions.StDwithinTest do
     end
 
     test "returns false when beyond threshold" do
-      assert {:known, false} = StDwithin.evaluate(%{arguments: [geo(151.2093, -33.8688), geo(144.9631, -37.8136), 5_000]})
+      assert {:known, false} =
+               StDwithin.evaluate(%{arguments: [geo(151.2093, -33.8688), geo(144.9631, -37.8136), 5_000]})
     end
 
     test "boundary is inclusive (PostGIS semantics)" do

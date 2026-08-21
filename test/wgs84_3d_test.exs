@@ -107,15 +107,15 @@ defmodule AshNeo4j.Wgs84_3DTest do
 
   describe "strict dimension policy (#270)" do
     test "3D value against a 2D attribute returns a GeoDimensionMismatch error" do
-      assert_error_message "dimension mismatch: a 3D value against a 2D attribute", fn ->
+      assert_error_message("dimension mismatch: a 3D value against a 2D attribute", fn ->
         Place |> Ash.Query.filter(st_distance(location, ^pz(151.0, -33.0, 5.0)) < 1000) |> Ash.read()
-      end
+      end)
     end
 
     test "2D value against a 3D attribute returns a GeoDimensionMismatch error" do
-      assert_error_message "dimension mismatch: a 2D value against a 3D attribute", fn ->
+      assert_error_message("dimension mismatch: a 2D value against a 3D attribute", fn ->
         Place |> Ash.Query.filter(st_distance(tower, ^p2(151.0, -33.0)) < 1000) |> Ash.read()
-      end
+      end)
     end
 
     test "force_2d bridges: a 3D point's footprint against a 2D area" do
@@ -141,9 +141,9 @@ defmodule AshNeo4j.Wgs84_3DTest do
         srid: 4979
       }
 
-      assert_error_message "3D areal/linear geometry) is not supported yet", fn ->
+      assert_error_message("3D areal/linear geometry) is not supported yet", fn ->
         Place |> Ash.create(%{name: "bad", shape: polyz})
-      end
+      end)
     end
   end
 end

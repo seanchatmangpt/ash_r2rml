@@ -52,6 +52,7 @@ defmodule AshNeo4j.Functions.StWithinTest do
         ],
         srid: 4326
       }
+
       assert {:known, true} = StWithin.evaluate(%{arguments: [inner, sydney_polygon()]})
     end
   end

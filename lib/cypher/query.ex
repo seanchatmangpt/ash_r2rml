@@ -840,7 +840,7 @@ defmodule AshNeo4j.Cypher.Query do
     {match_cypher, match_params} = Cypher.parameterized_properties(:nm, match_props)
 
     on_create_exprs =
-      (if(map_size(create_props) > 0, do: ["n += #{create_cypher}"], else: [])) ++
+      if(map_size(create_props) > 0, do: ["n += #{create_cypher}"], else: []) ++
         if(create_labels != [], do: ["n:" <> Enum.map_join(create_labels, ":", &to_string/1)], else: [])
 
     on_create = if on_create_exprs != [], do: [%OnCreateSet{expression: Enum.join(on_create_exprs, ", ")}], else: []
@@ -873,7 +873,7 @@ defmodule AshNeo4j.Cypher.Query do
     {atomic_exprs, atomic_params} = Keyword.get(opts, :atomics, {[], %{}})
 
     set_exprs =
-      (if(map_size(set_props) > 0, do: ["n += #{props_cypher}"], else: [])) ++ atomic_exprs
+      if(map_size(set_props) > 0, do: ["n += #{props_cypher}"], else: []) ++ atomic_exprs
 
     set_clauses = if set_exprs != [], do: [%Set{expression: Enum.join(set_exprs, ", ")}], else: []
 
@@ -1084,16 +1084,16 @@ defmodule AshNeo4j.Cypher.Query do
         [%Match{pattern: src_pattern}] ++
           guard_clauses ++
           [
-        %With{items: ["s"]},
-        %OptionalMatch{
-          pattern: "(s)" <> Cypher.relationship(:r0, edge_label, direction) <> Cypher.node(:d0, [dest_label])
-        },
-        %Delete{items: ["r0"]},
-        %With{items: ["s"]},
-        %Match{pattern: dest_pattern},
-        %Merge{pattern: "(s)" <> Cypher.relationship(:r, edge_label, direction) <> "(d)"},
-        %Return{items: ["s", "r", "d"]}
-      ],
+            %With{items: ["s"]},
+            %OptionalMatch{
+              pattern: "(s)" <> Cypher.relationship(:r0, edge_label, direction) <> Cypher.node(:d0, [dest_label])
+            },
+            %Delete{items: ["r0"]},
+            %With{items: ["s"]},
+            %Match{pattern: dest_pattern},
+            %Merge{pattern: "(s)" <> Cypher.relationship(:r, edge_label, direction) <> "(d)"},
+            %Return{items: ["s", "r", "d"]}
+          ],
       params: src_params |> Map.merge(dest_params) |> Map.merge(guard_params)
     }
   end
@@ -1118,17 +1118,17 @@ defmodule AshNeo4j.Cypher.Query do
         [%Match{pattern: src_pattern}] ++
           guard_clauses ++
           [
-        %OptionalMatch{pattern: dest_pattern},
-        %With{items: ["s", "d"]},
-        %OptionalMatch{
-          pattern: Cypher.node(:s0, src_labels) <> Cypher.relationship(:r0, edge_label, direction) <> "(d)"
-        },
-        %Where{conditions: ["s0 <> s"]},
-        %Delete{items: ["r0"]},
-        %With{items: ["s", "d"]},
-        %Merge{pattern: "(s)" <> Cypher.relationship(:r, edge_label, direction) <> "(d)"},
-        %Return{items: ["s", "r", "d"]}
-      ],
+            %OptionalMatch{pattern: dest_pattern},
+            %With{items: ["s", "d"]},
+            %OptionalMatch{
+              pattern: Cypher.node(:s0, src_labels) <> Cypher.relationship(:r0, edge_label, direction) <> "(d)"
+            },
+            %Where{conditions: ["s0 <> s"]},
+            %Delete{items: ["r0"]},
+            %With{items: ["s", "d"]},
+            %Merge{pattern: "(s)" <> Cypher.relationship(:r, edge_label, direction) <> "(d)"},
+            %Return{items: ["s", "r", "d"]}
+          ],
       params: src_params |> Map.merge(dest_params) |> Map.merge(guard_params)
     }
   end
@@ -1155,21 +1155,21 @@ defmodule AshNeo4j.Cypher.Query do
         [%Match{pattern: src_pattern}] ++
           guard_clauses ++
           [
-        %With{items: ["s"]},
-        %OptionalMatch{pattern: "(s)" <> Cypher.relationship(:r0, edge_label, direction) <> dest_pattern},
-        %Delete{items: ["r0"]},
-        %With{items: ["s"]},
-        %OptionalMatch{pattern: dest_pattern},
-        %With{items: ["s", "d"]},
-        %OptionalMatch{
-          pattern: Cypher.node(:s0, src_labels) <> Cypher.relationship(:r0, edge_label, direction) <> "(d)"
-        },
-        %Where{conditions: ["s0 <> s"]},
-        %Delete{items: ["r0"]},
-        %With{items: ["s", "d"]},
-        %Merge{pattern: "(s)" <> Cypher.relationship(:r, edge_label, direction) <> "(d)"},
-        %Return{items: ["s", "r", "d"]}
-      ],
+            %With{items: ["s"]},
+            %OptionalMatch{pattern: "(s)" <> Cypher.relationship(:r0, edge_label, direction) <> dest_pattern},
+            %Delete{items: ["r0"]},
+            %With{items: ["s"]},
+            %OptionalMatch{pattern: dest_pattern},
+            %With{items: ["s", "d"]},
+            %OptionalMatch{
+              pattern: Cypher.node(:s0, src_labels) <> Cypher.relationship(:r0, edge_label, direction) <> "(d)"
+            },
+            %Where{conditions: ["s0 <> s"]},
+            %Delete{items: ["r0"]},
+            %With{items: ["s", "d"]},
+            %Merge{pattern: "(s)" <> Cypher.relationship(:r, edge_label, direction) <> "(d)"},
+            %Return{items: ["s", "r", "d"]}
+          ],
       params: src_params |> Map.merge(dest_params) |> Map.merge(guard_params)
     }
   end
@@ -1272,7 +1272,15 @@ defmodule AshNeo4j.Cypher.Query do
             prop_seg = Cypher.sanitize_param(prop)
             test_key = "#{param_prefix}#{variable}_#{prop_seg}_#{index}_test"
             thresh_key = "#{param_prefix}#{variable}_#{prop_seg}_#{index}_t"
-            expr = Cypher.expression(variable, prop, "st_distance", {convert_operator(comp_op_atom), "$#{test_key}", "$#{thresh_key}"})
+
+            expr =
+              Cypher.expression(
+                variable,
+                prop,
+                "st_distance",
+                {convert_operator(comp_op_atom), "$#{test_key}", "$#{thresh_key}"}
+              )
+
             params = acc_params |> Map.put(test_key, test_point) |> Map.put(thresh_key, threshold)
             {expr, params}
 
@@ -1290,7 +1298,15 @@ defmodule AshNeo4j.Cypher.Query do
             prop_seg = Cypher.sanitize_param(prop)
             vec_key = "#{param_prefix}#{variable}_#{prop_seg}_#{index}_vec"
             thresh_key = "#{param_prefix}#{variable}_#{prop_seg}_#{index}_t"
-            expr = Cypher.expression(variable, prop, Atom.to_string(op), {convert_operator(comp_op_atom), "$#{vec_key}", "$#{thresh_key}"})
+
+            expr =
+              Cypher.expression(
+                variable,
+                prop,
+                Atom.to_string(op),
+                {convert_operator(comp_op_atom), "$#{vec_key}", "$#{thresh_key}"}
+              )
+
             params = acc_params |> Map.put(vec_key, query_vec) |> Map.put(thresh_key, threshold)
             {expr, params}
 

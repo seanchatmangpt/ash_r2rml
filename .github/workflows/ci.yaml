@@ -6,12 +6,12 @@ name: CI
 
 on: [push, pull_request]
 
-# Two gates: `types` is database-free — `mix compile --warnings-as-errors` runs
-# Elixir 1.20's set-theoretic type checker and `mix dialyzer` adds success
-# typing. `test` runs the full suite against the three Neo4j servers from the
-# bundled docker-compose.yml (bolt5 5.26.27 → 7687, bolt6 2026.05 → 7689,
-# apoc 5.26.27 → 7691), matching the Bolt / Bolt6 / BoltApoc blocks in
-# config/test.exs.
+# Three gates:
+# - `types` is database-free: compile warnings-as-errors + Dialyzer.
+# - `test` preserves the full inherited Neo4j control suite.
+# - `obda` executes the bounded ontology-first crown against real PostgreSQL,
+#   official Ontop, and the Neo4j control graph. Technical parity still does
+#   not grant cutover authority.
 jobs:
   types:
     runs-on: ubuntu-latest
@@ -66,5 +66,85 @@ jobs:
         run: mix test --include cypher25 --include bolt6 --include apoc --include slow
 
       - name: Stop Neo4j test databases
+        if: always()
+        run: docker compose down
+
+  obda:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ash_r2rml
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d ash_r2rml"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Elixir / Erlang (from .tool-versions)
+        uses: jdx/mise-action@v2
+
+      - name: Cache deps and build
+        uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
+          restore-keys: ${{ runner.os }}-mix-
+
+      - name: Install dependencies
+        run: mix deps.get
+
+      - name: Compile candidate compiler
+        run: mix compile --force --warnings-as-errors
+
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Start Neo4j control database
+        run: docker compose up -d --wait --wait-timeout 300 neo4j-bolt5
+
+      - name: Pull pinned official Ontop image
+        run: docker pull ontop/ontop:5.5.0
+
+      - name: Supply pinned PostgreSQL JDBC driver to Ontop
+        env:
+          PGJDBC_VERSION: "42.7.13"
+          PGJDBC_SHA256: "6e0e4cc2d8cae902084f8a2b18728b073a6fd9d1f87c9d8bff8f298c18185b93"
+        run: |
+          set -euo pipefail
+          jdbc_dir="${RUNNER_TEMP}/ontop-jdbc"
+          jdbc_jar="${jdbc_dir}/postgresql-${PGJDBC_VERSION}.jar"
+          mkdir -p "${jdbc_dir}"
+          curl --fail --location --silent --show-error \
+            "https://repo1.maven.org/maven2/org/postgresql/postgresql/${PGJDBC_VERSION}/postgresql-${PGJDBC_VERSION}.jar" \
+            --output "${jdbc_jar}"
+          echo "${PGJDBC_SHA256}  ${jdbc_jar}" | sha256sum --check --strict
+
+      - name: Execute RDF/SHACL → Postgres/R2RML → Ontop + Neo4j parity crown
+        env:
+          MIX_ENV: test
+          ASH_R2RML_ONTOP_JDBC_DIR: ${{ runner.temp }}/ontop-jdbc
+          ASH_R2RML_PGJDBC_SHA256: "6e0e4cc2d8cae902084f8a2b18728b073a6fd9d1f87c9d8bff8f298c18185b93"
+        run: mix run test/integration/obda_crown.exs
+
+      - name: Publish bounded parity receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ash-r2ml-obda-parity
+          path: tmp/ash_r2rml_obda/parity-receipt.json
+          if-no-files-found: ignore
+
+      - name: Stop Neo4j control database
         if: always()
         run: docker compose down

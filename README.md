@@ -1,433 +1,494 @@
-<!-- 
+<!--
 SPDX-FileCopyrightText: 2025 ash_neo4j contributors <https://github.com/diffo-dev/ash_neo4j/graphs.contributors>
+SPDX-FileCopyrightText: 2026 ash_r2rml contributors
 
 SPDX-License-Identifier: MIT
 -->
 
-# AshNeo4j
+# AshR2RML
 
-[![Module Version](https://img.shields.io/hexpm/v/ash_neo4j)](https://hex.pm/packages/ash_neo4j)
-[![Hex Docs](https://img.shields.io/badge/hex-docs-lightgreen)](https://hexdocs.pm/ash_neo4j/)
-[![License](https://img.shields.io/hexpm/l/ash_neo4j)](https://github.com/diffo-dev/ash_neo4j/blob/master/LICENSES/MIT.md)
-[![REUSE status](https://api.reuse.software/badge/github.com/diffo-dev/ash_neo4j)](https://api.reuse.software/info/github.com/diffo-dev/ash_neo4j)
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/diffo-dev/ash_neo4j)
+**Ontology-first semantic mappings for Ash. Keep PostgreSQL relational; expose the same admitted subject as RDF.**
 
-Ash DataLayer for Neo4j, configurable using a simple DSL
+AshR2RML is an Ash extension that compiles Ash resources and relationships into standards-valid W3C R2RML mappings. It lets an Ash application persist through its normal data layer—typically AshPostgres—while exposing the same relational state as a virtual RDF graph through any compatible OBDA/R2RML engine.
+
+AshR2RML is **not** a graph database, **not** an `Ash.DataLayer`, and **not** a SPARQL engine.
+
+Its job is narrower and more useful:
+
+```text
+Ash.Resource + semantic mapping
+             │
+             ▼
+      AshR2RML.Mapping
+         ╱         ╲
+        ▼           ▼
+  AshPostgres     R2RML
+        │           │
+        ▼           ▼
+   PostgreSQL   virtual RDF graph
+        │           │
+        └─────┬─────┘
+              ▼
+       ONE SUBJECT
+       SQL / Ash / SPARQL
+```
+
+The same facts are not synchronized between two databases. PostgreSQL remains the operational store; R2RML defines a semantic projection over it.
+
+## Why AshR2RML
+
+A conventional semantic integration often starts too late:
+
+```text
+application schema → database tables → retrofit RDF mapping
+```
+
+AshR2RML supports both that pragmatic direction and an ontology-first direction:
+
+```text
+RDF/OWL + SHACL
+       │
+       ▼
+      ggen
+       │
+       ▼
+generated Ash resources
+       │
+       ▼
+ AshR2RML.Mapping
+    ╱        ╲
+   ▼          ▼
+AshPostgres  R2RML
+```
+
+Both routes converge on the same semantic mapping intermediate representation.
+
+That gives an application three lawful query surfaces over one admitted subject:
+
+- Ash queries and actions for application behavior.
+- SQL for relational analytics and operations.
+- SPARQL over the virtual RDF graph for semantic interoperability.
 
 ## Installation
 
-### With Igniter (recommended)
-
-```bash
-mix igniter.install ash_neo4j
-```
-
-This automatically configures the formatter, adds Bolty connection config to `config/runtime.exs`, and wires Bolty into your supervision tree.
-
-### Manual
-
-Add to deps in `mix.exs`:
+Add AshR2RML beside the Ash data layer you already use:
 
 ```elixir
 def deps do
   [
-    {:ash_neo4j, "~> 0.10"},
+    {:ash, "~> 3.0"},
+    {:ash_postgres, "~> 2.0"},
+    {:ash_r2rml, "~> 1.0"}
   ]
 end
 ```
 
-Then follow the [Bolty configuration](#installing-neo4j-and-configuring-bolty) steps below.
-
-## AI Coding Assistants
-
-AshNeo4j ships usage rules for AI coding assistants. If your project uses
-[`usage_rules`](https://hex.pm/packages/usage_rules), add `ash_neo4j` to your
-`:usage_rules` config and run `mix usage_rules.sync` to merge the rules into
-your `AGENTS.md` (or `CLAUDE.md`).
-
-## Tutorial
-
-To get started you need a running instance of [Livebook](https://livebook.dev/)
-
-[![Run in Livebook](https://livebook.dev/badge/v1/blue.svg)](https://livebook.dev/run?url=https%3A%2F%2Fgithub.com%2Fdiffo%2Ddev%2Fash%5Fneo4j%2Fblob%2Fdev%2Fash%5Fneo4j%5Fdatalayer.livemd)
-
-
-## Usage
-
-Configure `AshNeo4j.DataLayer` as `data_layer:` within `use Ash.Resource` options:
+AshR2RML does not replace AshPostgres. A resource continues to use its normal data layer:
 
 ```elixir
+defmodule MyApp.Person do
   use Ash.Resource,
-    data_layer: AshNeo4j.DataLayer
+    domain: MyApp.Domain,
+    data_layer: AshPostgres.DataLayer,
+    extensions: [AshR2RML.Resource]
+end
 ```
 
-### Configuration
+## Ash-first quick start
 
-Each Ash.Resource allows configuration of its AshNeo4j.DataLayer. An example Comment resource is given below, it can belong to a Post resource. The neo4j configuration block below is actually unnecessary as written.
+Define the relational resource normally, then add only the semantic information Ash cannot infer.
 
 ```elixir
-defmodule Blog.Comment do
+defmodule MyApp.Person do
   use Ash.Resource,
-    data_layer: AshNeo4j.DataLayer
+    domain: MyApp.Domain,
+    data_layer: AshPostgres.DataLayer,
+    extensions: [AshR2RML.Resource]
 
-  neo4j do
-    label :Comment
-    relate [{:post, :BELONGS_TO, :outgoing, :Post}]
+  postgres do
+    table "people"
+    repo MyApp.Repo
   end
 
-  actions do
-    default_accept :*
-    defaults [:create, :read, :update, :destroy]
+  r2rml do
+    class "http://xmlns.com/foaf/0.1/Person"
+
+    subject do
+      template "https://example.org/people/{id}"
+      term_type :iri
+    end
   end
 
   attributes do
     uuid_primary_key :id
-    attribute :title, :string, public?: true
-    attribute :date_created, :date, source: :dateCreated
+
+    attribute :name, :string do
+      allow_nil? false
+      public? true
+
+      rdf do
+        predicate "http://xmlns.com/foaf/0.1/name"
+      end
+    end
   end
+end
+```
 
-  relationships do
-    belongs_to :post, Post, public?: true
+AshR2RML introspects the Ash resource, its data layer metadata, attributes, identities, and relationships and compiles them into a normalized mapping.
+
+```elixir
+mapping = AshR2RML.Resource.Info.mapping(MyApp.Person)
+```
+
+Generate R2RML:
+
+```elixir
+{:ok, turtle} = AshR2RML.R2RML.render([MyApp.Person])
+File.write!("priv/r2rml/application.ttl", turtle)
+```
+
+The resulting triples map is equivalent in shape to:
+
+```turtle
+<#Person>
+    a rr:TriplesMap ;
+    rr:logicalTable [ rr:tableName "people" ] ;
+    rr:subjectMap [
+        rr:template "https://example.org/people/{id}" ;
+        rr:class foaf:Person ;
+        rr:termType rr:IRI
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate foaf:name ;
+        rr:objectMap [
+            rr:column "name" ;
+            rr:datatype xsd:string
+        ]
+    ] .
+```
+
+## Relationships are semantic edges
+
+Ash relationships are first-class inputs to the mapping compiler.
+
+```elixir
+relationships do
+  belongs_to :organization, MyApp.Organization do
+    allow_nil? false
+
+    rdf do
+      predicate "https://schema.org/memberOf"
+    end
   end
 end
 ```
 
-## Label
+For a relational data layer, AshR2RML derives the join from the relationship metadata and emits an R2RML reference object map:
 
-The DSL may be used to label the Ash Resource's underlying graph node. If omitted the Ash Resource's short module name will be used.
+```turtle
+rr:predicateObjectMap [
+    rr:predicate schema:memberOf ;
+    rr:objectMap [
+        rr:parentTriplesMap <#Organization> ;
+        rr:joinCondition [
+            rr:child "organization_id" ;
+            rr:parent "id"
+        ]
+    ]
+] .
+```
+
+One admitted relationship therefore has three corresponding projections:
+
+```text
+Ash relationship
+      │
+      ├── PostgreSQL FK / join structure
+      └── R2RML RefObjectMap / RDF object property
+```
+
+AshR2RML refuses mappings that cannot be derived without inventing semantics.
+
+## Semantic identity
+
+Database identity and RDF identity are separate concerns.
+
+AshR2RML supports subject maps based on:
+
+- IRI templates,
+- a column,
+- a constant IRI,
+- blank nodes where explicitly configured.
+
+Example:
 
 ```elixir
-  neo4j do
-    label :Comment
+r2rml do
+  class "https://schema.org/Organization"
+
+  subject do
+    template "https://example.org/org/{tenant_id}/{id}"
+    term_type :iri
   end
-```
-
-## Relate
-
-The DSL may be used to specifically direct any relationship, in the form {relationship_name, edge_label, edge_direction, destination_label}. An entry can be provided for any relationship to override the default values created by AshNeo4j.
-
-```elixir
-  neo4j do
-    relate [{:post, :BELONGS_TO, :outgoing, :Post}]
-  end
-```
-
-Default relate clauses are always :outgoing from the source resource, and the edge_label is derived from the Ash relationship type.
-Relate clauses, whether specific or default must be unique {_, edge_label, edge_direction, destination_label} for a given source_label to allow determination of the source relationship.
-
-## Guard
-
-The DSL may be used to guard destroy actions, in the form {edge_label, edge_direction, destination_label}. By default incoming allow_nil? false belongs_to are guarded against deletion while relationships exist. Guards can be created independently of explicit relationships.
-```elixir
-  neo4j do
-    guard [{:WRITTEN_BY, :outgoing, :Post}]
-  end
-```
-
-Guard is useful where the resource has no explicit relationships, but other resources expect the resource to exist while they are related.
-Guard can also be used where the underlying node has other edges which should prevent resource destruction.
-
-## Skip
-
-The DSL may be used to skip storing attributes as node properties. This can be useful for 'transient' attributes, or attributes you want to default using the resource but not store explicitly.
-
-```elixir
-  neo4j do
-    skip [:other_id]
-  end
-```
-
-## Translate
-
-Translation of resource attributes to/from Neo4j node properties is done without explicit Ash Neo4j DSL.
-
-For convenience Ash Neo4j translates attributes with underscores to camelCase Neo4j properties. Neo4j uses the node property 'id' internally, so Ash Neo4j will translate the 'id' attribute using the camelCased short name of the type, e.g. an 'id' attribute of :uuid type is translated to the 'uuid' node property.
-
-Ash Neo4j also supports the source field in Ash.Resource.Attribute DSL - if present this will be used for the node property. 
-
-## Verifiers
-
-The DSL is verified against misconfiguration and violation of accepted neo4j conventions providing compile time errors:
-
-* neo4j labels must be PascalCase
-* neo4j property names must be camelCase
-* edge label must be MACRO_CASE
-* edge direction must be in [:incoming, :outgoing]
-* relate: relationship_name must match the name of a relationship
-* relate: relationship enrichment not possible, edge_label, edge_direction and destination_label must be unique
-* attribute type requires unsupported term
-* identity cannot be enforced as a uniqueness constraint (`nils_distinct?: false`, or a filtered `where:`)
-
-## Testing
-
-`AshNeo4j.Sandbox` provides test isolation analogous to `Ecto.Adapters.SQL.Sandbox`. Each test that calls `checkout/0` gets a dedicated Neo4j connection with an open transaction. All queries from that test run inside the transaction, which is rolled back automatically when the test process exits. Nothing is ever committed, so there is no data to clean up and tests can safely run in parallel.
-
-### Setup
-
-Replace any `Neo4jHelper.delete_all()` or `Neo4jHelper.delete_nodes/1` teardown with a sandbox checkout:
-
-```elixir
-setup_all do
-  AshNeo4j.BoltyHelper.start()
-end
-
-setup do
-  AshNeo4j.Sandbox.checkout()
-  on_exit(&AshNeo4j.Sandbox.rollback/0)
 end
 ```
 
-The `on_exit` call is optional — the transaction is rolled back automatically when the test process exits — but is recommended for clarity.
+Every template field must resolve to an admitted Ash attribute. Subject construction is validated at compile time; invalid or ambiguous identity mappings are refused rather than guessed.
 
-### Placing a node in a world
+## Datatypes
 
-A node's **label set** is what `AshNeo4j.worlds/1` resolves to a `(domain, resource)` world, so polymorphic / open-world tests sometimes need a node whose labels differ from what an Ash create produces. `AshNeo4j.Neo4jHelper.update_node_labels/4` adds and/or removes labels on an existing node — create the node normally via Ash, then mutate its labels:
+AshR2RML maps Ash types to RDF datatypes through an explicit datatype registry.
+
+Typical built-ins include:
+
+| Ash type | RDF datatype |
+|---|---|
+| `:string` | `xsd:string` |
+| `:integer` | `xsd:integer` |
+| `:boolean` | `xsd:boolean` |
+| `:decimal` | `xsd:decimal` |
+| `:date` | `xsd:date` |
+| UTC datetime types | `xsd:dateTime` |
+| `:uuid` | `xsd:string` unless overridden |
+
+A type with no lawful mapping is `UNSUPPORTED`; it is never silently coerced to a string.
+
+Custom Ash types can implement the AshR2RML datatype contract to define their RDF lexical form and datatype IRI.
+
+## The mapping intermediate representation
+
+Every public entry path compiles to the same IR:
+
+```text
+AshR2RML.Mapping.Resource
+AshR2RML.Mapping.SubjectMap
+AshR2RML.Mapping.PredicateObjectMap
+AshR2RML.Mapping.ReferenceObjectMap
+AshR2RML.Mapping.JoinCondition
+AshR2RML.Mapping.Datatype
+AshR2RML.Mapping.GraphMap
+```
+
+This representation is deliberately close to R2RML terminology. It is inspectable, deterministic, and independent of any one application ontology.
 
 ```elixir
-place = Ash.create!(Place, %{name: "Sydney"})
-# strip the domain label so worlds/1 can no longer resolve this node to a world
-AshNeo4j.Neo4jHelper.update_node_labels(:Place, %{name: "Sydney"}, [], [:SRM])
+%AshR2RML.Mapping.Resource{
+  resource: MyApp.Person,
+  class_iris: ["http://xmlns.com/foaf/0.1/Person"],
+  logical_table: "people",
+  subject_map: %AshR2RML.Mapping.SubjectMap{...},
+  properties: [...],
+  relationships: [...]
+}
 ```
 
-This is a **test/maintenance** helper — the data layer sets labels at create time and never mutates them on the normal CRUD path — so it lives in `Neo4jHelper` alongside the other raw-Cypher helpers (`create_node/2`, `relate_nodes/6`, …) rather than on a resource action.
+## Ontology-first Ash with ggen
 
-### Parallel tests
+AshR2RML ships a ggen pack for generating ordinary Ash resources from an admitted RDF/SHACL application profile.
 
-Because each test's writes are confined to an uncommitted transaction, tests can run concurrently without interfering:
+The source of truth is the ontology/profile, not the generated Elixir:
 
-```elixir
-use ExUnit.Case, async: true
-
-setup do
-  AshNeo4j.Sandbox.checkout()
-  on_exit(&AshNeo4j.Sandbox.rollback/0)
-end
+```text
+public ontology / application ontology
+               │
+               ▼
+          SHACL shapes
+               │
+               ▼
+             ggen
+               │
+               ▼
+       generated Ash.Resource
+               │
+               ▼
+         AshR2RML.Mapping
+               │
+               ▼
+             R2RML
 ```
 
-### Targeting a second Neo4j (pool routing)
+Example shape:
 
-The data layer talks to a configurable Bolty pool — `AshNeo4j.BoltyHelper.current_pool/0`, defaulting to `Bolt`. Override it per-process with `with_pool/2` (or `Process.put(:ash_neo4j_pool, Pool)`) to route a test's queries — and the `cypher25?/1` / `policy/1` capability checks — to a different server. AshNeo4j's own suite uses this to run Cypher-25 vector tests against a Neo4j 2026.05 pool (`Bolt6`) while the rest of the suite stays on a 5.x pool; those tests are tagged `:cypher25` and excluded by default. Start a long-lived pool from `test_helper.exs` (not a per-test `setup`) — `Bolty.start_link/1` links the pool to the calling process, so starting it inside a test ties the pool's lifetime to that one test. See `usage-rules/vectors.md`.
-
-### Running the suite
-
-The suite needs a Neo4j at `bolt://localhost:7687` (`neo4j` / `password`, the `Bolt` block in `config/test.exs`). The `:cypher25` / `:bolt6` tests — excluded by default — additionally need a Neo4j ≥ 2025.06 at `bolt://localhost:7689` (the `Bolt6` block), and the `:apoc` test needs a Neo4j + APOC at `bolt://localhost:7691` (the `BoltApoc` block). The bundled `docker-compose.yml` brings all three up (community edition is deliberate — it runs everything the suite needs, including vector search and Cypher 25; APOC is on its own opt-in server since it's not part of the default surface):
-
-```sh
-docker compose up -d --wait                          # bolt5 → 7687, bolt6 → 7689, apoc → 7691
-mix test                                              # default suite (7687 only)
-mix test --include cypher25 --include bolt6 --include apoc   # full suite
-docker compose down                                   # tear down
+```turtle
+ex:PersonShape
+    a sh:NodeShape ;
+    sh:targetClass foaf:Person ;
+    r2ml:ashModule "MyApp.Person" ;
+    r2ml:table "people" ;
+    r2ml:subjectTemplate "https://example.org/people/{id}" ;
+    sh:property [
+        sh:path foaf:name ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+        sh:maxCount 1
+    ] .
 ```
 
-Elixir/Erlang versions are pinned in `.tool-versions` (read by [mise](https://mise.jdx.dev) or asdf): `mise install` (or `asdf install`).
+The pack deterministically manufactures the corresponding Ash resource and semantic annotations. Generated resources are projections and should not be hand-edited.
 
-## Installing Neo4j and Configuring Bolty
+See [Ontology-first generation](documentation/how_to/ontology_first.livemd).
 
-ash_neo4j uses [neo4j](https://github.com/neo4j/neo4j) which must be installed and running.
+## SHACL as the operational closure boundary
 
-ash_neo4j uses [bolty](https://github./com/diffo-dev/bolty), a reluctant fork of [boltx](https://github.com/sagastume/boltx)
+AshR2RML does not claim that arbitrary OWL can be deterministically compiled into a relational schema.
 
-Your Ash application needs to configure, start and supervise bolty see [bolty documentation](https://hexdocs.pm/bolty/). Make sure to configure any required authorisation.
+OWL describes open-world semantics. Ash resources and relational schemas need operationally closed decisions about cardinality, datatype, identity, and storage.
 
-Tested against Neo4j 5.26.x community (Bolt 5.x) and the calendar-versioned Neo4j 2026.05 community (Bolt 6.0), as well as [DozerDB](https://dozerdb.org) 5.26.x with multi-database. bolty `~> 0.1.0` negotiates Bolt 5.6–6.0 and drops the older Bolt 1–4.x protocols; Neo4j 4.x / Bolt 4.x are not supported.
+For ontology-first generation, SHACL supplies that closure:
 
-## Cypher 25 and Cypher 5
-
-Neo4j 2025.06 introduced **versioned Cypher**: the long-standing language is now **Cypher 5** (the default on Neo4j 5.x and on 2025.x servers), and **Cypher 25** is the new calendar-versioned language available from Neo4j 2025.06 onward. The two coexist on a 2025.06+ server and are selected per-query with a leading `CYPHER 5` / `CYPHER 25` clause.
-
-AshNeo4j detects the connected server version (from `Bolty.connection_info/1`'s `server_version`) and, on **Neo4j ≥ 2025.06**, automatically prepends `CYPHER 25 ` to every query so it runs against the Cypher 25 language. On older servers no prefix is emitted and queries run against the server default (Cypher 5). The result is cached per pool; `AshNeo4j.BoltyHelper.cypher25?/0` reports it.
-
-This is distinct from the **Bolt protocol** version (5.6–6.0) — the Bolt version is how the driver talks to the server, while Cypher 5 / 25 is the query language version. Some features require Cypher 25 regardless of Bolt version: for example vector similarity search (see `usage-rules/vectors.md`) needs Neo4j ≥ 2025.06 but works over Bolt 5.8. A feature that requires it calls `AshNeo4j.Cypher.require_cypher25/0`, which returns `{:error, %AshNeo4j.Error.RequiresCypher25{}}` on an older server (the data layer returns this error, it never raises).
-
-> Until [bolty#47](https://github.com/diffo-dev/bolty/issues/47) adds a `cypher25` indicator to `Bolty.Policy`, AshNeo4j derives this from the `server_version` string (`"Neo4j/YYYY.MM.*"` ≥ `2025.06`).
-
-## Elixir, Ash and Neo4j Types
-
-We've made some decisions around how Ash/Elixir types are used to persist attributes as Neo4j properties. Where possible we've used Ash.Type.dump_to_native/cast_stored and 'native' Neo4j types, in many cases encoding to ISO8601, JSON or Base64 strings.
-
-
-| Ash Type shortname   | Ash Type Module                      | Elixir Type Module | Attribute Value Example                                 | Neo4j Node Property Value Cypher Example               | Cypher Type    |
-|----------------------|--------------------------------------|--------------------|---------------------------------------------------------|--------------------------------------------------------|----------------|
-| :atom                | Ash.Type.Atom                        | Atom               | :a                                                      | "a"                                                    | STRING         |
-| :binary              | Ash.Type.Binary                      | BitString          | <<1, 2, 3>>                                             | "AQID"                                                 | STRING         |
-| :boolean             | Ash.Type.Boolean                     | Boolean            | true                                                    | true                                                   | BOOLEAN        |
-| :ci_string           | Ash.Type.CiString                    | Ash.CiString       | Ash.CiString.new("Hello")                               | "Hello"                                                | STRING         |
-| :date                | Ash.Type.Date                        | Date               | ~D[2025-05-11]                                          | 2025-05-11                                             | DATE           |
-| :datetime            | Ash.Type.DateTime                    | DateTime           | ~U[2025-05-11 07:45:41Z]                                | 2025-05-11T07:45:41Z                                   | DATETIME       |
-| :decimal             | Ash.Type.Decimal                     | Decimal            | Decimal.new("4.2")                                      | "\"4.2\""                                              | STRING         |
-| :duration            | Ash.Type.Duration                    | Duration           | %Duration{month: 2}                                     | PT2H                                                   | DURATION       |
-| :duration_name       | Ash.Type.DurationName                | Atom               | :day                                                    | "day"                                                  | STRING         |
-| :integer             | Ash.Type.Integer                     | Integer            | 1                                                       | 1                                                      | INTEGER        |
-| :float               | Ash.Type.Float                       | Float              | 1.23456789                                              | 1.23456789                                             | FLOAT          |
-| :function            | Ash.Type.Function                    | Function           | &AshNeo4j.Neo4jHelper.create_node/2                     | "&AshNeo4j.Neo4jHelper.create_node/2"                  | STRING         |
-| subtype_of: :keyword | DogKeyword using Ash.Type.NewType    | DogKeyword         | [name: "Henry", age: 8, breed: :groodle]                | "{\"age\":8,\"breed\":\"groodle\",\"name\":\"Henry\"}" | STRING         |
-| :map                 | Ash.Type.Map                         | Map                | %{name: "Henry", age: 8, breed: :groodle}               | "{\"age\":8,\"breed\":\"groodle\",\"name\":\"Henry\"}" | STRING         |
-| :module              | Ash.Type.Module                      | Module             | AshNeo4j.DataLayer                                      | "Elixir.AshNeo4j.DataLayer"                            | STRING         |
-| :naive_datetime      | Ash.Type.NaiveDateTime               | NaiveDateTime      | ~N[2025-05-11 07:45:41]                                 | 2025-05-11T07:45:41                                    | LOCAL_DATETIME |
-| :string              | Ash.Type.String                      | BitString          | "hello"                                                 | "hello"                                                | STRING         |
-| subtype_of: :struct  | DogStruct using Ash.Type.NewType     | DogStruct          | %DogStruct{name: "Henry", age: 8, breed: :groodle}      | "{\"age\":8,\"breed\":\"groodle\",\"name\":\"Henry\"}" | STRING         |
-| :time                | Ash.Type.Time                        | Time               | ~T[07:45:41Z]                                           | 07:45:41Z                                              | TIME           |
-| :time_usec           | Ash.Type.TimeUsec                    | Time               | ~T[07:45:41.429903Z]                                    | 07:45:41.429903000Z                                    | TIME           |
-| subtype_of: :tuple   | DogTuple using Ash.Type.NewType      | Tuple              | {"Henry", 8, :groodle}                                  | "{\"age\":8,\"breed\":\"groodle\",\"name\":\"Henry\"}" | STRING         |
-| :subtype_of :struct  | DogTypedStruct using Ash.TypedStruct | DogTypedStruct     | %DogTypedStruct{name: "Henry", age: 8, breed: :groodle} | "{\"age\":8,\"breed\":\"groodle\",\"name\":\"Henry\"}" | STRING         |
-| :union               | Ash.Type.Union                       | Ash.Union          | %Ash.Union{type: :typed_struct, value: %Dog{age: 8}}    | "{\"type\":\"typed_struct\",\"value\":{\"age\":8}}"    | STRING         |
-| :url_encoded_binary  | Ash.Type.UrlEncodedBinary            | BitString          | <<1, 2, 3>>                                             | "AQID"                                                 | STRING         |
-| :utc_datetime        | Ash.Type.UtcDatetime                 | DateTime           | ~U[2025-05-11 07:45:41Z]                                | 2025-05-11T07:45:41Z                                   | DATETIME       |
-| :utc_datetime_usec   | Ash.Type.UtcDatetimeUsec             | DateTime           | ~U[2025-05-11 07:45:41.429903Z]                         | 2025-05-11T07:45:41.429903000Z.                        | DATETIME       |
-| :uuid                | Ash.Type.UUID                        | BitString          | "0274972c-161c-4dc9-882f-6851704c2af9"                  | "0274972c-161c-4dc9-882f-6851704c2af9"                 | STRING         |
-| :uuid7               | Ash.Type.UUIDv7                      | BitString          | "019d85f7-8450-7695-9426-4ede74026140"                  | "019d85f7-8450-7695-9426-4ede74026140"                 | STRING         |
-| (vector embedding)   | AshNeo4j.Type.Vector                | List               | [0.12, -0.04, 0.98]                                     | [0.12, -0.04, 0.98]                                    | LIST<FLOAT>    |
-
-Ash :date, :datetime, :time and :naive_datetime are second precision, whereas :utc_datetime_usec and :time_usec are microsecond precision. Neo4j is capable of nanoseconds however Ash/Elixir is not. 
-
-Struct is supported, however must implement Ash.Type. Ash arrays are supported as arrays in neo4j.
-
-Ash.Type.NewType including Ash.TypedStruct are supported, as are embedded resources.
-
-Ash.Type.File and Ash.Type.Term are not supported. The built-in `Ash.Type.Vector` is also not supported — AshNeo4j ships its own `AshNeo4j.Type.Vector` for embeddings (stored as a Neo4j `LIST<FLOAT>`), with `vector_similarity` / `vector_cosine_distance` search expressions. See `usage-rules/vectors.md`.
-
-## Storage Types
-
-Generally AshNeo4j uses Ash.Type.dump_to_native and Ash.Type.cast_stored. Post/prior to this we may encode/decode either as JSON or Base64.
-
-Ash.Type.Keyword, Ash.Type.Map, Ash.Type.Struct, Ash.Type.Tuple and Ash.Type.Union are stored as JSON.
-Ash.Type that have storage type map and aren't built in are also stored as JSON. This covers TypedStruct, embedded resources and Ash.Type.NewType you create subtype_of keyword, map, struct, tuple or union.
-
-JSON types are stored as maps. We encode with AshNeo4j.Util.json_encode, which erases Struct's and orders keys. It deliberately avoids using Jason.Encoder on structs other than those it has converted to Jason.OrderedObject. This means you are free to use Jason.Encoder (possibly via [ash_jason](https://hexdocs.pm/ash_jason/)) for other concerns such as presentation or communications.
-
-Interestingly many Ash.Types have identical JSON representations (e.g. Map, Struct, Tuple, Keyword). Neo4j lists are used for arrays since JSON and Base64 are strings.
-
-A few things to note:
-* Ash.Type.UUID, Ash.Type.UUIDv7 - we persist in the 'cast_input' format rather than as compacted binary for readability, so we don't use Ash.Type.dump_to_native and Ash.Type.cast_stored at all. However relationship attributes aren't persisted as properties, we of course use relationships (edges).
-* Ash.Type.Function - we persist external functions as a string MFA, rather than binary, so we don't use Ash.Type.dump_to_native and Ash.Type.cast_stored at all. Persisting local functions is not supported.
-
-## Keys
-
-We've generally used :uuid_primary_key, which Ash creates. While it *may* be possible to use other types for primary keys, we haven't done so yet.
-
-## Identities
-
-An Ash `identity` is enforced at the database level with a Neo4j uniqueness constraint, so you don't need `pre_check?` (and its race window). Create the constraints yourself — like vector indexes, AshNeo4j runs no migrations on boot — with `AshNeo4j.Constraint.create_constraints/1` (single and composite identities are both supported on Community Edition). A conflicting create surfaces as Ash's own `Ash.Error.Changes.InvalidAttribute` ("has already been taken"), in Ash terms. Identities Neo4j can't enforce (`nils_distinct?: false`, or a filtered `where:`) are refused — at compile time and by the helper — rather than silently left unenforced. See `usage-rules/identities.md`.
-
-## Elixir nil and Neo4j Null
-
-Generally attributes with nil value are not persisted, rather they are simply not created or removed on update to nil.
-
-## Other Notable
-
-Transactions are supported.
-
-## Aggregates
-
-AshNeo4j supports Ash aggregates. Declare them in the standard Ash `aggregates` block:
-
-```elixir
-aggregates do
-  count :comment_count, :comments
-  exists :has_comments, :comments
-  sum :total_score, :comments, field: :score
-  avg :avg_score, :comments, field: :score
-  min :min_score, :comments, field: :score
-  max :max_score, :comments, field: :score
-  first :first_comment_title, :comments, field: :title
-  list :comment_titles, :comments, field: :title
-end
+```text
+OWL/RDFS vocabulary
+      ↓
+application profile
+      ↓
+SHACL operational shapes
+      ↓
+ggen compilation
 ```
 
-Supported kinds: `:count`, `:exists`, `:sum`, `:avg`, `:min`, `:max`, `:first`, `:list`. The `:custom` kind is not supported.
+If the shape does not provide enough information to choose one lawful Ash/relational projection, generation fails with a typed refusal.
 
-Aggregates are computed in Cypher via `OPTIONAL MATCH` traversal. Single-hop and multi-hop relationship paths are both supported.
+## Typed refusals
 
-**Embedded struct and JSON-type fields are supported.** When `field:` refers to an attribute stored as JSON — `Ash.TypedStruct`, `Ash.Type.NewType` with map storage, embedded resources, `Ash.Type.Map`, `Ash.Type.Union`, etc. — AshNeo4j collects the raw JSON strings from Neo4j and deserializes them in Elixir using `Ash.Type.cast_stored/3`. `:list` and `:first` aggregates return fully deserialized struct values. `:sum`, `:avg`, `:min`, `:max` work when the deserialized values are directly comparable/numeric. To aggregate a sub-field within a struct, use an `expr:` aggregate.
+AshR2RML fails closed at semantic boundaries. Representative failures include:
 
-```elixir
-aggregates do
-  list :all_metadata, :related_things, field: :metadata   # returns [%MetadataStruct{}, ...]
-  first :first_metadata, :related_things, field: :metadata # returns %MetadataStruct{}
-end
-
-# No elevation needed — navigate into the struct with an expression aggregate:
-Ash.aggregate(MyResource, {:total_bandwidth, :sum, [
-  path: [:characteristics],
-  expr: Ash.Expr.expr(get_path(value, [:bandwidth])),
-  expr_type: :integer
-]})
+```text
+REFUSED_INVALID_CLASS_IRI
+REFUSED_MISSING_SUBJECT_MAP
+REFUSED_NON_UNIQUE_SEMANTIC_IDENTITY
+REFUSED_UNMAPPED_DATATYPE
+REFUSED_AMBIGUOUS_RELATIONSHIP
+REFUSED_INVALID_JOIN_CONDITION
+REFUSED_RELATIONSHIP_WITHOUT_PREDICATE
+REFUSED_R2RML_JOIN_WITHOUT_IDENTITY
+REFUSED_UNPROVEN_EQUIVALENCE
+UNSUPPORTED_TERM_TYPE
+UNSUPPORTED_ASH_TYPE
 ```
 
-For `expr:` aggregates, AshNeo4j fetches full destination records, evaluates the Ash expression on each in Elixir, and aggregates the results. Any valid Ash expression works — `get_path` for nested struct navigation, arithmetic, etc. Note: `expr:` is a programmatic API and is not available in the resource-level `aggregates do` DSL block.
+The exact Elixir error is a typed AshR2RML/Spark error. No mapping path silently drops a resource, attribute, relationship, or identity.
 
-## Calculations
+## Virtual RDF, not RDF synchronization
 
-AshNeo4j supports **expression calculations** — calculations declared with `expr(...)` in the `calculations` block. They are evaluated in Elixir after records are loaded from Neo4j.
+AshR2RML generates mappings; an OBDA engine executes SPARQL against the relational database.
 
-```elixir
-calculations do
-  calculate :score_doubled, :integer, expr(score * 2)
-  calculate :full_name, :string, expr(first_name <> " " <> last_name)
-  calculate :dog_age, :integer, expr(get_path(dog, [:age]))
-end
+```text
+SPARQL
+   │
+   ▼
+OBDA / R2RML engine
+   │ rewrites
+   ▼
+ SQL
+   │
+   ▼
+PostgreSQL
 ```
 
-Calculations can be:
+There is no RDF replication requirement and no dual-write protocol. The RDF graph is virtual unless the application deliberately materializes it elsewhere.
 
-- **Loaded** — `Ash.load!(records, [:score_doubled])`
-- **Filtered on** — `Ash.Query.filter(score_doubled > 10)` — AshNeo4j loads all matching nodes then evaluates the filter in Elixir
-- **Sorted on** — `Ash.Query.sort(score_doubled: :asc)` — applied in Elixir after records are loaded
+This eliminates an entire class of synchronization drift:
 
-**Embedded struct fields work without elevation.** `get_path(dog, [:age])` navigates into a `DogTypedStruct` directly — records arrive with embedded types fully deserialized, so any Ash expression that works in-memory works in a calculation.
-
-Only `expr(...)` calculations are currently supported. Custom `:calculate` callback modules are not.
-
-## Graph Traversal Expressions
-
-`traverse(^hop_chain, projection)` expresses a multi-hop graph traversal as an `Ash.Expr` value and pushes it down to a single Cypher path pattern — so a multi-hop reach composes inside a `filter` instead of being an imperative load-time walk. A relational data layer models relationships as joins and has no notion of a path as an expression value; this is something a graph data layer can offer that the relational ones structurally cannot.
-
-```elixir
-require Ash.Query
-import Ash.Expr
-
-chain = [{:forward, :posts}]                 # {:forward | :reverse, relationship_or_edge}
-
-# reached-node field comparison
-Author |> Ash.Query.filter(traverse(^chain, :score) > 50) |> Ash.read!()
-
-# compose with spatial — "services within 5 km of their site", one query
-Service |> Ash.Query.filter(st_dwithin(traverse(^chain, :location), ^point, 5_000)) |> Ash.read!()
-
-# membership / cardinality / aggregate over the reached set
-Service |> Ash.Query.filter(traverse(^chain, :exists) == true)
-Party   |> Ash.Query.filter(traverse(^chain, {:max, :population}) <= 5_200_000)
+```text
+Postgres row/FK state == source of truth
+RDF triples            == semantic projection of that state
 ```
 
-`traverse` is pushdown-only (it needs the graph) and lands in `filter` first — `sort`, `calculate`/policy and variable-length are tracked on epic [#321](https://github.com/diffo-dev/ash_neo4j/issues/321). To *return* a reached value rather than filter on it, use `AshNeo4j.Calculations.ProjectedTraversal`, which late-binds the reached node's type and yields `AshNeo4j.Unknown` when it can't be determined. See `usage-rules/traverse.md`.
+## Architecture invariant
 
-## Atomic and Bulk Writes
+AshR2RML follows this correspondence:
 
-AshNeo4j renders Ash atomics straight to Cypher — the new value is computed by the database in a `SET`, with no read-modify-write round trip. `Ash.bulk_update` / `Ash.bulk_destroy` with `strategy: :atomic` run as a single `update_query` / `destroy_query`; a create-or-update keyed on an identity renders an atomic `MERGE` so concurrent upserts converge on one node. A single filtered (optimistic-lock) update or destroy whose guard no longer holds returns `Ash.Error.Changes.StaleRecord` rather than a silent no-op, so lost updates are observable. See `usage-rules/atomics.md`.
+| Semantic construct | Ash | Relational projection | R2RML |
+|---|---|---|---|
+| RDF/OWL class | Resource | table/view | `rr:class` |
+| datatype property | attribute | column/expression | predicate-object map |
+| object property | relationship | FK/join | reference object map |
+| semantic identity | subject DSL / Ash identity | unique key(s) | subject map |
+| datatype | Ash type | storage type | `rr:datatype` |
+| required property | `allow_nil? false` | NOT NULL where applicable | shape constraint |
+| one-to-one / many-to-one | relationship | FK | reference object map |
+| many-to-many | relationship/join resource | join table | chained reference maps |
 
-## Cypher Fragments
+R2RML should name and expose relationships the relational model already preserves. It should not repair a semantically impoverished schema.
 
-`fragment(...)` is a filter escape hatch — embed a snippet of raw Cypher in a filter for a condition AshNeo4j doesn't push down (e.g. an APOC function), so the read stays a normal Ash query instead of being hand-written as a raw Cypher query (and losing authorization, the resource model and composability). `?` arguments are bound safely: an attribute reference renders to `s.<property>`, a literal to a `$param`. The fragment must be the whole filter, and arguments must be attribute references or literals — anything else is refused (`AshNeo4j.Error.UnsupportedFilterFragment`), never silently dropped. (This is the *expression* `fragment/N`, not an Ash *resource* fragment.) See `usage-rules/cypher-fragments.md`.
+## Deterministic generation
 
-## Limitations and Future Work
+The ontology-first pack follows the ggen model:
 
-Ash Neo4j has support for Ash create, update, read, destroy actions (including atomic and bulk writes with optimistic locking), aggregates, expression calculations, graph traversal expressions, spatial types, and vector embeddings. The cypher is now parameterised but is by no means optimised. The DSL is likely to evolve further and this may break back compatibility. Storage formats are subject to infrequent change so upgrade *may* require data migration (not included).
+```text
+ontology + shapes + queries + templates
+             │
+             ▼
+          ggen sync
+             │
+             ▼
+      deterministic artifacts
+```
 
-Vector similarity search is currently a full scan — Neo4j does not use the HNSW vector index for `vector.similarity.cosine` in a `WHERE`/`ORDER BY`. Indexed top-K (via `db.index.vector.queryNodes` / the Cypher 25 `SEARCH` clause) is tracked in [#297](https://github.com/diffo-dev/ash_neo4j/issues/297).
+A semantic change should require one authoritative edit and zero manual synchronization across generated Ash and R2RML projections.
 
-Future work may include: cached calculations and aggregates, indexed vector/semantic search ([#297](https://github.com/diffo-dev/ash_neo4j/issues/297)), and broader geospatial support.
+## Verification model
 
-Collaboration on ash_neo4j welcome via github, please use discussions and/or raise issues as you encounter them. If going straight for a PR, please include explanation and test cases.
+AshR2RML treats compile success as a checkpoint, not the crown.
 
-## Acknowledgements
+The integration contract is:
 
-Thanks to the [Ash Core](https://github.com/ash-project) for [ash](https://github.com/ash-project/ash) 🚀, including [ash_csv](https://github.com/ash-project/ash_csv) which was an exemplar.
+```text
+Ash resources
+    ↓
+PostgreSQL fixture
+    ↓
+AshR2RML-generated R2RML
+    ↓
+real R2RML/OBDA engine
+    ↓
+SPARQL
+```
 
-Thanks to [Sagastume](https://github.com/sagastume) for [boltx](https://github.com/tiagodavi/ex4j) which was based on [bolt_sips](https://github.com/florinpatrascu/bolt_sips) by [Florin Patrascu](https://github.com/florinpatrascu).
+The semantic identity and required relationships returned through SPARQL must match the subject visible through Ash.
 
-Thanks to the [Neo4j Core](https://github.com/neo4j) for [neo4j](https://github.com/neo4j/neo4j) and pioneering work on graph databases. Thanks to [DozerDB](https://dozerdb.org) for enterprise features on community neo4j.
+Ontology-first generation adds the upstream leg:
 
-## Links
+```text
+RDF/SHACL
+   ↓
+ggen
+   ↓
+Ash
+   ↓
+Postgres
+   ↓
+R2RML
+   ↓
+SPARQL
+```
 
-[Diffo.dev](https://www.diffo.dev)
-[Neo4j Deployment Centre](https://neo4j.com/deployment-center/).
+## What AshR2RML does not do
+
+AshR2RML deliberately does not:
+
+- replace AshPostgres, AshSql, Ecto, or another Ash data layer;
+- store RDF triples itself;
+- require Neo4j or another graph database;
+- implement a SPARQL optimizer;
+- infer arbitrary OWL semantics;
+- invent missing relationship or identity information;
+- make generated ontology facts executable with ambient authority.
+
+## Documentation
+
+- [Architecture](documentation/topics/architecture.md)
+- [Ash-first mapping](documentation/how_to/ash_first.livemd)
+- [Ontology-first generation](documentation/how_to/ontology_first.livemd)
+- [Managing relational schema and R2RML](documentation/how_to/managing_schema.livemd)
+- [Usage rules](usage-rules.md)
+
+## Development
+
+AshR2RML uses ggen to manufacture generated semantic compiler surfaces. Generated artifacts are projections; change their owning ontology/query/template and regenerate rather than hand-editing them.
+
+The repository's `AGENTS.md` is the authoritative contributor contract.
+
+## License
+
+MIT. See `LICENSES/MIT.md`.

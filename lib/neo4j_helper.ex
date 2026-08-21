@@ -239,11 +239,21 @@ defmodule AshNeo4j.Neo4jHelper do
   :ok
   ```
   """
-  def unrelate_nodes(source_label, source_properties, dest_label, dest_properties, edge_label, edge_direction, guard \\ [])
+  def unrelate_nodes(
+        source_label,
+        source_properties,
+        dest_label,
+        dest_properties,
+        edge_label,
+        edge_direction,
+        guard \\ []
+      )
       when (is_atom(source_label) or is_list(source_label)) and is_map(source_properties) and
              is_atom(dest_label) and is_map(dest_properties) and
              is_atom(edge_label) and is_atom(edge_direction) and is_list(guard) do
-    Query.unrelate(source_label, source_properties, dest_label, dest_properties, edge_label, edge_direction, guard: guard)
+    Query.unrelate(source_label, source_properties, dest_label, dest_properties, edge_label, edge_direction,
+      guard: guard
+    )
     |> Cypher.run()
   end
 
@@ -389,7 +399,9 @@ defmodule AshNeo4j.Neo4jHelper do
 
     case Keyword.get(opts, :exclusive, {false, false}) do
       {false, false} ->
-        Query.relate(source_label, source_properties, dest_label, dest_properties, edge_label, edge_direction, guard: guard)
+        Query.relate(source_label, source_properties, dest_label, dest_properties, edge_label, edge_direction,
+          guard: guard
+        )
         |> Cypher.run()
 
       {true, false} ->

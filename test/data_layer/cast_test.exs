@@ -55,7 +55,6 @@ defmodule AshNeo4j.DataLayer.CastTest do
     test "time usec" do
       value_unchanged(Ash.Type.TimeUsec, ~T[07:45:41.429903Z])
     end
-
   end
 
   describe "cast ash types" do
@@ -80,6 +79,7 @@ defmodule AshNeo4j.DataLayer.CastTest do
         ],
         srid: 4326
       }
+
       value_unchanged(AshGeo.GeoJson, poly, geo_types: [:polygon])
     end
 

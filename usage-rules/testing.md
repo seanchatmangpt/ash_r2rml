@@ -1,75 +1,130 @@
-<!--
-SPDX-FileCopyrightText: 2025 ash_neo4j contributors <https://github.com/diffo-dev/ash_neo4j/graphs.contributors>
+# Testing AshR2RML
 
-SPDX-License-Identifier: MIT
--->
+AshR2RML testing is layered because different claims require different evidence.
 
-# Testing
+## Unit tests
 
-## AshNeo4j.Sandbox
+Pure mapping logic should be tested without external services:
 
-Use `AshNeo4j.Sandbox` for test isolation. Each test gets a dedicated Neo4j connection with an open transaction. All queries from that test run inside the transaction, which is rolled back automatically when the test process exits — nothing is ever committed, so there is no data to clean up.
+- subject-template parsing;
+- IRI validation;
+- datatype registry lookups;
+- normalized mapping IR construction;
+- join-condition construction;
+- deterministic ordering;
+- typed refusal classification.
 
-Do not use `delete_all` teardown patterns. Use the sandbox instead.
+Unit tests are appropriate for pure functions and compile-time invariants.
 
-## Setup
+## DSL compilation tests
 
-Start Bolty once for the test suite, then check out a sandbox connection per test:
+Compile representative Ash resources and assert that `AshR2RML.Resource.Info.mapping/1` returns the expected normalized IR.
 
-```elixir
-setup_all do
-  AshNeo4j.BoltyHelper.start()
-end
+Fixtures should exercise:
 
-setup do
-  AshNeo4j.Sandbox.checkout()
-  on_exit(&AshNeo4j.Sandbox.rollback/0)
-end
+- scalar attributes;
+- required/optional attributes;
+- semantic subject templates;
+- `belongs_to`;
+- `has_one`/`has_many`;
+- many-to-many;
+- association resources;
+- composite identities;
+- custom datatype mappings;
+- named graphs where supported.
+
+## R2RML conformance tests
+
+Render Turtle and parse it using an independent RDF parser. Do not treat string matching alone as proof of valid R2RML syntax.
+
+Tests should assert the intended R2RML structures:
+
+```text
+rr:TriplesMap
+rr:logicalTable
+rr:subjectMap
+rr:predicateObjectMap
+rr:objectMap
+rr:parentTriplesMap
+rr:joinCondition
 ```
 
-`on_exit(&AshNeo4j.Sandbox.rollback/0)` is optional — the transaction rolls back automatically when the test process exits — but is recommended for clarity.
+## Determinism
 
-## Verifying the graph directly
+Given identical admitted inputs, repeated compilation/rendering must produce byte-identical semantic artifacts unless a field is explicitly documented as nondeterministic receipt metadata.
 
-Use `AshNeo4j.Neo4jHelper` to assert on nodes and edges at the graph level, independently of the Ash query layer:
+Test deterministic ordering of resources, classes, predicate-object maps, joins, prefixes, and generated files.
 
-```elixir
-# Assert a node exists with specific properties
-{:ok, %{records: records}} = AshNeo4j.Neo4jHelper.read_nodes(:Post, %{uuid: post.id})
-assert length(records) == 1
+## Relational integration
 
-# Assert a direct edge exists between two nodes
-assert AshNeo4j.Neo4jHelper.nodes_relate_how?(
-  :Post, %{uuid: post.id},
-  :Comment, %{uuid: comment.id},
-  :HAS_COMMENT, :outgoing
-)
+Use a real relational database for claims about relational correspondence. The canonical integration fixture uses AshPostgres/PostgreSQL.
 
-# Assert a relationship via multi-hop traversal
-assert AshNeo4j.Neo4jHelper.nodes_relate_how?(
-  :Author, %{uuid: author.id},
-  :Tag, %{uuid: tag.id},
-  [WROTE: :outgoing, TAGGED_WITH: :outgoing]
-)
+Verify:
+
+1. resources migrate successfully;
+2. records written through Ash exist in the relational tables;
+3. relationships are represented by the expected FK/join structure;
+4. the same data is addressable by the generated R2RML mapping.
+
+Mocks cannot prove this boundary.
+
+## OBDA integration
+
+The crown integration test runs a real compatible R2RML/OBDA engine against the same database and executes SPARQL.
+
+For an admitted fixture:
+
+```text
+Ash write/read
+     ↓
+PostgreSQL
+     ↓
+generated R2RML
+     ↓
+real OBDA engine
+     ↓
+SPARQL
 ```
 
-These helpers operate **below the Ash data layer** — they talk directly to Neo4j via Bolty and know nothing about Ash resources, types, or translations. You must supply already-translated values: the same property names and labels that AshNeo4j's compile-time translation map produces. You are responsible for:
+Compare normalized semantic IRIs, literal values, and relationships between Ash-visible state and SPARQL-visible virtual RDF.
 
-- Property names must be in Neo4j form (`camelCase`; `uuid` not `id` for a UUID primary key)
-- Property values must be in their stored Neo4j form (e.g. the raw UUID string, not an Ash struct)
-- **Labels**: any label present on the node is valid. The recommended approach is to pass both the domain label and the module label as a pair — this asserts both are present and uniquely identifies the resource type: `read_nodes([:Access, :Shelf], %{uuid: shelf.id})`. Use `AshNeo4j.Resource.Info.domain_label/1` and `module_label/1` to obtain these programmatically.
+## Ontology-first integration
 
-Return values from `read_nodes` and similar are `{:ok, %Bolty.Response{}}` structs — not Ash records. `nodes_relate_how?` returns `true`, `false`, or `:error`.
+The ontology-first suite adds the generation leg:
 
-## Parallel tests
-
-Because each test's writes are confined to an uncommitted transaction, tests can run concurrently without interfering:
-
-```elixir
-use ExUnit.Case, async: true
-
-setup do
-  AshNeo4j.Sandbox.checkout()
-  on_exit(&AshNeo4j.Sandbox.rollback/0)
-end
+```text
+RDF/OWL + SHACL
+       ↓
+      ggen
+       ↓
+generated Ash.Resource
+       ↓
+Postgres
+       ↓
+R2RML
+       ↓
+SPARQL
 ```
+
+Tests must include invalid shapes proving fail-closed behavior before generated files are written.
+
+## Required falsifiers
+
+Maintain tests for:
+
+- unsupported type does not become `xsd:string` silently;
+- missing subject template field is refused;
+- two distinct resources do not collide on subject IRI;
+- relationship mappings are not silently dropped;
+- ambiguous joins are refused;
+- physical table/module rename does not alter semantic identity unless explicitly configured;
+- predicate renames are explicit semantic changes;
+- repeated ggen runs are deterministic;
+- R2RML parses independently;
+- SPARQL and Ash observe the same admitted subject.
+
+## Standing
+
+Use `PARTIAL_ALIVE` for successful lower checkpoints such as DSL compilation or Turtle parsing.
+
+Use `ALIVE` only for the exact admitted end-to-end claim that actually executed, for example: "generic Person/Organization fixture persisted in PostgreSQL and queried through generated R2RML using a real OBDA engine with matching semantic identity and relationship results."

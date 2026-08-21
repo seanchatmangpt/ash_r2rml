@@ -40,7 +40,9 @@ defmodule AshNeo4j.Error.Neo4jTest do
   end
 
   test "the message preserves the Neo4j code and message" do
-    msg = Exception.message(Neo4j.from_bolt(bolt("Neo.ClientError.Schema.ConstraintValidationFailed", "already exists")))
+    msg =
+      Exception.message(Neo4j.from_bolt(bolt("Neo.ClientError.Schema.ConstraintValidationFailed", "already exists")))
+
     assert msg =~ "ConstraintValidationFailed"
     assert msg =~ "already exists"
   end

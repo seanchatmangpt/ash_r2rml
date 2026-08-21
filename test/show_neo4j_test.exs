@@ -135,6 +135,7 @@ defmodule AshNeo4j.ShowNeo4jTest do
 
       IO.puts("\n========== #{name} ==========")
       IO.puts("Ash record (cast_stored — what consumers see):")
+
       IO.inspect(Map.take(reread, [:id, :name, :location, :bounds, :path, :pes, :regions]),
         label: "  reread",
         printable_limit: :infinity

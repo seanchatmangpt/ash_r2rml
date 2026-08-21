@@ -91,6 +91,7 @@ defmodule AshNeo4j.DataLayer.DumpTest do
         ],
         srid: 4326
       }
+
       value_unchanged(AshGeo.GeoJson, poly, geo_types: [:polygon])
     end
 

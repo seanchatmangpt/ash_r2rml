@@ -298,7 +298,10 @@ defmodule AshNeo4j.QueryHelper do
   defp render_fragment_token({:expr, other}, _mapping, _index), do: {:error, {:unsupported_argument, other}}
 
   defp contains_fragment?(%Ash.Query.Function.Fragment{}), do: true
-  defp contains_fragment?(%_struct{} = struct), do: struct |> Map.from_struct() |> Map.values() |> Enum.any?(&contains_fragment?/1)
+
+  defp contains_fragment?(%_struct{} = struct),
+    do: struct |> Map.from_struct() |> Map.values() |> Enum.any?(&contains_fragment?/1)
+
   defp contains_fragment?(list) when is_list(list), do: Enum.any?(list, &contains_fragment?/1)
   defp contains_fragment?(%{} = map), do: map |> Map.values() |> Enum.any?(&contains_fragment?/1)
   defp contains_fragment?(_), do: false
@@ -323,10 +326,14 @@ defmodule AshNeo4j.QueryHelper do
 
   defp traverse_predicate?(%AshNeo4j.Functions.StDwithin{arguments: [%AshNeo4j.Functions.Traverse{} | _]}), do: true
   defp traverse_predicate?(%AshNeo4j.Functions.StContains{arguments: [%AshNeo4j.Functions.Traverse{} | _]}), do: true
-  defp traverse_predicate?(%{left: %AshNeo4j.Functions.StDistance{arguments: [%AshNeo4j.Functions.Traverse{} | _]}}), do: true
 
-  defp traverse_predicate?(%{left: %AshNeo4j.Functions.StDistanceInMeters{arguments: [%AshNeo4j.Functions.Traverse{} | _]}}),
+  defp traverse_predicate?(%{left: %AshNeo4j.Functions.StDistance{arguments: [%AshNeo4j.Functions.Traverse{} | _]}}),
     do: true
+
+  defp traverse_predicate?(%{
+         left: %AshNeo4j.Functions.StDistanceInMeters{arguments: [%AshNeo4j.Functions.Traverse{} | _]}
+       }),
+       do: true
 
   defp traverse_predicate?(_), do: false
 

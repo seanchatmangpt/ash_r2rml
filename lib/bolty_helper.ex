@@ -176,7 +176,10 @@ defmodule AshNeo4j.BoltyHelper do
   end
 
   defp query_apoc_available?(pool) do
-    case Bolty.query(pool, "SHOW PROCEDURES YIELD name WHERE name STARTS WITH 'apoc' RETURN count(name) > 0 AS available") do
+    case Bolty.query(
+           pool,
+           "SHOW PROCEDURES YIELD name WHERE name STARTS WITH 'apoc' RETURN count(name) > 0 AS available"
+         ) do
       {:ok, %Bolty.Response{results: [%{"available" => available} | _]}} -> available == true
       _ -> false
     end

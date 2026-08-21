@@ -131,12 +131,18 @@ defmodule AshNeo4j.Constraint do
   end
 
   defp spec(resource, _label, _translations, %{where: where} = identity) when where != nil do
-    {:error, UnsupportedIdentity.exception(resource: resource, identity: identity.name, keys: identity.keys, reason: :filtered)}
+    {:error,
+     UnsupportedIdentity.exception(resource: resource, identity: identity.name, keys: identity.keys, reason: :filtered)}
   end
 
   defp spec(resource, _label, _translations, %{nils_distinct?: false} = identity) do
     {:error,
-     UnsupportedIdentity.exception(resource: resource, identity: identity.name, keys: identity.keys, reason: :nils_not_distinct)}
+     UnsupportedIdentity.exception(
+       resource: resource,
+       identity: identity.name,
+       keys: identity.keys,
+       reason: :nils_not_distinct
+     )}
   end
 
   defp spec(_resource, label, translations, identity) do

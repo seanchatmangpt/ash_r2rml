@@ -138,6 +138,11 @@ defmodule AshNeo4j.MixProject do
     [
       {:ash, ash_version("~> 3.0 and >= 3.28.0")},
       {:spark, ">= 2.7.0"},
+      {:rdf, "~> 3.0"},
+      # RDF-Elixir standards stack used by the semantic verification surfaces.
+      {:sparql, "~> 0.3.12"},
+      {:sparql_client, "~> 0.5.1"},
+      {:json_ld, "~> 1.0.1"},
       {:ash_state_machine, "~> 0.2.12", only: [:dev, :test]},
       {:bolty, bolty_version("~> 0.2.1")},
       {:geo, "~> 3.6"},

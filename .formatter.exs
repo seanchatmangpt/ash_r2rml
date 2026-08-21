@@ -18,5 +18,10 @@ spark_locals_without_parens = [
   local_pipe_with_parens: true,
   single_clause_on_do: true,
   locals_without_parens: spark_locals_without_parens,
-  export: [locals_without_parens: spark_locals_without_parens]
+  export: [
+    locals_without_parens: spark_locals_without_parens
+  ],
+  spark: [
+    extensions: [AshR2RML.Resource]
+  ]
 ]

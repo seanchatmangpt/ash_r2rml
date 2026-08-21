@@ -1,0 +1,341 @@
+<!--
+SPDX-FileCopyrightText: 2026 ash_r2rml contributors
+
+SPDX-License-Identifier: MIT
+-->
+
+# Ontology-first Ash with ggen
+
+AshR2RML's ontology-first workflow treats generated Ash resources as projections of an admitted semantic model.
+
+The source of truth is not the generated Elixir file.
+
+```text
+RDF/OWL vocabulary
+      ↓
+application profile
+      ↓
+SHACL operational shapes
+      ↓
+ggen
+      ↓
+generated Ash resources
+      ↓
+AshR2RML.Mapping
+      ↓
+R2RML
+```
+
+## Why SHACL sits between OWL and Ash
+
+OWL is open-world and does not necessarily specify enough operational information to choose a relational representation.
+
+Ash and relational schemas need decisions such as:
+
+```text
+is the value required?
+is it single-valued?
+what datatype is stored?
+what identifies a subject?
+is this an entity or an action?
+which relation owns the foreign key?
+```
+
+The application profile and SHACL shapes provide that closure.
+
+AshR2RML does not claim arbitrary OWL-to-SQL compilation.
+
+## Start with a domain vocabulary
+
+A public or application ontology may define:
+
+```turtle
+@prefix ex: <https://example.org/ontology/> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+ex:Person a owl:Class .
+ex:Organization a owl:Class .
+
+ex:name a owl:DatatypeProperty .
+ex:memberOf a owl:ObjectProperty ;
+  rdfs:domain ex:Person ;
+  rdfs:range ex:Organization .
+```
+
+These facts describe meaning, but they do not determine a complete Ash/PostgreSQL schema.
+
+## Add an application profile and operational shape
+
+```turtle
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix r2ml: <https://ash-r2ml.dev/ns#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+ex:OrganizationShape
+    a sh:NodeShape ;
+    sh:targetClass ex:Organization ;
+    r2ml:ashModule "MyApp.Organization" ;
+    r2ml:table "organizations" ;
+    r2ml:subjectTemplate "https://example.org/organizations/{id}" ;
+    sh:property [
+        sh:path ex:name ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+        sh:maxCount 1
+    ] .
+
+ex:PersonShape
+    a sh:NodeShape ;
+    sh:targetClass ex:Person ;
+    r2ml:ashModule "MyApp.Person" ;
+    r2ml:table "people" ;
+    r2ml:subjectTemplate "https://example.org/people/{id}" ;
+    sh:property [
+        sh:path ex:name ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+        sh:maxCount 1
+    ] ;
+    sh:property [
+        sh:path ex:memberOf ;
+        sh:class ex:Organization ;
+        sh:minCount 1 ;
+        sh:maxCount 1
+    ] .
+```
+
+The operational shape now gives the compiler enough information to manufacture a required scalar and a required to-one relationship.
+
+## Compile with the AshR2RML ggen pack
+
+The project imports the AshR2RML pack and runs the standard ggen synchronization path.
+
+Conceptually:
+
+```bash
+ggen sync
+```
+
+The pack performs:
+
+```text
+parse RDF
+  ↓
+load application profile
+  ↓
+run semantic admission gates
+  ↓
+project normalized resource/attribute/relationship facts
+  ↓
+render Ash resources
+  ↓
+render AshR2RML semantic annotations
+  ↓
+write deterministic projections
+```
+
+The exact project configuration is ordinary ggen configuration; there is no second bespoke generator runtime inside AshR2RML.
+
+## Generated resource shape
+
+The person resource manufactured from the example profile is equivalent to:
+
+```elixir
+defmodule MyApp.Person do
+  use Ash.Resource,
+    domain: MyApp.Domain,
+    data_layer: AshPostgres.DataLayer,
+    extensions: [AshR2RML.Resource]
+
+  postgres do
+    table "people"
+    repo MyApp.Repo
+  end
+
+  r2rml do
+    class "https://example.org/ontology/Person"
+
+    subject do
+      template "https://example.org/people/{id}"
+      term_type :iri
+    end
+  end
+
+  attributes do
+    uuid_primary_key :id
+
+    attribute :name, :string do
+      allow_nil? false
+
+      rdf do
+        predicate "https://example.org/ontology/name"
+      end
+    end
+  end
+
+  relationships do
+    belongs_to :organization, MyApp.Organization do
+      allow_nil? false
+
+      rdf do
+        predicate "https://example.org/ontology/memberOf"
+      end
+    end
+  end
+end
+```
+
+Do not hand-edit this generated module. Change the profile or compiler source and regenerate.
+
+## Admission before rendering
+
+The pack fails before writing generated files when the semantic model is incomplete or ambiguous.
+
+Examples of refused inputs:
+
+```text
+NodeShape has no target class
+mapped resource has no subject identity
+property shape has no datatype or target class
+relationship target has no mapped resource
+subject template references an unknown field
+object property admits several incompatible storage strategies
+an asserted close match is treated as equivalence without proof
+many-valued relation is forced into one scalar column
+```
+
+The generator should never repair these by convention.
+
+## Nouns, relationships, and actions
+
+Ontology-first generation is structural, not lexical.
+
+A class or node shape representing a durable subject can become an Ash resource.
+
+An object property becomes a relationship when the profile admits that interpretation.
+
+A verb-like operation should not become a table merely because an ontology individual or capability name contains a noun phrase.
+
+Application behavior belongs in Ash actions; persistent entities belong in resources.
+
+## Cardinality correspondence
+
+Typical shape-to-Ash correspondence:
+
+| SHACL | Ash candidate | Relational consequence |
+|---|---|---|
+| `sh:minCount 1` scalar | `allow_nil? false` | `NOT NULL` where applicable |
+| `sh:maxCount 1` scalar | one attribute | one column/value |
+| `sh:class` + `sh:maxCount 1` | `belongs_to` / `has_one` | FK candidate |
+| many-valued object property | `has_many` / `many_to_many` | FK/join candidate |
+| relation with attributes | association resource | relationship table/resource |
+
+These are candidates until the application profile determines direction, ownership, and identity.
+
+## Datatype correspondence
+
+The pack maps supported RDF datatypes to Ash types through the same datatype registry used by AshR2RML runtime mapping.
+
+For example:
+
+```text
+xsd:string   → :string
+xsd:boolean  → :boolean
+xsd:integer  → :integer
+xsd:decimal  → :decimal
+xsd:date     → :date
+xsd:dateTime → UTC datetime type
+```
+
+An unknown datatype is not converted to a string automatically.
+
+## Semantic identity
+
+The profile must declare how relational records become RDF subjects.
+
+A subject template may use one or several admitted identity fields:
+
+```turtle
+r2ml:subjectTemplate "https://example.org/accounts/{tenant_id}/{account_number}" .
+```
+
+The generated Ash resource should carry compatible identity constraints when the profile declares uniqueness.
+
+RDF identity remains stable even if the internal database uses a surrogate UUID.
+
+## Public ontologies remain public
+
+Do not add Ash-specific facts directly to imported public ontology files.
+
+Use a profile layer:
+
+```text
+public ontology
+  ex:Person
+      │
+      ▼
+application profile
+  maps ex:Person → MyApp.Person
+      │
+      ▼
+SHACL operational shape
+  cardinality/type/identity/storage facts
+```
+
+This allows the same public ontology to support several lawful application projections without contaminating its vocabulary with implementation details.
+
+## Conservative semantic alignment
+
+The compiler preserves the distinction between:
+
+```text
+owl:equivalentClass
+rdfs:subClassOf
+skos:exactMatch
+skos:closeMatch
+application-specific mapping
+```
+
+It never upgrades a weaker assertion to `owl:equivalentClass` merely to simplify generation.
+
+## Determinism
+
+Run generation twice against the same admitted graph.
+
+The generated Ash resources and mapping artifacts must be byte-stable except for explicitly declared nondeterministic receipt fields.
+
+A normal verification pattern is:
+
+```bash
+ggen sync
+git diff --exit-code -- generated/
+```
+
+or the consuming repository's equivalent generated-surface verifier.
+
+## End-to-end semantic proof
+
+The ontology-first crown is not generation alone.
+
+The complete proof is:
+
+```text
+ontology + SHACL
+      ↓
+ggen
+      ↓
+Ash resources
+      ↓
+AshPostgres / relational DB
+      ↓
+AshR2RML R2RML
+      ↓
+OBDA engine
+      ↓
+SPARQL
+```
+
+For the admitted fixture graph, the SPARQL-visible subjects, classes, scalar properties, and object-property relationships must correspond to the same records observed through Ash.
+
+That closes the semantic round trip without requiring a graph database.
