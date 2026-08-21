@@ -109,6 +109,13 @@ defmodule AshR2ml.RdfIngestionAndObdaTest do
     assert compilation.ash_source =~ "defmodule Example.Account"
     assert compilation.postgres_ddl =~ ~s(FOREIGN KEY ("organization_id"))
     assert compilation.r2rml =~ "rr:parentTriplesMap <#Example_Organization>"
+
+    {organization_create, _} = :binary.match(compilation.postgres_ddl, ~s(CREATE TABLE IF NOT EXISTS "organizations"))
+    {account_fk, _} = :binary.match(compilation.postgres_ddl, ~s(ALTER TABLE "accounts"))
+    assert organization_create < account_fk
+
+    assert {:ok, public_bundle} = AshR2ML.Ingestion.compile_turtle(@profile)
+    assert length(public_bundle.resources) == 2
   end
 
   test "ggen can manufacture the generic bundle directly from Turtle" do
@@ -189,7 +196,7 @@ defmodule AshR2ml.RdfIngestionAndObdaTest do
            ]
 
     runner = fn "ontop", ^args, opts ->
-      assert opts[:stderr_to_stdout]
+      refute Keyword.get(opts, :stderr_to_stdout, false)
       {"resource,account\nurn:r:1,urn:a:1\n", 0}
     end
 

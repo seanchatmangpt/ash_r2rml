@@ -43,9 +43,8 @@ defmodule AshR2ml.OBDA.Ontop do
   deterministic unit testing with an injected runner and is permanently marked
   `:test_double_only`; its result must not be attached as a parity witness.
 
-  Ontop accepts standards-valid R2RML through `-m/--mapping`, a SPARQL SELECT
-  query through `-q/--query`, and either a properties file or explicit database
-  options. The CLI returns CSV, which this adapter normalizes to string-keyed maps.
+  `:prefix_args` allows an operator to place Ontop behind an execution wrapper,
+  including the official Docker image, without changing the semantic command.
   """
 
   alias AshR2ml.{OBDA.Observation, Refusal}
@@ -55,9 +54,10 @@ defmodule AshR2ml.OBDA.Ontop do
     with {:ok, mapping} <- required(opts, :mapping_path),
          {:ok, query} <- required(opts, :query_path) do
       binary = get(opts, :binary, System.get_env("ONTOP_BIN") || "ontop")
+      prefix_args = get(opts, :prefix_args, []) |> List.wrap()
 
       args =
-        ["query", "-m", mapping, "-q", query]
+        prefix_args ++ ["query", "-m", mapping, "-q", query]
         |> append_option("-p", get(opts, :properties_path))
         |> append_option("-t", get(opts, :ontology_path))
         |> append_option("--db-url", get(opts, :db_url))
@@ -104,7 +104,7 @@ defmodule AshR2ml.OBDA.Ontop do
       command_sha256 = sha256(:erlang.term_to_binary({binary, redact(args)}, [:deterministic]))
 
       try do
-        case runner.(binary, args, stderr_to_stdout: true) do
+        case runner.(binary, args, []) do
           {output, 0} ->
             standing = if evidence_kind == :system_process, do: :obda_query_observed, else: :test_double_only
 

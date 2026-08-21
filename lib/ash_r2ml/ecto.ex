@@ -7,7 +7,9 @@ defmodule AshR2ml.Semantic.Ecto do
   Manufactures an Ecto migration source projection from `AshR2ml.SemanticIR`.
 
   The renderer is pure CONSTRUCT: it returns source text and never runs a
-  migration. Unknown Ash-to-Ecto type projections fail closed.
+  migration. Unknown Ash-to-Ecto type projections fail closed. Base tables are
+  created before foreign-key constraints so dependency cycles do not depend on
+  accidental resource ordering.
   """
 
   alias AshR2ml.{Refusal, SemanticIR}
@@ -30,12 +32,13 @@ defmodule AshR2ml.Semantic.Ecto do
     resources = Enum.sort_by(resources, & &1.table)
 
     with :ok <- verify_types(resources) do
-      tables = Enum.map_join(resources, "\n\n", &render_table(&1, resources))
+      tables = Enum.map_join(resources, "\n\n", &render_table/1)
+      foreign_keys = resources |> Enum.flat_map(&render_foreign_keys(&1, resources)) |> Enum.join("\n\n")
       join_tables = resources |> Enum.flat_map(&render_join_tables(&1, resources)) |> Enum.join("\n\n")
       indexes = resources |> Enum.flat_map(&render_identity_indexes/1) |> Enum.join("\n")
 
       body =
-        [tables, join_tables, indexes]
+        [tables, foreign_keys, join_tables, indexes]
         |> Enum.reject(&(&1 == ""))
         |> Enum.join("\n\n")
         |> indent(4)
@@ -75,32 +78,13 @@ defmodule AshR2ml.Semantic.Ecto do
     end
   end
 
-  defp render_table(resource, resources) do
-    fk_by_source =
-      resource.relationships
-      |> Enum.filter(&(&1.storage_strategy == :foreign_key))
-      |> Map.new(&{&1.source_key, &1})
-
+  defp render_table(resource) do
     fields =
       Enum.map_join(resource.attributes, "\n", fn attribute ->
         primary? = primary_key?(resource, attribute.name)
         null? = if primary?, do: false, else: attribute.nullable
 
-        type_expression =
-          case Map.get(fk_by_source, attribute.name) do
-            nil ->
-              inspect(ecto_type(attribute.ash_type))
-
-            relationship ->
-              destination = Enum.find(resources, &(&1.class_iri == relationship.target_class))
-              destination_attribute = Enum.find(destination.attributes, &(&1.name == relationship.destination_key))
-
-              "references(#{atom_literal(destination.table)}, " <>
-                "column: #{atom_literal(destination_attribute.column)}, " <>
-                "type: #{inspect(ecto_type(destination_attribute.ash_type))}, on_delete: :nothing)"
-          end
-
-        "add #{atom_literal(attribute.column)}, #{type_expression}, " <>
+        "add #{atom_literal(attribute.column)}, #{inspect(ecto_type(attribute.ash_type))}, " <>
           "null: #{inspect(null?)}, primary_key: #{inspect(primary?)}"
       end)
 
@@ -110,6 +94,24 @@ defmodule AshR2ml.Semantic.Ecto do
     end
     """
     |> String.trim()
+  end
+
+  defp render_foreign_keys(resource, resources) do
+    for %Relationship{storage_strategy: :foreign_key} = relationship <- resource.relationships do
+      source_attribute = Enum.find(resource.attributes, &(&1.name == relationship.source_key))
+      destination = Enum.find(resources, &(&1.class_iri == relationship.target_class))
+      destination_attribute = Enum.find(destination.attributes, &(&1.name == relationship.destination_key))
+
+      """
+      alter table(#{atom_literal(resource.table)}) do
+        modify #{atom_literal(source_attribute.column)},
+          references(#{atom_literal(destination.table)}, column: #{atom_literal(destination_attribute.column)}, type: #{inspect(ecto_type(destination_attribute.ash_type))}, on_delete: :nothing),
+          from: #{inspect(ecto_type(source_attribute.ash_type))},
+          null: #{inspect(source_attribute.nullable)}
+      end
+      """
+      |> String.trim()
+    end
   end
 
   defp render_join_tables(resource, resources) do

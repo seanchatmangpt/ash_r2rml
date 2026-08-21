@@ -29,6 +29,7 @@ defmodule AshR2ml.Semantic.Ash do
 
   defp render_resource(resource, resources) do
     attributes = Enum.map_join(resource.attributes, "\n", &render_attribute(resource, &1))
+
     relationships =
       Enum.map_join(resource.relationships, "\n", &render_relationship(resource, &1, resources))
 
@@ -219,22 +220,27 @@ defmodule AshR2ml.Semantic.Ash do
 end
 
 defmodule AshR2ml.Semantic.SQL do
-  @moduledoc "Manufactures deterministic PostgreSQL DDL from the admitted semantic IR."
+  @moduledoc """
+  Manufactures deterministic PostgreSQL DDL from the admitted semantic IR.
+
+  Base tables are created before any inter-table foreign-key constraint. This
+  makes the projection independent of lexical resource ordering and supports
+  mutually-referencing resource topologies without requiring a hidden ordering
+  heuristic.
+  """
 
   alias AshR2ml.SemanticIR.Relationship
 
   def render(%AshR2ml.SemanticIR{resources: resources}) do
     resources = Enum.sort_by(resources, & &1.table)
-    tables = Enum.map(resources, &render_table(&1, resources))
+    tables = Enum.map(resources, &render_table/1)
+    foreign_keys = Enum.flat_map(resources, &render_foreign_keys(&1, resources))
     joins = Enum.flat_map(resources, &render_join_tables(&1, resources))
-    {:ok, Enum.join(tables ++ joins, "\n\n") <> "\n"}
+    {:ok, Enum.join(tables ++ foreign_keys ++ joins, "\n\n") <> "\n"}
   end
 
-  defp render_table(resource, resources) do
-    columns = Enum.map(resource.attributes, &column_definition/1)
-    identities = identity_constraints(resource)
-    foreign_keys = foreign_key_constraints(resource, resources)
-    definitions = columns ++ identities ++ foreign_keys
+  defp render_table(resource) do
+    definitions = Enum.map(resource.attributes, &column_definition/1) ++ identity_constraints(resource)
 
     "CREATE TABLE IF NOT EXISTS #{quote_ident(resource.table)} (\n" <>
       Enum.map_join(definitions, ",\n", &"  #{&1}") <>
@@ -259,14 +265,16 @@ defmodule AshR2ml.Semantic.SQL do
     end)
   end
 
-  defp foreign_key_constraints(resource, resources) do
+  defp render_foreign_keys(resource, resources) do
     for %Relationship{storage_strategy: :foreign_key} = rel <- resource.relationships do
       destination = Enum.find(resources, &(&1.class_iri == rel.target_class))
       child = attribute_column!(resource, rel.source_key)
       parent = attribute_column!(destination, rel.destination_key)
+      constraint = resource.table <> "_" <> to_string(rel.name) <> "_fk"
 
-      "CONSTRAINT #{quote_ident(resource.table <> "_" <> to_string(rel.name) <> "_fk")} " <>
-        "FOREIGN KEY (#{quote_ident(child)}) REFERENCES #{quote_ident(destination.table)} (#{quote_ident(parent)})"
+      "ALTER TABLE #{quote_ident(resource.table)}\n" <>
+        "  ADD CONSTRAINT #{quote_ident(constraint)} FOREIGN KEY (#{quote_ident(child)}) " <>
+        "REFERENCES #{quote_ident(destination.table)} (#{quote_ident(parent)});"
     end
   end
 
@@ -400,6 +408,7 @@ defmodule AshR2ml.Semantic.SHACL do
   defp render_resource(resource, resources) do
     attributes = Enum.map(resource.attributes, &attribute_shape/1)
     relationships = Enum.map(resource.relationships, &relationship_shape(&1, resources))
+
     suffix =
       if attributes ++ relationships == [],
         do: "",

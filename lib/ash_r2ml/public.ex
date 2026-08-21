@@ -20,6 +20,12 @@ defmodule AshR2ML do
   @doc "Compile an admitted ontology/application-profile/SHACL projection into the same mapping bundle."
   defdelegate compile_profile(profile), to: AshR2ML.Compiler
 
+  @doc "Parse RDF/Turtle + SHACL into the normalized closed ontology-first profile."
+  def ingest_turtle(turtle, opts \\ []), do: AshR2ML.Ingestion.from_turtle(turtle, opts)
+
+  @doc "Compile RDF/Turtle + SHACL into the same canonical mapping bundle as Ash-first resources."
+  def compile_turtle(turtle, opts \\ []), do: AshR2ML.Ingestion.compile_turtle(turtle, opts)
+
   @doc "Render standards-oriented R2RML Turtle from a bundle or Ash resource set."
   defdelegate render(resources_or_bundle), to: AshR2ML.R2RML
 end
