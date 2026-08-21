@@ -8,9 +8,9 @@ defmodule AshR2RML do
 
   AshR2RML is not an Ash data layer and never owns persistence. Ash-first and
   ontology-first inputs converge on `AshR2RML.Mapping.Bundle`; R2RML is then a
-  deterministic projection of that normalized IR. RDF serialization, workload
-  routing, ggen manufacture, deployment composition and execution remain
-  explicit boundary choices rather than alternate sources of truth.
+  deterministic projection of that normalized IR. RDF serialization and SPARQL
+  execution remain explicit boundary choices rather than alternate sources of
+  truth.
   """
 
   @r2rml %Spark.Dsl.Section{
@@ -87,83 +87,26 @@ defmodule AshR2RML do
   @doc "Render SHACL shapes graph from a bundle or Ash resource set."
   defdelegate render_shacl(resources_or_bundle), to: AshR2RML.SHACL, as: :render
 
-  @doc "Return the canonical Fortune-5 DfCM configuration graph."
-  defdelegate fortune5_dfcm_graph(), to: AshR2RML.Fortune5.DfCM, as: :default_graph
+  @doc "Return the default evidence-bounded production quality profile."
+  defdelegate production_profile(), to: AshR2RML.Production, as: :default_profile
 
-  @doc "Return the default DfCM assignment without selecting it."
-  defdelegate fortune5_default_assignment(), to: AshR2RML.Fortune5.DfCM, as: :default_assignment
+  @doc "Return the reversible production design space without selecting a candidate."
+  defdelegate production_design_space(), to: AshR2RML.Production, as: :design_space
 
-  @doc "Return the logical DfCM design-space cardinality without enumerating it."
-  def fortune5_logical_cardinality(selection \\ %{}) do
-    AshR2RML.Fortune5.DfCM.logical_cardinality(
-      AshR2RML.Fortune5.DfCM.default_graph(),
-      selection
-    )
+  @doc "Lazily enumerate bounded production candidates."
+  def production_candidates(opts \\ []) do
+    AshR2RML.DfCM.enumerate(AshR2RML.Production.design_space(), opts)
   end
 
-  @doc "Lazily enumerate a bounded Fortune-5 DfCM design space."
-  def fortune5_candidates(opts \\ []) do
-    AshR2RML.Fortune5.DfCM.enumerate(AshR2RML.Fortune5.DfCM.default_graph(), opts)
+  @doc "Admit technical production evidence for an exact semantic subject."
+  def production_admit(subject_sha256, evidence \\ [], profile \\ AshR2RML.Production.default_profile()) do
+    AshR2RML.Production.admit(profile, subject_sha256, evidence)
   end
 
-  @doc "Return the dependency-closed Fortune-5 capability catalog."
-  defdelegate fortune5_capabilities(), to: AshR2RML.Fortune5.CapabilityGraph, as: :catalog
-
-  @doc "Admit requested Fortune-5 capabilities against exact observations."
-  def fortune5_admit_capabilities(requested, observations \\ []) do
-    AshR2RML.Fortune5.CapabilityGraph.admit(requested, observations)
+  @doc "Construct the dynamic production graph consumed by the repo-level ggen workspace."
+  def compile_production(resources_or_bundle, opts \\ []) do
+    AshR2RML.Ggen.Production.compile(resources_or_bundle, opts)
   end
-
-  @doc "Construct the Fortune-5 production admission contract without actuating anything."
-  def fortune5_production_contract(
-        contract \\ AshR2RML.Fortune5.ProductionClosure.default_contract()
-      ) do
-    AshR2RML.Fortune5.ProductionClosure.admit(contract)
-  end
-
-  @doc "Manufacture the dependency-closed Fortune-5 ggen path/content graph."
-  def compile_fortune5(resources_or_bundle, opts \\ []) do
-    AshR2RML.Fortune5.Manufacture.compile(resources_or_bundle, opts)
-  end
-
-  @doc "Return the self-contained Fortune-5 ggen pack source graph."
-  defdelegate fortune5_ggen_pack(), to: AshR2RML.Fortune5.Ggen, as: :pack_source_files
-
-  @doc "Validate the Fortune-5 ggen pack against the admitted ggen manifest contract."
-  defdelegate validate_fortune5_ggen_pack(files),
-    to: AshR2RML.Fortune5.Ggen,
-    as: :validate_pack_source_files
-
-  @doc "Construct a deployment plan for one admitted DfCM candidate."
-  def fortune5_deployment(candidate, opts \\ []) do
-    AshR2RML.Fortune5.Deployment.plan(candidate, opts)
-  end
-
-  @doc "Project a deployment plan to Kubernetes-compatible JSON objects without applying them."
-  def fortune5_kubernetes(plan, opts \\ []) do
-    AshR2RML.Fortune5.Deployment.kubernetes(plan, opts)
-  end
-
-  @doc "Build a bounded Fortune-5 workload intent."
-  defdelegate fortune5_workload(attrs), to: AshR2RML.Fortune5.Workload, as: :new
-
-  @doc "Construct a deterministic route plan without executing the workload."
-  def fortune5_route(intent, candidates, cells, opts \\ []) do
-    AshR2RML.Fortune5.Router.route(intent, candidates, cells, opts)
-  end
-
-  @doc "Construct the deterministic planning cell catalog."
-  def fortune5_cells(regions \\ ["us-west-2", "us-east-1"], cells_per_region \\ 3) do
-    AshR2RML.Fortune5.Router.cells(regions, cells_per_region)
-  end
-
-  @doc "Derive a capacity target using Little's Law and explicit bounded assumptions."
-  def fortune5_capacity(workload, opts \\ []) do
-    AshR2RML.Fortune5.SLO.capacity(workload, opts)
-  end
-
-  @doc "Evaluate observed SLI values against the Fortune-5 objective set."
-  defdelegate fortune5_slo(observations), to: AshR2RML.Fortune5.SLO, as: :evaluate
 
   @doc "Validate and return compilation receipt for resources or profile."
   def validate(resources_or_profile) do
@@ -190,11 +133,7 @@ defmodule AshR2RML do
           classes_admitted: length(bundle.resources),
           executed: [:canonical_mapping_ir, :r2rml_render, :shacl_render],
           verified: [:canonical_mapping_ir_projection],
-          blocked: [
-            :sparql_sql_behavioral_parity,
-            :neo4j_postgres_semantic_parity,
-            :cutover_authority
-          ],
+          blocked: [:sparql_sql_behavioral_parity, :neo4j_postgres_semantic_parity, :cutover_authority],
           refusals: []
         }
 
