@@ -1,3 +1,9 @@
+<!--
+SPDX-FileCopyrightText: 2026 ash_r2ml contributors <https://github.com/seanchatmangpt/ash_r2ml/graphs/contributors>
+
+SPDX-License-Identifier: MIT
+-->
+
 # Side-by-side R2RML migration architecture
 
 ## Status
