@@ -42,6 +42,9 @@ defmodule AshR2RML do
   @doc "Compile an admitted profile into a manufactured ggen bundle."
   defdelegate compile_bundle(profile), to: AshR2RML.Ggen
 
+  @doc "Emit ontology, SHACL, and R2RML TTL for cloud ggen directly from Ash resources."
+  defdelegate compile_ash_ttl_bundle(resources_or_bundle), to: AshR2RML.Ggen
+
   @doc "Inspect normalized AshR2RML resource mapping."
   defdelegate mapping_result(resource), to: AshR2RML.Resource.Info
 
