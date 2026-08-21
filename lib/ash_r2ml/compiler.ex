@@ -2,34 +2,6 @@
 #
 # SPDX-License-Identifier: MIT
 
-defmodule AshR2ml.Compilation do
-  @moduledoc "Evidence-bounded result of ontology-first semantic compilation."
-
-  defstruct [
-    :status,
-    :standing,
-    :ir,
-    :ash_source,
-    :postgres_ddl,
-    :r2rml,
-    :shacl,
-    :receipt,
-    refusals: []
-  ]
-
-  @type t :: %__MODULE__{
-          status: atom(),
-          standing: atom(),
-          ir: AshR2ml.SemanticIR.t() | nil,
-          ash_source: String.t() | nil,
-          postgres_ddl: String.t() | nil,
-          r2rml: String.t() | nil,
-          shacl: String.t() | nil,
-          receipt: AshR2ml.CompilationReceipt.t() | nil,
-          refusals: [AshR2ml.Refusal.t()]
-        }
-end
-
 defmodule AshR2ml.CompilationReceipt do
   @moduledoc "Identity and standing record for one deterministic semantic compilation."
 
@@ -88,6 +60,34 @@ defmodule AshR2ml.CompilationReceipt do
         }
 end
 
+defmodule AshR2ml.Compilation do
+  @moduledoc "Evidence-bounded result of ontology-first semantic compilation."
+
+  defstruct [
+    :status,
+    :standing,
+    :ir,
+    :ash_source,
+    :postgres_ddl,
+    :r2rml,
+    :shacl,
+    :receipt,
+    refusals: []
+  ]
+
+  @type t :: %__MODULE__{
+          status: atom(),
+          standing: atom(),
+          ir: AshR2ml.SemanticIR.t() | nil,
+          ash_source: String.t() | nil,
+          postgres_ddl: String.t() | nil,
+          r2rml: String.t() | nil,
+          shacl: String.t() | nil,
+          receipt: AshR2ml.CompilationReceipt.t() | nil,
+          refusals: [AshR2ml.Refusal.t()]
+        }
+end
+
 defmodule AshR2ml.Compiler do
   @moduledoc """
   Ontology-first compiler for the admitted closed operational profile.
@@ -123,7 +123,9 @@ defmodule AshR2ml.Compiler do
 
       {:ok, ir} ->
         case projection_refusals(ir) do
-          [] -> render_all(ir)
+          [] ->
+            render_all(ir)
+
           refusals ->
             {:error,
              %Compilation{
@@ -173,7 +175,11 @@ defmodule AshR2ml.Compiler do
           :neo4j_postgres -> List.delete(receipt.blocked, :neo4j_postgres_semantic_parity)
         end
 
-      %{receipt | blocked: blocked, verified: Enum.uniq([{:parity_witness, kind, witness_id} | receipt.verified])}
+      %{
+        receipt
+        | blocked: blocked,
+          verified: Enum.uniq([{:parity_witness, kind, witness_id} | receipt.verified])
+      }
     else
       refusal =
         Refusal.new(
@@ -217,7 +223,7 @@ defmodule AshR2ml.Compiler do
          {:ok, postgres_ddl} <- AshR2ml.Semantic.SQL.render(ir),
          {:ok, r2rml} <- AshR2ml.Semantic.R2RML.render(ir),
          {:ok, shacl} <- AshR2ml.Semantic.SHACL.render(ir) do
-      receipt = receipt(ir, ash_source, postgres_ddl, r2rml, shacl)
+      compilation_receipt = receipt(ir, ash_source, postgres_ddl, r2rml, shacl)
 
       {:ok,
        %Compilation{
@@ -228,13 +234,27 @@ defmodule AshR2ml.Compiler do
          postgres_ddl: postgres_ddl,
          r2rml: r2rml,
          shacl: shacl,
-         receipt: receipt,
+         receipt: compilation_receipt,
          refusals: []
        }}
     else
       {:error, reason} ->
-        refusal = Refusal.new(:REFUSED_UNPROVEN_EQUIVALENCE, :projection, "renderer refused semantic IR", %{reason: inspect(reason)})
-        {:error, %Compilation{status: :REFUSED, standing: :semantic_ir_only, ir: ir, refusals: [refusal], receipt: refusal_receipt([refusal], ir)}}
+        refusal =
+          Refusal.new(
+            :REFUSED_UNPROVEN_EQUIVALENCE,
+            :projection,
+            "renderer refused semantic IR",
+            %{reason: inspect(reason)}
+          )
+
+        {:error,
+         %Compilation{
+           status: :REFUSED,
+           standing: :semantic_ir_only,
+           ir: ir,
+           refusals: [refusal],
+           receipt: refusal_receipt([refusal], ir)
+         }}
     end
   end
 
@@ -293,9 +313,20 @@ defmodule AshR2ml.Compiler do
       policies_admitted: Enum.sum(Enum.map(resources, &length(&1.policies))),
       storage_candidates: storage_map(resources, & &1.storage_candidates),
       selected_storage: storage_map(resources, & &1.storage_strategy),
-      executed: [:admission, :semantic_ir, :ash_render, :postgres_render, :r2rml_render, :shacl_render],
+      executed: [
+        :admission,
+        :semantic_ir,
+        :ash_render,
+        :postgres_render,
+        :r2rml_render,
+        :shacl_render
+      ],
       verified: [:single_ir_projection, :deterministic_render_identity],
-      blocked: [:sparql_sql_behavioral_parity, :neo4j_postgres_semantic_parity, :cutover_authority],
+      blocked: [
+        :sparql_sql_behavioral_parity,
+        :neo4j_postgres_semantic_parity,
+        :cutover_authority
+      ],
       refusals: []
     }
   end
@@ -310,7 +341,12 @@ defmodule AshR2ml.Compiler do
       query_parity: :UNKNOWN,
       neo4j_postgres_parity: :UNKNOWN,
       cutover_authority: :UNAUTHORIZED,
-      blocked: [:semantic_projection, :sparql_sql_behavioral_parity, :neo4j_postgres_semantic_parity, :cutover_authority],
+      blocked: [
+        :semantic_projection,
+        :sparql_sql_behavioral_parity,
+        :neo4j_postgres_semantic_parity,
+        :cutover_authority
+      ],
       refusals: refusals
     }
   end
@@ -330,11 +366,7 @@ defmodule AshR2ml.Compiler do
     |> :erlang.term_to_binary([:deterministic])
   end
 
-  defp canonical_term(%_{} = struct) do
-    struct
-    |> Map.from_struct()
-    |> canonical_term()
-  end
+  defp canonical_term(%_{} = struct), do: struct |> Map.from_struct() |> canonical_term()
 
   defp canonical_term(map) when is_map(map) do
     map
