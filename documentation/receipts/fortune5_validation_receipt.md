@@ -187,5 +187,5 @@ docker run --name ash-postgres -e POSTGRES_PASSWORD=postgres -p 5432:5432 -d pos
 # Run Ontop & SPARQL Parity integration tests
 mix test test/adversarial/ontop_postgres_test.exs
 mix test test/adversarial/sparql_parity_test.exs
-elixir test/integration/obda_crown.exs
+mix run test/integration/obda_crown.exs
 ```
