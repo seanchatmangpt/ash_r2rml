@@ -4,30 +4,86 @@ SPDX-FileCopyrightText: 2026 ash_r2ml contributors <https://github.com/seanchatm
 SPDX-License-Identifier: MIT
 -->
 
-# AGENTS.md — AshR2ml side-by-side semantic projection
+# AGENTS.md — AshR2ml ontology-first side-by-side compiler
 
 This subtree is governed by the root `AGENTS.md` plus the following migration rules.
 
 ## Purpose
 
-`AshR2ml` is an additive W3C R2RML/SHACL semantic compiler for Ash resources. It is not a replacement data layer in this phase. Existing `AshNeo4j.DataLayer`, future `AshPostgres.DataLayer`, and any other storage implementation retain persistence and transaction authority.
+`AshR2ml` is an additive W3C R2RML/SHACL semantic compiler for Ash. It is not a replacement data layer. Existing `AshNeo4j.DataLayer`, future `AshPostgres.DataLayer`, and any other storage implementation retain persistence and transaction authority.
+
+The mature source of truth is **not** hand-written Ash and is **not** the `r2rml do ... end` block. The canonical object is an admitted closed operational ontology/application profile represented as `AshR2ml.SemanticIR`.
+
+## Foundational order
+
+Preserve → Fence → Calculus → Exclusions → Falsifier → Extension → Operationalization.
+
+The compiler correspondence is:
+
+```text
+public ontology + application profile + SHACL
+                    |
+                admission
+                    |
+             SemanticIR (O*)
+          /         |          \
+       Ash      PostgreSQL     R2RML
+                    |
+                  SHACL
+```
+
+Ash resources, SQL schema, R2RML, and generated SHACL are projections of the same admitted object. Never make one generated projection the source from which another is semantically reconstructed when the IR is available.
 
 ## DfCM migration law
 
 Preserve both lawful worlds until behavioral equivalence is observed:
 
 1. Keep existing Neo4j/Bolt/Cypher implementation and tests intact as a control path.
-2. Add R2RML metadata beside existing resource configuration.
-3. Compile metadata into a canonical mapping IR before rendering any external representation.
-4. Generate deterministic R2RML and SHACL projections from that IR.
-5. Expand relationship dependencies to closure; never silently omit an unmapped destination.
-6. Treat successful projection as `PARTIAL_ALIVE`, not cutover readiness.
-7. Require observed SPARQL-to-SQL behavioral parity against the same admitted subject before any cutover may be proposed.
-8. Cutover is a separate authorized actuation. Mapping generation must never remove or disable the control path.
+2. Keep the existing `r2rml` Spark DSL as a compatibility/projection surface while ontology-first compilation is proven.
+3. Admit ontology/application-profile/SHACL information into one canonical semantic IR.
+4. Preserve all lawful relational storage candidates when constraints do not force a unique selection.
+5. Refuse executable projection when an irreversible storage choice remains unadmitted.
+6. Manufacture Ash, PostgreSQL DDL, R2RML, and SHACL from the same IR.
+7. Treat successful projection as `PARTIAL_ALIVE`, not runtime or cutover readiness.
+8. Require observed SQL/SPARQL behavioral parity and Neo4j/PostgreSQL semantic parity against the same admitted subject.
+9. Cutover is a separate authorized actuation and requires its own receipt.
+
+## SHACL boundary
+
+Do not compile arbitrary OWL directly into PostgreSQL.
+
+OWL defines the semantic universe. The application profile selects the operational interpretation. SHACL closes the structural facts required for deterministic runtime/schema projection: datatype, class, cardinality, identity, and other bounded constraints.
+
+An open-world object property with insufficient cardinality/storage evidence remains a DfCM candidate set. It does not silently become `belongs_to`.
 
 ## Authority boundary
 
-The semantic compiler is SELECT/CONSTRUCT only. It may describe a relational subject and manufacture mapping artifacts. It must not create, update, or delete application rows, graph nodes, database schema, or production endpoints.
+The compiler is SELECT/CONSTRUCT only. It may manufacture source, DDL, mappings, manifests, and receipts. It must not:
+
+- apply migrations;
+- write application rows;
+- write graph nodes;
+- start or configure production OBDA endpoints;
+- grant its own cutover authority;
+- treat model/planner output as execution authority.
+
+`AshR2ml.Ggen.compile_bundle/1` returns a deterministic path/content graph for ggen. ggen owns rendering/filesystem actuation and its own receipts.
+
+## Typed refusals
+
+Prefer typed fail-closed refusals, including:
+
+- `REFUSED_UNMAPPED_RESOURCE_CLASS`
+- `REFUSED_ATTRIBUTE_WITHOUT_PREDICATE`
+- `REFUSED_INVALID_SUBJECT_TEMPLATE`
+- `REFUSED_NON_UNIQUE_SEMANTIC_IDENTITY`
+- `REFUSED_RELATIONSHIP_WITHOUT_TARGET_MAP`
+- `REFUSED_CARDINALITY_STORAGE_MISMATCH`
+- `REFUSED_DATATYPE_CAST_NOT_LOSSLESS`
+- `REFUSED_UNPROVEN_EQUIVALENCE`
+- `REFUSED_R2RML_JOIN_KEY_NOT_UNIQUE`
+
+Do not convert unsupported or unproven semantics into a convenient default.
 
 ## Standards boundary
 
@@ -36,26 +92,26 @@ Use W3C terms precisely:
 - R2RML namespace: `http://www.w3.org/ns/r2rml#`
 - SHACL namespace: `http://www.w3.org/ns/shacl#`
 - R2RML logical tables are exactly one of `rr:tableName` or `rr:sqlQuery`.
-- Ash relationships become R2RML referencing object maps using the Ash relationship's source and destination attributes as join columns.
-- Subject templates must include all primary-key columns so identity manufacture is deterministic.
+- To-one relational relationships become referencing object maps only after join identity is admitted.
+- Many-to-many mappings require an admitted join-table representation or a reified association resource.
+- Subject templates must cover the admitted semantic identity.
 
-## Extension rules
+## Side-by-side falsifier
 
-- Do not make `AshR2ml` an `Ash.DataLayer` while the side-by-side experiment is active.
-- Do not add a triplestore as an authoritative copy of application state.
-- Do not hand-maintain an RDF graph synchronized from the database.
-- Do not add SPARQL execution authority to a renderer.
-- Fail closed when a relationship destination lacks an R2RML mapping.
-- Prefer data-layer-neutral Ash metadata; use relational column `source` names when present.
+The virtual Postgres graph is not equivalent to the control graph if any admitted comparison corpus query returns a different normalized semantic result multiset.
+
+Use `AshR2ml.Parity.compare/5` only on results that were actually executed by the relevant systems. A manufactured or mocked result set is not a parity witness.
 
 ## Verification ladder
 
 Run, in order:
 
 1. `mix compile --force --warnings-as-errors`
-2. `mix test test/ash_r2ml_test.exs`
+2. `mix test test/ash_r2ml_test.exs test/ontology_first_compiler_test.exs`
 3. `mix test`
 4. full CI matrix from `.github/workflows/ci.yaml`
-5. later OBDA integration: execute paired SQL/SPARQL queries against the exact same Postgres fixture and compare normalized result multisets
+5. PostgreSQL + real OBDA paired SQL/SPARQL corpus
+6. Neo4j/PostgreSQL semantic comparison corpus
+7. explicit cutover-authority receipt
 
-Only step 5 can upgrade `query_parity` from `UNKNOWN` to `VERIFIED`.
+Only observed execution can promote the relevant parity field to `VERIFIED`. Only both parity receipts plus explicit authority can make `cutover_ready?/1` true.
