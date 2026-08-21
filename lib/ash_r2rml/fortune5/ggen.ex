@@ -6,14 +6,14 @@ defmodule AshR2RML.Fortune5.Ggen do
   @moduledoc """
   Maximal Fortune-5 ggen manufacturing projection.
 
-  This module does not write files and does not invoke ggen.  It constructs the
-  complete path/content graph that ggen may materialize under its own authority.
-  The graph includes semantic TTL, the DfCM candidate frontier, capability and
-  evidence matrices, security/observability/resilience/release contracts, replay
-  metadata, and a self-contained ggen pack source projection.
+  This module is CONSTRUCT-only. It never writes files or invokes ggen. It
+  manufactures a deterministic path/content graph containing the semantic TTL,
+  DfCM frontier, capability/evidence plan, per-candidate operational contracts,
+  production runbooks, verification plans, and a self-contained ggen pack.
 
-  Generated operational artifacts are downstream projections of admitted Ash /
-  SemanticIR / Mapping identity.  They are never promoted to semantic authority.
+  ggen remains the filesystem/materialization authority. Generated operational
+  artifacts are projections of admitted semantic and production objects; they
+  never become semantic truth or DO authority merely because they were emitted.
   """
 
   alias AshR2RML.Fortune5.{
@@ -23,12 +23,16 @@ defmodule AshR2RML.Fortune5.Ggen do
     ProductionClosure,
     Release,
     Resilience,
+    Router,
+    SLO,
     Security
   }
 
   @default_frontier 32
   @default_candidates 512
   @fortune5_ns "https://w3id.org/ash-r2rml/fortune5#"
+  @ggen_schema_ref "7fc324df397973004059c37b752a365315d7bfb8"
+  @ggen_generation_modes [:Create, :Overwrite, :Merge]
 
   defmodule ManufactureReceipt do
     @moduledoc "Receipt for one constructed Fortune-5 ggen path/content graph."
@@ -43,12 +47,13 @@ defmodule AshR2RML.Fortune5.Ggen do
       :capability_graph_sha256,
       :capability_admission_receipt_sha256,
       :production_contract_sha256,
-      :files_sha256,
+      :projected_files_sha256,
       :receipt_sha256,
       :candidate_count,
       :frontier_count,
       :generated_file_count,
       :pack_source_file_count,
+      :ggen_schema_ref,
       blocked: [],
       verified: [],
       executed: [],
@@ -65,6 +70,7 @@ defmodule AshR2RML.Fortune5.Ggen do
     selection = Keyword.get(opts, :select, default_selection(contract))
     max_candidates = Keyword.get(opts, :max_candidates, @default_candidates)
     max_frontier = Keyword.get(opts, :max_frontier, @default_frontier)
+    max_examined = Keyword.get(opts, :max_examined, graph.bounds.max_examined)
     observations = Keyword.get(opts, :capability_observations, [])
     requested = Keyword.get(opts, :capabilities, Enum.map(CapabilityGraph.catalog(), & &1.id))
 
@@ -73,9 +79,10 @@ defmodule AshR2RML.Fortune5.Ggen do
            DfCM.enumerate(graph,
              select: selection,
              max_candidates: max_candidates,
-             max_examined: Keyword.get(opts, :max_examined, graph.bounds.max_examined)
+             max_examined: max_examined
            ),
-         frontier when is_list(frontier) <- DfCM.frontier(candidates, max_frontier) do
+         frontier when is_list(frontier) <- DfCM.frontier(candidates, max_frontier),
+         :ok <- validate_pack_source_files(pack_source_files()) do
       capability_admission = CapabilityGraph.admit(requested, observations)
       production_admission = ProductionClosure.admit(contract)
 
@@ -93,7 +100,7 @@ defmodule AshR2RML.Fortune5.Ggen do
     end
   end
 
-  @doc "Return the ggen pack source files used to project the Fortune-5 operational graph."
+  @doc "Return the exact ggen pack source graph used by the Fortune-5 manufacturer."
   def pack_source_files do
     %{
       "pack.toml" => pack_toml(),
@@ -115,6 +122,61 @@ defmodule AshR2RML.Fortune5.Ggen do
       "templates/release_matrix.md.tmpl" => template_release_matrix(),
       "templates/authority_matrix.md.tmpl" => template_authority_matrix()
     }
+  end
+
+  @doc "Validate the pack source against the bounded ggen manifest contract used by this project."
+  def validate_pack_source_files(files) when is_map(files) do
+    required = [
+      "pack.toml",
+      "ggen.toml",
+      "gates/010_semantic_subject.rq",
+      "gates/040_authority_boundary.rq",
+      "queries/candidates.rq",
+      "templates/candidate_contract.json.tmpl"
+    ]
+
+    missing = Enum.reject(required, &Map.has_key?(files, &1))
+    manifest = Map.get(files, "ggen.toml", "")
+    modes = Regex.scan(~r/mode\s*=\s*"([A-Za-z]+)"/, manifest, capture: :all_but_first) |> List.flatten()
+    valid_modes = Enum.map(@ggen_generation_modes, &Atom.to_string/1)
+    invalid_modes = modes -- valid_modes
+
+    select_queries =
+      files
+      |> Enum.filter(fn {path, _} -> String.starts_with?(path, "queries/") end)
+      |> Enum.filter(fn {_path, query} -> String.contains?(String.upcase(query), "SELECT") end)
+
+    unordered =
+      select_queries
+      |> Enum.reject(fn {_path, query} -> String.contains?(String.upcase(query), "ORDER BY") end)
+      |> Enum.map(&elem(&1, 0))
+
+    cond do
+      missing != [] ->
+        {:error, %{code: :REFUSED_GGEN_PACK_INCOMPLETE, subject: :fortune5_pack, evidence: %{missing: missing}}}
+
+      invalid_modes != [] ->
+        {:error,
+         %{
+           code: :REFUSED_GGEN_GENERATION_MODE,
+           subject: :ggen_toml,
+           evidence: %{invalid: invalid_modes, allowed: valid_modes, schema_ref: @ggen_schema_ref}
+         }}
+
+      unordered != [] ->
+        {:error,
+         %{
+           code: :REFUSED_GGEN_NONDETERMINISTIC_QUERY,
+           subject: :ggen_queries,
+           evidence: %{missing_order_by: unordered}
+         }}
+
+      not String.contains?(manifest, "strict_mode = true") ->
+        {:error, %{code: :REFUSED_GGEN_STRICT_MODE_DISABLED, subject: :ggen_toml, evidence: %{}}}
+
+      true ->
+        :ok
+    end
   end
 
   @doc "Deterministically project the DfCM/capability graph to RDF consumed by the pack."
@@ -150,7 +212,6 @@ defmodule AshR2RML.Fortune5.Ggen do
   def verify_staged(%{files: files}, observed) when is_map(observed) do
     expected = file_hashes(files)
     observed = normalize_hash_map(observed)
-
     missing = Map.keys(expected) -- Map.keys(observed)
     extra = Map.keys(observed) -- Map.keys(expected)
 
@@ -197,25 +258,23 @@ defmodule AshR2RML.Fortune5.Ggen do
 
     operational_files =
       frontier
-      |> Enum.flat_map(fn candidate -> candidate_files(candidate, semantic_subject_sha256, capability_admission) end)
+      |> Enum.flat_map(fn candidate ->
+        candidate_files(candidate, semantic_subject_sha256, capability_admission)
+      end)
       |> Map.new()
 
     semantic_files =
-      semantic.files
-      |> Enum.map(fn {path, content} -> {"semantic/#{path}", content} end)
-      |> Map.new()
+      Map.new(semantic.files, fn {path, content} -> {"semantic/#{path}", content} end)
 
     pack_files =
       pack_source_files()
-      |> Enum.map(fn {path, content} -> {"manufacturing/fortune5-pack/#{path}", content} end)
-      |> Map.new()
+      |> Map.new(fn {path, content} -> {"manufacturing/fortune5-pack/#{path}", content} end)
 
     contract_ttl = contract_ttl(frontier, capability_admission, semantic)
 
     core_files = %{
       "manufacturing/fortune5-pack/ontology.ttl" => semantic.files["ontology.ttl"],
-      "manufacturing/fortune5-pack/shapes/operational-profile.ttl" =>
-        semantic.files["shapes/operational-profile.ttl"],
+      "manufacturing/fortune5-pack/shapes/operational-profile.ttl" => semantic.files["shapes/operational-profile.ttl"],
       "manufacturing/fortune5-pack/r2rml/mapping.ttl" => semantic.files["r2rml/mapping.ttl"],
       "manufacturing/fortune5-pack/fortune5/production-contract.ttl" => contract_ttl,
       "generated/fortune5/dfcm/candidates.json" => json(DfCM.matrix(candidates)),
@@ -225,17 +284,24 @@ defmodule AshR2RML.Fortune5.Ggen do
       "generated/fortune5/capabilities/admission.json" => json(capability_admission),
       "generated/fortune5/capabilities/evidence-plan.json" => json(capability_admission.evidence_plan),
       "generated/fortune5/production/contract.json" => json(contract),
-      "generated/fortune5/production/admission.json" => json(production_admission),
-      "generated/fortune5/operations/global-verification-plan.json" =>
-        json(global_verification_plan(capability_admission)),
-      "generated/fortune5/operations/production-readiness.md" =>
-        readiness_markdown(frontier, capability_admission, production_admission),
+      "generated/fortune5/production/admission.json" => json(production_receipt(production_admission)),
+      "generated/fortune5/slo/objectives.json" => json(SLO.objectives()),
+      "generated/fortune5/slo/capacity-scenarios.json" => json(capacity_scenarios()),
+      "generated/fortune5/routing/planning-cells.json" => json(planning_cells()),
+      "generated/fortune5/operations/global-verification-plan.json" => json(global_verification_plan(capability_admission)),
+      "generated/fortune5/operations/production-readiness.md" => readiness_markdown(frontier, capability_admission, production_admission),
       "generated/fortune5/operations/authority-boundary.md" => authority_markdown(),
-      "generated/fortune5/operations/replay-protocol.md" => replay_markdown()
+      "generated/fortune5/operations/replay-protocol.md" => replay_markdown(),
+      "generated/fortune5/operations/falsifier-catalog.md" => falsifier_markdown()
     }
 
-    files = semantic_files |> Map.merge(pack_files) |> Map.merge(core_files) |> Map.merge(operational_files)
-    hashes = file_hashes(files)
+    projected_files =
+      semantic_files
+      |> Map.merge(pack_files)
+      |> Map.merge(core_files)
+      |> Map.merge(operational_files)
+
+    projected_hashes = file_hashes(projected_files)
 
     base_receipt = %ManufactureReceipt{
       status: :PARTIAL_ALIVE,
@@ -248,21 +314,21 @@ defmodule AshR2RML.Fortune5.Ggen do
       capability_graph_sha256: CapabilityGraph.graph_sha256(),
       capability_admission_receipt_sha256: capability_admission.receipt_sha256,
       production_contract_sha256: production_contract_sha256,
-      files_sha256: sha256(hashes),
+      projected_files_sha256: sha256(projected_hashes),
       candidate_count: length(candidates),
       frontier_count: length(frontier),
-      generated_file_count: map_size(files),
+      generated_file_count: map_size(projected_files) + 1,
       pack_source_file_count: map_size(pack_source_files()),
+      ggen_schema_ref: @ggen_schema_ref,
       blocked: blocked(production_admission, capability_admission),
-      verified: [],
+      verified: [:ggen_manifest_static_contract, :path_content_hash_construction],
       executed: [],
       refused: [],
       receipt_sha256: nil
     }
 
     receipt = %{base_receipt | receipt_sha256: sha256(Map.from_struct(base_receipt))}
-
-    files = Map.put(files, "receipts/fortune5-manufacture.json", json(receipt))
+    files = Map.put(projected_files, "receipts/fortune5-manufacture.json", json(receipt))
 
     {:ok,
      %{
@@ -272,19 +338,21 @@ defmodule AshR2RML.Fortune5.Ggen do
        semantic: semantic,
        dfcm: %{
          graph_sha256: DfCM.graph_sha256(graph),
+         logical_cardinality: DfCM.logical_cardinality(graph, Keyword.get(opts, :select, default_selection(contract))),
          enumeration_receipt: enumeration_receipt,
          candidates: candidates,
          frontier: frontier
        },
        capabilities: capability_admission,
-       production: production_admission,
+       production: production_receipt(production_admission),
        receipt: receipt,
        files: files,
        sha256: file_hashes(files),
        replay: %{
          command_class: :ggen_two_pass,
          requires_exact_toolchain?: true,
-         expected_files_sha256: receipt.files_sha256,
+         expected_projected_files_sha256: receipt.projected_files_sha256,
+         ggen_schema_ref: @ggen_schema_ref,
          max_frontier: Keyword.get(opts, :max_frontier, @default_frontier)
        }
      }}
@@ -301,6 +369,8 @@ defmodule AshR2RML.Fortune5.Ggen do
     tenancy = tenancy_contract(candidate)
     data = data_contract(candidate)
     supply_chain = supply_chain_contract(candidate)
+    slo = candidate_slo(candidate)
+    routing = routing_contract(candidate)
 
     [
       {"#{prefix}/candidate.json", json(candidate)},
@@ -313,12 +383,15 @@ defmodule AshR2RML.Fortune5.Ggen do
       {"#{prefix}/tenancy.json", json(tenancy)},
       {"#{prefix}/data-governance.json", json(data)},
       {"#{prefix}/supply-chain.json", json(supply_chain)},
+      {"#{prefix}/slo.json", json(slo)},
+      {"#{prefix}/routing.json", json(routing)},
       {"#{prefix}/semantic-binding.json",
        json(%{
          semantic_subject_sha256: semantic_subject_sha256,
          candidate_sha256: candidate.id,
          generated_projection?: true,
-         semantic_authority?: false
+         semantic_authority?: false,
+         do_authority?: false
        })},
       {"#{prefix}/runbook.md", candidate_runbook(candidate, verification, resilience, release)}
     ]
@@ -347,7 +420,7 @@ defmodule AshR2RML.Fortune5.Ggen do
         supervised?: true,
         isolated_external_workers?: true,
         bounded_task_supervision?: true,
-        crash_only_optional_adapters?: true
+        optional_adapter_failure_is_topology_not_graph_failure?: true
       },
       do_authority: if(a.execution_mode == :receipted_write_runtime, do: :brce_only, else: :none)
     }
@@ -422,16 +495,42 @@ defmodule AshR2RML.Fortune5.Ggen do
     }
   end
 
-  defp candidate_verification_plan(candidate, capability_admission) do
-    candidate_evidence =
-      candidate.required_evidence
-      |> Enum.map(&evidence_command/1)
+  defp candidate_slo(candidate) do
+    a = candidate.assignment
 
+    %{
+      objectives: SLO.objectives(),
+      availability_scope: a.availability_model,
+      capacity_target: 1_000_000,
+      queue_p99_ms: 50,
+      p99_cold_path_ms: 500,
+      evidence_required: [:benchmark, :stress_1m, :failure_injection],
+      observed?: false
+    }
+  end
+
+  defp routing_contract(candidate) do
+    a = candidate.assignment
+
+    %{
+      algorithm: :rendezvous_hash,
+      partition_strategy: a.partition_strategy,
+      residency: a.data_residency,
+      control_plane: a.control_plane,
+      runtime_isolation: a.runtime_isolation,
+      tenant_context_required?: true,
+      quota_before_route?: true,
+      write_requires_brce_cell?: true,
+      cells_are_planning_projection?: true
+    }
+  end
+
+  defp candidate_verification_plan(candidate, capability_admission) do
     %{
       candidate: candidate.id,
       status: :PARTIAL_ALIVE,
       standing: :verification_plan_only,
-      candidate_evidence: candidate_evidence,
+      candidate_evidence: Enum.map(candidate.required_evidence, &evidence_command/1),
       capability_evidence: capability_admission.evidence_plan,
       order: [
         :syntax,
@@ -472,6 +571,30 @@ defmodule AshR2RML.Fortune5.Ggen do
     }
   end
 
+  defp capacity_scenarios do
+    scenarios = %{
+      interactive_read: %{arrival_rate_per_second: 250_000, service_time_ms: 100, peak_multiplier: 2.0},
+      semantic_compile: %{arrival_rate_per_second: 20_000, service_time_ms: 500, peak_multiplier: 3.0},
+      obda_query: %{arrival_rate_per_second: 50_000, service_time_ms: 250, peak_multiplier: 2.0},
+      verification: %{arrival_rate_per_second: 10_000, service_time_ms: 1_000, peak_multiplier: 2.0}
+    }
+
+    Map.new(scenarios, fn {name, workload} -> {name, SLO.capacity(workload)} end)
+  end
+
+  defp planning_cells do
+    Router.cells(["region-a", "region-b", "region-c"], 3)
+    |> Enum.map(fn cell ->
+      %{
+        id: cell.id,
+        region: cell.region,
+        capacity_class: cell.capacity_class,
+        environment_sha256: cell.environment_sha256,
+        planning_projection?: true
+      }
+    end)
+  end
+
   defp evidence_command(:semantic_mapping_receipt), do: %{evidence: :semantic_mapping_receipt, command_class: :compile_and_hash}
   defp evidence_command(:deterministic_generation_receipt), do: %{evidence: :deterministic_generation_receipt, command_class: :ggen_two_pass}
   defp evidence_command(:exact_head_build), do: %{evidence: :exact_head_build, command: "mix compile --force --warnings-as-errors"}
@@ -486,19 +609,22 @@ defmodule AshR2RML.Fortune5.Ggen do
   defp evidence_command(other), do: %{evidence: other, command_class: :unknown}
 
   defp default_selection(contract) do
-    topology = Map.get(contract, :selected_topology, :multi_region_active_passive)
-
     %{
-      deployment_topology: topology,
+      deployment_topology: Map.get(contract, :selected_topology, :multi_region_active_passive),
       observability: :open_telemetry_receipts,
       workload_identity: :spiffe,
       secret_provider: :external_secrets_operator
     }
   end
 
-  defp blocked({:ok, production}, capabilities), do: production.blocked_checks ++ capability_blocked(capabilities)
-  defp blocked({:error, production}, capabilities), do: production.blocked_checks ++ capability_blocked(capabilities)
-  defp capability_blocked(capabilities), do: capabilities.unknown ++ capabilities.partial_alive ++ capabilities.blocked ++ capabilities.unsupported ++ capabilities.refused
+  defp production_receipt({:ok, receipt}), do: receipt
+  defp production_receipt({:error, receipt}), do: receipt
+
+  defp blocked(production_admission, capabilities) do
+    production_receipt(production_admission).blocked_checks ++
+      capabilities.unknown ++ capabilities.partial_alive ++ capabilities.blocked ++
+      capabilities.unsupported ++ capabilities.refused
+  end
 
   defp semantic_subject_sha256(semantic) do
     sha256(%{
@@ -511,7 +637,9 @@ defmodule AshR2RML.Fortune5.Ggen do
 
   defp file_hashes(files) do
     files
-    |> Enum.map(fn {path, content} -> {path, :crypto.hash(:sha256, content) |> Base.encode16(case: :lower)} end)
+    |> Enum.map(fn {path, content} ->
+      {path, :crypto.hash(:sha256, content) |> Base.encode16(case: :lower)}
+    end)
     |> Enum.sort_by(&elem(&1, 0))
     |> Map.new()
   end
@@ -561,16 +689,13 @@ defmodule AshR2RML.Fortune5.Ggen do
   end
 
   defp capability_ttl(admission) do
-    statuses =
-      []
-      |> append_status(admission.alive, :ALIVE)
-      |> append_status(admission.partial_alive, :PARTIAL_ALIVE)
-      |> append_status(admission.unknown, :UNKNOWN)
-      |> append_status(admission.blocked, :BLOCKED)
-      |> append_status(admission.unsupported, :UNSUPPORTED)
-      |> append_status(admission.refused, :REFUSED)
-
-    statuses
+    []
+    |> append_status(admission.alive, :ALIVE)
+    |> append_status(admission.partial_alive, :PARTIAL_ALIVE)
+    |> append_status(admission.unknown, :UNKNOWN)
+    |> append_status(admission.blocked, :BLOCKED)
+    |> append_status(admission.unsupported, :UNSUPPORTED)
+    |> append_status(admission.refused, :REFUSED)
     |> Enum.sort_by(&elem(&1, 0))
     |> Enum.map(fn {capability, status} ->
       """
@@ -585,20 +710,20 @@ defmodule AshR2RML.Fortune5.Ggen do
   defp append_status(acc, capabilities, status), do: acc ++ Enum.map(capabilities, &{&1, status})
 
   defp readiness_markdown(frontier, capabilities, production) do
-    production_receipt = case production do {:ok, receipt} -> receipt; {:error, receipt} -> receipt end
+    production = production_receipt(production)
 
     """
     # Fortune-5 Production Readiness Projection
 
-    This document is generated from the admitted production contract. It is not
-    production authority and it is not a substitute for observed execution.
+    Generated from admitted production objects. This is not production authority
+    and not a substitute for observed execution.
 
     ## Standing
 
     - DfCM frontier candidates: #{length(frontier)}
     - Capability standing: #{capabilities.status}
-    - Production contract standing: #{production_receipt.status}
-    - Production ready: #{production_receipt.production_ready?}
+    - Production contract standing: #{production.status}
+    - Production ready: #{production.production_ready?}
 
     ## Evidence still required
 
@@ -616,15 +741,15 @@ defmodule AshR2RML.Fortune5.Ggen do
 
     SELECT, CONSTRUCT, and DO are separate authority classes.
 
-    - Semantic authors may submit candidate semantics; they cannot actuate.
-    - AshR2RML may admit and construct deterministic projections; it cannot actuate.
-    - ggen may materialize an admitted path/content graph under its own receipt; it cannot grant runtime mutation authority.
+    - Semantic authors submit candidate semantics; they cannot actuate.
+    - AshR2RML admits and constructs deterministic projections; it cannot actuate.
+    - ggen materializes an admitted path/content graph under its own receipt.
     - Hooks manufacture intents; they never actuate.
     - BRCE is the exclusive DO path.
     - Cutover authority is organizational evidence independent of technical parity.
 
-    Any implementation that allows raw RDF, SHACL, template output, planner output,
-    model output, or generated source to directly mutate production is refused.
+    Raw RDF, SHACL, templates, planner/model output, and generated source have no
+    ambient production mutation authority.
     """
   end
 
@@ -632,19 +757,41 @@ defmodule AshR2RML.Fortune5.Ggen do
     """
     # Replay Protocol
 
-    A Fortune-5 replay binds:
-
-    1. exact source/tree identity;
-    2. exact admitted semantic subject identity;
-    3. exact Mapping/R2RML identity;
-    4. exact DfCM graph and selected candidate identity;
-    5. exact ggen pack/config/toolchain identity;
-    6. exact external engine/environment identity where relevant;
-    7. exact authority receipt for DO or cutover;
-    8. exact produced artifact hashes.
+    A Fortune-5 replay binds exact source/tree, semantic subject, Mapping/R2RML,
+    DfCM graph/candidate, ggen pack/config/toolchain, external environment where
+    relevant, authority receipt for DO/cutover, and produced artifact hashes.
 
     Replay mismatch is a falsifier. Equivalent-looking output without matching
     admitted identities does not inherit the original receipt standing.
+    """
+  end
+
+  defp falsifier_markdown do
+    """
+    # Permanent Fortune-5 Falsifier Corpus
+
+    - semantic identity drift
+    - datatype information loss
+    - relationship or join loss
+    - SHACL/cardinality/storage mismatch
+    - generation nondeterminism
+    - invalid ggen generation mode
+    - SELECT query without deterministic ORDER BY under strict mode
+    - stale or mismatched staged artifact hash
+    - SQL/SPARQL semantic mismatch
+    - multi-engine observation mismatch
+    - cross-tenant access
+    - residency misrouting
+    - quota bypass
+    - unbounded external query result
+    - unbounded telemetry cardinality
+    - raw secret/query/IRI leakage to telemetry or receipts
+    - missing idempotency identity on retryable mutation
+    - non-BRCE DO attempt
+    - cutover without independent authority
+    - regional/cell failover outside RTO/RPO
+    - replay identity mismatch
+    - unsigned or unattested release artifact
     """
   end
 
@@ -683,8 +830,8 @@ defmodule AshR2RML.Fortune5.Ggen do
 
     ## Verification
 
-    Standing: #{verification.standing}. Generated commands are a plan only; ALIVE
-    requires observed execution against this exact candidate and semantic subject.
+    Standing: #{verification.standing}. This generated runbook is a plan only;
+    ALIVE requires observed execution against this exact candidate and semantic subject.
     """
   end
 
@@ -692,7 +839,7 @@ defmodule AshR2RML.Fortune5.Ggen do
     """
     [pack]
     name = "ash-r2rml-fortune5-pack"
-    version = "0.1.0"
+    version = "0.2.0"
     description = "DfCM Fortune-5 projection pack. Consumes AshR2RML-emitted semantic TTL plus production-contract TTL and manufactures candidate, capability, release, and authority projections."
     """
   end
@@ -701,7 +848,7 @@ defmodule AshR2RML.Fortune5.Ggen do
     """
     [project]
     name = "ash-r2rml-fortune5"
-    version = "0.1.0"
+    version = "0.2.0"
     description = "Fortune-5 DfCM production projections for AshR2RML"
     license = "MIT"
 
@@ -731,9 +878,14 @@ defmodule AshR2RML.Fortune5.Ggen do
       "gates/070_no_ambient_do.rq",
       "gates/080_runtime_evidence.rq",
     ]
+    strict_mode = true
 
     [generation]
     output_dir = "."
+    max_sparql_timeout_ms = 5000
+    require_audit_trail = true
+    determinism_salt = "ash-r2rml-fortune5-v2"
+    enable_llm = false
 
     [[generation.rules]]
     name = "candidate-contract"
@@ -741,7 +893,7 @@ defmodule AshR2RML.Fortune5.Ggen do
     template = { file = "templates/candidate_contract.json.tmpl" }
     output_file = "generated/fortune5/ggen-candidates/{{ candidate_id }}/contract.json"
     skip_empty = true
-    mode = "CreateOrOverwrite"
+    mode = "Overwrite"
 
     [[generation.rules]]
     name = "capability-matrix"
@@ -749,7 +901,7 @@ defmodule AshR2RML.Fortune5.Ggen do
     template = { file = "templates/capability_matrix.md.tmpl" }
     output_file = "generated/fortune5/ggen-capabilities/{{ capability_id }}.md"
     skip_empty = true
-    mode = "CreateOrOverwrite"
+    mode = "Overwrite"
 
     [[generation.rules]]
     name = "release-matrix"
@@ -757,7 +909,7 @@ defmodule AshR2RML.Fortune5.Ggen do
     template = { file = "templates/release_matrix.md.tmpl" }
     output_file = "generated/fortune5/ggen-release/{{ candidate_id }}.md"
     skip_empty = true
-    mode = "CreateOrOverwrite"
+    mode = "Overwrite"
 
     [[generation.rules]]
     name = "authority-matrix"
@@ -765,7 +917,7 @@ defmodule AshR2RML.Fortune5.Ggen do
     template = { file = "templates/authority_matrix.md.tmpl" }
     output_file = "generated/fortune5/ggen-authority/authority.md"
     skip_empty = true
-    mode = "CreateOrOverwrite"
+    mode = "Overwrite"
     """
   end
 
@@ -931,6 +1083,7 @@ defmodule AshR2RML.Fortune5.Ggen do
         f5:brceOnlyDo ?brce ;
         f5:ambientDo ?ambient .
     }
+    ORDER BY ?separated ?brce ?ambient
     """
   end
 
@@ -969,8 +1122,8 @@ defmodule AshR2RML.Fortune5.Ggen do
 
     Standing: **{{ status }}**
 
-    This is a generated capability projection. `ALIVE` is valid only when the
-    corresponding exact-subject evidence receipt has been observed.
+    Generated capability projection. `ALIVE` is valid only when the corresponding
+    exact-subject evidence receipt was admitted before this graph was constructed.
     """
   end
 
@@ -997,13 +1150,18 @@ defmodule AshR2RML.Fortune5.Ggen do
     """
   end
 
-  defp ttl_literal(value) when is_integer(value), do: "#{value}"
-  defp ttl_literal(value) when is_float(value), do: "#{value}"
+  defp ttl_literal(value) when is_integer(value), do: Integer.to_string(value)
+  defp ttl_literal(value) when is_float(value), do: Float.to_string(value)
   defp ttl_literal(value) when is_boolean(value), do: if(value, do: "true", else: "false")
   defp ttl_literal(value) when is_atom(value), do: ttl_literal(Atom.to_string(value))
 
   defp ttl_literal(value) when is_binary(value) do
-    escaped = value |> String.replace("\\", "\\\\") |> String.replace("\"", "\\\"") |> String.replace("\n", "\\n")
+    escaped =
+      value
+      |> String.replace("\\", "\\\\")
+      |> String.replace("\"", "\\\"")
+      |> String.replace("\n", "\\n")
+
     "\"#{escaped}\""
   end
 
@@ -1043,7 +1201,9 @@ defmodule AshR2RML.Fortune5.Ggen do
     end
   end
 
-  defp encode_json(tuple, indent) when is_tuple(tuple), do: tuple |> Tuple.to_list() |> encode_json(indent)
+  defp encode_json(tuple, indent) when is_tuple(tuple),
+    do: tuple |> Tuple.to_list() |> encode_json(indent)
+
   defp encode_json(nil, _indent), do: "null"
   defp encode_json(true, _indent), do: "true"
   defp encode_json(false, _indent), do: "false"
@@ -1070,7 +1230,7 @@ defmodule AshR2RML.Fortune5.Ggen do
   defp canonical(map) when is_map(map) do
     map
     |> Enum.map(fn {key, value} -> {canonical(key), canonical(value)} end)
-    |> Enum.sort_by(fn {key, _} -> :erlang.term_to_binary(key, [:deterministic]) end)
+    |> Enum.sort_by(fn {key, _value} -> :erlang.term_to_binary(key, [:deterministic]) end)
   end
 
   defp canonical(list) when is_list(list), do: Enum.map(list, &canonical/1)
