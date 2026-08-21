@@ -3,7 +3,7 @@
 
 [project]
 name = "ash-r2rml-production"
-version = "0.1.0"
+version = "0.2.0"
 description = "Deterministic production engineering projections from an admitted AshR2RML subject"
 authors = ["ash_r2rml contributors"]
 license = "MIT"
@@ -20,6 +20,8 @@ gates = [
   "gates/020_no_ambient_do.rq",
   "gates/030_candidate_identity.rq",
   "gates/040_admission_receipt.rq",
+  "gates/050_alive_requires_alive_capabilities.rq",
+  "gates/060_candidate_projection_closure.rq",
 ]
 strict_mode = true
 
@@ -27,7 +29,7 @@ strict_mode = true
 output_dir = "output"
 max_sparql_timeout_ms = 5000
 require_audit_trail = true
-determinism_salt = "ash-r2rml-production-v1"
+determinism_salt = "ash-r2rml-production-v2"
 enable_llm = false
 
 [[generation.rules]]
@@ -43,5 +45,45 @@ name = "capability-matrix"
 query = { file = "queries/capabilities.rq" }
 template = { file = "templates/capability-matrix.md.tmpl" }
 output_file = "generated/production/capabilities/{{ capability }}/standing.md"
+skip_empty = true
+mode = "Overwrite"
+
+[[generation.rules]]
+name = "kubernetes-candidate"
+query = { file = "queries/operational-candidates.rq" }
+template = { file = "templates/kubernetes-candidate.yaml.tmpl" }
+output_file = "generated/production/candidates/{{ sha }}/kubernetes.yaml"
+skip_empty = true
+mode = "Overwrite"
+
+[[generation.rules]]
+name = "release-plan"
+query = { file = "queries/operational-candidates.rq" }
+template = { file = "templates/release-plan.md.tmpl" }
+output_file = "generated/production/candidates/{{ sha }}/release-plan.md"
+skip_empty = true
+mode = "Overwrite"
+
+[[generation.rules]]
+name = "observability-contract"
+query = { file = "queries/operational-candidates.rq" }
+template = { file = "templates/otel-contract.yaml.tmpl" }
+output_file = "generated/production/candidates/{{ sha }}/otel-contract.yaml"
+skip_empty = true
+mode = "Overwrite"
+
+[[generation.rules]]
+name = "authority-policy"
+query = { file = "queries/operational-candidates.rq" }
+template = { file = "templates/brce-authority.rego.tmpl" }
+output_file = "generated/production/candidates/{{ sha }}/brce-authority.rego"
+skip_empty = true
+mode = "Overwrite"
+
+[[generation.rules]]
+name = "evidence-standing"
+query = { file = "queries/production-admission.rq" }
+template = { file = "templates/evidence-standing.md.tmpl" }
+output_file = "generated/production/evidence/standing.md"
 skip_empty = true
 mode = "Overwrite"
