@@ -87,11 +87,11 @@ defmodule AshR2ml.Admission do
          repo_module: get(raw, :repo_module),
          table: get(raw, :table),
          subject_template: get(raw, :subject_template),
-         identities: identities,
-         attributes: attributes,
-         relationships: relationships,
-         actions: normalize_actions(get(raw, :actions, [])),
-         policies: normalize_policies(get(raw, :policies, [])),
+         identities: sort_identities(identities),
+         attributes: Enum.sort_by(attributes, &to_string(&1.name)),
+         relationships: Enum.sort_by(relationships, &to_string(&1.name)),
+         actions: raw |> get(:actions, []) |> normalize_actions() |> Enum.sort_by(&to_string(&1.name)),
+         policies: raw |> get(:policies, []) |> normalize_policies() |> Enum.sort_by(&to_string(&1.name)),
          provenance: get(raw, :provenance, %{})
        }}
     end
@@ -242,7 +242,38 @@ defmodule AshR2ml.Admission do
   defp verify_resources(resources) do
     by_class = Map.new(resources, &{&1.class_iri, &1})
 
-    Enum.flat_map(resources, &verify_resource(&1, by_class))
+    duplicate_classes = duplicated(Enum.map(resources, & &1.class_iri))
+    duplicate_tables = duplicated(Enum.map(resources, & &1.table))
+    duplicate_modules = duplicated(Enum.map(resources, & &1.module))
+
+    global =
+      []
+      |> maybe_add(duplicate_classes != [], fn ->
+        Refusal.new(
+          :REFUSED_UNMAPPED_RESOURCE_CLASS,
+          :profile,
+          "each admitted class must map to exactly one resource",
+          %{classes: duplicate_classes}
+        )
+      end)
+      |> maybe_add(duplicate_tables != [], fn ->
+        Refusal.new(
+          :REFUSED_UNPROVEN_EQUIVALENCE,
+          :profile,
+          "table ownership is ambiguous across admitted resources",
+          %{tables: duplicate_tables}
+        )
+      end)
+      |> maybe_add(duplicate_modules != [], fn ->
+        Refusal.new(
+          :REFUSED_UNPROVEN_EQUIVALENCE,
+          :profile,
+          "Ash module ownership is ambiguous across admitted resources",
+          %{modules: duplicate_modules}
+        )
+      end)
+
+    global ++ Enum.flat_map(resources, &verify_resource(&1, by_class))
   end
 
   defp verify_resource(resource, by_class) do
@@ -280,6 +311,17 @@ defmodule AshR2ml.Admission do
       |> Enum.uniq()
       |> Enum.reject(&MapSet.member?(names, &1))
 
+    nullable_identity_keys =
+      resource.identities
+      |> Enum.flat_map(& &1.keys)
+      |> Enum.uniq()
+      |> Enum.filter(fn key ->
+        case find_attribute(resource, key) do
+          nil -> false
+          attribute -> attribute.nullable or attribute.min_count < 1
+        end
+      end)
+
     template_missing =
       if primary do
         Enum.reject(primary.keys, fn key ->
@@ -307,6 +349,14 @@ defmodule AshR2ml.Admission do
         resource.module,
         "semantic identity references unknown attributes",
         %{keys: missing_keys}
+      )
+    end)
+    |> maybe_add(nullable_identity_keys != [], fn ->
+      Refusal.new(
+        :REFUSED_NON_UNIQUE_SEMANTIC_IDENTITY,
+        resource.module,
+        "semantic identity keys must be required/non-null",
+        %{keys: nullable_identity_keys}
       )
     end)
     |> maybe_add(duplicate_keysets != [], fn ->
@@ -340,14 +390,26 @@ defmodule AshR2ml.Admission do
         Refusal.new(:REFUSED_UNKNOWN_ATTRIBUTE, resource.module, "attribute columns must be non-empty strings")
       end)
       |> maybe_add(duplicated(names) != [], fn ->
-        Refusal.new(:REFUSED_UNKNOWN_ATTRIBUTE, resource.module, "duplicate attribute names", %{names: duplicated(names)})
+        Refusal.new(
+          :REFUSED_UNKNOWN_ATTRIBUTE,
+          resource.module,
+          "duplicate attribute names",
+          %{names: duplicated(names)}
+        )
       end)
       |> maybe_add(duplicated(columns) != [], fn ->
-        Refusal.new(:REFUSED_UNKNOWN_ATTRIBUTE, resource.module, "duplicate relational columns", %{columns: duplicated(columns)})
+        Refusal.new(
+          :REFUSED_UNKNOWN_ATTRIBUTE,
+          resource.module,
+          "duplicate relational columns",
+          %{columns: duplicated(columns)}
+        )
       end)
 
     base ++
       Enum.flat_map(resource.attributes, fn attribute ->
+        expected_nullable = attribute.min_count == 0
+
         []
         |> require_iri(
           attribute.predicate_iri,
@@ -359,12 +421,28 @@ defmodule AshR2ml.Admission do
           {resource.module, attribute.name},
           :REFUSED_DATATYPE_CAST_NOT_LOSSLESS
         )
+        |> maybe_add(not valid_cardinality?(attribute.min_count, attribute.max_count), fn ->
+          Refusal.new(
+            :REFUSED_CARDINALITY_STORAGE_MISMATCH,
+            {resource.module, attribute.name},
+            "invalid SHACL cardinality",
+            %{min_count: attribute.min_count, max_count: attribute.max_count}
+          )
+        end)
         |> maybe_add(attribute.max_count not in [nil, 1], fn ->
           Refusal.new(
             :REFUSED_CARDINALITY_STORAGE_MISMATCH,
             {resource.module, attribute.name},
             "multi-valued datatype properties require an explicit normalized storage projection",
             %{max_count: attribute.max_count}
+          )
+        end)
+        |> maybe_add(attribute.nullable != expected_nullable, fn ->
+          Refusal.new(
+            :REFUSED_CARDINALITY_STORAGE_MISMATCH,
+            {resource.module, attribute.name},
+            "Ash/PostgreSQL nullability must equal admitted SHACL minCount semantics",
+            %{nullable: attribute.nullable, min_count: attribute.min_count}
           )
         end)
       end)
@@ -380,6 +458,14 @@ defmodule AshR2ml.Admission do
         {resource.module, relationship.name},
         :REFUSED_RELATIONSHIP_WITHOUT_TARGET_MAP
       )
+      |> maybe_add(not valid_cardinality?(relationship.min_count, relationship.max_count), fn ->
+        Refusal.new(
+          :REFUSED_CARDINALITY_STORAGE_MISMATCH,
+          {resource.module, relationship.name},
+          "invalid relationship cardinality",
+          %{min_count: relationship.min_count, max_count: relationship.max_count}
+        )
+      end)
       |> maybe_add(relationship.source_class != resource.class_iri, fn ->
         Refusal.new(
           :REFUSED_UNPROVEN_EQUIVALENCE,
@@ -423,6 +509,7 @@ defmodule AshR2ml.Admission do
   defp verify_foreign_key(resource, relationship, destination) do
     source_attr = find_attribute(resource, relationship.source_key)
     destination_attr = find_attribute(destination, relationship.destination_key)
+    expected_nullable = relationship.min_count == 0
 
     []
     |> maybe_add(is_nil(source_attr), fn ->
@@ -437,6 +524,14 @@ defmodule AshR2ml.Admission do
         :REFUSED_UNKNOWN_ATTRIBUTE,
         {resource.module, relationship.name},
         "foreign-key destination_key is not an admitted target attribute"
+      )
+    end)
+    |> maybe_add(source_attr && source_attr.nullable != expected_nullable, fn ->
+      Refusal.new(
+        :REFUSED_CARDINALITY_STORAGE_MISMATCH,
+        {resource.module, relationship.name},
+        "foreign-key source nullability must equal object-property minCount semantics",
+        %{source_key: relationship.source_key, nullable: source_attr.nullable, min_count: relationship.min_count}
       )
     end)
     |> maybe_add(destination_attr && not single_column_identity_key?(destination, relationship.destination_key), fn ->
@@ -527,7 +622,7 @@ defmodule AshR2ml.Admission do
   end
 
   defp require_nonempty(acc, value, subject, detail) do
-    if nonempty_string?(value) or is_atom(value) do
+    if nonempty_string?(value) or (is_atom(value) and not is_nil(value)) do
       acc
     else
       acc ++ [Refusal.new(:REFUSED_UNPROVEN_EQUIVALENCE, subject, detail, %{value: value})]
@@ -543,6 +638,13 @@ defmodule AshR2ml.Admission do
 
   defp absolute_iri?(_), do: false
 
+  defp valid_cardinality?(min_count, max_count)
+       when is_integer(min_count) and min_count >= 0 and
+              (is_nil(max_count) or (is_integer(max_count) and max_count >= min_count)),
+       do: true
+
+  defp valid_cardinality?(_, _), do: false
+
   defp duplicated(values) do
     values
     |> Enum.frequencies()
@@ -555,6 +657,10 @@ defmodule AshR2ml.Admission do
 
   defp reverse_ok({:ok, values}), do: {:ok, Enum.reverse(values)}
   defp reverse_ok(other), do: other
+
+  defp sort_identities(identities) do
+    Enum.sort_by(identities, fn identity -> {not identity.primary?, to_string(identity.name)} end)
+  end
 
   defp default_column(name) when is_atom(name), do: Atom.to_string(name)
   defp default_column(name) when is_binary(name), do: name
