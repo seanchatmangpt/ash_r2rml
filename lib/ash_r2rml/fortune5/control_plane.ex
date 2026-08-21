@@ -125,7 +125,7 @@ defmodule AshR2RML.Fortune5.SLO do
     end
   end
 
-  @doc "Check an observed SLI map against targets without manufacturing missing observations."
+  @doc "Check observed SLIs against targets without manufacturing missing observations."
   def evaluate(observations, objectives \\ @default_objectives) when is_map(observations) do
     results =
       Enum.map(objectives, fn objective ->
@@ -182,11 +182,7 @@ defmodule AshR2RML.Fortune5.SLO do
   defp invalid_if(refusals, false, _field, _value), do: refusals
 
   defp sha256(term) do
-    term
-    |> canonical()
-    |> :erlang.term_to_binary([:deterministic])
-    |> :crypto.hash(:sha256)
-    |> Base.encode16(case: :lower)
+    term |> canonical() |> :erlang.term_to_binary([:deterministic]) |> :crypto.hash(:sha256) |> Base.encode16(case: :lower)
   end
 
   defp canonical(%_{} = struct), do: struct |> Map.from_struct() |> canonical()
@@ -303,7 +299,7 @@ defmodule AshR2RML.Fortune5.Quota do
 
   def defaults, do: @default_limits
 
-  @doc "Admit requested deltas against observed usage and configured limits."
+  @doc "Admit requested deltas against observed usage and configured limits. UNKNOWN is never admitted."
   def admit(requests, usages, limits \\ @default_limits) when is_list(requests) and is_list(usages) do
     usage_index = Map.new(usages, &{{&1.scope, &1.scope_sha256, &1.metric}, &1})
 
@@ -313,20 +309,34 @@ defmodule AshR2RML.Fortune5.Quota do
         scope_sha = value(request, :scope_sha256)
         metric = value(request, :metric)
         delta = value(request, :delta) || 0
-
         limit = find_limit(limits, scope, scope_sha, metric)
         usage = Map.get(usage_index, {scope, scope_sha, metric}, %Usage{scope: scope, scope_sha256: scope_sha, metric: metric, used: 0})
-
         evaluate_limit(limit, usage, delta)
       end)
 
     refused = Enum.filter(results, &(&1.status == :REFUSED))
+    unknown = Enum.filter(results, &(&1.status == :UNKNOWN))
+
+    status =
+      cond do
+        refused != [] -> :REFUSED
+        unknown != [] -> :UNKNOWN
+        true -> :PARTIAL_ALIVE
+      end
+
+    standing =
+      case status do
+        :REFUSED -> :quota_refused
+        :UNKNOWN -> :quota_unadmitted
+        :PARTIAL_ALIVE -> :quota_admitted_not_executed
+      end
 
     %{
-      status: if(refused == [], do: :PARTIAL_ALIVE, else: :REFUSED),
-      standing: if(refused == [], do: :quota_admitted_not_executed, else: :quota_refused),
+      status: status,
+      standing: standing,
       results: results,
       refusal_count: length(refused),
+      unknown_count: length(unknown),
       receipt_sha256: sha256(results)
     }
   end
@@ -358,10 +368,7 @@ defmodule AshR2RML.Fortune5.Quota do
   end
 
   defp value(map, key), do: Map.get(map, key, Map.get(map, Atom.to_string(key)))
-
-  defp sha256(term) do
-    term |> :erlang.term_to_binary([:deterministic]) |> :crypto.hash(:sha256) |> Base.encode16(case: :lower)
-  end
+  defp sha256(term), do: term |> :erlang.term_to_binary([:deterministic]) |> :crypto.hash(:sha256) |> Base.encode16(case: :lower)
 end
 
 defmodule AshR2RML.Fortune5.Router do
@@ -403,30 +410,30 @@ defmodule AshR2RML.Fortune5.Router do
     @type t :: %__MODULE__{}
   end
 
+  @read_classes [:interactive_read, :batch_read, :verify, :replay]
+  @construct_classes [:compile, :manufacture]
+  @do_classes [:receipted_write, :cutover]
+
   @doc "Route one admitted workload across an admitted candidate frontier and cell catalog."
   def route(%Workload.Intent{} = intent, candidates, cells, opts \\ []) do
     quota = Keyword.get(opts, :quota)
-    selection = choose_candidate(intent, candidates)
 
-    with {:ok, candidate} <- selection,
+    with {:ok, candidate} <- choose_candidate(intent, candidates),
          :ok <- execution_compatible(intent, candidate),
          {:ok, eligible} <- eligible_cells(intent, candidate, cells),
          {:ok, quota_receipt} <- quota_admission(intent, quota),
          {:ok, selected, fallbacks} <- rendezvous(intent, candidate, eligible) do
-      route_key = route_key(intent, candidate)
-      required_authority = required_authority(intent.work_class)
-
       base = %Plan{
         status: :PARTIAL_ALIVE,
         standing: :route_constructed_not_executed,
         candidate_id: candidate.id,
         cell_id: selected.id,
         region: selected.region,
-        route_key_sha256: route_key,
+        route_key_sha256: route_key(intent, candidate),
         quota_receipt_sha256: quota_receipt,
         semantic_subject_sha256: intent.semantic_subject_sha256,
         tenant_sha256: intent.tenant_sha256,
-        required_authority: required_authority,
+        required_authority: required_authority(intent.work_class),
         fallbacks: Enum.map(fallbacks, & &1.id),
         refusals: []
       }
@@ -449,8 +456,7 @@ defmodule AshR2RML.Fortune5.Router do
   @doc "Construct a deterministic default cell catalog for simulation and planning."
   def cells(regions \\ ["us-west-2", "us-east-1"], cells_per_region \\ 3)
       when is_list(regions) and is_integer(cells_per_region) and cells_per_region > 0 do
-    for region <- regions,
-        ordinal <- 1..cells_per_region do
+    for region <- regions, ordinal <- 1..cells_per_region do
       id = "#{region}-cell-#{ordinal}"
 
       %Cell{
@@ -466,10 +472,9 @@ defmodule AshR2RML.Fortune5.Router do
   end
 
   defp choose_candidate(intent, candidates) do
-    admitted = Enum.filter(candidates, &match?(%DfCM.Candidate{refusals: []}, &1))
-
     compatible =
-      admitted
+      candidates
+      |> Enum.filter(&match?(%DfCM.Candidate{refusals: []}, &1))
       |> Enum.filter(&intent_candidate_compatible?(intent, &1))
       |> Enum.sort_by(fn candidate -> {-candidate.score, length(candidate.irreversible_edges), candidate.id} end)
 
@@ -481,11 +486,9 @@ defmodule AshR2RML.Fortune5.Router do
 
   defp intent_candidate_compatible?(intent, candidate) do
     a = candidate.assignment
-
     consistency_ok? = is_nil(intent.consistency) or intent.consistency == a.consistency_model
     residency_ok? = is_nil(intent.residency) or residency_candidate?(intent.residency, a.data_residency)
-    execution_ok? = work_execution_compatible?(intent.work_class, a.execution_mode)
-    consistency_ok? and residency_ok? and execution_ok?
+    consistency_ok? and residency_ok? and work_execution_compatible?(intent.work_class, a.execution_mode)
   end
 
   defp execution_compatible(intent, candidate) do
@@ -496,23 +499,25 @@ defmodule AshR2RML.Fortune5.Router do
     end
   end
 
-  defp work_execution_compatible?(work_class, :receipted_write_runtime), do: work_class != :cutover or true
-  defp work_execution_compatible?(work_class, :read_only_runtime), do: work_class not in [:receipted_write, :cutover]
-  defp work_execution_compatible?(work_class, :compile_only), do: work_class in [:compile, :manufacture]
+  defp work_execution_compatible?(work_class, :receipted_write_runtime),
+    do: work_class in @read_classes or work_class in @construct_classes or work_class in @do_classes
+
+  defp work_execution_compatible?(work_class, :read_only_runtime),
+    do: work_class in @read_classes or work_class in @construct_classes
+
+  defp work_execution_compatible?(work_class, :compile_only), do: work_class in @construct_classes
   defp work_execution_compatible?(_work_class, _mode), do: false
 
-  defp residency_candidate?(requested, :unrestricted), do: not is_nil(requested)
+  defp residency_candidate?(_requested, :unrestricted), do: true
   defp residency_candidate?(_requested, :country_pinned), do: true
   defp residency_candidate?(_requested, :region_pinned), do: true
   defp residency_candidate?(_requested, :sovereign_cell), do: true
   defp residency_candidate?(_requested, _), do: false
 
   defp eligible_cells(intent, candidate, cells) do
-    a = candidate.assignment
-
     eligible =
       cells
-      |> Enum.filter(&region_compatible?(intent, a, &1))
+      |> Enum.filter(&region_compatible?(intent, candidate.assignment, &1))
       |> Enum.filter(&capability_compatible?(intent, &1))
       |> Enum.sort_by(& &1.id)
 
@@ -522,28 +527,39 @@ defmodule AshR2RML.Fortune5.Router do
     end
   end
 
-  defp region_compatible?(intent, a, cell) do
+  defp region_compatible?(intent, assignment, cell) do
     explicit_region_ok? = is_nil(intent.region) or intent.region == cell.region
 
     residency_ok? =
-      case a.data_residency do
+      case assignment.data_residency do
         :unrestricted -> true
         :country_pinned -> true
         :region_pinned -> is_nil(intent.region) or intent.region == cell.region
-        :sovereign_cell -> intent.residency == cell.residency
+        :sovereign_cell -> not is_nil(intent.residency) and intent.residency == cell.residency
         _ -> false
       end
 
     explicit_region_ok? and residency_ok?
   end
 
-  defp capability_compatible?(%Workload.Intent{work_class: :interactive_read}, cell), do: :sparql_read in cell.capabilities
-  defp capability_compatible?(%Workload.Intent{work_class: :batch_read}, cell), do: :sparql_read in cell.capabilities
-  defp capability_compatible?(%Workload.Intent{work_class: :compile}, cell), do: :semantic_compile in cell.capabilities
-  defp capability_compatible?(%Workload.Intent{work_class: :manufacture}, cell), do: :ggen_construct in cell.capabilities
-  defp capability_compatible?(%Workload.Intent{work_class: :verify}, _cell), do: true
-  defp capability_compatible?(%Workload.Intent{work_class: :replay}, _cell), do: true
-  defp capability_compatible?(%Workload.Intent{work_class: work_class}, cell) when work_class in [:receipted_write, :cutover], do: :brce_do in cell.capabilities
+  defp capability_compatible?(%Workload.Intent{work_class: work_class}, cell)
+       when work_class in [:interactive_read, :batch_read],
+       do: :sparql_read in cell.capabilities
+
+  defp capability_compatible?(%Workload.Intent{work_class: :compile}, cell),
+    do: :semantic_compile in cell.capabilities
+
+  defp capability_compatible?(%Workload.Intent{work_class: :manufacture}, cell),
+    do: :ggen_construct in cell.capabilities
+
+  defp capability_compatible?(%Workload.Intent{work_class: work_class}, _cell)
+       when work_class in [:verify, :replay],
+       do: true
+
+  defp capability_compatible?(%Workload.Intent{work_class: work_class}, cell)
+       when work_class in [:receipted_write, :cutover],
+       do: :brce_do in cell.capabilities
+
   defp capability_compatible?(_intent, _cell), do: false
 
   defp quota_admission(_intent, nil), do: {:ok, nil}
@@ -551,14 +567,15 @@ defmodule AshR2RML.Fortune5.Router do
   defp quota_admission(intent, %{requests: requests, usages: usages} = quota) do
     result = Quota.admit(requests, usages, Map.get(quota, :limits, Quota.defaults()))
 
-    if result.status == :REFUSED do
-      {:error, refusal(:REFUSED_QUOTA, intent.work_class, %{quota_receipt_sha256: result.receipt_sha256})}
-    else
-      {:ok, result.receipt_sha256}
+    case result.status do
+      :PARTIAL_ALIVE -> {:ok, result.receipt_sha256}
+      :REFUSED -> {:error, refusal(:REFUSED_QUOTA, intent.work_class, %{quota_receipt_sha256: result.receipt_sha256})}
+      :UNKNOWN -> {:error, refusal(:REFUSED_QUOTA_UNADMITTED, intent.work_class, %{quota_receipt_sha256: result.receipt_sha256})}
     end
   end
 
-  defp quota_admission(intent, _other), do: {:error, refusal(:REFUSED_INVALID_QUOTA_CONTEXT, intent.work_class, %{}))
+  defp quota_admission(intent, _other),
+    do: {:error, refusal(:REFUSED_INVALID_QUOTA_CONTEXT, intent.work_class, %{})}
 
   defp rendezvous(intent, candidate, cells) do
     route_key = route_key(intent, candidate)
@@ -588,9 +605,8 @@ defmodule AshR2RML.Fortune5.Router do
   defp required_authority(:cutover), do: :cutover_authority
   defp required_authority(_), do: :none
 
-  defp refusal(code, subject, evidence), do: %{code: code, subject: subject, detail: "routing admission refused", evidence: evidence}
+  defp refusal(code, subject, evidence),
+    do: %{code: code, subject: subject, detail: "routing admission refused", evidence: evidence}
 
-  defp sha256(term) do
-    term |> :erlang.term_to_binary([:deterministic]) |> :crypto.hash(:sha256) |> Base.encode16(case: :lower)
-  end
+  defp sha256(term), do: term |> :erlang.term_to_binary([:deterministic]) |> :crypto.hash(:sha256) |> Base.encode16(case: :lower)
 end
