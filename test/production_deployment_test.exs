@@ -11,8 +11,8 @@ defmodule AshR2RML.ProductionDeploymentTest do
 
   @subject String.duplicate("d", 64)
 
-  test "deployment model separates roles and contains no ambient DO" do
-    assert {:ok, [candidate], _} =
+  test "deployment model is platform-neutral and contains no ambient DO" do
+    assert {:ok, [candidate], _receipt} =
              DfCM.enumerate(Production.design_space(), select: Production.default_assignment())
 
     plan = Deployment.plan(candidate, @subject)
@@ -20,6 +20,7 @@ defmodule AshR2RML.ProductionDeploymentTest do
     assert :ok = Deployment.validate(plan)
     refute Enum.any?(plan.roles, &(&1.authority == :do))
     assert plan.security.ambient_authority == false
+    assert :vendor_specific_projection_owned_by_ggen in plan.invariants
   end
 
   test "receipted write runtime creates exactly one BRCE DO role" do
@@ -36,25 +37,37 @@ defmodule AshR2RML.ProductionDeploymentTest do
     assert :ok = Deployment.validate(plan)
   end
 
-  test "Kubernetes is a projection with default-deny and hardened containers" do
-    assert {:ok, [candidate], _} =
-             DfCM.enumerate(Production.design_space(), select: Production.default_assignment())
+  test "cellular topology expands failure-isolation cells without changing semantic identity" do
+    assignment =
+      Production.default_assignment()
+      |> Map.put(:deployment_topology, :cellular)
+      |> Map.put(:control_plane, :cellular)
 
-    plan = Deployment.plan(candidate, @subject)
-    objects = Deployment.kubernetes(plan, image: "example.invalid/ash-r2rml@sha256:abc")
+    assert {:ok, candidate} = DfCM.admit(Production.design_space(), assignment)
 
-    refute Enum.any?(objects, &(Map.get(&1, :kind) == "Secret"))
-    assert Enum.any?(objects, &(Map.get(&1, :kind) == "NetworkPolicy"))
-    assert Enum.any?(objects, &(Map.get(&1, :kind) == "HorizontalPodAutoscaler"))
+    plan =
+      Deployment.plan(candidate, @subject,
+        regions: ["us-west-2", "us-east-1"],
+        cells_per_region: 3,
+        zones_per_region: 3
+      )
 
-    deployments = Enum.filter(objects, &(Map.get(&1, :kind) == "Deployment"))
+    assert length(plan.cells) == 6
+    assert Enum.all?(plan.cells, &(&1.zone_count == 3))
+    assert plan.semantic_subject_sha256 == @subject
+  end
 
-    assert Enum.all?(deployments, fn object ->
-             [container] = object.spec.template.spec.containers
-             container.securityContext.runAsNonRoot == true and
-               container.securityContext.readOnlyRootFilesystem == true and
-               container.securityContext.allowPrivilegeEscalation == false and
-               container.securityContext.capabilities.drop == ["ALL"]
-           end)
+  test "vendor-specific Kubernetes manufacture lives in ggen workspace" do
+    manifest = File.read!("production/ggen/ggen.toml")
+    template = File.read!("production/ggen/templates/kubernetes-candidate.yaml.tmpl")
+
+    assert manifest =~ ~s(name = "kubernetes-candidate")
+    assert manifest =~ ~s(template = { file = "templates/kubernetes-candidate.yaml.tmpl" })
+    assert template =~ "kind: NetworkPolicy"
+    assert template =~ "automountServiceAccountToken: false"
+    assert template =~ "readOnlyRootFilesystem: true"
+    assert template =~ "capabilities: {drop: [\"ALL\"]}"
+    refute template =~ "kind: Secret"
+    refute template =~ "{{ now()"
   end
 end

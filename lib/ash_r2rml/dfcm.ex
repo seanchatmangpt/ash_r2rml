@@ -4,21 +4,20 @@
 
 defmodule AshR2RML.DfCM do
   @moduledoc """
-  Design for Combinatorial Maximalism as a bounded, deterministic calculus.
+  Bounded Design for Combinatorial Maximalism calculus.
 
-  DfCM preserves the lawful reversible design space until evidence or explicit
-  authority closes a choice. It is intentionally generic: deployment, storage,
-  runtime and organizational quality policies are consumers of this module,
-  not concepts built into it.
+  DfCM preserves a finite lawful set of reversible alternatives until evidence
+  or explicit authority closes a choice. It is deliberately generic: storage,
+  deployment, runtime and production-quality policies are consumers of this
+  calculus rather than concepts encoded into it.
 
-  The module is SELECT-only. It never applies a candidate to a runtime system.
+  This module is SELECT-only. It never applies a candidate to a runtime system.
   """
 
   defmodule Dimension do
     @moduledoc "A reversible design dimension with a finite admitted option set."
     @enforce_keys [:id, :options]
     defstruct [:id, :description, :default, options: [], metadata: %{}]
-
     @type t :: %__MODULE__{}
   end
 
@@ -26,14 +25,12 @@ defmodule AshR2RML.DfCM do
     @moduledoc "A declarative implication/refusal over candidate assignments."
     @enforce_keys [:id]
     defstruct [:id, :description, severity: :hard, match: %{}, require: %{}, forbid: %{}]
-
     @type t :: %__MODULE__{}
   end
 
   defmodule Space do
-    @moduledoc "A deterministic finite product plus declarative constraints and bounds."
+    @moduledoc "A deterministic finite product plus declarative constraints and traversal bounds."
     defstruct dimensions: [], constraints: [], bounds: %{max_examined: 100_000, max_candidates: 1_000}
-
     @type t :: %__MODULE__{}
   end
 
@@ -41,7 +38,6 @@ defmodule AshR2RML.DfCM do
     @moduledoc "One admitted reversible candidate."
     @enforce_keys [:id, :assignment]
     defstruct [:id, :assignment, advisory: [], metadata: %{}]
-
     @type t :: %__MODULE__{}
   end
 
@@ -49,7 +45,6 @@ defmodule AshR2RML.DfCM do
     @moduledoc "A typed DfCM refusal."
     @enforce_keys [:code, :subject, :detail]
     defstruct [:code, :subject, :detail, evidence: %{}]
-
     @type t :: %__MODULE__{}
   end
 
@@ -65,18 +60,16 @@ defmodule AshR2RML.DfCM do
       :truncated,
       :receipt_sha256
     ]
-
     @type t :: %__MODULE__{}
   end
 
   defmodule SelectionReceipt do
-    @moduledoc "Receipt proving an explicit choice without granting execution authority."
+    @moduledoc "Receipt proving explicit candidate selection without granting execution authority."
     defstruct [:candidate_id, :space_sha256, :authority_receipt_sha256, :receipt_sha256]
-
     @type t :: %__MODULE__{}
   end
 
-  @type selection :: %{optional(atom()) => term()}
+  @type selection :: %{optional(atom() | String.t()) => term()} | keyword()
 
   @spec new([Dimension.t()], [Constraint.t()], keyword()) :: {:ok, Space.t()} | {:error, Refusal.t()}
   def new(dimensions, constraints \\ [], opts \\ []) when is_list(dimensions) and is_list(constraints) do
@@ -89,13 +82,14 @@ defmodule AshR2RML.DfCM do
       }
     }
 
-    case validate_space(space) do
-      :ok -> {:ok, normalize_space(space)}
-      {:error, refusal} -> {:error, refusal}
+    with :ok <- validate_space(space),
+         :ok <- validate_positive_bound(:max_examined, space.bounds.max_examined),
+         :ok <- validate_positive_bound(:max_candidates, space.bounds.max_candidates) do
+      {:ok, normalize_space(space)}
     end
   end
 
-  @spec logical_cardinality(Space.t(), map()) :: non_neg_integer()
+  @spec logical_cardinality(Space.t(), selection()) :: non_neg_integer()
   def logical_cardinality(%Space{} = space, selection \\ %{}) do
     case normalize_selection(space, selection) do
       {:ok, selected} ->
@@ -103,7 +97,7 @@ defmodule AshR2RML.DfCM do
           if Map.has_key?(selected, dimension.id), do: total, else: total * length(dimension.options)
         end)
 
-      {:error, _} ->
+      {:error, _refusal} ->
         0
     end
   end
@@ -118,18 +112,16 @@ defmodule AshR2RML.DfCM do
     with :ok <- validate_positive_bound(:max_examined, max_examined),
          :ok <- validate_positive_bound(:max_candidates, max_candidates),
          {:ok, selected} <- normalize_selection(space, selection) do
-      stream = assignment_stream(space.dimensions, selected)
-
-      initial = %{examined: 0, admitted: [], refused: 0, ended?: true}
-
       state =
-        Enum.reduce_while(stream, initial, fn assignment, acc ->
+        space.dimensions
+        |> assignment_stream(selected)
+        |> Enum.reduce_while(%{examined: 0, admitted: [], refused: 0, bounded?: false}, fn assignment, acc ->
           cond do
             acc.examined >= max_examined ->
-              {:halt, %{acc | ended?: false}}
+              {:halt, %{acc | bounded?: true}}
 
             length(acc.admitted) >= max_candidates ->
-              {:halt, %{acc | ended?: false}}
+              {:halt, %{acc | bounded?: true}}
 
             true ->
               examined = acc.examined + 1
@@ -145,21 +137,20 @@ defmodule AshR2RML.DfCM do
         end)
 
       candidates = state.admitted |> Enum.reverse() |> Enum.sort_by(& &1.id)
-      logical_cardinality = logical_cardinality(space, selected)
+      cardinality = logical_cardinality(space, selected)
 
       base = %EnumerationReceipt{
         space_sha256: space_sha256(space),
         selection_sha256: sha256(selected),
-        logical_cardinality: logical_cardinality,
+        logical_cardinality: cardinality,
         examined: state.examined,
         admitted: length(candidates),
         refused: state.refused,
-        truncated: not state.ended? or state.examined < logical_cardinality,
+        truncated: state.bounded? or state.examined < cardinality,
         receipt_sha256: nil
       }
 
-      receipt = %{base | receipt_sha256: sha256(Map.from_struct(base))}
-      {:ok, candidates, receipt}
+      {:ok, candidates, %{base | receipt_sha256: sha256(Map.from_struct(base))}}
     end
   end
 
@@ -189,7 +180,7 @@ defmodule AshR2RML.DfCM do
     authority_receipt = fetch(authority, :receipt_sha256, nil)
 
     with true <- authorized? == true,
-         true <- is_binary(authority_receipt) and byte_size(authority_receipt) > 0,
+         true <- present?(authority_receipt),
          {:ok, admitted} <- admit(space, candidate.assignment),
          true <- admitted.id == candidate.id do
       base = %SelectionReceipt{
@@ -201,7 +192,7 @@ defmodule AshR2RML.DfCM do
 
       {:ok, %{base | receipt_sha256: sha256(Map.from_struct(base))}}
     else
-      _ ->
+      _other ->
         {:error,
          refusal(
            :REFUSED_DFCM_SELECTION_WITHOUT_AUTHORITY,
@@ -256,25 +247,26 @@ defmodule AshR2RML.DfCM do
          )}
 
       length(ids) != length(Enum.uniq(ids)) ->
-        {:error,
-         refusal(:REFUSED_DFCM_DUPLICATE_DIMENSION, :dimensions, "dimension ids must be unique")}
+        {:error, refusal(:REFUSED_DFCM_DUPLICATE_DIMENSION, :dimensions, "dimension ids must be unique")}
 
       Enum.any?(space.dimensions, &(&1.default != nil and &1.default not in &1.options)) ->
         {:error,
          refusal(:REFUSED_DFCM_INVALID_DEFAULT, :dimensions, "dimension defaults must be admitted options")}
+
+      Enum.any?(space.constraints, &(not is_atom(&1.id) or &1.severity not in [:hard, :advisory])) ->
+        {:error,
+         refusal(:REFUSED_DFCM_INVALID_CONSTRAINT, :constraints, "constraint ids and severities must be admitted")}
 
       true ->
         :ok
     end
   end
 
-  defp validate_positive_bound(name, value) when is_integer(value) and value > 0, do: :ok
+  defp validate_positive_bound(_name, value) when is_integer(value) and value > 0, do: :ok
 
   defp validate_positive_bound(name, value) do
     {:error,
-     refusal(:REFUSED_DFCM_INVALID_BOUND, name, "enumeration bounds must be positive integers", %{
-       value: value
-     })}
+     refusal(:REFUSED_DFCM_INVALID_BOUND, name, "enumeration bounds must be positive integers", %{value: value})}
   end
 
   defp normalize_space(%Space{} = space) do
@@ -310,7 +302,9 @@ defmodule AshR2RML.DfCM do
 
         %Dimension{} = dimension ->
           case resolve_option(dimension.options, raw_value) do
-            {:ok, value} -> {:cont, {:ok, Map.put(acc, dimension.id, value)}}
+            {:ok, value} ->
+              {:cont, {:ok, Map.put(acc, dimension.id, value)}}
+
             :error ->
               {:halt,
                {:error,
@@ -327,9 +321,12 @@ defmodule AshR2RML.DfCM do
 
   defp normalize_selection(_space, selection) do
     {:error,
-     refusal(:REFUSED_DFCM_INVALID_SELECTION, :selection, "selection must be a map or keyword list", %{
-       selection: inspect(selection)
-     })}
+     refusal(
+       :REFUSED_DFCM_INVALID_SELECTION,
+       :selection,
+       "selection must be a map or keyword list",
+       %{selection: inspect(selection)}
+     )}
   end
 
   defp normalize_assignment(%Space{} = space, assignment) do
@@ -355,20 +352,26 @@ defmodule AshR2RML.DfCM do
   defp resolve_dimension(dimensions, key) when is_atom(key), do: Map.get(dimensions, key)
 
   defp resolve_dimension(dimensions, key) when is_binary(key) do
-    Enum.find_value(dimensions, fn {id, dimension} -> if Atom.to_string(id) == key, do: dimension end)
+    Enum.find_value(dimensions, fn {id, dimension} ->
+      if Atom.to_string(id) == key, do: dimension
+    end)
   end
 
   defp resolve_dimension(_dimensions, _key), do: nil
 
   defp resolve_option(options, value) do
     cond do
-      value in options -> {:ok, value}
+      value in options ->
+        {:ok, value}
+
       is_binary(value) ->
         case Enum.find(options, &(to_string(&1) == value)) do
           nil -> :error
           option -> {:ok, option}
         end
-      true -> :error
+
+      true ->
+        :error
     end
   end
 
@@ -389,9 +392,14 @@ defmodule AshR2RML.DfCM do
   defp evaluate_constraints(constraints, assignment) do
     Enum.reduce(constraints, {[], []}, fn constraint, {hard, advisory} ->
       case evaluate_constraint(constraint, assignment) do
-        :ok -> {hard, advisory}
-        {:error, refusal} when constraint.severity == :advisory -> {hard, [refusal | advisory]}
-        {:error, refusal} -> {[refusal | hard], advisory}
+        :ok ->
+          {hard, advisory}
+
+        {:error, refusal} when constraint.severity == :advisory ->
+          {hard, [refusal | advisory]}
+
+        {:error, refusal} ->
+          {[refusal | hard], advisory}
       end
     end)
   end
@@ -434,9 +442,11 @@ defmodule AshR2RML.DfCM do
   defp dominates?(left, right, objectives) do
     comparisons =
       Enum.map(objectives, fn {key, direction} ->
-        left_value = get_in(left.metadata, [:metrics, key])
-        right_value = get_in(right.metadata, [:metrics, key])
-        compare_objective(left_value, right_value, direction)
+        compare_objective(
+          get_in(left.metadata, [:metrics, key]),
+          get_in(right.metadata, [:metrics, key]),
+          direction
+        )
       end)
 
     Enum.all?(comparisons, &(&1 in [:equal, :better])) and Enum.any?(comparisons, &(&1 == :better))
@@ -455,14 +465,14 @@ defmodule AshR2RML.DfCM do
   end
 
   defp redact_authority(authority) do
-    authority
-    |> Map.take([:authorized?, "authorized?"])
-    |> Map.put(:receipt_present?, is_binary(fetch(authority, :receipt_sha256, nil)))
+    %{
+      authorized?: fetch(authority, :authorized?, false),
+      receipt_present?: present?(fetch(authority, :receipt_sha256, nil))
+    }
   end
 
-  defp fetch(map, key, default) do
-    Map.get(map, key, Map.get(map, Atom.to_string(key), default))
-  end
+  defp present?(value), do: is_binary(value) and byte_size(value) > 0
+  defp fetch(map, key, default), do: Map.get(map, key, Map.get(map, Atom.to_string(key), default))
 
   defp canonical(%_{} = struct), do: struct |> Map.from_struct() |> canonical()
 

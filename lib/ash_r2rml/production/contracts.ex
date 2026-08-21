@@ -5,6 +5,8 @@
 defmodule AshR2RML.Production.Observability do
   @moduledoc "Operational telemetry contract derived from a design candidate."
 
+  @forbidden_labels [:tenant_id, :raw_query, :iri, :secret, :token, :email, :subject_value]
+
   @spec contract(map(), String.t()) :: map()
   def contract(assignment, subject_sha256) do
     %{
@@ -16,20 +18,24 @@ defmodule AshR2RML.Production.Observability do
       gauges: [:inflight, :queue_depth, :healthy_cells],
       semantic_subject_sha256: subject_sha256,
       mode: Map.get(assignment, :observability, :otel),
-      forbidden_labels: [:tenant_id, :raw_query, :iri, :secret, :token, :email, :subject_value],
+      forbidden_labels: @forbidden_labels,
       max_dynamic_label_cardinality: 100
     }
   end
 
   @spec validate_labels(map()) :: :ok | {:error, map()}
   def validate_labels(labels) when is_map(labels) do
-    forbidden = [:tenant_id, :raw_query, :iri, :secret, :token, :email, :subject_value]
-    leaked = Enum.filter(Map.keys(labels), &(&1 in forbidden or to_string(&1) in Enum.map(forbidden, &to_string/1)))
+    forbidden_strings = MapSet.new(Enum.map(@forbidden_labels, &to_string/1))
+
+    leaked =
+      Enum.filter(Map.keys(labels), fn key ->
+        key in @forbidden_labels or MapSet.member?(forbidden_strings, to_string(key))
+      end)
 
     if leaked == [] do
       :ok
     else
-      {:error, %{code: :REFUSED_TELEMETRY_SENSITIVE_LABEL, labels: leaked}}
+      {:error, %{code: :REFUSED_TELEMETRY_SENSITIVE_LABEL, labels: Enum.sort(leaked)}}
     end
   end
 end

@@ -4,12 +4,12 @@
 
 defmodule AshR2RML.Ggen.Production do
   @moduledoc """
-  Construct the dynamic input graph consumed by the repository's `production/ggen` workspace.
+  Construct dynamic input for the repository's `production/ggen` workspace.
 
-  This module intentionally does not embed ggen gates, queries or templates in
-  Elixir. Those are first-class manufacturing source under `production/ggen/`.
-  Elixir constructs the admitted semantic/operational model; ggen owns final
-  projection rendering and filesystem receipts.
+  This module does not embed ggen gates, queries, templates, Kubernetes or other
+  operational renderers in Elixir. Elixir constructs the admitted semantic and
+  platform-neutral operational model; ggen owns final projection rendering and
+  filesystem receipts.
   """
 
   alias AshR2RML.DfCM
@@ -33,7 +33,6 @@ defmodule AshR2RML.Ggen.Production do
       :receipt_sha256,
       :candidate_count
     ]
-
     @type t :: %__MODULE__{}
   end
 
@@ -125,7 +124,11 @@ defmodule AshR2RML.Ggen.Production do
   @spec verify_staged(map(), map()) :: {:ok, map()} | {:error, map()}
   def verify_staged(%{files: files}, observed_hashes) when is_map(observed_hashes) do
     expected = file_hashes(files)
-    observed = Map.new(observed_hashes, fn {path, hash} -> {to_string(path), String.downcase(to_string(hash))} end)
+
+    observed =
+      Map.new(observed_hashes, fn {path, hash} ->
+        {to_string(path), String.downcase(to_string(hash))}
+      end)
 
     missing = Map.keys(expected) -- Map.keys(observed)
     extra = Map.keys(observed) -- Map.keys(expected)
@@ -138,7 +141,12 @@ defmodule AshR2RML.Ggen.Production do
       end
 
     if missing == [] and extra == [] and mismatched == [] do
-      {:ok, %{status: :ALIVE, standing: :staged_input_hashes_verified, files_sha256: DfCM.sha256(expected)}}
+      {:ok,
+       %{
+         status: :ALIVE,
+         standing: :staged_input_hashes_verified,
+         files_sha256: DfCM.sha256(expected)
+       }}
     else
       {:error,
        %{
@@ -158,10 +166,20 @@ defmodule AshR2RML.Ggen.Production do
       "production/ggen/gates/010_semantic_subject.rq",
       "production/ggen/gates/020_no_ambient_do.rq",
       "production/ggen/gates/030_candidate_identity.rq",
+      "production/ggen/gates/040_admission_receipt.rq",
+      "production/ggen/gates/050_alive_requires_alive_capabilities.rq",
+      "production/ggen/gates/060_candidate_projection_closure.rq",
       "production/ggen/queries/candidates.rq",
       "production/ggen/queries/capabilities.rq",
+      "production/ggen/queries/operational-candidates.rq",
+      "production/ggen/queries/production-admission.rq",
       "production/ggen/templates/candidate-contract.md.tmpl",
-      "production/ggen/templates/capability-matrix.md.tmpl"
+      "production/ggen/templates/capability-matrix.md.tmpl",
+      "production/ggen/templates/kubernetes-candidate.yaml.tmpl",
+      "production/ggen/templates/release-plan.md.tmpl",
+      "production/ggen/templates/otel-contract.yaml.tmpl",
+      "production/ggen/templates/brce-authority.rego.tmpl",
+      "production/ggen/templates/evidence-standing.md.tmpl"
     ]
   end
 
@@ -216,9 +234,7 @@ defmodule AshR2RML.Ggen.Production do
     assignments =
       candidate.assignment
       |> Enum.sort_by(fn {key, _value} -> key end)
-      |> Enum.map(fn {key, value} ->
-        "  p:dim_#{key} \"#{escape(value)}\""
-      end)
+      |> Enum.map(fn {key, value} -> "  p:dim_#{key} \"#{escape(value)}\"" end)
       |> Enum.join(" ;\n")
 
     """
@@ -228,7 +244,9 @@ defmodule AshR2RML.Ggen.Production do
     """
   end
 
-  defp candidate_json(candidate), do: %{id: candidate.id, assignment: candidate.assignment, advisory: candidate.advisory}
+  defp candidate_json(candidate) do
+    %{id: candidate.id, assignment: candidate.assignment, advisory: candidate.advisory}
+  end
 
   defp capability_status(admission, capability) do
     cond do
@@ -243,9 +261,20 @@ defmodule AshR2RML.Ggen.Production do
     DfCM.sha256(%{source: semantic.source, sha256: semantic.sha256})
   end
 
-  defp file_hashes(files), do: Map.new(files, fn {path, content} -> {path, sha256_binary(content)} end)
+  defp file_hashes(files) do
+    Map.new(files, fn {path, content} -> {path, sha256_binary(content)} end)
+  end
+
   defp sha256_binary(value), do: :crypto.hash(:sha256, value) |> Base.encode16(case: :lower)
-  defp escape(value), do: value |> to_string() |> String.replace("\\", "\\\\") |> String.replace("\"", "\\\"")
+
+  defp escape(value) do
+    value
+    |> to_string()
+    |> String.replace("\\", "\\\\")
+    |> String.replace("\"", "\\\"")
+  end
+
+  defp canonical_json(%_{} = struct), do: struct |> Map.from_struct() |> canonical_json()
 
   defp canonical_json(value) when is_map(value) do
     entries =
@@ -253,11 +282,16 @@ defmodule AshR2RML.Ggen.Production do
       |> Enum.map(fn {key, item} -> {to_string(key), item} end)
       |> Enum.sort_by(&elem(&1, 0))
 
-    "{" <> Enum.map_join(entries, ",", fn {key, item} -> Jason.encode!(key) <> ":" <> canonical_json(item) end) <> "}"
+    "{" <>
+      Enum.map_join(entries, ",", fn {key, item} ->
+        Jason.encode!(key) <> ":" <> canonical_json(item)
+      end) <> "}"
   end
 
-  defp canonical_json(value) when is_list(value), do: "[" <> Enum.map_join(value, ",", &canonical_json/1) <> "]"
-  defp canonical_json(%_{} = struct), do: struct |> Map.from_struct() |> canonical_json()
+  defp canonical_json(value) when is_list(value) do
+    "[" <> Enum.map_join(value, ",", &canonical_json/1) <> "]"
+  end
+
   defp canonical_json(value) when is_atom(value) and value in [true, false, nil], do: Jason.encode!(value)
   defp canonical_json(value) when is_atom(value), do: Jason.encode!(Atom.to_string(value))
   defp canonical_json(value), do: Jason.encode!(value)

@@ -4,10 +4,15 @@
 
 defmodule AshR2RML.Production.Deployment do
   @moduledoc """
-  Platform-neutral deployment composition and Kubernetes projection.
+  Platform-neutral deployment composition for an admitted DfCM candidate.
+
+  The plan describes process roles, authority envelopes, failure-isolation cells,
+  resources and operational contracts. It deliberately does not render
+  Kubernetes, Terraform, Helm, cloud APIs or another vendor-specific artifact.
+  Those are ggen-owned projections under `production/ggen/`.
 
   A deployment plan is CONSTRUCT-only. It contains no cloud credentials and
-  never applies generated objects.
+  never applies infrastructure.
   """
 
   alias AshR2RML.DfCM.Candidate
@@ -20,13 +25,13 @@ defmodule AshR2RML.Production.Deployment do
   end
 
   defmodule Cell do
-    @moduledoc "One regional failure-isolation cell."
+    @moduledoc "One planned regional failure-isolation cell."
     defstruct [:id, :region, :zone_count, :weight, :status]
     @type t :: %__MODULE__{}
   end
 
   defmodule Plan do
-    @moduledoc "Deployment model derived from one DfCM candidate."
+    @moduledoc "Platform-neutral deployment model derived from one DfCM candidate."
     defstruct [
       :candidate_id,
       :assignment,
@@ -39,7 +44,6 @@ defmodule AshR2RML.Production.Deployment do
       cells: [],
       invariants: []
     ]
-
     @type t :: %__MODULE__{}
   end
 
@@ -58,37 +62,21 @@ defmodule AshR2RML.Production.Deployment do
       cells: cells(assignment, regions, cells_per_region, zones_per_region),
       security: Security.contract(assignment),
       observability: Observability.contract(assignment, semantic_subject_sha256),
-      resilience: Resilience.contract(assignment, %{max_recovery_point_seconds: 60, max_recovery_time_seconds: 300}),
+      resilience:
+        Resilience.contract(assignment, %{
+          max_recovery_point_seconds: 60,
+          max_recovery_time_seconds: 300
+        }),
       release: Release.contract(assignment),
       invariants: [
         :no_secret_material_in_plan,
         :brce_is_only_do_role,
-        :generated_objects_are_construct_only,
+        :vendor_specific_projection_owned_by_ggen,
         :semantic_subject_bound_to_every_role,
         :default_deny_network,
         :non_root_runtime
       ]
     }
-  end
-
-  @spec kubernetes(Plan.t(), keyword()) :: [map()]
-  def kubernetes(%Plan{} = plan, opts \\ []) do
-    namespace = Keyword.get(opts, :namespace, "ash-r2rml")
-    image = Keyword.get(opts, :image, "ash-r2rml@sha256:REQUIRED")
-
-    role_objects =
-      Enum.flat_map(plan.roles, fn role ->
-        [
-          service_account(namespace, role),
-          deployment(namespace, image, plan, role),
-          service(namespace, role),
-          network_policy(namespace, role),
-          pdb(namespace, role),
-          hpa(namespace, role)
-        ]
-      end)
-
-    [namespace_object(namespace), config_map(namespace, plan) | role_objects]
   end
 
   @spec validate(Plan.t()) :: :ok | {:error, [map()]}
@@ -147,116 +135,20 @@ defmodule AshR2RML.Production.Deployment do
     count = if topology == :cellular, do: cells_per_region, else: 1
 
     for region <- Enum.sort(regions), ordinal <- 1..count do
-      %Cell{id: "#{region}-c#{ordinal}", region: region, zone_count: zones_per_region, weight: 1, status: :planned}
+      %Cell{
+        id: "#{region}-c#{ordinal}",
+        region: region,
+        zone_count: zones_per_region,
+        weight: 1,
+        status: :planned
+      }
     end
   end
 
-  defp namespace_object(namespace) do
-    %{apiVersion: "v1", kind: "Namespace", metadata: %{name: namespace, labels: %{"app.kubernetes.io/part-of" => "ash-r2rml"}}}
-  end
-
-  defp service_account(namespace, role) do
-    %{
-      apiVersion: "v1",
-      kind: "ServiceAccount",
-      metadata: %{name: role_name(role), namespace: namespace},
-      automountServiceAccountToken: false
-    }
-  end
-
-  defp deployment(namespace, image, plan, role) do
-    labels = labels(role)
-
-    %{
-      apiVersion: "apps/v1",
-      kind: "Deployment",
-      metadata: %{name: role_name(role), namespace: namespace, labels: labels},
-      spec: %{
-        replicas: role.replicas,
-        selector: %{matchLabels: labels},
-        template: %{
-          metadata: %{labels: labels},
-          spec: %{
-            serviceAccountName: role_name(role),
-            automountServiceAccountToken: false,
-            securityContext: %{runAsNonRoot: true, seccompProfile: %{type: "RuntimeDefault"}},
-            containers: [
-              %{
-                name: Atom.to_string(role.id),
-                image: image,
-                imagePullPolicy: "IfNotPresent",
-                args: ["--role", Atom.to_string(role.id)],
-                env: [
-                  %{name: "ASH_R2RML_SEMANTIC_SUBJECT_SHA256", value: plan.semantic_subject_sha256},
-                  %{name: "ASH_R2RML_AUTHORITY_CLASS", value: Atom.to_string(role.authority)}
-                ],
-                resources: %{requests: role.resources, limits: role.resources},
-                securityContext: %{
-                  allowPrivilegeEscalation: false,
-                  readOnlyRootFilesystem: true,
-                  runAsNonRoot: true,
-                  capabilities: %{drop: ["ALL"]}
-                },
-                readinessProbe: %{httpGet: %{path: role.health.readiness, port: 4000}},
-                livenessProbe: %{httpGet: %{path: role.health.liveness, port: 4000}}
-              }
-            ]
-          }
-        }
-      }
-    }
-  end
-
-  defp service(namespace, role) do
-    %{apiVersion: "v1", kind: "Service", metadata: %{name: role_name(role), namespace: namespace}, spec: %{selector: labels(role), ports: [%{port: 4000, targetPort: 4000}]}}
-  end
-
-  defp network_policy(namespace, role) do
-    %{
-      apiVersion: "networking.k8s.io/v1",
-      kind: "NetworkPolicy",
-      metadata: %{name: "#{role_name(role)}-default-deny", namespace: namespace},
-      spec: %{podSelector: %{matchLabels: labels(role)}, policyTypes: ["Ingress", "Egress"]}
-    }
-  end
-
-  defp pdb(namespace, role) do
-    %{apiVersion: "policy/v1", kind: "PodDisruptionBudget", metadata: %{name: role_name(role), namespace: namespace}, spec: %{minAvailable: 1, selector: %{matchLabels: labels(role)}}}
-  end
-
-  defp hpa(namespace, role) do
-    %{
-      apiVersion: "autoscaling/v2",
-      kind: "HorizontalPodAutoscaler",
-      metadata: %{name: role_name(role), namespace: namespace},
-      spec: %{
-        scaleTargetRef: %{apiVersion: "apps/v1", kind: "Deployment", name: role_name(role)},
-        minReplicas: role.replicas,
-        maxReplicas: max(role.replicas * 10, 10),
-        metrics: [%{type: "Resource", resource: %{name: "cpu", target: %{type: "Utilization", averageUtilization: 65}}}]
-      }
-    }
-  end
-
-  defp config_map(namespace, plan) do
-    %{
-      apiVersion: "v1",
-      kind: "ConfigMap",
-      metadata: %{name: "ash-r2rml-production", namespace: namespace},
-      data: %{
-        "candidate_sha256" => plan.candidate_id,
-        "semantic_subject_sha256" => plan.semantic_subject_sha256,
-        "standing" => "construct_only"
-      }
-    }
-  end
-
-  defp labels(role), do: %{"app.kubernetes.io/name" => "ash-r2rml", "ash-r2rml/role" => Atom.to_string(role.id)}
-  defp role_name(role), do: "ash-r2rml-#{String.replace(Atom.to_string(role.id), "_", "-")}"
-
   defp contains_secret?(role) do
-    role.env
-    |> Enum.any?(fn {key, _value} -> String.contains?(String.downcase(to_string(key)), ["secret", "password", "token", "key"]) end)
+    Enum.any?(role.env, fn {key, _value} ->
+      String.contains?(String.downcase(to_string(key)), ["secret", "password", "token", "key"])
+    end)
   end
 
   defp maybe_refuse(acc, true, code), do: [%{code: code} | acc]
