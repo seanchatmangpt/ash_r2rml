@@ -4,18 +4,24 @@
 
 defmodule AshR2ml do
   @moduledoc """
-  Side-by-side R2RML semantic projection for Ash resources.
+  Side-by-side semantic projection and ontology-first compiler for Ash resources.
 
   `AshR2ml` is deliberately **not** an `Ash.DataLayer`. Storage and transactional
   authority remain with the resource's selected data layer (for example
-  `AshPostgres.DataLayer` or the existing `AshNeo4j.DataLayer`). This extension
-  adds a second, read-only semantic description of the same Ash resource so a
-  relational deployment can expose a W3C R2RML virtual RDF graph without
-  duplicating application state.
+  `AshPostgres.DataLayer` or the existing `AshNeo4j.DataLayer`).
 
-  The first migration phase is additive: resources may keep the existing Neo4j
-  DSL and add an `r2rml` block. Cutover is a separate actuation and is never
-  inferred from successful mapping generation alone.
+  There are two additive surfaces during migration:
+
+  * `r2rml do ... end` is the compatibility/projection DSL for existing Ash
+    resources and side-by-side Neo4j validation.
+  * `AshR2ml.Compiler` is the ontology-first path. It admits a closed operational
+    application profile into one `AshR2ml.SemanticIR`, then manufactures Ash,
+    PostgreSQL, R2RML, and SHACL projections from that same object.
+
+  The DSL is therefore not promoted to canonical truth. In the mature path ggen
+  consumes `AshR2ml.Ggen.compile_bundle/1`, writes the generated projections, and
+  carries the compilation receipt. Cutover remains a separate authorized actuation
+  after observed SQL/SPARQL and Neo4j/PostgreSQL parity.
   """
 
   @r2rml %Spark.Dsl.Section{
@@ -85,15 +91,24 @@ defmodule AshR2ml do
     persisters: [AshR2ml.PersistMapping],
     verifiers: [AshR2ml.VerifyMapping]
 
-  @doc "Return the persisted semantic mapping for a resource."
+  @doc "Return the persisted compatibility semantic mapping for an existing Ash resource."
   defdelegate mapping(resource), to: AshR2ml.Resource.Info
 
-  @doc "Render a dependency-closed W3C R2RML Turtle document."
+  @doc "Render a dependency-closed W3C R2RML Turtle document from existing Ash resources."
   defdelegate render_r2rml(resources), to: AshR2ml.R2RML, as: :render
 
-  @doc "Render SHACL shapes derived from the same admitted resource mappings."
+  @doc "Render SHACL shapes derived from the same compatibility resource mappings."
   defdelegate render_shacl(resources), to: AshR2ml.SHACL, as: :render
 
-  @doc "Build a side-by-side validation receipt without authorizing cutover."
+  @doc "Build a side-by-side compatibility validation receipt without authorizing cutover."
   defdelegate validate(resources), to: AshR2ml.Validation
+
+  @doc "Explore the ontology-first semantic IR while preserving unresolved DfCM choices."
+  defdelegate explore(profile), to: AshR2ml.Compiler
+
+  @doc "Compile one admitted operational profile into Ash/PostgreSQL/R2RML/SHACL projections."
+  defdelegate compile(profile), to: AshR2ml.Compiler
+
+  @doc "Build the deterministic ggen-facing output bundle without filesystem actuation."
+  defdelegate compile_bundle(profile), to: AshR2ml.Ggen
 end
