@@ -238,7 +238,7 @@ defmodule AshR2RML.R2RML do
           "  rr:logicalTable [ #{render_logical_table(parent.logical_table)} ] ;\n" <>
           "  rr:subjectMap [ #{render_subject(parent)} ] ;\n" <>
           "  rr:predicateObjectMap [ rr:predicate <#{reference.inverse_predicate}>; " <>
-          "rr:objectMap [ rr:parentTriplesMap <#{AshR2RML.Mapping.mapping_identity(resource)}>; " <>
+          "rr:objectMap [ rr:parentTriplesMap <#{triples_map_name(resource)}>; " <>
           Enum.map_join(reversed_joins, "; ", &render_join/1) <>
           " ] ] .\n"
 

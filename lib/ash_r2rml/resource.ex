@@ -55,7 +55,7 @@ defmodule AshR2RML.Resource do
     args: [:iri],
     target: AshR2RML.Dsl.Class,
     identifier: :iri,
-    schema: [iri: [type: :string, required: true]]
+    schema: [iri: [type: {:or, [:string, {:list, :string}]}, required: true]]
   }
 
   @subject %Spark.Dsl.Entity{
@@ -185,7 +185,7 @@ defmodule AshR2RML.Resource.Persist do
       mapping =
         %Resource{
           ash_resource: resource,
-          class_iris: Enum.map(classes, & &1.iri),
+          class_iris: classes |> Enum.flat_map(&List.wrap(&1.iri)) |> Enum.uniq(),
           logical_table: logical_table,
           subject_map: subject_map,
           predicate_object_maps: predicate_object_maps,
