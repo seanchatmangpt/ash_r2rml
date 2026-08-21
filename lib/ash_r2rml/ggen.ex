@@ -13,6 +13,11 @@ defmodule AshR2RML.Ggen do
   Turtle and JSON-LD are alternate RDF input serializations. Both are admitted
   into the same normalized profile before manufacture so ggen never receives a
   serialization-specific semantic fork.
+
+  Cloud ggen may also run in Ash-first mode. In that mode the maintained source
+  is the Ash resource graph itself and `compile_ash_ttl_bundle/1` emits the
+  ontology, operational SHACL shapes, and R2RML Turtle required by ggen. No
+  checked-in ontology/profile TTL is required for that path.
   """
 
   alias AshR2RML.Compilation
@@ -39,6 +44,11 @@ defmodule AshR2RML.Ggen do
        }}
     end
   end
+
+  @doc "Manufacture cloud-ggen TTL inputs directly from one or more Ash resources."
+  @spec compile_ash_ttl_bundle(module() | [module()] | AshR2RML.Mapping.Bundle.t()) ::
+          {:ok, map()} | {:error, term()}
+  defdelegate compile_ash_ttl_bundle(resources_or_bundle), to: AshR2RML.Ggen.TTL, as: :emit
 
   @doc "Parse an RDF/SHACL Turtle profile, then manufacture the same deterministic ggen bundle."
   @spec compile_turtle_bundle(String.t(), keyword()) :: {:ok, map()} | {:error, term()}
