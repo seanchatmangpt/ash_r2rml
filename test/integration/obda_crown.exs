@@ -16,6 +16,7 @@ defmodule AshR2ml.ObdaCrown do
   @postgres_user "postgres"
   @postgres_password "postgres"
   @neo4j_url "http://127.0.0.1:7474/db/neo4j/tx/commit"
+  @ontop_image "ontop/ontop:5.5.0"
   @ontop_container "ash-r2ml-ontop-endpoint"
   @ontop_endpoint "http://127.0.0.1:8080/sparql"
 
@@ -117,6 +118,8 @@ defmodule AshR2ml.ObdaCrown do
   """
 
   def run! do
+    jdbc_evidence = verify_pgjdbc!()
+
     File.rm_rf!(@workspace)
     File.mkdir_p!(@workspace)
 
@@ -178,18 +181,9 @@ defmodule AshR2ml.ObdaCrown do
     {:ok, cli_observation} =
       AshR2ML.OBDA.Ontop.query(%{
         binary: "docker",
-        prefix_args: [
-          "run",
-          "--rm",
-          "--network",
-          "host",
-          "-e",
-          "ONTOP_LOG_LEVEL=ERROR",
-          "-v",
-          "#{workspace}:/workspace:ro",
-          "ontop/ontop:5.5.0",
-          "ontop"
-        ],
+        prefix_args:
+          ["run", "--rm"] ++
+            ontop_docker_args(workspace, jdbc_evidence.directory) ++ [@ontop_image, "ontop"],
         mapping_path: container_root <> "/mapping.ttl",
         query_path: container_root <> "/query.rq",
         properties_path: container_root <> "/postgres.properties",
@@ -221,7 +215,7 @@ defmodule AshR2ml.ObdaCrown do
     unless cli_sql.verified?, do: raise("Ontop CLI/PostgreSQL parity mismatch")
 
     # Execution topology 2: a live SPARQL 1.1 Protocol endpoint queried by SPARQL.Client.
-    start_ontop_endpoint!(workspace, container_root)
+    start_ontop_endpoint!(workspace, container_root, jdbc_evidence.directory)
 
     protocol_observation =
       try do
@@ -340,6 +334,13 @@ defmodule AshR2ml.ObdaCrown do
           ontop_cli_sql: cli_sql,
           sparql_client_sql: protocol_sql,
           neo4j_postgres: neo4j_postgres,
+          external_dependencies: %{
+            ontop_image: @ontop_image,
+            pgjdbc: %{
+              artifact: jdbc_evidence.artifact,
+              sha256: jdbc_evidence.sha256
+            }
+          },
           compilation_receipt: technical_receipt
         }),
         pretty: true
@@ -364,36 +365,76 @@ defmodule AshR2ml.ObdaCrown do
     ])
   end
 
-  defp start_ontop_endpoint!(workspace, container_root) do
+  defp start_ontop_endpoint!(workspace, container_root, jdbc_directory) do
     stop_ontop_endpoint!()
 
     {_container_id, 0} =
       System.cmd(
         "docker",
-        [
-          "run",
-          "-d",
-          "--rm",
-          "--name",
-          @ontop_container,
-          "--network",
-          "host",
-          "-e",
-          "ONTOP_LOG_LEVEL=ERROR",
-          "-v",
-          "#{workspace}:/workspace:ro",
-          "ontop/ontop:5.5.0",
-          "ontop",
-          "endpoint",
-          "-m",
-          container_root <> "/mapping.ttl",
-          "-p",
-          container_root <> "/postgres.properties"
-        ],
+        ["run", "-d", "--rm", "--name", @ontop_container] ++
+          ontop_docker_args(workspace, jdbc_directory) ++
+          [
+            @ontop_image,
+            "ontop",
+            "endpoint",
+            "-m",
+            container_root <> "/mapping.ttl",
+            "-p",
+            container_root <> "/postgres.properties"
+          ],
         stderr_to_stdout: true
       )
 
     wait_for_endpoint!(60)
+  end
+
+  defp ontop_docker_args(workspace, jdbc_directory) do
+    [
+      "--network",
+      "host",
+      "-e",
+      "ONTOP_LOG_LEVEL=ERROR",
+      "-v",
+      "#{workspace}:/workspace:ro",
+      "-v",
+      "#{jdbc_directory}:/opt/ontop/jdbc:ro"
+    ]
+  end
+
+  defp verify_pgjdbc! do
+    directory =
+      System.get_env("ASH_R2ML_ONTOP_JDBC_DIR") ||
+        raise "ASH_R2ML_ONTOP_JDBC_DIR must point to the admitted Ontop JDBC directory"
+
+    expected_sha256 =
+      System.get_env("ASH_R2ML_PGJDBC_SHA256") ||
+        raise "ASH_R2ML_PGJDBC_SHA256 must pin the admitted PostgreSQL JDBC artifact"
+
+    jars = Path.wildcard(Path.join(directory, "postgresql-*.jar")) |> Enum.sort()
+
+    jar =
+      case jars do
+        [single] ->
+          single
+
+        [] ->
+          raise "Ontop JDBC directory contains no pinned PostgreSQL JDBC driver"
+
+        many ->
+          raise "Ontop JDBC directory must contain exactly one PostgreSQL JDBC driver, got #{inspect(many)}"
+      end
+
+    actual_sha256 = jar |> File.read!() |> sha256()
+
+    unless actual_sha256 == String.downcase(expected_sha256) do
+      raise "PostgreSQL JDBC digest mismatch: expected #{expected_sha256}, observed #{actual_sha256}"
+    end
+
+    %{
+      directory: Path.expand(directory),
+      artifact: Path.basename(jar),
+      sha256: actual_sha256
+    }
   end
 
   defp wait_for_endpoint!(0), do: raise("Ontop SPARQL endpoint did not become ready")
