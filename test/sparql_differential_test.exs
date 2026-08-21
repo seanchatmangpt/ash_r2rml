@@ -35,9 +35,10 @@ defmodule AshR2ML.SparqlDifferentialTest do
       observation(:ontop_cli, first)
     ]
 
-    assert {:ok, receipt} = Differential.compare(:account_org, observations)
+    assert {:ok, receipt} = Differential.compare(:account_org, observations, %{corpus: "bounded"})
     assert receipt.verified?
     assert receipt.strategies == [:local_rdf, :ontop_cli, :protocol]
+    assert receipt.metadata == %{corpus: "bounded"}
     assert map_size(receipt.result_sha256_by_strategy) == 3
     assert is_binary(receipt.receipt_sha256)
 
@@ -45,9 +46,19 @@ defmodule AshR2ML.SparqlDifferentialTest do
              Differential.require_strategies(receipt, [:local_rdf, :protocol, :ontop_cli])
 
     assert {:ok, reordered} =
-             Differential.compare(:account_org, Enum.reverse(observations))
+             Differential.compare(:account_org, Enum.reverse(observations), %{corpus: "bounded"})
 
     assert reordered.receipt_sha256 == receipt.receipt_sha256
+  end
+
+  test "a single execution cannot manufacture a differential equivalence receipt" do
+    assert {:error, refusal} =
+             Differential.compare(:account_org, [
+               observation(:protocol, [%{"id" => "1"}])
+             ])
+
+    assert refusal.code == :REFUSED_UNPROVEN_EQUIVALENCE
+    assert refusal.evidence.observation_count == 1
   end
 
   test "mismatched engine result remains a stable falsifying receipt" do

@@ -44,8 +44,8 @@ defmodule AshR2ML.SPARQL.Differential do
   lexical query**. It is deliberately not used to claim equivalence between
   different SPARQL query strings, even when a human believes them equivalent.
 
-  Observation order is irrelevant; duplicate strategies and mixed query
-  identities fail closed.
+  Observation order is irrelevant; fewer than two strategies, duplicate
+  strategies, and mixed query identities fail closed.
   """
 
   alias AshR2ML.Refusal
@@ -53,18 +53,17 @@ defmodule AshR2ML.SPARQL.Differential do
 
   @spec compare(term(), [Observation.t()], map()) ::
           {:ok, DifferentialReceipt.t()} | {:error, Refusal.t()}
-  def compare(subject, observations, metadata \\ %{}) when is_list(observations) do
+  def compare(subject, observations, metadata \\ %{}) when is_list(observations) and is_map(metadata) do
     with :ok <- require_observations(observations),
          {:ok, query_sha256} <- common_query_identity(observations),
          :ok <- unique_strategies(observations) do
       ordered = Enum.sort_by(observations, &to_string(&1.strategy))
 
-      normalized =
+      hashes =
         Map.new(ordered, fn observation ->
-          {observation.strategy, AshR2ml.Parity.normalize_multiset(observation.rows)}
+          {observation.strategy, Result.hash_rows(observation.rows)}
         end)
 
-      hashes = Map.new(normalized, fn {strategy, rows} -> {strategy, Result.hash_rows(rows)} end)
       counts = Map.new(ordered, &{&1.strategy, length(&1.rows)})
       distinct_results = hashes |> Map.values() |> MapSet.new() |> MapSet.size()
 
@@ -75,7 +74,7 @@ defmodule AshR2ML.SPARQL.Differential do
         result_sha256_by_strategy: hashes,
         row_count_by_strategy: counts,
         verified?: distinct_results == 1,
-        metadata: canonical(metadata)
+        metadata: metadata
       }
 
       {:ok,
@@ -83,13 +82,13 @@ defmodule AshR2ML.SPARQL.Differential do
     end
   end
 
-  def compare(subject, other, _metadata) do
+  def compare(subject, other, metadata) do
     {:error,
      Refusal.new(
        :REFUSED_UNPROVEN_EQUIVALENCE,
        subject,
-       "SPARQL differential observations must be a list",
-       %{got: inspect(other)}
+       "SPARQL differential requires an observation list and metadata map",
+       %{observations: inspect(other), metadata: inspect(metadata)}
      )}
   end
 
@@ -123,12 +122,13 @@ defmodule AshR2ML.SPARQL.Differential do
     end
   end
 
-  defp require_observations([]) do
+  defp require_observations(observations) when length(observations) < 2 do
     {:error,
      Refusal.new(
        :REFUSED_UNPROVEN_EQUIVALENCE,
        :sparql_differential,
-       "at least one observed SPARQL execution is required"
+       "semantic differential requires observations from at least two execution strategies",
+       %{observation_count: length(observations)}
      )}
   end
 
