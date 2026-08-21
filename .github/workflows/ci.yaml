@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2026 ash_neo4j contributors <https://github.com/diffo-dev/ash_neo4j/graphs/contributors>
+# SPDX-FileCopyrightText: 2026 ash_neo4j contributors <https://github.com/diffo-dev/ash_neo4j/graphs.contributors>
 #
 # SPDX-License-Identifier: MIT
 
@@ -28,8 +28,8 @@ jobs:
           path: |
             deps
             _build
-          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
-          restore-keys: ${{ runner.os }}-mix-
+          key: ${{ runner.os }}-mix-${{ hashFiles('.tool-versions') }}-${{ hashFiles('**/mix.lock') }}
+          restore-keys: ${{ runner.os }}-mix-${{ hashFiles('.tool-versions') }}-
 
       - name: Install dependencies
         run: mix deps.get
@@ -54,8 +54,8 @@ jobs:
           path: |
             deps
             _build
-          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
-          restore-keys: ${{ runner.os }}-mix-
+          key: ${{ runner.os }}-mix-${{ hashFiles('.tool-versions') }}-${{ hashFiles('**/mix.lock') }}
+          restore-keys: ${{ runner.os }}-mix-${{ hashFiles('.tool-versions') }}-
 
       - name: Install dependencies
         run: mix deps.get
@@ -102,8 +102,8 @@ jobs:
           path: |
             deps
             _build
-          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
-          restore-keys: ${{ runner.os }}-mix-
+          key: ${{ runner.os }}-mix-${{ hashFiles('.tool-versions') }}-${{ hashFiles('**/mix.lock') }}
+          restore-keys: ${{ runner.os }}-mix-${{ hashFiles('.tool-versions') }}-
 
       - name: Install dependencies
         run: mix deps.get
