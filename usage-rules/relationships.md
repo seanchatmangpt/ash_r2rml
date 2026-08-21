@@ -1,143 +1,101 @@
-<!--
-SPDX-FileCopyrightText: 2025 ash_neo4j contributors <https://github.com/diffo-dev/ash_neo4j/graphs.contributors>
-
-SPDX-License-Identifier: MIT
--->
-
 # Relationships
 
-## Relationships are graph edges, not columns
+Ash relationships are the source of relational joins and RDF object-property mappings.
 
-In AshNeo4j, relationships are stored as edges in the graph — not as foreign key columns on nodes. This has important consequences:
-
-- **Do not add foreign key attributes** to a resource to model a relationship. There are no `_id` columns.
-- **Many-to-many requires a joiner node resource** — see the many-to-many section below. AshNeo4j does not use edge properties.
-- An Ash `belongs_to` relationship does not create a foreign key attribute on the resource. The relationship is expressed entirely through a graph edge.
-
-## Defining relationships
-
-Define Ash relationships in the `relationships` block as normal, then declare the corresponding graph edge in `relate`:
+## Object-property mapping
 
 ```elixir
-# Post resource
 relationships do
-  has_many :comments, MyApp.Blog.Comment
-end
+  belongs_to :organization, MyApp.Organization do
+    allow_nil? false
 
-neo4j do
-  relate [{:comments, :HAS_COMMENT, :outgoing, :Comment}]
-end
-
-# Comment resource
-relationships do
-  belongs_to :post, MyApp.Blog.Post, define_attribute?: false
-end
-
-neo4j do
-  relate [{:post, :HAS_COMMENT, :incoming, :Post}]
+    rdf do
+      predicate "https://schema.org/memberOf"
+    end
+  end
 end
 ```
 
-Note `define_attribute?: false` on the `belongs_to` — there is no foreign key attribute to define.
+AshR2ML compiles the relationship into a reference object map when the active data layer exposes a deterministic relational join.
 
-## Edge direction
+Conceptually:
 
-Direction is always described from the perspective of the source resource's node:
+```text
+Ash relationship
+      │
+      ├── relational FK/join
+      └── rr:RefObjectMap
+             └── rr:joinCondition
+```
 
-- `:outgoing` — the edge points away from this node: `(this)-[:EDGE]->(other)`
-- `:incoming` — the edge points toward this node: `(other)-[:EDGE]->(this)`
+## What is inferred
 
-Both sides of a relationship refer to the same physical edge in the graph, just from opposite directions. The `edge_label` must match on both sides.
+Prefer introspection over repeated configuration. AshR2ML should derive, when available:
+
+- destination resource;
+- source attribute;
+- destination attribute;
+- table/view identity;
+- destination triples map;
+- join columns;
+- relationship cardinality represented by Ash.
+
+The RDF predicate is semantic information and is normally explicit.
+
+## `belongs_to`
+
+A relational `belongs_to` normally maps cleanly to a reference object map from the child/source table to the parent triples map.
+
+The join must target a stable parent identity. A foreign key existing in SQL is necessary evidence but does not by itself define the public RDF predicate or subject strategy.
+
+## `has_one` and `has_many`
+
+Reverse Ash relationships are mapped from the same admitted relational relation. Do not manufacture an unrelated second relation simply because Ash exposes both directions.
+
+When an inverse RDF predicate is declared, preserve the explicit inverse semantics. Do not infer `owl:inverseOf` merely from the presence of two Ash relationships.
 
 ## Many-to-many
 
-AshNeo4j does not use edge properties. Many-to-many relationships are modelled
-using a **joiner resource** — a dedicated node that sits between the two sides.
-The pattern is two back-to-back relationships: many-to-one into the joiner, and
-one-to-many out of it.
+Many-to-many mappings must follow the actual relational join structure. A plain join table may compile to chained/reference maps. If the join relation carries its own semantic attributes, provenance, validity interval, role, or identity, model it as an association resource instead of erasing those facts into a bare edge.
 
-The joiner resource has two `belongs_to` relationships sharing the same edge
-label: one `:incoming` (from the source) and one `:outgoing` (to the target).
+## Association resources
 
-```elixir
-# PostTag joiner resource
-relationships do
-  belongs_to :post, MyApp.Blog.Post, define_attribute?: false
-  belongs_to :tag, MyApp.Blog.Tag, define_attribute?: false
-end
+Use an association resource when the relationship is itself a thing with data:
 
-neo4j do
-  relate [
-    {:post, :TAGGED_WITH, :incoming, :Post},
-    {:tag, :TAGGED_WITH, :outgoing, :Tag}
-  ]
-end
-
-# Post resource
-relationships do
-  has_many :post_tags, MyApp.Blog.PostTag
-end
-
-# Tag resource
-relationships do
-  has_many :post_tags, MyApp.Blog.PostTag
-end
+```text
+Person ── Membership ── Organization
+             │
+             ├── role
+             ├── valid_from
+             └── provenance
 ```
 
-The joiner node is a first-class resource: it can carry its own attributes and
-be further enriched by relationships to other nodes. This is the preferred way
-to model metadata that would otherwise require edge properties.
+This preserves information that a direct object property cannot carry on its own.
 
-## Avoiding dense nodes
+## Missing mappings
 
-A node that accumulates a very high number of edges (thousands or more) becomes a **dense node**. Traversals through it degrade significantly — unlike SQL where you add an index, in Neo4j you need to reconsider the graph topology at modelling time.
+A relationship with an RDF predicate may never be silently omitted from the mapping IR or R2RML output.
 
-The most effective mitigation is to **omit `relate` on the high-cardinality side**. If you only need to traverse in one direction, only declare it in one direction. The reverse edge still exists in the graph and can be protected with `guard` — you just cannot accidentally load it via Ash.
+Refuse when:
 
-```elixir
-# Instance resource — traversal TO Specification makes sense
-neo4j do
-  relate [{:specification, :SPECIFIED_BY, :outgoing, :Specification}]
-end
+- the destination resource has no usable subject map;
+- join metadata is ambiguous;
+- source/destination attributes cannot be resolved;
+- the active data layer does not expose a lawful relational projection;
+- an ontology-first shape remains ambiguous about storage/cardinality.
 
-# Specification resource — NO relate back to Instance
-# A Specification could be referenced by thousands of instances.
-# Omitting relate prevents any action from loading them all.
-# guard still protects the Specification from deletion while instances reference it.
-neo4j do
-  guard [{:SPECIFIED_BY, :incoming, :Instance}]
-end
-```
+## Cardinality
 
-Apply this pattern whenever a `has_many` relationship could grow without bound. Be deliberate about which direction of traversal your application actually needs.
+R2RML itself describes mapping, not all SHACL cardinality semantics. AshR2ML preserves Ash's actual relationship shape and, in ontology-first workflows, ggen uses SHACL to select the Ash/relational projection before R2RML compilation.
 
-## Default relate behaviour
+Do not claim that `rr:RefObjectMap` alone enforces `sh:minCount` or `sh:maxCount`.
 
-If you omit `relate` entries, AshNeo4j generates defaults:
+## Tests
 
-- Direction is always `:outgoing`
-- Edge label is derived from the Ash relationship type
+Relationship tests must prove the same semantic edge at three levels when applicable:
 
-Provide explicit `relate` entries when the direction or label needs to be different, or when two relationships between the same pair of labels would otherwise be ambiguous.
+1. Ash relationship metadata;
+2. relational FK/join data;
+3. RDF/SPARQL result through generated R2RML.
 
-## has_one
-
-`has_one` is supported but of limited utility. It works like `has_many` except AshNeo4j returns a single record (or `nil`) instead of a list. It does not enforce uniqueness in the graph — if multiple edges match, one record is returned arbitrarily.
-
-The only case where it adds value over `has_many` is when you want to surface a single designated record as a named field on the struct — for example, the most recently fired event on an instance — without exposing the full collection:
-
-```elixir
-has_one :event, MyApp.Provider.Event do
-  description "the most recently fired event"
-  public? true
-  destination_attribute :instance_id
-end
-```
-
-Declare the `relate` entry the same way you would for `has_many`. No additional DSL is needed.
-
-If you actually need "the most recent" semantics, sort within the query at call time — `has_one` itself does not order results.
-
-## Uniqueness constraint
-
-The combination `{edge_label, edge_direction, destination_label}` must be unique per resource. AshNeo4j uses this triple to look up the correct Ash relationship when traversing an edge. Duplicate triples will be rejected at compile time.
+Matching a generated Turtle substring is not sufficient evidence for the integration crown.
