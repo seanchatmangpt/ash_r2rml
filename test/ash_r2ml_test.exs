@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 ash_r2ml contributors <https://github.com/seanchatmangpt/ash_r2ml/graphs/contributors>
+#
 # SPDX-License-Identifier: MIT
 
 defmodule AshR2mlTest.Organization do
@@ -6,7 +8,7 @@ defmodule AshR2mlTest.Organization do
     extensions: [AshR2ml]
 
   r2rml do
-    class_iri "https://www.w3.org/ns/org#Organization"
+    class_iri "http://www.w3.org/ns/org#Organization"
     subject_template "https://xaas.example/id/organization/{id}"
     table_name "organizations"
     attribute_mappings [
@@ -36,7 +38,7 @@ defmodule AshR2mlTest.Account do
       {:balance, "https://xaas.example/ontology/balance", "http://www.w3.org/2001/XMLSchema#decimal"}
     ]
     relationship_mappings [
-      {:organization, "https://www.w3.org/ns/org#memberOf"}
+      {:organization, "http://www.w3.org/ns/org#memberOf"}
     ]
   end
 
@@ -97,7 +99,7 @@ defmodule AshR2mlTest do
     assert ttl =~ "sh:targetClass"
     assert ttl =~ "sh:minCount 1"
     assert ttl =~ "sh:datatype <http://www.w3.org/2001/XMLSchema#decimal>"
-    assert ttl =~ "sh:class <https://www.w3.org/ns/org#Organization>"
+    assert ttl =~ "sh:class <http://www.w3.org/ns/org#Organization>"
   end
 
   test "coexists with the existing Neo4j control mapping without cutover" do
