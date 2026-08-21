@@ -21,6 +21,7 @@ defmodule AshR2RML.Dsl.Property do
     :predicate_iri,
     :datatype,
     :language,
+    :language_column,
     :constant,
     :template,
     :__identifier__,
@@ -85,6 +86,7 @@ defmodule AshR2RML.Resource do
       predicate_iri: [type: :string, required: true],
       datatype: [type: :string],
       language: [type: :string],
+      language_column: [type: :atom],
       constant: [type: :string],
       template: [type: :string],
       term_type: [type: {:one_of, [:literal, :iri, :blank_node]}, default: :literal]
@@ -338,6 +340,15 @@ defmodule AshR2RML.Resource.Persist do
            strategy: strategy,
            value: value,
            language: property.language,
+           term_type: :literal
+         }}
+
+      property.language_column ->
+        {:ok,
+         %ObjectMap{
+           strategy: strategy,
+           value: value,
+           language: to_string(property.language_column),
            term_type: :literal
          }}
 
