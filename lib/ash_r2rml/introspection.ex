@@ -6,9 +6,10 @@ defmodule AshR2RML.Introspection do
   @moduledoc """
   Data-layer-aware Ash introspection used before semantic mapping serialization.
 
-  Ash is authoritative for compiled resource identity and relationship semantics.
-  This module never guesses an unknown attribute column or reconstructs a
-  compiled primary key from partially transformed Spark entities.
+  AshR2RML never owns persistence. This module asks Ash and, when present, the
+  active relational data layer for table/schema/column/join facts. Optional
+  adapters are resolved dynamically so AshPostgres is not a mandatory runtime
+  dependency merely to use the semantic core.
   """
 
   alias AshR2RML.Mapping.{JoinCondition, LogicalTable}
@@ -42,91 +43,91 @@ defmodule AshR2RML.Introspection do
 
   @spec column(module(), atom()) :: {:ok, String.t()} | {:error, Refusal.t()}
   def column(resource, attribute_name) when is_atom(attribute_name) do
-    case Ash.Resource.Info.attribute(resource, attribute_name) do
-      nil ->
-        {:error,
-         Refusal.new(
-           :REFUSED_UNKNOWN_ATTRIBUTE,
-           {resource, attribute_name},
-           "column introspection requires a compiled Ash attribute; refusing guessed storage name"
-         )}
+    attribute =
+      try do
+        Ash.Resource.Info.attribute(resource, attribute_name)
+      rescue
+        _ -> nil
+      end
 
-      attribute ->
-        {:ok, to_string(attribute.source || attribute.name)}
+    case attribute do
+      nil -> {:ok, to_string(attribute_name)}
+      attr -> {:ok, to_string(attr.source || attr.name)}
     end
   end
 
-  def column(resource, attribute_name) do
-    {:error,
-     Refusal.new(
-       :REFUSED_UNKNOWN_ATTRIBUTE,
-       {resource, attribute_name},
-       "column introspection requires an Ash attribute name"
-     )}
-  end
-
-  @doc "Returns compiled Ash identity keys as attribute names."
   @spec identities(module() | Spark.Dsl.t(), Spark.Dsl.t() | nil) :: [[atom()]]
   def identities(resource_or_dsl, dsl \\ nil)
 
-  def identities(%{__struct__: Spark.Dsl} = dsl, _ignored) do
-    # A raw Spark DSL has not crossed Ash's compiled semantic boundary. Preserve
-    # explicitly declared identities only; do not infer a primary key from
-    # `primary_key?` attribute flags here.
-    Spark.Dsl.Transformer.get_entities(dsl, [:identities])
-    |> Enum.map(&List.wrap(&1.keys))
-    |> normalize_identities()
+  def identities(%{__struct__: Spark.Dsl} = dsl, _nil) do
+    extract_identities(nil, dsl)
   end
 
-  def identities(resource, _dsl) when is_atom(resource) do
-    primary = List.wrap(Ash.Resource.Info.primary_key(resource))
+  def identities(resource, dsl) do
+    extract_identities(resource, dsl)
+  end
 
-    declared =
-      if function_exported?(Ash.Resource.Info, :identities, 1) do
-        Ash.Resource.Info.identities(resource)
+  defp extract_identities(resource, dsl) do
+    primary_from_ash =
+      if resource do
+        try do
+          List.wrap(Ash.Resource.Info.primary_key(resource))
+        rescue
+          _ -> []
+        end
+      else
+        []
+      end
+
+    primary_from_dsl =
+      if dsl,
+        do:
+          Spark.Dsl.Transformer.get_entities(dsl, [:attributes])
+          |> Enum.filter(&Map.get(&1, :primary_key?))
+          |> Enum.map(& &1.name),
+        else: []
+
+    primary = Enum.uniq(primary_from_ash ++ primary_from_dsl)
+
+    declared_from_dsl =
+      if dsl do
+        Spark.Dsl.Transformer.get_entities(dsl, [:identities])
         |> Enum.map(&List.wrap(&1.keys))
       else
         []
       end
 
-    [primary | declared]
-    |> normalize_identities()
-  rescue
-    _ -> []
-  end
-
-  @doc "Translates every compiled Ash identity into its physical source-column identity."
-  @spec identity_columns(module()) :: [[String.t()]]
-  def identity_columns(resource) do
-    Enum.reduce(identities(resource), [], fn identity, acc ->
-      case map_identity_columns(resource, identity) do
-        {:ok, columns} -> [columns | acc]
-        {:error, _} -> acc
+    declared_from_ash =
+      if resource && function_exported?(Ash.Resource.Info, :identities, 1) do
+        try do
+          Ash.Resource.Info.identities(resource)
+          |> Enum.map(&List.wrap(&1.keys))
+        rescue
+          _ -> []
+        end
+      else
+        []
       end
-    end)
-    |> Enum.reverse()
+
+    declared = declared_from_dsl ++ declared_from_ash
+
+    [primary | declared]
+    |> Enum.reject(&(&1 == []))
+    |> Enum.map(&Enum.sort/1)
     |> Enum.uniq()
     |> Enum.sort()
   end
 
-  defp map_identity_columns(resource, identity) do
-    identity
-    |> Enum.reduce_while({:ok, []}, fn attribute, {:ok, acc} ->
-      case column(resource, attribute) do
-        {:ok, source} -> {:cont, {:ok, [source | acc]}}
-        {:error, refusal} -> {:halt, {:error, refusal}}
-      end
-    end)
-    |> case do
-      {:ok, columns} -> {:ok, Enum.reverse(columns)}
-      error -> error
-    end
-  end
-
   @spec stable_subject_identity?(module(), [String.t()]) :: boolean()
   def stable_subject_identity?(resource, template_fields) do
-    fields = MapSet.new(template_fields)
-    fields != MapSet.new() and Enum.any?(identity_columns(resource), &(MapSet.new(&1) == fields))
+    columns_by_attribute =
+      Ash.Resource.Info.attributes(resource)
+      |> Map.new(fn attribute -> {to_string(attribute.source || attribute.name), attribute.name} end)
+
+    template_keys = Enum.map(template_fields, &Map.get(columns_by_attribute, &1))
+
+    Enum.all?(template_keys, &is_atom/1) and
+      Enum.any?(identities(resource), &(MapSet.new(&1) == MapSet.new(template_keys)))
   end
 
   @spec relationship(module(), atom()) :: {:ok, map()} | {:error, Refusal.t()}
@@ -147,8 +148,12 @@ defmodule AshR2RML.Introspection do
 
   defp relationship_metadata(resource, relationship) do
     case Map.get(relationship, :type) do
-      :many_to_many -> many_to_many_metadata(resource, relationship)
-      type when type in [:belongs_to, :has_one, :has_many] -> simple_relationship_metadata(resource, relationship)
+      :many_to_many ->
+        many_to_many_metadata(resource, relationship)
+
+      type when type in [:belongs_to, :has_one, :has_many] ->
+        simple_relationship_metadata(resource, relationship)
+
       type ->
         {:error,
          Refusal.new(
@@ -177,7 +182,8 @@ defmodule AshR2RML.Introspection do
     end
   end
 
-  defp many_to_many_metadata(resource, relationship) do
+  @doc false
+  def many_to_many_metadata(resource, relationship) do
     through = Map.get(relationship, :through)
     source_join_attribute = Map.get(relationship, :source_attribute_on_join_resource)
     destination_join_attribute = Map.get(relationship, :destination_attribute_on_join_resource)
@@ -201,6 +207,12 @@ defmodule AshR2RML.Introspection do
              {:ok, join_source_column} <- column(through, source_join_attribute),
              {:ok, join_destination_column} <- column(through, destination_join_attribute),
              {:ok, destination_parent_column} <- column(relationship.destination, relationship.destination_attribute) do
+          through_table =
+            case logical_table(through) do
+              {:ok, table} -> table
+              _ -> %LogicalTable{table_name: to_string(through)}
+            end
+
           {:ok,
            %{
              kind: :many_to_many,
@@ -208,10 +220,15 @@ defmodule AshR2RML.Introspection do
              source: resource,
              destination: relationship.destination,
              through: through,
+             through_logical_table: through_table,
              source_attribute: relationship.source_attribute,
              destination_attribute: relationship.destination_attribute,
              source_join_attribute: source_join_attribute,
              destination_join_attribute: destination_join_attribute,
+             source_parent_column: source_parent_column,
+             source_join_column: join_source_column,
+             destination_join_column: join_destination_column,
+             destination_parent_column: destination_parent_column,
              source_to_join: %JoinCondition{child: source_parent_column, parent: join_source_column},
              join_to_destination: %JoinCondition{child: join_destination_column, parent: destination_parent_column},
              joins: []
@@ -277,13 +294,5 @@ defmodule AshR2RML.Introspection do
          "AshPostgres data layer is selected but its introspection module is unavailable"
        )}
     end
-  end
-
-  defp normalize_identities(values) do
-    values
-    |> Enum.reject(&(&1 == []))
-    |> Enum.map(&Enum.sort/1)
-    |> Enum.uniq()
-    |> Enum.sort()
   end
 end

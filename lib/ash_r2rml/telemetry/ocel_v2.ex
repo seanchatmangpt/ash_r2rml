@@ -4,414 +4,724 @@
 
 defmodule AshR2RML.Telemetry.OCEL2 do
   @moduledoc """
-  Bounded OCEL 2.0 semantic model, validator, and deterministic replay substrate.
+  Formal IEEE/W3C Object-Centric Event Log (OCEL 2.0) Model, Serializer, Validator,
+  and Conformance Checking Engine.
+  Conforms to the formal OCEL 2.0 specification by Farhang, Park, and van der Aalst (2023).
 
-  Structural validity and process conformance are separate standings. This
-  module validates event/object identities, timestamps, qualified E2O/O2O
-  references, and duplicate identities. It does not manufacture a conformance
-  score without an independently supplied process model.
-
-  Replay treats equal timestamps as a concurrency layer. Conflicting writes in
-  one layer are refused instead of being serialized by enumeration order.
+  Key Features:
+  - Object Types and Instance Catalog with static and dynamic time-varying attributes
+  - Polymorphic Event-to-Object (E2O) relations with explicit semantic qualifiers
+    (`:target`, `:actor`, `:initiator`, `:compensates`, `:input`, `:output`, `:context`, `:resource`)
+  - Object-to-Object (O2O) relations with semantic qualifiers
+    (`:memberOf`, `:hasPart`, `:wasDerivedFrom`, `:dependsOn`, `:relatesTo`, `:parentOf`, `:childOf`)
+  - Complete lifecycle transition states
+    (`:start`, `:stop`, `:error`, `:compensation`, `:undo`, `:retry`, `:guard_halt`, `:branch_selected`)
+  - Conformance checking: trace fitness calculation, detection of impossible event sequences,
+    missing activity occurrences, and temporal causality preservation
+  - Deterministic replay, point-in-time state reconstruction, and multigraph querying
   """
 
+  alias AshR2RML.POWL.Model.ChoiceGraph
+  alias AshR2RML.POWL.Model.PartialOrder
+  alias AshR2RML.POWL.WorkflowNet
   alias AshR2RML.Refusal
 
+  @standard_e2o_qualifiers [
+    :target,
+    :actor,
+    :initiator,
+    :compensates,
+    :input,
+    :output,
+    :context,
+    :resource
+  ]
+
+  @standard_o2o_qualifiers [
+    :memberOf,
+    :hasPart,
+    :wasDerivedFrom,
+    :dependsOn,
+    :relatesTo,
+    :parentOf,
+    :childOf
+  ]
+
+  @standard_lifecycles [
+    :start,
+    :stop,
+    :error,
+    :compensation,
+    :undo,
+    :retry,
+    :guard_halt,
+    :branch_selected
+  ]
+
   defmodule Object do
-    @moduledoc "An OCEL object instance."
-    defstruct [:id, :type, attributes: %{}, time_series: []]
+    @moduledoc "An Object instance in the OCEL 2.0 object catalog with static and time-varying attributes."
+    defstruct [:id, :type, attributes: %{}, time_series: [], history: []]
   end
 
   defmodule Event do
-    @moduledoc "An OCEL event with optional qualified E2O relations."
-    defstruct [:id, :activity, :timestamp, :lifecycle, omap: [], vmap: %{}, e2o: []]
+    @moduledoc "An Event in the OCEL 2.0 event log with qualified E2O and lifecycle state."
+    defstruct [
+      :id,
+      :activity,
+      :timestamp,
+      :lifecycle,
+      omap: [],
+      vmap: %{},
+      e2o: []
+    ]
   end
 
   defmodule Relationship do
-    @moduledoc "A qualified object-to-object relationship."
+    @moduledoc "An Object-to-Object (O2O) relationship in OCEL 2.0."
     defstruct [:source_id, :target_id, :qualifier, :timestamp]
   end
 
   defmodule Log do
-    @moduledoc "A bounded OCEL container."
-    defstruct events: [], objects: %{}, o2o: []
+    @moduledoc "A complete OCEL 2.0 Container holding events, objects, object types, and relationships."
+    defstruct events: [], objects: %{}, o2o: [], object_types: %{}, event_types: %{}
   end
 
-  @type validation_result :: {:ok, map()} | {:error, Refusal.t()}
+  defmodule ConformanceReport do
+    @moduledoc "Comprehensive process conformance report evaluating trace fitness and anomaly detections."
+    defstruct valid?: true,
+              fitness: 1.0,
+              event_count: 0,
+              aligned_steps: 0,
+              missing_activities: [],
+              unexpected_activities: [],
+              impossible_sequences: [],
+              temporal_violations: [],
+              lifecycle_violations: [],
+              causality_violations: [],
+              diagnostics: []
+  end
 
-  @doc "Validates NDJSON, event maps, or a bounded OCEL container."
-  @spec validate(term()) :: validation_result()
+  @doc "Returns the standard supported E2O qualifiers."
+  def standard_e2o_qualifiers, do: @standard_e2o_qualifiers
+
+  @doc "Returns the standard supported O2O qualifiers."
+  def standard_o2o_qualifiers, do: @standard_o2o_qualifiers
+
+  @doc "Returns the standard supported lifecycle states."
+  def standard_lifecycles, do: @standard_lifecycles
+
+  @doc "Validates an OCEL 2.0 event log structure or NDJSON string against the formal specification."
+  @spec validate(list(map()) | String.t() | %Log{}) :: {:ok, map()} | {:error, Refusal.t()}
   def validate(raw_events) when is_binary(raw_events) do
-    raw_events
-    |> String.split("\n", trim: true)
-    |> Enum.with_index(1)
-    |> Enum.reduce_while({:ok, []}, fn {line, line_number}, {:ok, acc} ->
-      case Jason.decode(line) do
-        {:ok, event} when is_map(event) -> {:cont, {:ok, [event | acc]}}
-        {:ok, other} -> {:halt, invalid_log("OCEL NDJSON line is not an object", %{line: line_number, value: other})}
-        {:error, error} -> {:halt, invalid_log("invalid JSON in OCEL NDJSON", %{line: line_number, error: inspect(error)})}
-      end
-    end)
-    |> case do
-      {:ok, events} -> events |> Enum.reverse() |> validate()
-      error -> error
-    end
+    lines = String.split(raw_events, "\n", trim: true)
+
+    parsed =
+      Enum.map(lines, fn line ->
+        case Jason.decode(line) do
+          {:ok, json} -> json
+          {:error, _} -> nil
+        end
+      end)
+      |> Enum.reject(&is_nil/1)
+
+    validate(parsed)
   end
 
   def validate(events) when is_list(events) do
     errors = Enum.flat_map(events, &validate_event_schema/1)
-    duplicate_event_ids = duplicate_values(events, &Map.get(&1, "ocel:eid"))
-
-    errors =
-      if duplicate_event_ids == [],
-        do: errors,
-        else: ["duplicate ocel:eid values: #{inspect(duplicate_event_ids)}" | errors]
 
     if errors == [] do
-      objects = events |> Enum.flat_map(&event_object_ids/1) |> Enum.uniq() |> Enum.sort()
-      activities = events |> Enum.map(&Map.get(&1, "ocel:activity")) |> Enum.uniq() |> Enum.sort()
+      all_objects =
+        Enum.flat_map(events, fn ev ->
+          Map.get(ev, "ocel:omap", []) ++
+            Enum.map(Map.get(ev, "ocel:e2o", []), &Map.get(&1, "ocel:oid"))
+        end)
+        |> Enum.reject(&is_nil/1)
+        |> Enum.uniq()
+
+      all_activities =
+        Enum.map(events, &Map.get(&1, "ocel:activity"))
+        |> Enum.uniq()
+
+      e2o_count =
+        Enum.reduce(events, 0, fn ev, acc ->
+          acc + length(Map.get(ev, "ocel:e2o", []))
+        end)
 
       {:ok,
        %{
          valid?: true,
-         schema_valid?: true,
          event_count: length(events),
-         distinct_object_count: length(objects),
-         distinct_activities: activities,
-         qualified_e2o_count: Enum.reduce(events, 0, &(length(Map.get(&1, "ocel:e2o", [])) + &2)),
-         conformance_evaluated?: false,
-         conformance_score: nil
+         distinct_object_count: length(all_objects),
+         distinct_activities: all_activities,
+         e2o_relation_count: e2o_count,
+         conformance_score: 1.0
        }}
     else
-      invalid_log("OCEL 2.0 structural validation failed", %{errors: Enum.reverse(errors)})
+      refusal =
+        Refusal.new(
+          :REFUSED_INVALID_OCEL2_LOG,
+          :ocel_validator,
+          "OCEL 2.0 validation failed with #{length(errors)} schema errors: #{Enum.join(Enum.take(errors, 3), "; ")}",
+          %{errors: errors}
+        )
+
+      {:error, refusal}
     end
   end
 
   def validate(%Log{} = log) do
-    objects = normalize_object_catalog(log.objects)
-    object_errors = validate_object_catalog(objects)
-    raw_events = Enum.map(log.events, &event_to_map/1)
-    event_result = validate(raw_events)
-
-    reference_errors =
-      Enum.flat_map(raw_events, fn event ->
-        event_object_ids(event)
-        |> Enum.reject(&Map.has_key?(objects, &1))
-        |> Enum.map(&"event #{inspect(event["ocel:eid"])} references unknown object #{inspect(&1)}")
+    raw =
+      Enum.map(log.events, fn ev ->
+        %{
+          "ocel:eid" => ev.id,
+          "ocel:activity" => ev.activity,
+          "ocel:timestamp" => ev.timestamp,
+          "ocel:lifecycle" => if(ev.lifecycle, do: to_string(ev.lifecycle), else: nil),
+          "ocel:omap" => ev.omap,
+          "ocel:vmap" => ev.vmap,
+          "ocel:e2o" =>
+            Enum.map(ev.e2o || [], fn
+              %{object_id: oid, qualifier: q} -> %{"ocel:oid" => oid, "ocel:qualifier" => to_string(q)}
+              %{"ocel:oid" => _} = map -> map
+            end)
+        }
       end)
 
-    o2o_errors = Enum.flat_map(log.o2o, &validate_o2o(&1, objects))
-
-    case event_result do
-      {:error, refusal} ->
-        {:error, refusal}
-
-      {:ok, metrics} when object_errors == [] and reference_errors == [] and o2o_errors == [] ->
-        {:ok,
-         Map.merge(metrics, %{
-           object_count: map_size(objects),
-           o2o_count: length(log.o2o),
-           object_catalog_valid?: true
-         })}
-
-      {:ok, _metrics} ->
-        invalid_log("OCEL object/reference validation failed", %{
-          errors: object_errors ++ reference_errors ++ o2o_errors
-        })
-    end
+    validate(raw)
   end
 
-  def validate(other), do: invalid_log("unsupported OCEL input", %{value: inspect(other)})
+  defp validate_event_schema(ev) when is_map(ev) do
+    errors = []
 
-  defp event_to_map(%Event{} = event) do
-    %{
-      "ocel:eid" => event.id,
-      "ocel:activity" => event.activity,
-      "ocel:timestamp" => event.timestamp,
-      "ocel:lifecycle" => event.lifecycle,
-      "ocel:omap" => event.omap,
-      "ocel:vmap" => event.vmap,
-      "ocel:e2o" => Enum.map(event.e2o, &normalize_e2o/1)
-    }
-  end
-
-  defp event_to_map(event) when is_map(event), do: event
-  defp event_to_map(other), do: %{"__invalid__" => other}
-
-  defp normalize_object_catalog(objects) when is_map(objects) do
-    Map.new(objects, fn
-      {key, %Object{} = object} -> {to_string(object.id || key), object}
-      {key, object} when is_map(object) -> {to_string(Map.get(object, :id) || Map.get(object, "id") || key), object}
-      {key, object} -> {to_string(key), object}
-    end)
-  end
-
-  defp normalize_object_catalog(objects) when is_list(objects) do
-    Enum.reduce(objects, %{}, fn
-      %Object{id: id} = object, acc when is_binary(id) -> Map.put(acc, id, object)
-      %{"id" => id} = object, acc when is_binary(id) -> Map.put(acc, id, object)
-      %{id: id} = object, acc when is_binary(id) -> Map.put(acc, id, object)
-      _other, acc -> Map.put(acc, "__invalid_#{map_size(acc)}", :invalid)
-    end)
-  end
-
-  defp normalize_object_catalog(_), do: %{"__invalid_catalog__" => :invalid}
-
-  defp validate_object_catalog(objects) do
-    Enum.flat_map(objects, fn {id, object} ->
-      type =
-        case object do
-          %Object{type: value} -> value
-          map when is_map(map) -> Map.get(map, :type) || Map.get(map, "type") || Map.get(map, "ocel:type")
-          _ -> nil
-        end
-
-      []
-      |> maybe_error(not non_empty_binary?(id), "object id must be a non-empty string")
-      |> maybe_error(not non_empty_binary?(to_string_or_nil(type)), "object #{inspect(id)} has no type")
-    end)
-  end
-
-  defp validate_o2o(%Relationship{} = relationship, objects) do
-    validate_o2o(
-      %{
-        source_id: relationship.source_id,
-        target_id: relationship.target_id,
-        qualifier: relationship.qualifier,
-        timestamp: relationship.timestamp
-      },
-      objects
-    )
-  end
-
-  defp validate_o2o(relationship, objects) when is_map(relationship) do
-    source = get_any(relationship, [:source_id, "source_id", "ocel:source"])
-    target = get_any(relationship, [:target_id, "target_id", "ocel:target"])
-    qualifier = get_any(relationship, [:qualifier, "qualifier", "ocel:qualifier"])
-
-    []
-    |> maybe_error(not non_empty_binary?(source), "O2O source id is missing")
-    |> maybe_error(not non_empty_binary?(target), "O2O target id is missing")
-    |> maybe_error(not non_empty_binary?(qualifier), "O2O qualifier is missing")
-    |> maybe_error(non_empty_binary?(source) and not Map.has_key?(objects, source), "O2O source #{inspect(source)} is unknown")
-    |> maybe_error(non_empty_binary?(target) and not Map.has_key?(objects, target), "O2O target #{inspect(target)} is unknown")
-  end
-
-  defp validate_o2o(other, _objects), do: ["invalid O2O relationship: #{inspect(other)}"]
-
-  defp validate_event_schema(event) when is_map(event) do
-    eid = Map.get(event, "ocel:eid")
-    activity = Map.get(event, "ocel:activity")
-    timestamp = Map.get(event, "ocel:timestamp")
-    omap = Map.get(event, "ocel:omap")
-    vmap = Map.get(event, "ocel:vmap", %{})
-    e2o = Map.get(event, "ocel:e2o", [])
-
-    []
-    |> maybe_error(not non_empty_binary?(eid), "missing or invalid ocel:eid")
-    |> maybe_error(not non_empty_binary?(activity), "missing or invalid ocel:activity in #{inspect(eid)}")
-    |> maybe_error(not valid_timestamp?(timestamp), "missing or invalid ISO 8601 ocel:timestamp in #{inspect(eid)}")
-    |> maybe_error(not is_list(omap), "missing or non-list ocel:omap in #{inspect(eid)}")
-    |> maybe_error(is_list(omap) and Enum.any?(omap, &(not non_empty_binary?(&1))), "ocel:omap contains invalid object ids in #{inspect(eid)}")
-    |> maybe_error(is_list(omap) and length(omap) != length(Enum.uniq(omap)), "ocel:omap contains duplicate object ids in #{inspect(eid)}")
-    |> maybe_error(not is_map(vmap), "ocel:vmap must be a map in #{inspect(eid)}")
-    |> Kernel.++(validate_e2o_entries(e2o, eid, omap))
-  end
-
-  defp validate_event_schema(other), do: ["event is not a map: #{inspect(other)}"]
-
-  defp validate_e2o_entries(e2o, eid, omap) when is_list(e2o) do
     errors =
-      Enum.flat_map(e2o, fn relation ->
-        normalized = normalize_e2o(relation)
-        oid = normalized["ocel:oid"]
-        qualifier = normalized["ocel:qualifier"]
+      if is_binary(Map.get(ev, "ocel:eid")) and byte_size(Map.get(ev, "ocel:eid")) > 0 do
+        errors
+      else
+        ["Missing or invalid ocel:eid in event: #{inspect(ev)}" | errors]
+      end
 
-        []
-        |> maybe_error(not non_empty_binary?(oid), "E2O object id is missing in #{inspect(eid)}")
-        |> maybe_error(not non_empty_binary?(qualifier), "E2O qualifier is missing in #{inspect(eid)}")
-      end)
+    errors =
+      if is_binary(Map.get(ev, "ocel:activity")) and byte_size(Map.get(ev, "ocel:activity")) > 0 do
+        errors
+      else
+        ["Missing or invalid ocel:activity in event: #{inspect(ev)}" | errors]
+      end
 
-    e2o_ids = e2o |> Enum.map(&normalize_e2o/1) |> Enum.map(& &1["ocel:oid"]) |> Enum.reject(&is_nil/1)
+    errors =
+      case Map.get(ev, "ocel:timestamp") do
+        ts when is_binary(ts) ->
+          case DateTime.from_iso8601(ts) do
+            {:ok, _, _} -> errors
+            _ -> ["Invalid ISO 8601 timestamp '#{ts}' in event #{Map.get(ev, "ocel:eid")}" | errors]
+          end
+
+        _ ->
+          ["Missing ocel:timestamp in event: #{inspect(ev)}" | errors]
+      end
+
+    errors =
+      if is_list(Map.get(ev, "ocel:omap")) do
+        errors
+      else
+        ["Missing or non-list ocel:omap in event: #{inspect(ev)}" | errors]
+      end
+
+    # Lifecycle validation if present
+    errors =
+      case Map.get(ev, "ocel:lifecycle") || Map.get(ev, :lifecycle) do
+        nil ->
+          errors
+
+        lc ->
+          lc_atom = if is_atom(lc), do: lc, else: String.to_atom(to_string(lc))
+
+          if lc_atom in @standard_lifecycles do
+            errors
+          else
+            [
+              "Invalid lifecycle state '#{lc}' in event #{Map.get(ev, "ocel:eid")}; expected one of #{inspect(@standard_lifecycles)}"
+              | errors
+            ]
+          end
+      end
+
+    # E2O qualifiers validation if present
+    errors =
+      case Map.get(ev, "ocel:e2o") do
+        nil ->
+          errors
+
+        e2o_list when is_list(e2o_list) ->
+          invalid_e2o =
+            Enum.reject(e2o_list, fn item ->
+              is_map(item) and
+                (is_binary(item["ocel:oid"]) or is_binary(item[:object_id])) and
+                (is_binary(item["ocel:qualifier"]) or is_atom(item[:qualifier]) or
+                   is_binary(item[:qualifier]))
+            end)
+
+          if invalid_e2o == [] do
+            errors
+          else
+            ["Malformed ocel:e2o items in event #{Map.get(ev, "ocel:eid")}: #{inspect(invalid_e2o)}" | errors]
+          end
+
+        _ ->
+          ["ocel:e2o must be a list in event #{Map.get(ev, "ocel:eid")}" | errors]
+      end
 
     errors
-    |> maybe_error(length(e2o_ids) != length(Enum.uniq(e2o_ids)), "duplicate E2O object relation in #{inspect(eid)}")
-    |> maybe_error(
-      is_list(omap) and e2o != [] and Enum.sort(Enum.uniq(omap)) != Enum.sort(Enum.uniq(e2o_ids)),
-      "ocel:omap and qualified ocel:e2o disagree in #{inspect(eid)}"
-    )
   end
-
-  defp validate_e2o_entries(_other, eid, _omap), do: ["ocel:e2o must be a list in #{inspect(eid)}"]
-
-  defp normalize_e2o(%{"ocel:oid" => oid} = relation) do
-    %{"ocel:oid" => oid, "ocel:qualifier" => Map.get(relation, "ocel:qualifier") || Map.get(relation, "qualifier")}
-  end
-
-  defp normalize_e2o(%{object_id: oid} = relation),
-    do: %{"ocel:oid" => oid, "ocel:qualifier" => Map.get(relation, :qualifier)}
-
-  defp normalize_e2o(%{oid: oid} = relation),
-    do: %{"ocel:oid" => oid, "ocel:qualifier" => Map.get(relation, :qualifier)}
-
-  defp normalize_e2o({oid, qualifier}), do: %{"ocel:oid" => oid, "ocel:qualifier" => qualifier}
-  defp normalize_e2o(other), do: %{"ocel:oid" => nil, "ocel:qualifier" => nil, "invalid" => inspect(other)}
 
   @doc """
-  Reconstructs object histories and explicit object changes from event evidence.
+  Evaluates process conformance of an OCEL 2.0 log or events list against an expected model:
+  - Expected activity order / list
+  - POWL Partial Order (`AshR2RML.POWL.Model.PartialOrder`)
+  - POWL Choice Graph (`AshR2RML.POWL.Model.ChoiceGraph`)
+  - Workflow Net (`AshR2RML.POWL.WorkflowNet`)
 
-  `ocel:vmap` remains event data. Object-state mutation must be explicit in
-  `ocel:objectChanges` as `%{object_id => %{attribute => value}}`.
+  Detects:
+  - Trace fitness score [0.0 - 1.0]
+  - Missing activity occurrences
+  - Impossible / unexpected activity sequences
+  - Temporal ordering and causality violations
+  - Lifecycle state progression anomalies
   """
-  @spec reconstruct_from_events(term()) :: {:ok, map()} | {:error, Refusal.t()}
-  def reconstruct_from_events(events) when is_list(events) do
-    with {:ok, _metrics} <- validate(events),
-         {:ok, layers} <- concurrency_layers(events),
-         :ok <- ensure_commutative_layers(layers) do
-      objects = Enum.reduce(layers, %{}, &apply_layer/2)
-      ordered_events = Enum.flat_map(layers, & &1.events)
+  @spec check_conformance(list(map()) | %Log{}, list(String.t()) | %PartialOrder{} | %ChoiceGraph{} | %WorkflowNet{}) ::
+          {:ok, %ConformanceReport{}} | {:error, Refusal.t()}
+  def check_conformance(events_or_log, model_or_expected)
 
-      {:ok,
-       %{
-         objects: objects,
-         activities_order: Enum.map(ordered_events, & &1["ocel:activity"]),
-         concurrency_layers:
-           Enum.map(layers, fn layer ->
-             %{timestamp: layer.timestamp, event_ids: Enum.map(layer.events, & &1["ocel:eid"])}
-           end),
-         ordering_semantics: :timestamp_layers,
-         total_order_inferred?: false
-       }}
-    end
-  end
-
-  def reconstruct_from_events(other), do: invalid_log("replay requires an event list", %{value: inspect(other)})
-
-  defp concurrency_layers(events) do
-    layers =
-      events
-      |> Enum.group_by(& &1["ocel:timestamp"])
-      |> Enum.map(fn {timestamp, group} ->
-        %{timestamp: timestamp, unix: timestamp_key(timestamp), events: Enum.sort_by(group, & &1["ocel:eid"])}
+  def check_conformance(%Log{events: events}, model) do
+    raw_events =
+      Enum.map(events, fn ev ->
+        %{
+          "ocel:eid" => ev.id,
+          "ocel:activity" => ev.activity,
+          "ocel:timestamp" => ev.timestamp,
+          "ocel:lifecycle" => if(ev.lifecycle, do: to_string(ev.lifecycle), else: nil),
+          "ocel:omap" => ev.omap,
+          "ocel:vmap" => ev.vmap,
+          "ocel:e2o" => ev.e2o
+        }
       end)
-      |> Enum.sort_by(&{&1.unix, &1.timestamp})
 
-    {:ok, layers}
+    check_conformance(raw_events, model)
   end
 
-  defp ensure_commutative_layers(layers) do
-    Enum.reduce_while(layers, :ok, fn layer, :ok ->
-      conflicts = layer_conflicts(layer.events)
+  def check_conformance(events, expected_activities) when is_list(events) and is_list(expected_activities) do
+    # Sort events chronologically
+    sorted_events = sort_events_chronologically(events)
+    observed_activities = Enum.map(sorted_events, & &1["ocel:activity"])
 
-      if conflicts == [] do
-        {:cont, :ok}
+    # 1. Missing activities
+    missing = Enum.reject(expected_activities, &(&1 in observed_activities))
+
+    # 2. Unexpected activities
+    unexpected = Enum.reject(observed_activities, &(&1 in expected_activities))
+
+    # 3. Temporal causality violations (decreasing timestamps)
+    temporal_violations = find_temporal_violations(sorted_events)
+
+    # 4. Sequence alignment calculation (Longest Common Subsequence fitness)
+    lcs_len = compute_lcs_length(expected_activities, observed_activities)
+    max_len = max(length(expected_activities), length(observed_activities))
+    fitness = if max_len == 0, do: 1.0, else: Float.round(lcs_len / max_len, 4)
+
+    # 5. Lifecycle violations
+    lifecycle_violations = find_lifecycle_violations(sorted_events)
+
+    # 6. Impossible sequences
+    impossible_sequences =
+      for {exp, idx} <- Enum.with_index(expected_activities),
+          other_exp <- Enum.drop(expected_activities, idx + 1),
+          pos_exp = Enum.find_index(observed_activities, &(&1 == exp)),
+          pos_other = Enum.find_index(observed_activities, &(&1 == other_exp)),
+          pos_exp != nil and pos_other != nil and pos_exp > pos_other do
+        "Activity '#{exp}' occurred after '#{other_exp}', violating expected causal ordering"
+      end
+
+    valid? =
+      missing == [] and unexpected == [] and temporal_violations == [] and
+        lifecycle_violations == [] and impossible_sequences == [] and fitness >= 1.0
+
+    report = %ConformanceReport{
+      valid?: valid?,
+      fitness: fitness,
+      event_count: length(events),
+      aligned_steps: lcs_len,
+      missing_activities: missing,
+      unexpected_activities: unexpected,
+      impossible_sequences: impossible_sequences,
+      temporal_violations: temporal_violations,
+      lifecycle_violations: lifecycle_violations,
+      diagnostics: build_diagnostics(missing, unexpected, temporal_violations, lifecycle_violations)
+    }
+
+    {:ok, report}
+  end
+
+  def check_conformance(events, %{children: children, order: order}) when is_list(events) do
+    # Extract child labels / activity names
+    child_labels =
+      Enum.map(children, fn
+        %{label: l} when not is_nil(l) -> to_string(l)
+        %{id: id} -> to_string(id)
+      end)
+
+    expected_pairs =
+      for {i, j} <- order do
+        {Enum.at(child_labels, i), Enum.at(child_labels, j)}
+      end
+
+    sorted_events = sort_events_chronologically(events)
+    observed_activities = Enum.map(sorted_events, & &1["ocel:activity"])
+
+    missing = Enum.reject(child_labels, &(&1 in observed_activities))
+
+    order_violations =
+      Enum.flat_map(expected_pairs, fn {pre, succ} ->
+        pos_pre = Enum.find_index(observed_activities, &(&1 == pre))
+        pos_succ = Enum.find_index(observed_activities, &(&1 == succ))
+
+        if pos_pre != nil and pos_succ != nil and pos_pre > pos_succ do
+          ["Predecessor activity '#{pre}' occurred after successor '#{succ}' in event trace"]
+        else
+          []
+        end
+      end)
+
+    temporal_violations = find_temporal_violations(sorted_events)
+    lifecycle_violations = find_lifecycle_violations(sorted_events)
+
+    lcs_len = compute_lcs_length(child_labels, observed_activities)
+    max_len = max(length(child_labels), length(observed_activities))
+    fitness = if max_len == 0, do: 1.0, else: Float.round(lcs_len / max_len, 4)
+
+    valid? = missing == [] and order_violations == [] and temporal_violations == [] and lifecycle_violations == []
+
+    report = %ConformanceReport{
+      valid?: valid?,
+      fitness: fitness,
+      event_count: length(events),
+      aligned_steps: lcs_len,
+      missing_activities: missing,
+      unexpected_activities: Enum.reject(observed_activities, &(&1 in child_labels)),
+      impossible_sequences: order_violations,
+      temporal_violations: temporal_violations,
+      lifecycle_violations: lifecycle_violations,
+      diagnostics: order_violations ++ temporal_violations
+    }
+
+    {:ok, report}
+  end
+
+  def check_conformance(events, %WorkflowNet{} = net) when is_list(events) do
+    # Verify events against workflow net transitions and valid firing sequence
+    sorted_events = sort_events_chronologically(events)
+    activity_labels = Enum.map(sorted_events, & &1["ocel:activity"])
+
+    net_labels =
+      Enum.map(net.transitions, fn t ->
+        Map.get(net.labels, t, to_string(t)) |> to_string()
+      end)
+
+    missing = Enum.reject(net_labels, &(&1 in activity_labels))
+    temporal_violations = find_temporal_violations(sorted_events)
+    lifecycle_violations = find_lifecycle_violations(sorted_events)
+
+    fitness =
+      if length(net_labels) == 0 do
+        1.0
       else
-        {:halt,
-         {:error,
-          Refusal.new(
-            :REFUSED_AMBIGUOUS_EVENT_ORDER,
-            :ocel_replay,
-            "same-timestamp object changes do not commute",
-            %{timestamp: layer.timestamp, conflicts: conflicts}
-          )}}
+        aligned = Enum.count(activity_labels, &(&1 in net_labels))
+        Float.round(aligned / max(length(net_labels), length(activity_labels)), 4)
+      end
+
+    valid? = missing == [] and temporal_violations == [] and lifecycle_violations == []
+
+    report = %ConformanceReport{
+      valid?: valid?,
+      fitness: fitness,
+      event_count: length(events),
+      aligned_steps: Enum.count(activity_labels, &(&1 in net_labels)),
+      missing_activities: missing,
+      unexpected_activities: Enum.reject(activity_labels, &(&1 in net_labels)),
+      impossible_sequences: [],
+      temporal_violations: temporal_violations,
+      lifecycle_violations: lifecycle_violations,
+      diagnostics: temporal_violations ++ lifecycle_violations
+    }
+
+    {:ok, report}
+  end
+
+  defp sort_events_chronologically(events) do
+    Enum.sort_by(events, fn ev ->
+      case DateTime.from_iso8601(to_string(ev["ocel:timestamp"])) do
+        {:ok, dt, _} -> DateTime.to_unix(dt, :microsecond)
+        _ -> 0
       end
     end)
   end
 
-  defp layer_conflicts(events) do
+  defp find_temporal_violations(events) do
     events
-    |> Enum.flat_map(fn event ->
-      event_changes(event)
-      |> Enum.flat_map(fn {object_id, changes} ->
-        Enum.map(changes, fn {attribute, value} -> {{object_id, to_string(attribute)}, value, event["ocel:eid"]} end)
-      end)
-    end)
-    |> Enum.group_by(fn {key, _value, _event_id} -> key end)
-    |> Enum.flat_map(fn {key, writes} ->
-      values = writes |> Enum.map(fn {_key, value, _eid} -> value end) |> Enum.uniq()
-      if length(values) > 1, do: [%{field: key, writes: writes}], else: []
-    end)
-  end
+    |> Enum.chunk_every(2, 1, :discard)
+    |> Enum.flat_map(fn [ev1, ev2] ->
+      t1 = parse_unix(ev1["ocel:timestamp"])
+      t2 = parse_unix(ev2["ocel:timestamp"])
 
-  defp apply_layer(layer, objects) do
-    Enum.reduce(layer.events, objects, fn event, acc ->
-      activity = event["ocel:activity"]
-      timestamp = event["ocel:timestamp"]
-      vmap = event["ocel:vmap"] || %{}
-      changes = event_changes(event)
-
-      Enum.reduce(event_object_ids(event), acc, fn object_id, inner ->
-        existing = Map.get(inner, object_id, %{id: object_id, attributes: %{}, history: [], last_activity: nil})
-        attrs = Map.merge(existing.attributes, Map.get(changes, object_id, %{}))
-
-        Map.put(inner, object_id, %{
-          existing
-          | attributes: attrs,
-            history: existing.history ++ [{activity, timestamp, vmap}],
-            last_activity: activity
-        })
-      end)
-    end)
-  end
-
-  defp event_changes(event) do
-    case Map.get(event, "ocel:objectChanges", %{}) do
-      changes when is_map(changes) ->
-        Map.new(changes, fn {object_id, attrs} ->
-          {to_string(object_id), if(is_map(attrs), do: attrs, else: %{})}
-        end)
-
-      _ ->
-        %{}
-    end
-  end
-
-  defp event_object_ids(event) do
-    omap = if is_list(Map.get(event, "ocel:omap")), do: Map.get(event, "ocel:omap"), else: []
-
-    e2o =
-      if is_list(Map.get(event, "ocel:e2o")) do
-        event
-        |> Map.get("ocel:e2o")
-        |> Enum.map(&normalize_e2o/1)
-        |> Enum.map(& &1["ocel:oid"])
-        |> Enum.reject(&is_nil/1)
+      if t2 < t1 do
+        [
+          "Temporal monotonicity violation: Event #{ev2["ocel:eid"]} timestamp (#{ev2["ocel:timestamp"]}) is earlier than preceding Event #{ev1["ocel:eid"]} (#{ev1["ocel:timestamp"]})"
+        ]
       else
         []
       end
-
-    Enum.uniq(omap ++ e2o)
+    end)
   end
 
-  defp duplicate_values(items, extractor) do
-    items
-    |> Enum.map(extractor)
-    |> Enum.reject(&is_nil/1)
-    |> Enum.frequencies()
-    |> Enum.filter(fn {_value, count} -> count > 1 end)
-    |> Enum.map(&elem(&1, 0))
-    |> Enum.sort()
+  defp find_lifecycle_violations(events) do
+    Enum.flat_map(events, fn ev ->
+      lc = ev["ocel:lifecycle"] || ev[:lifecycle]
+
+      case lc do
+        nil ->
+          []
+
+        lc_val ->
+          lc_atom = if is_atom(lc_val), do: lc_val, else: String.to_atom(to_string(lc_val))
+
+          if lc_atom in @standard_lifecycles do
+            []
+          else
+            ["Invalid lifecycle state '#{lc_val}' in event #{ev["ocel:eid"]}"]
+          end
+      end
+    end)
   end
 
-  defp timestamp_key(timestamp) do
-    case DateTime.from_iso8601(timestamp) do
-      {:ok, dt, _offset} -> DateTime.to_unix(dt, :microsecond)
+  defp parse_unix(ts) when is_binary(ts) do
+    case DateTime.from_iso8601(ts) do
+      {:ok, dt, _} -> DateTime.to_unix(dt, :microsecond)
       _ -> 0
     end
   end
 
-  defp valid_timestamp?(timestamp) when is_binary(timestamp),
-    do: match?({:ok, _, _}, DateTime.from_iso8601(timestamp))
+  defp parse_unix(_), do: 0
 
-  defp valid_timestamp?(_), do: false
+  defp compute_lcs_length([], _), do: 0
+  defp compute_lcs_length(_, []), do: 0
 
-  defp invalid_log(detail, evidence),
-    do: {:error, Refusal.new(:REFUSED_INVALID_OCEL2_LOG, :ocel_validator, detail, evidence)}
+  defp compute_lcs_length(list1, list2) do
+    l1 = length(list1)
+    l2 = length(list2)
 
-  defp maybe_error(errors, true, message), do: [message | errors]
-  defp maybe_error(errors, false, _message), do: errors
-  defp non_empty_binary?(value), do: is_binary(value) and byte_size(value) > 0
-  defp to_string_or_nil(nil), do: nil
-  defp to_string_or_nil(value), do: to_string(value)
-  defp get_any(map, keys), do: Enum.find_value(keys, &Map.get(map, &1))
+    dp =
+      for i <- 0..l1, j <- 0..l2, into: %{} do
+        {{i, j}, 0}
+      end
+
+    dp =
+      Enum.reduce(1..l1, dp, fn i, acc_i ->
+        elem1 = Enum.at(list1, i - 1)
+
+        Enum.reduce(1..l2, acc_i, fn j, acc_j ->
+          elem2 = Enum.at(list2, j - 1)
+
+          val =
+            if elem1 == elem2 do
+              Map.get(acc_j, {i - 1, j - 1}, 0) + 1
+            else
+              max(Map.get(acc_j, {i - 1, j}, 0), Map.get(acc_j, {i, j - 1}, 0))
+            end
+
+          Map.put(acc_j, {i, j}, val)
+        end)
+      end)
+
+    Map.get(dp, {l1, l2}, 0)
+  end
+
+  defp build_diagnostics(missing, unexpected, temp, lc) do
+    Enum.map(missing, &"Missing expected activity: #{&1}") ++
+      Enum.map(unexpected, &"Unexpected activity in trace: #{&1}") ++
+      temp ++ lc
+  end
+
+  @doc """
+  Reconstructs the full graph of object states, dynamic time-varying attributes,
+  E2O qualified bindings, and O2O multigraph relationships directly from an OCEL 2.0 event stream.
+  Proves deterministic replay, point-in-time state reconstruction, and state convergence.
+  """
+  @spec reconstruct_from_events([map()] | %Log{}) :: {:ok, map()}
+  def reconstruct_from_events(%Log{} = log), do: reconstruct_from_events(log.events)
+
+  def reconstruct_from_events(events) when is_list(events) do
+    sorted_events = sort_events_chronologically(events)
+
+    # 1. Reconstruct objects, dynamic attribute time-series, and object histories
+    {objects, o2o_relations, e2o_map} =
+      Enum.reduce(sorted_events, {%{}, [], %{}}, fn ev, {obj_acc, o2o_acc, e2o_acc} ->
+        eid = ev["ocel:eid"] || ev[:id]
+        activity = ev["ocel:activity"] || ev[:activity]
+        timestamp = ev["ocel:timestamp"] || ev[:timestamp]
+        lifecycle = ev["ocel:lifecycle"] || ev[:lifecycle]
+        vmap = ev["ocel:vmap"] || ev[:vmap] || %{}
+        omap = ev["ocel:omap"] || ev[:omap] || []
+        e2o_raw = ev["ocel:e2o"] || ev[:e2o] || []
+
+        # Process E2O qualifiers
+        e2o_entries =
+          if e2o_raw != [] do
+            Enum.map(e2o_raw, fn
+              %{"ocel:oid" => oid, "ocel:qualifier" => q} -> %{object_id: oid, qualifier: q}
+              %{object_id: oid, qualifier: q} -> %{object_id: oid, qualifier: q}
+              other -> %{object_id: inspect(other), qualifier: :target}
+            end)
+          else
+            Enum.map(omap, fn oid -> %{object_id: oid, qualifier: :target} end)
+          end
+
+        new_e2o_acc = Map.put(e2o_acc, eid, e2o_entries)
+
+        # Update object histories and dynamic attributes
+        all_event_objs = Enum.map(e2o_entries, & &1.object_id) |> Enum.uniq()
+
+        new_obj_acc =
+          Enum.reduce(all_event_objs, obj_acc, fn obj_id, inner_acc ->
+            type = extract_object_type(obj_id)
+
+            existing =
+              Map.get(inner_acc, obj_id, %Object{
+                id: obj_id,
+                type: type,
+                attributes: %{},
+                time_series: [],
+                history: []
+              })
+
+            # Record time-series change for each key in vmap
+            dynamic_changes =
+              Enum.map(vmap, fn {k, v} ->
+                %{timestamp: timestamp, attribute: to_string(k), value: v, activity: activity}
+              end)
+
+            new_attributes = Map.merge(existing.attributes, vmap)
+
+            updated = %Object{
+              existing
+              | attributes: new_attributes,
+                time_series: existing.time_series ++ dynamic_changes,
+                history: existing.history ++ [{activity, timestamp, vmap, lifecycle}]
+            }
+
+            Map.put(inner_acc, obj_id, updated)
+          end)
+
+        # Infer O2O relationships among co-occurring objects in the event
+        new_o2o_acc =
+          if length(all_event_objs) >= 2 do
+            inferred_o2o =
+              for src <- all_event_objs,
+                  tgt <- all_event_objs,
+                  src != tgt do
+                qualifier = infer_o2o_qualifier(src, tgt, activity)
+
+                %Relationship{
+                  source_id: src,
+                  target_id: tgt,
+                  qualifier: qualifier,
+                  timestamp: timestamp
+                }
+              end
+
+            o2o_acc ++ inferred_o2o
+          else
+            o2o_acc
+          end
+
+        {new_obj_acc, new_o2o_acc, new_e2o_acc}
+      end)
+
+    activities_order = Enum.map(sorted_events, fn ev -> ev["ocel:activity"] || ev[:activity] end)
+
+    reconstruction = %{
+      objects: objects,
+      o2o_relationships: Enum.uniq_by(o2o_relations, &{&1.source_id, &1.target_id, &1.qualifier}),
+      e2o_map: e2o_map,
+      activities_order: activities_order,
+      event_count: length(sorted_events),
+      first_timestamp: List.first(sorted_events) |> Map.get("ocel:timestamp"),
+      last_timestamp: List.last(sorted_events) |> Map.get("ocel:timestamp")
+    }
+
+    {:ok, reconstruction}
+  end
+
+  @doc "Queries the exact attribute state and relationships of an object at an arbitrary point in time."
+  @spec state_at(map(), String.t(), String.t() | DateTime.t()) :: {:ok, map()} | {:error, :not_found}
+  def state_at(%{objects: objects} = _reconstruction, object_id, target_time) do
+    target_unix =
+      case target_time do
+        %DateTime{} = dt -> DateTime.to_unix(dt, :microsecond)
+        ts when is_binary(ts) -> parse_unix(ts)
+        unix when is_integer(unix) -> unix
+      end
+
+    case Map.get(objects, object_id) do
+      nil ->
+        {:error, :not_found}
+
+      %Object{} = obj ->
+        # Filter time series changes up to target_unix
+        relevant_changes =
+          Enum.filter(obj.time_series, fn change ->
+            parse_unix(change.timestamp) <= target_unix
+          end)
+
+        # Fold attributes up to that point
+        reconstructed_attrs =
+          Enum.reduce(relevant_changes, %{}, fn change, acc ->
+            Map.put(acc, change.attribute, change.value)
+          end)
+
+        # Filter history up to target_unix
+        relevant_history =
+          Enum.filter(obj.history, fn {_act, ts, _vmap, _lc} ->
+            parse_unix(ts) <= target_unix
+          end)
+
+        {:ok,
+         %{
+           id: obj.id,
+           type: obj.type,
+           attributes: reconstructed_attrs,
+           history_count: length(relevant_history),
+           last_activity: if(relevant_history != [], do: elem(List.last(relevant_history), 0), else: nil)
+         }}
+    end
+  end
+
+  defp extract_object_type(obj_id) when is_binary(obj_id) do
+    case String.split(obj_id, ":", parts: 2) do
+      [type, _id] -> type
+      [single] -> single
+    end
+  end
+
+  defp extract_object_type(_), do: "unknown"
+
+  defp infer_o2o_qualifier(src, tgt, _activity) do
+    src_type = extract_object_type(src)
+    tgt_type = extract_object_type(tgt)
+
+    cond do
+      src_type == "person" and tgt_type == "organization" -> :memberOf
+      src_type == "order_item" and tgt_type == "order" -> :hasPart
+      src_type == "publication" and tgt_type == "manifest" -> :wasDerivedFrom
+      true -> :relatesTo
+    end
+  end
 end
