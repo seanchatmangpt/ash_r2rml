@@ -11,7 +11,7 @@ spark_locals_without_parens = [
 
 [
   import_deps: [:ash],
-  plugins: [Spark.Formatter],
+  plugins: [AshR2RML.Formatter, Spark.Formatter],
   inputs: ["{mix,.formatter}.exs", "{config,lib,test}/**/*.{ex,exs}"],
   line_length: 120,
   trailing_comma: true,
