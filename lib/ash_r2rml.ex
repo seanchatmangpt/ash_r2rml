@@ -66,6 +66,9 @@ defmodule AshR2RML do
   @doc "Admit and identify a SPARQL query without executing it."
   defdelegate admit_sparql(query), to: AshR2RML.SPARQL.Query, as: :admit
 
+  @doc "Load and admit a SPARQL .rq query file from disk."
+  defdelegate load_sparql_file(path), to: AshR2RML.SPARQL.Query, as: :load_file
+
   @doc "Explore all supplied lawful SPARQL execution candidates without prematurely selecting among them."
   def plan_sparql(query, opts \\ []), do: AshR2RML.SPARQL.explore(query, opts)
 

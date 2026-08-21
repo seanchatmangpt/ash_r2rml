@@ -23,6 +23,21 @@ defmodule AshR2RML.SPARQL.Query do
           sha256: String.t()
         }
 
+  @spec load_file(String.t(), keyword()) :: {:ok, t()} | {:error, Refusal.t()}
+  def load_file(file_path, _opts \\ []) when is_binary(file_path) do
+    case File.read(file_path) do
+      {:ok, content} -> admit(content)
+      {:error, reason} ->
+        {:error,
+         Refusal.new(
+           :REFUSED_UNPROVEN_EQUIVALENCE,
+           :sparql_query,
+           "failed to read SPARQL file from disk: #{inspect(reason)}",
+           %{path: file_path}
+         )}
+    end
+  end
+
   @spec admit(String.t() | Elixir.SPARQL.Query.t()) :: {:ok, t()} | {:error, Refusal.t()}
   def admit(%Elixir.SPARQL.Query{query_string: source} = parsed) when is_binary(source) do
     {:ok,
@@ -33,6 +48,7 @@ defmodule AshR2RML.SPARQL.Query do
        sha256: sha256(source)
      }}
   end
+
   def admit(%Elixir.SPARQL.Query{} = parsed, source) when is_binary(source) do
     {:ok,
      %__MODULE__{
@@ -41,16 +57,6 @@ defmodule AshR2RML.SPARQL.Query do
        form: parsed.form,
        sha256: sha256(source)
      }}
-  end
-
-  def admit(%Elixir.SPARQL.Query{} = parsed) do
-    {:error,
-     Refusal.new(
-       :REFUSED_UNPROVEN_EQUIVALENCE,
-       :sparql_query,
-       "parsed SPARQL query has no lexical query identity",
-       %{form: parsed.form}
-     )}
   end
 
   def admit(source) when is_binary(source) do
