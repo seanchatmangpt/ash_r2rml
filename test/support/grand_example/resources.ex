@@ -4,10 +4,9 @@
 
 defmodule AshR2RML.GrandExample.Types.SemVer do
   @moduledoc """
-  Custom Ash semantic version scalar type with standards-valid XSD datatype representation.
+  Custom Ash semantic version scalar type with standards-valid XSD datatype representation for test suites.
   """
   use Ash.Type
-
   use AshR2RML.Type,
     xsd_datatype: "http://www.w3.org/2001/XMLSchema#string"
 
@@ -50,14 +49,14 @@ defmodule AshR2RML.GrandExample.Organization do
     extensions: [AshR2RML]
 
   r2rml do
-    class_iri("https://schema.org/Organization")
-    subject_template("https://schema.org/Organization/{id}")
-    table_name("schema_organizations")
+    class_iri "https://schema.org/Organization"
+    subject_template "https://schema.org/Organization/{id}"
+    table_name "schema_organizations"
 
-    attribute_mappings([
+    attribute_mappings [
       {:name, "https://schema.org/name"},
       {:version, "https://schema.org/version"}
-    ])
+    ]
   end
 
   attributes do
@@ -74,14 +73,14 @@ defmodule AshR2RML.GrandExample.Person do
     extensions: [AshR2RML]
 
   r2rml do
-    class_iri("https://schema.org/Person")
-    subject_template("https://schema.org/Person/{id}")
-    table_name("schema_people")
+    class_iri "https://schema.org/Person"
+    subject_template "https://schema.org/Person/{id}"
+    table_name "schema_people"
 
-    attribute_mappings([
+    attribute_mappings [
       {:name, "https://schema.org/name"},
       {:email, "https://schema.org/email"}
-    ])
+    ]
   end
 
   attributes do
@@ -107,15 +106,15 @@ defmodule AshR2RML.GrandExample.SemanticManifest do
     extensions: [AshR2RML]
 
   r2rml do
-    class_iri("https://schema.org/Dataset")
-    subject_template("https://schema.org/Dataset/{id}")
-    table_name("schema_datasets")
+    class_iri "https://schema.org/Dataset"
+    subject_template "https://schema.org/Dataset/{id}"
+    table_name "schema_datasets"
 
-    attribute_mappings([
+    attribute_mappings [
       {:title, "https://schema.org/headline"},
       {:status, "https://schema.org/creativeWorkStatus"},
       {:published_turtle, "https://schema.org/text"}
-    ])
+    ]
   end
 
   attributes do

@@ -4,11 +4,11 @@
 
 defmodule AshR2RML.GrandExample.SubReactors.InputVerifier do
   @moduledoc """
-  Sub-Reactor composed inside the Grand Publishing Reactor to validate input resource modules.
+  Sub-Reactor composed inside the Grand Publishing Reactor for testing compose step integration.
   """
   use Reactor
 
-  input(:resources)
+  input :resources
 
   step :validate_resource_list do
     argument :resources, input(:resources)
