@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 ash_r2ml contributors <https://github.com/seanchatmangpt/ash_r2ml/graphs/contributors>
+#
 # SPDX-License-Identifier: MIT
 
 defmodule AshR2ml.Graph do
@@ -171,16 +173,18 @@ defmodule AshR2ml.SHACL do
       "sh:class <#{destination.class_iri}> ]"
   end
 
+  defp datatype_for(nil), do: nil
+
   defp datatype_for(type) do
-    case type do
-      :string -> "http://www.w3.org/2001/XMLSchema#string"
-      :integer -> "http://www.w3.org/2001/XMLSchema#integer"
-      :float -> "http://www.w3.org/2001/XMLSchema#double"
-      :decimal -> "http://www.w3.org/2001/XMLSchema#decimal"
-      :boolean -> "http://www.w3.org/2001/XMLSchema#boolean"
-      :date -> "http://www.w3.org/2001/XMLSchema#date"
-      :utc_datetime -> "http://www.w3.org/2001/XMLSchema#dateTime"
-      :utc_datetime_usec -> "http://www.w3.org/2001/XMLSchema#dateTime"
+    case Ash.Type.get_type(type) do
+      Ash.Type.String -> "http://www.w3.org/2001/XMLSchema#string"
+      Ash.Type.Integer -> "http://www.w3.org/2001/XMLSchema#integer"
+      Ash.Type.Float -> "http://www.w3.org/2001/XMLSchema#double"
+      Ash.Type.Decimal -> "http://www.w3.org/2001/XMLSchema#decimal"
+      Ash.Type.Boolean -> "http://www.w3.org/2001/XMLSchema#boolean"
+      Ash.Type.Date -> "http://www.w3.org/2001/XMLSchema#date"
+      Ash.Type.UtcDatetime -> "http://www.w3.org/2001/XMLSchema#dateTime"
+      Ash.Type.UtcDatetimeUsec -> "http://www.w3.org/2001/XMLSchema#dateTime"
       _ -> nil
     end
   end
