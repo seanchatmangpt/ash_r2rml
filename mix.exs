@@ -161,6 +161,7 @@ defmodule AshNeo4j.MixProject do
       {:excoveralls, "~> 0.18.0", only: [:dev, :test]},
       {:mix_audit, ">= 0.0.0", only: [:dev, :test], runtime: false},
       {:benchee, "~> 1.3", only: [:dev, :test]},
+      {:reactor, ">= 0.9.0", optional: true},
       {:usage_rules, "~> 1.2", optional: true}
     ]
   end

@@ -4,11 +4,10 @@
 
 defmodule AshR2RML.Datatype.Registry do
   @moduledoc """
-  Loss-aware built-in datatype correspondence.
+  Loss-aware built-in and custom datatype correspondence.
 
-  Unknown Ash types are never stringified implicitly. A caller may supply an
-  explicit RDF datatype override for a custom type; otherwise resolution returns
-  `UNSUPPORTED_ASH_TYPE`.
+  Unknown Ash types are never stringified implicitly. Custom Ash types implementing
+  `AshR2RML.Type` are automatically resolved via `xsd_datatype/0`.
   """
 
   alias AshR2RML.Mapping.Datatype
@@ -80,6 +79,16 @@ defmodule AshR2RML.Datatype.Registry do
            %{rdf_datatype: rdf_override}
          )}
 
+      is_atom(ash_type) and Code.ensure_loaded?(ash_type) and function_exported?(ash_type, :xsd_datatype, 0) ->
+        rdf_datatype = ash_type.xsd_datatype()
+
+        {:ok,
+         %Datatype{
+           ash_type: ash_type,
+           rdf_datatype: rdf_datatype,
+           storage_type: storage_override || :text
+         }}
+
       Map.has_key?(@builtins, normalized) ->
         {rdf_datatype, storage} = Map.fetch!(@builtins, normalized)
 
@@ -95,14 +104,17 @@ defmodule AshR2RML.Datatype.Registry do
          Refusal.new(
            :UNSUPPORTED_ASH_TYPE,
            ash_type,
-           "Ash type has no admitted RDF datatype contract; supply an explicit mapping",
+           "Ash type has no admitted RDF datatype contract; supply an explicit mapping or implement AshR2RML.Type",
            %{normalized_type: normalized}
          )}
     end
   end
 
   @spec supported?(term()) :: boolean()
-  def supported?(ash_type), do: Map.has_key?(@builtins, normalize_ash_type(ash_type))
+  def supported?(ash_type) do
+    (is_atom(ash_type) and Code.ensure_loaded?(ash_type) and function_exported?(ash_type, :xsd_datatype, 0)) or
+      Map.has_key?(@builtins, normalize_ash_type(ash_type))
+  end
 
   @spec builtin_contracts() :: map()
   def builtin_contracts, do: @builtins
