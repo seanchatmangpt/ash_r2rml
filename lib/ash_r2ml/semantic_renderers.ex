@@ -22,13 +22,21 @@ defmodule AshR2ml.Semantic.Ash do
         end)
       end)
 
-    {:ok, Enum.map_join(resources, "\n\n", &render_resource(&1, resources)) <> join_generated(association_modules)}
+    {:ok,
+     Enum.map_join(resources, "\n\n", &render_resource(&1, resources)) <>
+       join_generated(association_modules)}
   end
 
   defp render_resource(resource, resources) do
-    attributes = Enum.map_join(resource.attributes, "\n", &render_attribute/1)
-    relationships = Enum.map_join(resource.relationships, "\n", &render_relationship(resource, &1, resources))
-    identities = Enum.map_join(resource.identities, "\n", &render_identity/1)
+    attributes = Enum.map_join(resource.attributes, "\n", &render_attribute(resource, &1))
+    relationships =
+      Enum.map_join(resource.relationships, "\n", &render_relationship(resource, &1, resources))
+
+    identities =
+      resource.identities
+      |> Enum.reject(& &1.primary?)
+      |> Enum.map_join("\n", &render_identity/1)
+
     repo = if resource.repo_module, do: "    repo #{module_name(resource.repo_module)}\n", else: ""
 
     """
@@ -62,12 +70,17 @@ defmodule AshR2ml.Semantic.Ash do
     |> String.trim()
   end
 
-  defp render_attribute(attribute) do
+  defp render_attribute(resource, attribute) do
+    primary? = primary_key?(resource, attribute.name)
+
     options = [
-      "allow_nil?: #{inspect(attribute.nullable)}",
+      "allow_nil?: #{inspect(if(primary?, do: false, else: attribute.nullable))}",
       "public?: true",
-      if(attribute.identity?, do: "primary_key?: true", else: nil),
-      if(attribute.column != to_string(attribute.name), do: "source: #{inspect(String.to_atom(attribute.column))}", else: nil)
+      if(primary?, do: "primary_key?: true", else: nil),
+      if(attribute.column != to_string(attribute.name),
+        do: "source: #{inspect(String.to_atom(attribute.column))}",
+        else: nil
+      )
     ]
     |> Enum.reject(&is_nil/1)
     |> Enum.join(", ")
@@ -75,9 +88,7 @@ defmodule AshR2ml.Semantic.Ash do
     "    attribute #{inspect(attribute.name)}, #{ash_type(attribute.ash_type)}, #{options}"
   end
 
-  defp render_identity(identity) do
-    "    identity #{inspect(identity.name)}, #{inspect(identity.keys)}"
-  end
+  defp render_identity(identity), do: "    identity #{inspect(identity.name)}, #{inspect(identity.keys)}"
 
   defp identity_block(""), do: ""
   defp identity_block(body), do: "  identities do\n#{body}\n  end\n\n"
@@ -110,6 +121,8 @@ defmodule AshR2ml.Semantic.Ash do
     """
         many_to_many #{inspect(rel.name)}, #{module_name(destination.module)} do
           through #{through}
+          source_attribute #{inspect(rel.source_key)}
+          destination_attribute #{inspect(rel.destination_key)}
           source_attribute_on_join_resource #{inspect(String.to_atom(rel.source_join_column))}
           destination_attribute_on_join_resource #{inspect(String.to_atom(rel.destination_join_column))}
           public? true
@@ -118,7 +131,8 @@ defmodule AshR2ml.Semantic.Ash do
     |> String.trim_trailing()
   end
 
-  defp render_relationship(_resource, %Relationship{storage_strategy: :association_resource}, _resources), do: ""
+  defp render_relationship(_resource, %Relationship{storage_strategy: :association_resource}, _resources),
+    do: ""
 
   defp render_join_resource(resource, rel, resources) do
     destination = resource_by_class!(resources, rel.target_class)
@@ -153,16 +167,28 @@ defmodule AshR2ml.Semantic.Ash do
     |> String.trim()
   end
 
+  defp primary_key?(resource, attribute_name) do
+    case Enum.find(resource.identities, & &1.primary?) do
+      nil -> false
+      identity -> attribute_name in identity.keys
+    end
+  end
+
   defp untyped_attribute_mappings(resource) do
-    for attribute <- resource.attributes, is_nil(attribute.datatype_iri), do: {attribute.name, attribute.predicate_iri}
+    for attribute <- resource.attributes,
+        is_nil(attribute.datatype_iri),
+        do: {attribute.name, attribute.predicate_iri}
   end
 
   defp typed_attribute_mappings(resource) do
-    for attribute <- resource.attributes, not is_nil(attribute.datatype_iri), do: {attribute.name, attribute.predicate_iri, attribute.datatype_iri}
+    for attribute <- resource.attributes,
+        not is_nil(attribute.datatype_iri),
+        do: {attribute.name, attribute.predicate_iri, attribute.datatype_iri}
   end
 
-  defp association_module(_resource, %{association_resource: explicit}, _destination) when not is_nil(explicit),
-    do: module_name(explicit)
+  defp association_module(_resource, %{association_resource: explicit}, _destination)
+       when not is_nil(explicit),
+       do: module_name(explicit)
 
   defp association_module(resource, rel, destination) do
     source_parts = module_parts(resource.module)
@@ -179,7 +205,12 @@ defmodule AshR2ml.Semantic.Ash do
   defp module_parts(module) when is_binary(module), do: String.split(module, ".", trim: true)
   defp module_name(module) when is_atom(module), do: inspect(module)
   defp module_name(module) when is_binary(module), do: module
-  defp ash_type(type) when is_atom(type) and type in [:string, :boolean, :integer, :float, :decimal, :date, :utc_datetime, :utc_datetime_usec, :uuid], do: inspect(type)
+
+  defp ash_type(type)
+       when is_atom(type) and
+              type in [:string, :boolean, :integer, :float, :decimal, :date, :utc_datetime, :utc_datetime_usec, :uuid],
+       do: inspect(type)
+
   defp ash_type(type) when is_atom(type), do: inspect(type)
   defp ash_type(type), do: inspect(type)
 
@@ -216,11 +247,14 @@ defmodule AshR2ml.Semantic.SQL do
   end
 
   defp identity_constraints(resource) do
-    resource.identities
-    |> Enum.with_index()
-    |> Enum.map(fn {identity, index} ->
-      columns = identity.keys |> Enum.map(&attribute_column!(resource, &1)) |> Enum.map_join(", ", &quote_ident/1)
-      kind = if identity.primary? or index == 0, do: "PRIMARY KEY", else: "UNIQUE"
+    Enum.map(resource.identities, fn identity ->
+      columns =
+        identity.keys
+        |> Enum.map(&attribute_column!(resource, &1))
+        |> Enum.map_join(", ", &quote_ident/1)
+
+      kind = if identity.primary?, do: "PRIMARY KEY", else: "UNIQUE"
+
       "CONSTRAINT #{quote_ident(resource.table <> "_" <> to_string(identity.name))} #{kind} (#{columns})"
     end)
   end
@@ -293,7 +327,10 @@ defmodule AshR2ml.Semantic.R2RML do
   end
 
   defp render_attribute(attribute) do
-    datatype = if attribute.datatype_iri, do: "; rr:datatype <#{attribute.datatype_iri}>", else: ""
+    datatype =
+      if attribute.datatype_iri,
+        do: "; rr:datatype <#{attribute.datatype_iri}>",
+        else: ""
 
     "  rr:predicateObjectMap [ rr:predicate <#{attribute.predicate_iri}>; " <>
       "rr:objectMap [ rr:column #{literal(attribute.column)}#{datatype} ] ]"
@@ -337,7 +374,13 @@ defmodule AshR2ml.Semantic.R2RML do
   defp module_parts(module) when is_binary(module), do: String.split(module, ".", trim: true)
 
   defp literal(value) do
-    escaped = value |> to_string() |> String.replace("\\", "\\\\") |> String.replace("\"", "\\\"") |> String.replace("\n", "\\n")
+    escaped =
+      value
+      |> to_string()
+      |> String.replace("\\", "\\\\")
+      |> String.replace("\"", "\\\"")
+      |> String.replace("\n", "\\n")
+
     "\"#{escaped}\""
   end
 end
@@ -357,7 +400,10 @@ defmodule AshR2ml.Semantic.SHACL do
   defp render_resource(resource, resources) do
     attributes = Enum.map(resource.attributes, &attribute_shape/1)
     relationships = Enum.map(resource.relationships, &relationship_shape(&1, resources))
-    suffix = if attributes ++ relationships == [], do: "", else: ";\n" <> Enum.join(attributes ++ relationships, ";\n")
+    suffix =
+      if attributes ++ relationships == [],
+        do: "",
+        else: ";\n" <> Enum.join(attributes ++ relationships, ";\n")
 
     "<#{resource.shape_iri}> a sh:NodeShape ;\n" <>
       "  sh:targetClass <#{resource.class_iri}>#{suffix} .\n"
