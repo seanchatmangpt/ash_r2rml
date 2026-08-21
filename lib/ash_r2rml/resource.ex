@@ -32,7 +32,7 @@ end
 defmodule AshR2RML.Dsl.Reference do
   @moduledoc false
   @enforce_keys [:relationship, :predicate_iri]
-  defstruct [:relationship, :predicate_iri, :inverse_predicate, :__identifier__, :__spark_metadata__]
+  defstruct [:relationship, :predicate_iri, :inverse_predicate, :guard_class, :__identifier__, :__spark_metadata__, direction: :outgoing]
 end
 
 defmodule AshR2RML.Dsl.SparqlQuery do
@@ -99,7 +99,9 @@ defmodule AshR2RML.Resource do
     schema: [
       relationship: [type: :atom, required: true],
       predicate_iri: [type: :string, required: true],
-      inverse_predicate: [type: :string]
+      inverse_predicate: [type: :string],
+      direction: [type: {:one_of, [:outgoing, :incoming]}, default: :outgoing],
+      guard_class: [type: :string]
     ]
   }
 
@@ -379,7 +381,7 @@ defmodule AshR2RML.Resource.Persist do
             inverse_predicate: reference.inverse_predicate,
             parent_resource: metadata.destination,
             joins: Map.get(metadata, :joins, []),
-            metadata: metadata
+            metadata: Map.merge(metadata, %{direction: reference.direction, guard_class: reference.guard_class})
           }
 
           {:cont, {:ok, [mapping | acc]}}
