@@ -47,7 +47,8 @@ defmodule AshR2ml.OntologyFirstCompilerTest do
         },
         %{
           iri: "https://xaas.example/resource/Account",
-          class_iri: "https://spec.edmcouncil.org/fibo/ontology/FBC/FinancialPositions/FinancialPositions/Account",
+          class_iri:
+            "https://spec.edmcouncil.org/fibo/ontology/FBC/FinancialPositions/FinancialPositions/Account",
           shape_iri: "https://xaas.example/shapes/AccountShape",
           module: "Xaas.Account",
           repo_module: "Xaas.Repo",
@@ -95,7 +96,8 @@ defmodule AshR2ml.OntologyFirstCompilerTest do
             %{
               name: :organization,
               predicate_iri: "https://www.w3.org/ns/org#memberOf",
-              source_class: "https://spec.edmcouncil.org/fibo/ontology/FBC/FinancialPositions/FinancialPositions/Account",
+              source_class:
+                "https://spec.edmcouncil.org/fibo/ontology/FBC/FinancialPositions/FinancialPositions/Account",
               target_class: "https://www.w3.org/ns/org#Organization",
               min_count: 1,
               max_count: 1,
@@ -104,11 +106,13 @@ defmodule AshR2ml.OntologyFirstCompilerTest do
               destination_key: :id
             }
           ],
-          actions: [
-            %{name: :reconcile, kind: :update, provenance: %{source: "xaas-profile"}}
-          ],
+          actions: [%{name: :reconcile, kind: :update, provenance: %{source: "xaas-profile"}}],
           policies: [
-            %{name: :account_access, effect: :authorize, odrl_iri: "http://www.w3.org/ns/odrl/2/permission"}
+            %{
+              name: :account_access,
+              effect: :authorize,
+              odrl_iri: "http://www.w3.org/ns/odrl/2/permission"
+            }
           ]
         }
       ]
@@ -117,7 +121,7 @@ defmodule AshR2ml.OntologyFirstCompilerTest do
     Map.merge(base, overrides)
   end
 
-  test "one admitted profile manufactures Ash, PostgreSQL, R2RML and SHACL projections" do
+  test "one admitted profile manufactures Ash, Ecto, PostgreSQL, R2RML and SHACL" do
     assert {:ok, compilation} = AshR2ml.Compiler.compile(profile())
 
     assert compilation.status == :PARTIAL_ALIVE
@@ -127,12 +131,19 @@ defmodule AshR2ml.OntologyFirstCompilerTest do
     assert compilation.ash_source =~ "data_layer: AshPostgres.DataLayer"
     assert compilation.ash_source =~ "belongs_to :organization, Xaas.Organization"
 
+    assert compilation.ecto_migration =~ "use Ecto.Migration"
+    assert compilation.ecto_migration =~ "references(:\"organizations\""
+
     assert compilation.postgres_ddl =~ ~s(CREATE TABLE IF NOT EXISTS "accounts")
-    assert compilation.postgres_ddl =~ ~s(FOREIGN KEY ("organization_id") REFERENCES "organizations" ("id"))
+
+    assert compilation.postgres_ddl =~
+             ~s(FOREIGN KEY ("organization_id") REFERENCES "organizations" ("id"))
 
     assert compilation.r2rml =~ "rr:TriplesMap"
     assert compilation.r2rml =~ "rr:parentTriplesMap <#Xaas_Organization>"
-    assert compilation.r2rml =~ ~s(rr:joinCondition [ rr:child "organization_id"; rr:parent "id" ])
+
+    assert compilation.r2rml =~
+             ~s(rr:joinCondition [ rr:child "organization_id"; rr:parent "id" ])
 
     assert compilation.shacl =~ "sh:targetClass <https://www.w3.org/ns/org#Organization>"
     assert compilation.shacl =~ "sh:minCount 1; sh:maxCount 1"
@@ -141,6 +152,7 @@ defmodule AshR2ml.OntologyFirstCompilerTest do
     assert compilation.receipt.relationships_admitted == 1
     assert compilation.receipt.actions_admitted == 1
     assert compilation.receipt.policies_admitted == 1
+    assert is_binary(compilation.receipt.ecto_sha256)
     assert compilation.receipt.query_parity == :UNKNOWN
     refute AshR2ml.Compiler.cutover_ready?(compilation.receipt)
   end
@@ -150,7 +162,9 @@ defmodule AshR2ml.OntologyFirstCompilerTest do
       update_in(profile(), [:resources], fn resources ->
         Enum.map(resources, fn
           %{module: "Xaas.Account"} = account ->
-            put_in(account, [:relationships, Access.at(0), :storage_strategy], nil)
+            update_in(account, [:relationships], fn [relationship | rest] ->
+              [Map.put(relationship, :storage_strategy, nil) | rest]
+            end)
 
           other ->
             other
@@ -167,55 +181,99 @@ defmodule AshR2ml.OntologyFirstCompilerTest do
 
     assert {:error, compilation} = AshR2ml.Compiler.compile(ambiguous)
     assert compilation.status == :REFUSED
-
-    assert Enum.any?(compilation.refusals, fn refusal ->
-             refusal.code == :REFUSED_UNPROVEN_EQUIVALENCE
-           end)
+    assert Enum.any?(compilation.refusals, &(&1.code == :REFUSED_UNPROVEN_EQUIVALENCE))
   end
 
-  test "unknown datatype is refused unless both Ash and PostgreSQL projections are supplied" do
+  test "unknown datatype is refused unless its projections are explicitly admitted" do
     broken =
-      update_in(profile(), [:resources], fn resources ->
-        Enum.map(resources, fn
-          %{module: "Xaas.Account"} = account ->
-            update_in(account, [:attributes], fn attrs ->
-              Enum.map(attrs, fn
-                %{name: :balance} = balance ->
-                  balance
-                  |> Map.put(:datatype_iri, "https://example.com/datatype/Money")
-                  |> Map.delete(:ash_type)
-                  |> Map.delete(:postgres_type)
+      update_resource("Xaas.Account", fn account ->
+        update_in(account, [:attributes], fn attrs ->
+          Enum.map(attrs, fn
+            %{name: :balance} = balance ->
+              balance
+              |> Map.put(:datatype_iri, "https://example.com/datatype/Money")
+              |> Map.delete(:ash_type)
+              |> Map.delete(:postgres_type)
 
-                other ->
-                  other
-              end)
-            end)
-
-          other ->
-            other
+            other ->
+              other
+          end)
         end)
       end)
 
     assert {:error, compilation} = AshR2ml.Compiler.compile(broken)
-
-    assert Enum.any?(compilation.refusals, fn refusal ->
-             refusal.code == :REFUSED_DATATYPE_CAST_NOT_LOSSLESS
-           end)
+    assert Enum.any?(compilation.refusals, &(&1.code == :REFUSED_DATATYPE_CAST_NOT_LOSSLESS))
   end
 
-  test "projection identity is deterministic independent of input resource ordering" do
+  test "single-column R2RML parent join identity cannot be inferred from a composite identity" do
+    broken =
+      update_resource("Xaas.Organization", fn organization ->
+        organization
+        |> Map.put(:subject_template, "https://xaas.example/id/organization/{id}/{name}")
+        |> Map.put(:identities, [%{name: :primary, keys: [:id, :name], primary?: true}])
+      end)
+
+    assert {:error, compilation} = AshR2ml.Compiler.compile(broken)
+    assert Enum.any?(compilation.refusals, &(&1.code == :REFUSED_R2RML_JOIN_KEY_NOT_UNIQUE))
+  end
+
+  test "multiple primary semantic identities are refused" do
+    broken =
+      update_resource("Xaas.Organization", fn organization ->
+        Map.put(organization, :identities, [
+          %{name: :primary, keys: [:id], primary?: true},
+          %{name: :alternate_primary, keys: [:name], primary?: true}
+        ])
+      end)
+
+    assert {:error, compilation} = AshR2ml.Compiler.compile(broken)
+    assert Enum.any?(compilation.refusals, &(&1.code == :REFUSED_NON_UNIQUE_SEMANTIC_IDENTITY))
+  end
+
+  test "SHACL minCount and relational nullability must remain concordant" do
+    broken =
+      update_resource("Xaas.Account", fn account ->
+        update_in(account, [:attributes], fn attrs ->
+          Enum.map(attrs, fn
+            %{name: :balance} = balance -> Map.put(balance, :nullable, true)
+            other -> other
+          end)
+        end)
+      end)
+
+    assert {:error, compilation} = AshR2ml.Compiler.compile(broken)
+    assert Enum.any?(compilation.refusals, &(&1.code == :REFUSED_CARDINALITY_STORAGE_MISMATCH))
+  end
+
+  test "projection identity is deterministic independent of input ordering" do
     assert {:ok, first} = AshR2ml.Compiler.compile(profile())
-    reversed = update_in(profile(), [:resources], &Enum.reverse/1)
-    assert {:ok, second} = AshR2ml.Compiler.compile(reversed)
+
+    reordered =
+      profile()
+      |> update_in([:resources], fn resources ->
+        resources
+        |> Enum.reverse()
+        |> Enum.map(fn resource ->
+          resource
+          |> Map.update(:attributes, [], &Enum.reverse/1)
+          |> Map.update(:relationships, [], &Enum.reverse/1)
+          |> Map.update(:identities, [], &Enum.reverse/1)
+          |> Map.update(:actions, [], &Enum.reverse/1)
+          |> Map.update(:policies, [], &Enum.reverse/1)
+        end)
+      end)
+
+    assert {:ok, second} = AshR2ml.Compiler.compile(reordered)
 
     assert first.receipt.ir_sha256 == second.receipt.ir_sha256
     assert first.receipt.ash_sha256 == second.receipt.ash_sha256
+    assert first.receipt.ecto_sha256 == second.receipt.ecto_sha256
     assert first.receipt.postgres_sha256 == second.receipt.postgres_sha256
     assert first.receipt.r2rml_sha256 == second.receipt.r2rml_sha256
     assert first.receipt.shacl_sha256 == second.receipt.shacl_sha256
   end
 
-  test "cutover requires externally observed SQL/SPARQL and Neo4j/Postgres parity witnesses" do
+  test "cutover requires external parity witnesses and separate authority" do
     assert {:ok, compilation} = AshR2ml.Compiler.compile(profile())
 
     receipt =
@@ -233,5 +291,14 @@ defmodule AshR2ml.OntologyFirstCompilerTest do
     assert receipt.neo4j_postgres_parity == :VERIFIED
     refute AshR2ml.Compiler.cutover_ready?(receipt)
     assert :cutover_authority in receipt.blocked
+  end
+
+  defp update_resource(module, fun) do
+    update_in(profile(), [:resources], fn resources ->
+      Enum.map(resources, fn
+        %{module: ^module} = resource -> fun.(resource)
+        other -> other
+      end)
+    end)
   end
 end
