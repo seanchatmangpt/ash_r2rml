@@ -1,0 +1,11 @@
+# SPDX-FileCopyrightText: 2026 ash_r2rml contributors <https://github.com/seanchatmangpt/ash_r2rml/graphs/contributors>
+# SPDX-License-Identifier: MIT
+PREFIX p: <https://w3id.org/ash-r2rml/production#>
+SELECT ?subject_sha ?status ?receipt
+WHERE {
+  p:SemanticSubject a p:AdmittedSemanticSubject ; p:sha256 ?subject_sha .
+  p:ProductionAdmission a p:EvidenceAdmission ;
+    p:status ?status ;
+    p:receiptSha256 ?receipt .
+}
+ORDER BY ?subject_sha ?receipt

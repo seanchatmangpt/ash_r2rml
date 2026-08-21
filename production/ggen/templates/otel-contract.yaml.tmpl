@@ -1,0 +1,45 @@
+# SPDX-FileCopyrightText: 2026 ash_r2rml contributors <https://github.com/seanchatmangpt/ash_r2rml/graphs/contributors>
+# SPDX-License-Identifier: MIT
+# Projection contract for candidate {{ sha }}; not a collector secret/config with credentials.
+
+candidate_sha256: "{{ sha }}"
+observability_mode: "{{ observability }}"
+resource_attributes:
+  service.namespace: "ash-r2rml"
+  ash_r2rml.candidate.sha256: "{{ sha }}"
+required_events:
+  - admit
+  - construct
+  - route
+  - execute
+  - receipt
+  - replay
+  - refusal
+required_histograms:
+  - latency_ms
+  - queue_ms
+  - external_engine_ms
+  - replay_ms
+required_counters:
+  - admitted
+  - refused
+  - timeouts
+  - retries
+  - failovers
+required_gauges:
+  - inflight
+  - queue_depth
+  - healthy_cells
+forbidden_dynamic_labels:
+  - tenant_id
+  - raw_query
+  - iri
+  - secret
+  - token
+  - email
+  - subject_value
+max_dynamic_label_cardinality: 100
+receipt_correlation_required:
+  - semantic_subject_sha256
+  - compilation_receipt_sha256
+  - execution_receipt_sha256
