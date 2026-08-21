@@ -33,6 +33,23 @@ defmodule AshR2ML.Datatype.Registry do
     atom: {@xsd <> "string", :text}
   }
 
+  @ash_type_modules %{
+    "Elixir.Ash.Type.String" => :string,
+    "Elixir.Ash.Type.Boolean" => :boolean,
+    "Elixir.Ash.Type.Integer" => :integer,
+    "Elixir.Ash.Type.Float" => :float,
+    "Elixir.Ash.Type.Decimal" => :decimal,
+    "Elixir.Ash.Type.Date" => :date,
+    "Elixir.Ash.Type.Time" => :time,
+    "Elixir.Ash.Type.UtcDatetime" => :utc_datetime,
+    "Elixir.Ash.Type.UtcDatetimeUsec" => :utc_datetime_usec,
+    "Elixir.Ash.Type.NaiveDatetime" => :naive_datetime,
+    "Elixir.Ash.Type.NaiveDatetimeUsec" => :naive_datetime_usec,
+    "Elixir.Ash.Type.UUID" => :uuid,
+    "Elixir.Ash.Type.CiString" => :ci_string,
+    "Elixir.Ash.Type.Atom" => :atom
+  }
+
   @spec resolve(term(), String.t() | nil, term() | nil) ::
           {:ok, Datatype.t()} | {:error, Refusal.t()}
   def resolve(ash_type, rdf_override \\ nil, storage_override \\ nil) do
@@ -40,13 +57,11 @@ defmodule AshR2ML.Datatype.Registry do
 
     cond do
       is_binary(rdf_override) and absolute_iri?(rdf_override) ->
-        storage = storage_override || builtin_storage(normalized)
-
         {:ok,
          %Datatype{
            ash_type: ash_type,
            rdf_datatype: rdf_override,
-           storage_type: storage
+           storage_type: storage_override || builtin_storage(normalized)
          }}
 
       is_binary(rdf_override) ->
@@ -95,21 +110,11 @@ defmodule AshR2ML.Datatype.Registry do
   defp normalize_ash_type(type) when is_atom(type) do
     cond do
       Map.has_key?(@builtins, type) -> type
-      true -> normalize_module_name(type)
+      true -> Map.get(@ash_type_modules, Atom.to_string(type), type)
     end
   end
 
   defp normalize_ash_type(type), do: type
-
-  defp normalize_module_name(module) do
-    module
-    |> Atom.to_string()
-    |> String.trim_leading("Elixir.Ash.Type.")
-    |> Macro.underscore()
-    |> String.to_atom()
-  rescue
-    _ -> module
-  end
 
   defp absolute_iri?(value) do
     case URI.parse(value) do
