@@ -1,0 +1,32 @@
+# MESSAGE: every operational property needs an Ash name and either a datatype or a fully closed relationship contract
+PREFIX ar2: <https://ash-r2ml.dev/ns#>
+PREFIX sh: <http://www.w3.org/ns/shacl#>
+
+SELECT ?shape ?property ?missing WHERE {
+  ?shape a sh:NodeShape ; sh:property ?property .
+  {
+    FILTER NOT EXISTS { ?property ar2:ashName ?v }
+    BIND(ar2:ashName AS ?missing)
+  } UNION {
+    FILTER NOT EXISTS { ?property sh:datatype ?datatype }
+    FILTER NOT EXISTS { ?property sh:class ?target }
+    BIND(sh:datatype AS ?missing)
+  } UNION {
+    ?property sh:class ?target .
+    FILTER NOT EXISTS { ?property ar2:relationshipKind ?v }
+    BIND(ar2:relationshipKind AS ?missing)
+  } UNION {
+    ?property sh:class ?target .
+    FILTER NOT EXISTS { ?property ar2:targetModule ?v }
+    BIND(ar2:targetModule AS ?missing)
+  } UNION {
+    ?property sh:class ?target .
+    FILTER NOT EXISTS { ?property ar2:sourceKey ?v }
+    BIND(ar2:sourceKey AS ?missing)
+  } UNION {
+    ?property sh:class ?target .
+    FILTER NOT EXISTS { ?property ar2:destinationKey ?v }
+    BIND(ar2:destinationKey AS ?missing)
+  }
+}
+ORDER BY ?shape ?property ?missing
