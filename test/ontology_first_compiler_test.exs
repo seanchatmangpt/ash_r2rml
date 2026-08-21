@@ -121,11 +121,13 @@ defmodule AshR2ml.OntologyFirstCompilerTest do
     Map.merge(base, overrides)
   end
 
-  test "one admitted profile manufactures Ash, Ecto, PostgreSQL, R2RML and SHACL" do
+  test "one admitted profile converges on canonical mapping before all projections" do
     assert {:ok, compilation} = AshR2ml.Compiler.compile(profile())
 
     assert compilation.status == :PARTIAL_ALIVE
     assert compilation.standing == :constructed_not_actuated
+    assert %AshR2ML.Mapping.Bundle{} = compilation.mapping_bundle
+    assert length(compilation.mapping_bundle.resources) == 2
 
     assert compilation.ash_source =~ "defmodule Xaas.Account"
     assert compilation.ash_source =~ "data_layer: AshPostgres.DataLayer"
@@ -139,8 +141,14 @@ defmodule AshR2ml.OntologyFirstCompilerTest do
     assert compilation.postgres_ddl =~
              ~s(FOREIGN KEY ("organization_id") REFERENCES "organizations" ("id"))
 
+    organization_mapping =
+      Enum.find(compilation.mapping_bundle.resources, &(&1.ash_resource == "Xaas.Organization"))
+
+    organization_map_iri = AshR2ML.Mapping.mapping_identity(organization_mapping)
+
     assert compilation.r2rml =~ "rr:TriplesMap"
-    assert compilation.r2rml =~ "rr:parentTriplesMap <#Xaas_Organization>"
+    assert compilation.r2rml =~ "rr:parentTriplesMap <#{organization_map_iri}>"
+    refute compilation.r2rml =~ "<#Xaas_Organization>"
 
     assert compilation.r2rml =~
              ~s(rr:joinCondition [ rr:child "organization_id"; rr:parent "id" ])
@@ -152,7 +160,10 @@ defmodule AshR2ml.OntologyFirstCompilerTest do
     assert compilation.receipt.relationships_admitted == 1
     assert compilation.receipt.actions_admitted == 1
     assert compilation.receipt.policies_admitted == 1
+    assert is_binary(compilation.receipt.mapping_sha256)
     assert is_binary(compilation.receipt.ecto_sha256)
+    assert :canonical_mapping_ir in compilation.receipt.executed
+    assert :canonical_mapping_ir_projection in compilation.receipt.verified
     assert compilation.receipt.query_parity == :UNKNOWN
     refute AshR2ml.Compiler.cutover_ready?(compilation.receipt)
   end
@@ -166,8 +177,7 @@ defmodule AshR2ml.OntologyFirstCompilerTest do
               [Map.put(relationship, :storage_strategy, nil) | rest]
             end)
 
-          other ->
-            other
+          other -> other
         end)
       end)
 
@@ -195,8 +205,7 @@ defmodule AshR2ml.OntologyFirstCompilerTest do
               |> Map.delete(:ash_type)
               |> Map.delete(:postgres_type)
 
-            other ->
-              other
+            other -> other
           end)
         end)
       end)
@@ -266,6 +275,7 @@ defmodule AshR2ml.OntologyFirstCompilerTest do
     assert {:ok, second} = AshR2ml.Compiler.compile(reordered)
 
     assert first.receipt.ir_sha256 == second.receipt.ir_sha256
+    assert first.receipt.mapping_sha256 == second.receipt.mapping_sha256
     assert first.receipt.ash_sha256 == second.receipt.ash_sha256
     assert first.receipt.ecto_sha256 == second.receipt.ecto_sha256
     assert first.receipt.postgres_sha256 == second.receipt.postgres_sha256
