@@ -1,0 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_r2rml contributors <https://github.com/seanchatmangpt/ash_r2rml/graphs/contributors>
+# SPDX-License-Identifier: MIT
+
+[pack]
+name = "ash-r2rml-production"
+version = "0.1.0"
+description = "Production engineering projection pack for dynamic AshR2RML semantic inputs."
