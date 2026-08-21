@@ -29,9 +29,7 @@ defmodule AshR2ml.Admission do
 
   @spec admit(map()) :: {:ok, SemanticIR.t()} | {:error, [Refusal.t()]}
   def admit(profile) when is_map(profile) do
-    raw_resources = get(profile, :resources, [])
-
-    with {:ok, resources} <- normalize_resources(raw_resources),
+    with {:ok, resources} <- normalize_resources(get(profile, :resources, [])),
          [] <- verify_resources(resources) do
       {:ok,
        %SemanticIR{
@@ -48,31 +46,36 @@ defmodule AshR2ml.Admission do
 
   def admit(other) do
     {:error,
-     [Refusal.new(:REFUSED_UNPROVEN_EQUIVALENCE, :profile, "expected normalized application profile map", %{got: inspect(other)})]}
+     [
+       Refusal.new(
+         :REFUSED_UNPROVEN_EQUIVALENCE,
+         :profile,
+         "expected normalized application profile map",
+         %{got: inspect(other)}
+       )
+     ]}
   end
 
-  @doc "Returns the datatype correspondence used when the SHACL datatype closes the representation choice."
+  @doc "Returns the datatype correspondence used when SHACL closes the representation choice."
   def datatype_projection(datatype_iri), do: Map.get(@xsd, datatype_iri)
 
   defp normalize_resources(resources) when is_list(resources) do
-    Enum.reduce_while(resources, {:ok, []}, fn resource, {:ok, acc} ->
-      case normalize_resource(resource) do
-        {:ok, value} -> {:cont, {:ok, [value | acc]}}
+    Enum.reduce_while(resources, {:ok, []}, fn raw, {:ok, acc} ->
+      case normalize_resource(raw) do
+        {:ok, resource} -> {:cont, {:ok, [resource | acc]}}
         {:error, refusal} -> {:halt, {:error, [refusal]}}
       end
     end)
-    |> case do
-      {:ok, values} -> {:ok, Enum.reverse(values)}
-      error -> error
-    end
+    |> reverse_ok()
   end
 
   defp normalize_resources(_) do
-    {:error, [Refusal.new(:REFUSED_UNPROVEN_EQUIVALENCE, :resources, "profile resources must be a list")]}
+    {:error,
+     [Refusal.new(:REFUSED_UNPROVEN_EQUIVALENCE, :resources, "profile resources must be a list")]}
   end
 
   defp normalize_resource(raw) when is_map(raw) do
-    with {:ok, attrs} <- normalize_attributes(get(raw, :attributes, [])),
+    with {:ok, attributes} <- normalize_attributes(get(raw, :attributes, [])),
          {:ok, identities} <- normalize_identities(get(raw, :identities, [])),
          {:ok, relationships} <- normalize_relationships(get(raw, :relationships, [])) do
       {:ok,
@@ -85,7 +88,7 @@ defmodule AshR2ml.Admission do
          table: get(raw, :table),
          subject_template: get(raw, :subject_template),
          identities: identities,
-         attributes: attrs,
+         attributes: attributes,
          relationships: relationships,
          actions: normalize_actions(get(raw, :actions, [])),
          policies: normalize_policies(get(raw, :policies, [])),
@@ -94,8 +97,10 @@ defmodule AshR2ml.Admission do
     end
   end
 
-  defp normalize_resource(other),
-    do: {:error, Refusal.new(:REFUSED_UNMAPPED_RESOURCE_CLASS, other, "resource profile entry must be a map")}
+  defp normalize_resource(other) do
+    {:error,
+     Refusal.new(:REFUSED_UNMAPPED_RESOURCE_CLASS, other, "resource profile entry must be a map")}
+  end
 
   defp normalize_attributes(values) when is_list(values) do
     Enum.reduce_while(values, {:ok, []}, fn raw, {:ok, acc} ->
@@ -103,6 +108,7 @@ defmodule AshR2ml.Admission do
       projection = datatype_projection(datatype)
       ash_type = get(raw, :ash_type) || (projection && elem(projection, 0))
       postgres_type = get(raw, :postgres_type) || (projection && elem(projection, 1))
+      name = get(raw, :name)
       min_count = get(raw, :min_count, 0)
       max_count = get(raw, :max_count, 1)
 
@@ -112,7 +118,7 @@ defmodule AshR2ml.Admission do
            {:error,
             Refusal.new(
               :REFUSED_ATTRIBUTE_WITHOUT_PREDICATE,
-              get(raw, :name),
+              name,
               "admitted datatype property has no predicate IRI"
             )}}
 
@@ -121,15 +127,15 @@ defmodule AshR2ml.Admission do
            {:error,
             Refusal.new(
               :REFUSED_DATATYPE_CAST_NOT_LOSSLESS,
-              get(raw, :name),
-              "datatype has no known lossless Ash/PostgreSQL projection; provide both explicitly",
+              name,
+              "datatype has no admitted Ash/PostgreSQL projection; provide both explicitly",
               %{datatype_iri: datatype}
             )}}
 
         true ->
           attribute = %Attribute{
-            name: get(raw, :name),
-            column: get(raw, :column) || to_string(get(raw, :name)),
+            name: name,
+            column: get(raw, :column) || default_column(name),
             predicate_iri: get(raw, :predicate_iri),
             datatype_iri: datatype,
             ash_type: ash_type,
@@ -147,8 +153,9 @@ defmodule AshR2ml.Admission do
     |> reverse_ok()
   end
 
-  defp normalize_attributes(_),
-    do: {:error, Refusal.new(:REFUSED_UNPROVEN_EQUIVALENCE, :attributes, "attributes must be a list")}
+  defp normalize_attributes(_) do
+    {:error, Refusal.new(:REFUSED_UNPROVEN_EQUIVALENCE, :attributes, "attributes must be a list")}
+  end
 
   defp normalize_identities(values) when is_list(values) do
     values
@@ -164,8 +171,10 @@ defmodule AshR2ml.Admission do
     |> then(&{:ok, &1})
   end
 
-  defp normalize_identities(_),
-    do: {:error, Refusal.new(:REFUSED_NON_UNIQUE_SEMANTIC_IDENTITY, :identities, "identities must be a list")}
+  defp normalize_identities(_) do
+    {:error,
+     Refusal.new(:REFUSED_NON_UNIQUE_SEMANTIC_IDENTITY, :identities, "identities must be a list")}
+  end
 
   defp normalize_relationships(values) when is_list(values) do
     Enum.reduce_while(values, {:ok, []}, fn raw, {:ok, acc} ->
@@ -197,8 +206,10 @@ defmodule AshR2ml.Admission do
     |> reverse_ok()
   end
 
-  defp normalize_relationships(_),
-    do: {:error, Refusal.new(:REFUSED_UNPROVEN_EQUIVALENCE, :relationships, "relationships must be a list")}
+  defp normalize_relationships(_) do
+    {:error,
+     Refusal.new(:REFUSED_UNPROVEN_EQUIVALENCE, :relationships, "relationships must be a list")}
+  end
 
   defp normalize_actions(values) when is_list(values) do
     Enum.map(values, fn raw ->
@@ -231,9 +242,7 @@ defmodule AshR2ml.Admission do
   defp verify_resources(resources) do
     by_class = Map.new(resources, &{&1.class_iri, &1})
 
-    Enum.flat_map(resources, fn resource ->
-      verify_resource(resource, by_class)
-    end)
+    Enum.flat_map(resources, &verify_resource(&1, by_class))
   end
 
   defp verify_resource(resource, by_class) do
@@ -241,6 +250,9 @@ defmodule AshR2ml.Admission do
     |> require_iri(resource.class_iri, resource.module, :REFUSED_UNMAPPED_RESOURCE_CLASS)
     |> require_iri(resource.shape_iri, resource.module, :REFUSED_INVALID_IRI)
     |> require_iri(resource.iri, resource.module, :REFUSED_INVALID_IRI)
+    |> require_nonempty(resource.module, resource.module, "resource module is required")
+    |> require_nonempty(resource.table, resource.module, "relational table name is required")
+    |> require_nonempty(resource.subject_template, resource.module, "subject template is required")
     |> Kernel.++(verify_identity(resource))
     |> Kernel.++(verify_attributes(resource))
     |> Kernel.++(verify_relationships(resource, by_class))
@@ -258,23 +270,52 @@ defmodule AshR2ml.Admission do
 
   defp verify_identity(resource) do
     names = MapSet.new(resource.attributes, & &1.name)
-    primary = Enum.find(resource.identities, & &1.primary?) || List.first(resource.identities)
+    primaries = Enum.filter(resource.identities, & &1.primary?)
+    primary = List.first(primaries)
     duplicate_keysets = resource.identities |> Enum.map(&Enum.sort(&1.keys)) |> duplicated()
 
-    missing_keys = Enum.reject(primary.keys, &MapSet.member?(names, &1))
+    missing_keys =
+      resource.identities
+      |> Enum.flat_map(& &1.keys)
+      |> Enum.uniq()
+      |> Enum.reject(&MapSet.member?(names, &1))
 
     template_missing =
-      Enum.reject(primary.keys, fn key ->
-        attribute = Enum.find(resource.attributes, &(&1.name == key))
-        attribute && String.contains?(resource.subject_template || "", "{#{attribute.column}}")
-      end)
+      if primary do
+        Enum.reject(primary.keys, fn key ->
+          case find_attribute(resource, key) do
+            nil -> false
+            attribute -> String.contains?(resource.subject_template || "", "{#{attribute.column}}")
+          end
+        end)
+      else
+        []
+      end
 
     []
+    |> maybe_add(length(primaries) != 1, fn ->
+      Refusal.new(
+        :REFUSED_NON_UNIQUE_SEMANTIC_IDENTITY,
+        resource.module,
+        "exactly one primary semantic identity is required",
+        %{primary_count: length(primaries)}
+      )
+    end)
     |> maybe_add(missing_keys != [], fn ->
-      Refusal.new(:REFUSED_UNKNOWN_ATTRIBUTE, resource.module, "semantic identity references unknown attributes", %{keys: missing_keys})
+      Refusal.new(
+        :REFUSED_UNKNOWN_ATTRIBUTE,
+        resource.module,
+        "semantic identity references unknown attributes",
+        %{keys: missing_keys}
+      )
     end)
     |> maybe_add(duplicate_keysets != [], fn ->
-      Refusal.new(:REFUSED_NON_UNIQUE_SEMANTIC_IDENTITY, resource.module, "duplicate semantic identity key sets", %{keysets: duplicate_keysets})
+      Refusal.new(
+        :REFUSED_NON_UNIQUE_SEMANTIC_IDENTITY,
+        resource.module,
+        "duplicate semantic identity key sets",
+        %{keysets: duplicate_keysets}
+      )
     end)
     |> maybe_add(template_missing != [], fn ->
       Refusal.new(
@@ -287,19 +328,46 @@ defmodule AshR2ml.Admission do
   end
 
   defp verify_attributes(resource) do
-    Enum.flat_map(resource.attributes, fn attribute ->
+    names = Enum.map(resource.attributes, & &1.name)
+    columns = Enum.map(resource.attributes, & &1.column)
+
+    base =
       []
-      |> require_iri(attribute.predicate_iri, {resource.module, attribute.name}, :REFUSED_ATTRIBUTE_WITHOUT_PREDICATE)
-      |> require_iri(attribute.datatype_iri, {resource.module, attribute.name}, :REFUSED_DATATYPE_CAST_NOT_LOSSLESS)
-      |> maybe_add(attribute.max_count not in [nil, 1], fn ->
-        Refusal.new(
-          :REFUSED_CARDINALITY_STORAGE_MISMATCH,
-          {resource.module, attribute.name},
-          "multi-valued datatype properties require an explicit normalized storage projection",
-          %{max_count: attribute.max_count}
-        )
+      |> maybe_add(Enum.any?(names, &(not is_atom(&1))), fn ->
+        Refusal.new(:REFUSED_UNKNOWN_ATTRIBUTE, resource.module, "attribute names must be atoms")
       end)
-    end)
+      |> maybe_add(Enum.any?(columns, &(not nonempty_string?(&1))), fn ->
+        Refusal.new(:REFUSED_UNKNOWN_ATTRIBUTE, resource.module, "attribute columns must be non-empty strings")
+      end)
+      |> maybe_add(duplicated(names) != [], fn ->
+        Refusal.new(:REFUSED_UNKNOWN_ATTRIBUTE, resource.module, "duplicate attribute names", %{names: duplicated(names)})
+      end)
+      |> maybe_add(duplicated(columns) != [], fn ->
+        Refusal.new(:REFUSED_UNKNOWN_ATTRIBUTE, resource.module, "duplicate relational columns", %{columns: duplicated(columns)})
+      end)
+
+    base ++
+      Enum.flat_map(resource.attributes, fn attribute ->
+        []
+        |> require_iri(
+          attribute.predicate_iri,
+          {resource.module, attribute.name},
+          :REFUSED_ATTRIBUTE_WITHOUT_PREDICATE
+        )
+        |> require_iri(
+          attribute.datatype_iri,
+          {resource.module, attribute.name},
+          :REFUSED_DATATYPE_CAST_NOT_LOSSLESS
+        )
+        |> maybe_add(attribute.max_count not in [nil, 1], fn ->
+          Refusal.new(
+            :REFUSED_CARDINALITY_STORAGE_MISMATCH,
+            {resource.module, attribute.name},
+            "multi-valued datatype properties require an explicit normalized storage projection",
+            %{max_count: attribute.max_count}
+          )
+        end)
+      end)
   end
 
   defp verify_relationships(resource, by_class) do
@@ -307,7 +375,19 @@ defmodule AshR2ml.Admission do
       destination = Map.get(by_class, relationship.target_class)
 
       []
-      |> require_iri(relationship.predicate_iri, {resource.module, relationship.name}, :REFUSED_RELATIONSHIP_WITHOUT_TARGET_MAP)
+      |> require_iri(
+        relationship.predicate_iri,
+        {resource.module, relationship.name},
+        :REFUSED_RELATIONSHIP_WITHOUT_TARGET_MAP
+      )
+      |> maybe_add(relationship.source_class != resource.class_iri, fn ->
+        Refusal.new(
+          :REFUSED_UNPROVEN_EQUIVALENCE,
+          {resource.module, relationship.name},
+          "relationship source class must equal the enclosing admitted resource class",
+          %{expected: resource.class_iri, actual: relationship.source_class}
+        )
+      end)
       |> maybe_add(is_nil(destination), fn ->
         Refusal.new(
           :REFUSED_RELATIONSHIP_WITHOUT_TARGET_MAP,
@@ -320,22 +400,25 @@ defmodule AshR2ml.Admission do
     end)
   end
 
-  defp verify_strategy(_resource, relationship, nil) do
-    unresolved_strategy(relationship)
-  end
+  defp verify_strategy(_resource, _relationship, nil), do: []
 
   defp verify_strategy(resource, relationship, destination) do
-    unresolved_strategy(relationship) ++
-      case relationship.storage_strategy do
-        :foreign_key -> verify_foreign_key(resource, relationship, destination)
-        :join_table -> verify_join_table(resource, relationship, destination)
-        :association_resource -> verify_association_resource(relationship)
-        nil -> []
-      end
+    case relationship.storage_strategy do
+      :foreign_key -> verify_foreign_key(resource, relationship, destination)
+      :join_table -> verify_join_table(resource, relationship, destination)
+      :association_resource -> verify_association_resource(relationship)
+      nil -> []
+      _ ->
+        [
+          Refusal.new(
+            :REFUSED_CARDINALITY_STORAGE_MISMATCH,
+            {resource.module, relationship.name},
+            "unsupported relational storage strategy",
+            %{strategy: relationship.storage_strategy}
+          )
+        ]
+    end
   end
-
-  defp unresolved_strategy(%Relationship{storage_strategy: nil}), do: []
-  defp unresolved_strategy(_), do: []
 
   defp verify_foreign_key(resource, relationship, destination) do
     source_attr = find_attribute(resource, relationship.source_key)
@@ -343,16 +426,24 @@ defmodule AshR2ml.Admission do
 
     []
     |> maybe_add(is_nil(source_attr), fn ->
-      Refusal.new(:REFUSED_UNKNOWN_ATTRIBUTE, {resource.module, relationship.name}, "foreign-key source_key is not an admitted source attribute")
+      Refusal.new(
+        :REFUSED_UNKNOWN_ATTRIBUTE,
+        {resource.module, relationship.name},
+        "foreign-key source_key is not an admitted source attribute"
+      )
     end)
     |> maybe_add(is_nil(destination_attr), fn ->
-      Refusal.new(:REFUSED_UNKNOWN_ATTRIBUTE, {resource.module, relationship.name}, "foreign-key destination_key is not an admitted target attribute")
+      Refusal.new(
+        :REFUSED_UNKNOWN_ATTRIBUTE,
+        {resource.module, relationship.name},
+        "foreign-key destination_key is not an admitted target attribute"
+      )
     end)
-    |> maybe_add(destination_attr && not identity_key?(destination, relationship.destination_key), fn ->
+    |> maybe_add(destination_attr && not single_column_identity_key?(destination, relationship.destination_key), fn ->
       Refusal.new(
         :REFUSED_R2RML_JOIN_KEY_NOT_UNIQUE,
         {resource.module, relationship.name},
-        "R2RML parent join key must participate in an admitted unique identity",
+        "R2RML parent join key must itself be an admitted single-column unique identity",
         %{destination_key: relationship.destination_key}
       )
     end)
@@ -368,6 +459,7 @@ defmodule AshR2ml.Admission do
     ]
 
     missing = for {key, value} <- required, is_nil(value), do: key
+    primary_key = single_primary_key(resource)
 
     []
     |> maybe_add(missing != [], fn ->
@@ -378,11 +470,21 @@ defmodule AshR2ml.Admission do
         %{missing: missing}
       )
     end)
-    |> maybe_add(not identity_key?(resource, relationship.source_key), fn ->
-      Refusal.new(:REFUSED_R2RML_JOIN_KEY_NOT_UNIQUE, {resource.module, relationship.name}, "join-table source key must be unique")
+    |> maybe_add(primary_key != relationship.source_key, fn ->
+      Refusal.new(
+        :REFUSED_INVALID_SUBJECT_TEMPLATE,
+        {resource.module, relationship.name},
+        "join-table source key must be the resource's single-column primary semantic identity so its subject template can be projected losslessly",
+        %{primary_key: primary_key, source_key: relationship.source_key}
+      )
     end)
-    |> maybe_add(not identity_key?(destination, relationship.destination_key), fn ->
-      Refusal.new(:REFUSED_R2RML_JOIN_KEY_NOT_UNIQUE, {resource.module, relationship.name}, "join-table destination key must be unique")
+    |> maybe_add(not single_column_identity_key?(destination, relationship.destination_key), fn ->
+      Refusal.new(
+        :REFUSED_R2RML_JOIN_KEY_NOT_UNIQUE,
+        {resource.module, relationship.name},
+        "join-table destination key must itself be an admitted single-column unique identity",
+        %{destination_key: relationship.destination_key}
+      )
     end)
   end
 
@@ -403,14 +505,32 @@ defmodule AshR2ml.Admission do
   defp find_attribute(nil, _), do: nil
   defp find_attribute(resource, name), do: Enum.find(resource.attributes, &(&1.name == name))
 
-  defp identity_key?(nil, _), do: false
-  defp identity_key?(resource, key), do: Enum.any?(resource.identities, &(key in &1.keys))
+  defp single_column_identity_key?(nil, _), do: false
+
+  defp single_column_identity_key?(resource, key) do
+    Enum.any?(resource.identities, &(&1.keys == [key]))
+  end
+
+  defp single_primary_key(resource) do
+    case Enum.find(resource.identities, & &1.primary?) do
+      %Identity{keys: [key]} -> key
+      _ -> nil
+    end
+  end
 
   defp require_iri(acc, value, subject, code) do
     if absolute_iri?(value) do
       acc
     else
       acc ++ [Refusal.new(code, subject, "expected absolute IRI", %{value: value})]
+    end
+  end
+
+  defp require_nonempty(acc, value, subject, detail) do
+    if nonempty_string?(value) or is_atom(value) do
+      acc
+    else
+      acc ++ [Refusal.new(:REFUSED_UNPROVEN_EQUIVALENCE, subject, detail, %{value: value})]
     end
   end
 
@@ -436,10 +556,20 @@ defmodule AshR2ml.Admission do
   defp reverse_ok({:ok, values}), do: {:ok, Enum.reverse(values)}
   defp reverse_ok(other), do: other
 
+  defp default_column(name) when is_atom(name), do: Atom.to_string(name)
+  defp default_column(name) when is_binary(name), do: name
+  defp default_column(_), do: nil
+
+  defp nonempty_string?(value), do: is_binary(value) and value != ""
+
   defp normalize_strategy(nil), do: nil
-  defp normalize_strategy(value) when value in [:foreign_key, :join_table, :association_resource], do: value
-  defp normalize_strategy(value) when is_binary(value), do: String.to_existing_atom(value)
-  defp normalize_strategy(value), do: value
+  defp normalize_strategy(:foreign_key), do: :foreign_key
+  defp normalize_strategy(:join_table), do: :join_table
+  defp normalize_strategy(:association_resource), do: :association_resource
+  defp normalize_strategy("foreign_key"), do: :foreign_key
+  defp normalize_strategy("join_table"), do: :join_table
+  defp normalize_strategy("association_resource"), do: :association_resource
+  defp normalize_strategy(value), do: {:unsupported, value}
 
   defp get(map, key, default \\ nil) when is_map(map) do
     Map.get(map, key, Map.get(map, Atom.to_string(key), default))
