@@ -116,9 +116,25 @@ jobs:
       - name: Pull pinned official Ontop image
         run: docker pull ontop/ontop:5.5.0
 
+      - name: Supply pinned PostgreSQL JDBC driver to Ontop
+        env:
+          PGJDBC_VERSION: "42.7.13"
+          PGJDBC_SHA256: "6e0e4cc2d8cae902084f8a2b18728b073a6fd9d1f87c9d8bff8f298c18185b93"
+        run: |
+          set -euo pipefail
+          jdbc_dir="${RUNNER_TEMP}/ontop-jdbc"
+          jdbc_jar="${jdbc_dir}/postgresql-${PGJDBC_VERSION}.jar"
+          mkdir -p "${jdbc_dir}"
+          curl --fail --location --silent --show-error \
+            "https://repo1.maven.org/maven2/org/postgresql/postgresql/${PGJDBC_VERSION}/postgresql-${PGJDBC_VERSION}.jar" \
+            --output "${jdbc_jar}"
+          echo "${PGJDBC_SHA256}  ${jdbc_jar}" | sha256sum --check --strict
+
       - name: Execute RDF/SHACL → Postgres/R2RML → Ontop + Neo4j parity crown
         env:
           MIX_ENV: test
+          ASH_R2ML_ONTOP_JDBC_DIR: ${{ runner.temp }}/ontop-jdbc
+          ASH_R2ML_PGJDBC_SHA256: "6e0e4cc2d8cae902084f8a2b18728b073a6fd9d1f87c9d8bff8f298c18185b93"
         run: mix run test/integration/obda_crown.exs
 
       - name: Publish bounded parity receipt
