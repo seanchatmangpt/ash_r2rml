@@ -16,6 +16,10 @@ defmodule AshR2RML.ParityReceipt do
     :right_result_sha256,
     :fixture_sha256,
     :mapping_sha256,
+    :session_sha256,
+    :left_observation_sha256,
+    :right_observation_sha256,
+    :observed?,
     :verified?,
     :receipt_sha256,
     left_count: 0,
@@ -34,6 +38,10 @@ defmodule AshR2RML.ParityReceipt do
           right_result_sha256: String.t(),
           fixture_sha256: String.t() | nil,
           mapping_sha256: String.t() | nil,
+          session_sha256: String.t() | nil,
+          left_observation_sha256: String.t() | nil,
+          right_observation_sha256: String.t() | nil,
+          observed?: boolean(),
           verified?: boolean(),
           receipt_sha256: String.t(),
           left_count: non_neg_integer(),
@@ -50,6 +58,10 @@ defmodule AshR2RML.Parity do
   admitted SQL/SPARQL/Cypher queries, then pass their observed rows here. The
   comparator normalizes result multisets and emits a stable receipt that can be
   attached to `AshR2RML.CompilationReceipt`.
+
+  `:session_sha256` binds the result comparison to the exact DfCM semantic
+  session. Legacy callers may omit it, but strict DfCM witness admission will
+  refuse an unbound receipt for crown/cutover standing.
   """
 
   alias AshR2RML.ParityReceipt
@@ -61,6 +73,13 @@ defmodule AshR2RML.Parity do
     right = normalize_multiset(right_rows)
     left_hash = sha256(left)
     right_hash = sha256(right)
+    left_observation_sha256 = get(metadata, :left_observation_sha256)
+    right_observation_sha256 = get(metadata, :right_observation_sha256)
+
+    observed? =
+      get(metadata, :observed?) == true and
+        present_hash?(left_observation_sha256) and
+        present_hash?(right_observation_sha256)
 
     receipt = %ParityReceipt{
       kind: kind,
@@ -73,10 +92,28 @@ defmodule AshR2RML.Parity do
       right_result_sha256: right_hash,
       fixture_sha256: get(metadata, :fixture_sha256),
       mapping_sha256: get(metadata, :mapping_sha256),
+      session_sha256: get(metadata, :session_sha256),
+      left_observation_sha256: left_observation_sha256,
+      right_observation_sha256: right_observation_sha256,
+      observed?: observed?,
       verified?: left == right,
       left_count: length(left_rows),
       right_count: length(right_rows),
-      metadata: Map.drop(metadata, [:left_query, :right_query, "left_query", "right_query"])
+      metadata:
+        Map.drop(metadata, [
+          :left_query,
+          :right_query,
+          :session_sha256,
+          :left_observation_sha256,
+          :right_observation_sha256,
+          :observed?,
+          "left_query",
+          "right_query",
+          "session_sha256",
+          "left_observation_sha256",
+          "right_observation_sha256",
+          "observed?"
+        ])
     }
 
     %{receipt | receipt_sha256: sha256(canonical(Map.from_struct(receipt)))}
@@ -105,6 +142,8 @@ defmodule AshR2RML.Parity do
   defp canonical(tuple) when is_tuple(tuple), do: tuple |> Tuple.to_list() |> Enum.map(&canonical/1)
   defp canonical(value) when is_atom(value) and value not in [true, false, nil], do: Atom.to_string(value)
   defp canonical(value), do: value
+
+  defp present_hash?(value), do: is_binary(value) and value != ""
 
   defp query_hash(nil), do: nil
   defp query_hash(query), do: sha256(to_string(query))

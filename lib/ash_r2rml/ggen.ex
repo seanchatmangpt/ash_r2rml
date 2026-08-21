@@ -7,8 +7,9 @@ defmodule AshR2RML.Ggen do
   ggen-facing deterministic compilation bundle.
 
   `AshR2RML` does not invoke ggen or write files. It manufactures a path/content
-  graph so ggen can own rendering, filesystem actuation, migration versioning,
-  replay, and receipts without independently reconstructing semantic decisions.
+  graph plus an atomic publication plan so ggen can own rendering, filesystem
+  actuation, migration versioning, replay, and receipts without independently
+  reconstructing semantic decisions.
 
   Turtle and JSON-LD are alternate RDF input serializations. Both are admitted
   into the same normalized profile before manufacture so ggen never receives a
@@ -20,29 +21,46 @@ defmodule AshR2RML.Ggen do
   checked-in ontology/profile TTL is required for that path.
   """
 
-  alias AshR2RML.Compilation
+  alias AshR2RML.{Compilation, Manufacturing}
 
   @spec compile_bundle(map()) :: {:ok, map()} | {:error, Compilation.t() | term()}
   def compile_bundle(profile) do
-    with {:ok, compilation} <- AshR2RML.Compiler.compile(profile),
+    with {:ok, dfcm} <- AshR2RML.DfCM.Compiler.compile(profile),
+         compilation = dfcm.compilation,
          {:ok, receipt_json} <- encode_json(compilation.receipt),
+         {:ok, integrity_json} <- encode_json(dfcm.integrity_receipt),
          {:ok, catalog_json} <- encode_json(compilation.ir) do
+      files = %{
+        "generated/ash/ontology_resources.ex" => compilation.ash_source,
+        "generated/ecto/semantic_schema_migration.exs" => compilation.ecto_migration,
+        "generated/sql/semantic_schema.sql" => compilation.postgres_ddl,
+        "priv/r2rml/mapping.ttl" => compilation.r2rml,
+        "generated/shacl/operational-profile.ttl" => compilation.shacl,
+        "generated/catalog/resource-map.json" => catalog_json,
+        "receipts/semantic-compilation.json" => receipt_json,
+        "receipts/semantic-integrity.json" => integrity_json
+      }
+
       {:ok,
        %{
          status: :PARTIAL_ALIVE,
          standing: :construct_only,
          receipt: compilation.receipt,
-         files: %{
-           "generated/ash/ontology_resources.ex" => compilation.ash_source,
-           "generated/ecto/semantic_schema_migration.exs" => compilation.ecto_migration,
-           "generated/sql/semantic_schema.sql" => compilation.postgres_ddl,
-           "priv/r2rml/mapping.ttl" => compilation.r2rml,
-           "generated/shacl/operational-profile.ttl" => compilation.shacl,
-           "generated/catalog/resource-map.json" => catalog_json,
-           "receipts/semantic-compilation.json" => receipt_json
-         }
+         integrity_receipt: dfcm.integrity_receipt,
+         session_identity: dfcm.session_identity,
+         proof_classes: dfcm.proof_classes,
+         manufacturing_plan: Manufacturing.plan(files, dfcm.session_identity),
+         files: files
        }}
     end
+  end
+
+  @doc "Verify hashes reported by ggen for an isolated stage before atomic publication."
+  @spec verify_staged(map(), map()) ::
+          {:ok, AshR2RML.Manufacturing.VerificationReceipt.t()} | {:error, AshR2RML.Refusal.t()}
+  def verify_staged(%{manufacturing_plan: %AshR2RML.Manufacturing.Plan{} = plan}, observed_hashes)
+      when is_map(observed_hashes) do
+    Manufacturing.verify_staged(plan, observed_hashes)
   end
 
   @doc "Manufacture cloud-ggen TTL inputs directly from one or more Ash resources."
@@ -53,7 +71,8 @@ defmodule AshR2RML.Ggen do
   @doc "Parse an RDF/SHACL Turtle profile, then manufacture the same deterministic ggen bundle."
   @spec compile_turtle_bundle(String.t(), keyword()) :: {:ok, map()} | {:error, term()}
   def compile_turtle_bundle(turtle, opts \\ []) do
-    with {:ok, profile} <- AshR2RML.Ingestion.from_turtle(turtle, opts) do
+    with :ok <- AshR2RML.Bounds.admit_input(turtle, opts),
+         {:ok, profile} <- AshR2RML.Ingestion.from_turtle(turtle, opts) do
       compile_bundle(profile)
     end
   end
@@ -61,7 +80,8 @@ defmodule AshR2RML.Ggen do
   @doc "Parse a JSON-LD 1.1 RDF/SHACL profile, then manufacture the same deterministic ggen bundle."
   @spec compile_jsonld_bundle(String.t() | map() | list(), keyword()) :: {:ok, map()} | {:error, term()}
   def compile_jsonld_bundle(jsonld, opts \\ []) do
-    with {:ok, profile} <- AshR2RML.JSONLD.ingest(jsonld, opts) do
+    with :ok <- AshR2RML.Bounds.admit_input(jsonld, opts),
+         {:ok, profile} <- AshR2RML.JSONLD.ingest(jsonld, opts) do
       compile_bundle(profile)
     end
   end
