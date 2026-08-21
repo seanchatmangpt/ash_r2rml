@@ -1,4 +1,4 @@
 [pack]
 name = "ash-r2ml-pack"
-version = "0.1.0"
-description = "Ontology-first AshR2RML manufacturer. SHACL NodeShapes plus explicit operational mapping facts generate Ash resources that compile through AshR2RML.Mapping; fail-closed gates reject missing identity, class, datatype, target, join, or storage facts before writes."
+version = "0.2.0"
+description = "Ash-first cloud ggen manufacturer. AshR2RML emits ontology, SHACL, and R2RML TTL deterministically from admitted Ash resources; ggen consumes the generated path/content graph with fail-closed gates and no independently maintained TTL source files."
