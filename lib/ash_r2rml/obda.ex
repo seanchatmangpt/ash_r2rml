@@ -3,19 +3,28 @@
 # SPDX-License-Identifier: MIT
 
 defmodule AshR2RML.OBDA.Observation do
-  @moduledoc "Operator-invoked observation of one external OBDA query execution."
+  @moduledoc "Operator-invoked observation of one bounded external OBDA query execution."
 
   defstruct [
     :status,
     :standing,
     :system,
+    :system_version,
     :evidence_kind,
     :exit_status,
     :command_sha256,
     :query_sha256,
     :mapping_sha256,
+    :session_sha256,
+    :observation_sha256,
+    :output_sha256,
+    :output_bytes,
+    :row_count,
+    :duration_ms,
     :raw_output,
+    :capability_receipt,
     :refusal,
+    bounded?: true,
     rows: []
   ]
 
@@ -23,13 +32,22 @@ defmodule AshR2RML.OBDA.Observation do
           status: atom(),
           standing: atom(),
           system: atom() | String.t(),
+          system_version: String.t() | nil,
           evidence_kind: :system_process | :injected_runner,
           exit_status: integer() | nil,
           command_sha256: String.t() | nil,
           query_sha256: String.t() | nil,
           mapping_sha256: String.t() | nil,
+          session_sha256: String.t() | nil,
+          observation_sha256: String.t() | nil,
+          output_sha256: String.t() | nil,
+          output_bytes: non_neg_integer() | nil,
+          row_count: non_neg_integer() | nil,
+          duration_ms: non_neg_integer() | nil,
           raw_output: String.t() | nil,
+          capability_receipt: AshR2RML.OBDA.CapabilityReceipt.t() | nil,
           refusal: AshR2RML.Refusal.t() | nil,
+          bounded?: boolean(),
           rows: [map()]
         }
 end
@@ -41,13 +59,22 @@ defmodule AshR2RML.OBDA.Ontop do
   This module does not start an endpoint and is never called implicitly by the
   compiler. `query/1` executes the real external process. `query/2` exists for
   deterministic unit testing with an injected runner and is permanently marked
-  `:test_double_only`; its result must not be attached as a parity witness.
+  `:test_double_only`; its result must not be attached as a crown/parity witness.
+
+  External execution is bounded by timeout, output bytes, and parsed row count.
+  Raw engine output is excluded from observations by default; set
+  `retain_raw_output: true` only for explicitly authorized local diagnostics.
 
   `:prefix_args` allows an operator to place Ontop behind an execution wrapper,
   including the official Docker image, without changing the semantic command.
   """
 
   alias AshR2RML.{OBDA.Observation, Refusal}
+  alias AshR2RML.OBDA.Capabilities
+
+  @default_timeout_ms 30_000
+  @default_max_output_bytes 4 * 1024 * 1024
+  @default_max_rows 50_000
 
   @spec command(keyword() | map()) :: {:ok, {String.t(), [String.t()]}} | {:error, Refusal.t()}
   def command(opts) do
@@ -72,7 +99,7 @@ defmodule AshR2RML.OBDA.Ontop do
     end
   end
 
-  @doc "Execute Ontop as a real external process."
+  @doc "Execute Ontop as a real bounded external process."
   @spec query(keyword() | map()) :: {:ok, Observation.t()} | {:error, Observation.t()}
   def query(opts), do: execute(opts, &System.cmd/3, :system_process)
 
@@ -98,91 +125,378 @@ defmodule AshR2RML.OBDA.Ontop do
   end
 
   defp execute(opts, runner, evidence_kind) do
-    with {:ok, {binary, args}} <- command(opts) do
+    version = get(opts, :engine_version)
+    required_capabilities = get(opts, :required_capabilities, []) |> List.wrap()
+
+    with {:ok, capability_receipt} <- Capabilities.admit(:ontop, version, required_capabilities),
+         {:ok, {binary, args}} <- command(opts) do
       query_sha256 = hash_file_or_value(get(opts, :query_path), get(opts, :query))
       mapping_sha256 = hash_file_or_value(get(opts, :mapping_path), get(opts, :mapping))
       command_sha256 = sha256(:erlang.term_to_binary({binary, redact(args)}, [:deterministic]))
+      session_sha256 = get(opts, :session_sha256)
+      timeout_ms = bounded_integer(get(opts, :timeout_ms), @default_timeout_ms)
+      max_output_bytes = bounded_integer(get(opts, :max_output_bytes), @default_max_output_bytes)
+      max_rows = bounded_integer(get(opts, :max_rows), @default_max_rows)
+      started = System.monotonic_time(:millisecond)
 
-      try do
-        case runner.(binary, args, []) do
-          {output, 0} ->
-            standing = if evidence_kind == :system_process, do: :obda_query_observed, else: :test_double_only
+      case run_bounded(runner, binary, args, timeout_ms) do
+        {:ok, {output, status}} when is_binary(output) and is_integer(status) ->
+          duration_ms = elapsed(started)
+          output_bytes = byte_size(output)
+          output_sha256 = sha256(output)
 
-            {:ok,
-             %Observation{
-               status: :PARTIAL_ALIVE,
-               standing: standing,
-               system: :ontop,
-               evidence_kind: evidence_kind,
-               exit_status: 0,
-               command_sha256: command_sha256,
-               query_sha256: query_sha256,
-               mapping_sha256: mapping_sha256,
-               raw_output: output,
-               rows: parse_csv(output)
-             }}
-
-          {output, status} when is_integer(status) ->
-            refusal =
-              Refusal.new(
-                :REFUSED_OBDA_EXECUTION,
-                :ontop,
-                "Ontop query exited non-zero",
-                %{exit_status: status}
+          cond do
+            output_bytes > max_output_bytes ->
+              bounded_failure(
+                opts,
+                evidence_kind,
+                version,
+                capability_receipt,
+                :REFUSED_RESOURCE_BOUND,
+                :obda_output_bytes,
+                "OBDA output exceeded the admitted byte bound",
+                %{observed: output_bytes, limit: max_output_bytes},
+                command_sha256,
+                query_sha256,
+                mapping_sha256,
+                session_sha256,
+                status,
+                output_sha256,
+                output_bytes,
+                duration_ms
               )
 
-            {:error,
-             %Observation{
-               status: :BLOCKED,
-               standing: :obda_execution_failed,
-               system: :ontop,
-               evidence_kind: evidence_kind,
-               exit_status: status,
-               command_sha256: command_sha256,
-               query_sha256: query_sha256,
-               mapping_sha256: mapping_sha256,
-               raw_output: output,
-               refusal: refusal,
-               rows: []
-             }}
-        end
-      rescue
-        exception ->
-          refusal =
-            Refusal.new(
-              :REFUSED_OBDA_EXECUTION,
-              :ontop,
-              "Ontop process could not be executed",
-              %{reason: Exception.message(exception)}
-            )
+            status != 0 ->
+              execution_failure(
+                opts,
+                evidence_kind,
+                version,
+                capability_receipt,
+                status,
+                command_sha256,
+                query_sha256,
+                mapping_sha256,
+                session_sha256,
+                output_sha256,
+                output_bytes,
+                duration_ms,
+                output
+              )
 
-          {:error,
-           %Observation{
-             status: :BLOCKED,
-             standing: :obda_execution_unavailable,
-             system: :ontop,
-             evidence_kind: evidence_kind,
-             exit_status: nil,
-             command_sha256: command_sha256,
-             query_sha256: query_sha256,
-             mapping_sha256: mapping_sha256,
-             refusal: refusal,
-             rows: []
-           }}
+            true ->
+              rows = parse_csv(output)
+
+              if length(rows) > max_rows do
+                bounded_failure(
+                  opts,
+                  evidence_kind,
+                  version,
+                  capability_receipt,
+                  :REFUSED_RESOURCE_BOUND,
+                  :obda_rows,
+                  "OBDA result exceeded the admitted row bound",
+                  %{observed: length(rows), limit: max_rows},
+                  command_sha256,
+                  query_sha256,
+                  mapping_sha256,
+                  session_sha256,
+                  status,
+                  output_sha256,
+                  output_bytes,
+                  duration_ms
+                )
+              else
+                standing = if evidence_kind == :system_process, do: :obda_query_observed, else: :test_double_only
+                executed_capability_receipt = Capabilities.mark_executed(capability_receipt)
+
+                observation_sha256 =
+                  observation_hash(%{
+                    system: :ontop,
+                    system_version: version,
+                    evidence_kind: evidence_kind,
+                    exit_status: 0,
+                    command_sha256: command_sha256,
+                    query_sha256: query_sha256,
+                    mapping_sha256: mapping_sha256,
+                    session_sha256: session_sha256,
+                    output_sha256: output_sha256,
+                    output_bytes: output_bytes,
+                    row_count: length(rows),
+                    capability_receipt_sha256: executed_capability_receipt.receipt_sha256
+                  })
+
+                {:ok,
+                 %Observation{
+                   status: :PARTIAL_ALIVE,
+                   standing: standing,
+                   system: :ontop,
+                   system_version: version,
+                   evidence_kind: evidence_kind,
+                   exit_status: 0,
+                   command_sha256: command_sha256,
+                   query_sha256: query_sha256,
+                   mapping_sha256: mapping_sha256,
+                   session_sha256: session_sha256,
+                   observation_sha256: observation_sha256,
+                   output_sha256: output_sha256,
+                   output_bytes: output_bytes,
+                   row_count: length(rows),
+                   duration_ms: duration_ms,
+                   raw_output: retained_output(opts, output),
+                   capability_receipt: executed_capability_receipt,
+                   bounded?: true,
+                   rows: rows
+                 }}
+              end
+          end
+
+        {:ok, _unexpected} ->
+          runner_failure(
+            evidence_kind,
+            version,
+            capability_receipt,
+            :runner_contract,
+            command_sha256,
+            query_sha256,
+            mapping_sha256,
+            session_sha256,
+            elapsed(started)
+          )
+
+        {:error, :timeout} ->
+          bounded_failure(
+            opts,
+            evidence_kind,
+            version,
+            capability_receipt,
+            :REFUSED_RESOURCE_BOUND,
+            :obda_timeout,
+            "OBDA execution exceeded the admitted timeout",
+            %{limit_ms: timeout_ms},
+            command_sha256,
+            query_sha256,
+            mapping_sha256,
+            session_sha256,
+            nil,
+            nil,
+            nil,
+            elapsed(started)
+          )
+
+        {:error, _reason} ->
+          runner_failure(
+            evidence_kind,
+            version,
+            capability_receipt,
+            :runner_crashed,
+            command_sha256,
+            query_sha256,
+            mapping_sha256,
+            session_sha256,
+            elapsed(started)
+          )
       end
     else
-      {:error, refusal} ->
+      {:error, %Refusal{} = refusal} ->
         {:error,
          %Observation{
            status: :REFUSED,
            standing: :invalid_obda_invocation,
            system: :ontop,
+           system_version: version,
            evidence_kind: evidence_kind,
            refusal: refusal,
+           bounded?: true,
            rows: []
          }}
     end
   end
+
+  defp run_bounded(runner, binary, args, timeout_ms) do
+    parent = self()
+    ref = make_ref()
+
+    {pid, monitor} =
+      spawn_monitor(fn ->
+        result =
+          try do
+            {:runner_result, runner.(binary, args, [])}
+          rescue
+            _exception -> {:runner_error, :exception}
+          catch
+            _kind, _reason -> {:runner_error, :abnormal_exit}
+          end
+
+        send(parent, {ref, result})
+      end)
+
+    receive do
+      {^ref, {:runner_result, value}} ->
+        Process.demonitor(monitor, [:flush])
+        {:ok, value}
+
+      {^ref, {:runner_error, reason}} ->
+        Process.demonitor(monitor, [:flush])
+        {:error, reason}
+
+      {:DOWN, ^monitor, :process, ^pid, _reason} ->
+        {:error, :runner_crashed}
+    after
+      timeout_ms ->
+        Process.exit(pid, :kill)
+
+        receive do
+          {:DOWN, ^monitor, :process, ^pid, _reason} -> :ok
+        after
+          100 -> :ok
+        end
+
+        {:error, :timeout}
+    end
+  end
+
+  defp bounded_failure(
+         opts,
+         evidence_kind,
+         version,
+         capability_receipt,
+         code,
+         subject,
+         detail,
+         evidence,
+         command_sha256,
+         query_sha256,
+         mapping_sha256,
+         session_sha256,
+         exit_status,
+         output_sha256,
+         output_bytes,
+         duration_ms
+       ) do
+    refusal = Refusal.new(code, subject, detail, evidence)
+
+    {:error,
+     %Observation{
+       status: :BLOCKED,
+       standing: :obda_bound_exhausted,
+       system: :ontop,
+       system_version: version,
+       evidence_kind: evidence_kind,
+       exit_status: exit_status,
+       command_sha256: command_sha256,
+       query_sha256: query_sha256,
+       mapping_sha256: mapping_sha256,
+       session_sha256: session_sha256,
+       output_sha256: output_sha256,
+       output_bytes: output_bytes,
+       duration_ms: duration_ms,
+       raw_output: if(output_sha256, do: retained_output(opts, nil), else: nil),
+       capability_receipt: capability_receipt,
+       refusal: refusal,
+       bounded?: true,
+       rows: []
+     }}
+  end
+
+  defp execution_failure(
+         opts,
+         evidence_kind,
+         version,
+         capability_receipt,
+         status,
+         command_sha256,
+         query_sha256,
+         mapping_sha256,
+         session_sha256,
+         output_sha256,
+         output_bytes,
+         duration_ms,
+         output
+       ) do
+    refusal =
+      Refusal.new(
+        :REFUSED_OBDA_EXECUTION,
+        :ontop,
+        "Ontop query exited non-zero",
+        %{exit_status: status}
+      )
+
+    {:error,
+     %Observation{
+       status: :BLOCKED,
+       standing: :obda_execution_failed,
+       system: :ontop,
+       system_version: version,
+       evidence_kind: evidence_kind,
+       exit_status: status,
+       command_sha256: command_sha256,
+       query_sha256: query_sha256,
+       mapping_sha256: mapping_sha256,
+       session_sha256: session_sha256,
+       output_sha256: output_sha256,
+       output_bytes: output_bytes,
+       duration_ms: duration_ms,
+       raw_output: retained_output(opts, output),
+       capability_receipt: capability_receipt,
+       refusal: refusal,
+       bounded?: true,
+       rows: []
+     }}
+  end
+
+  defp runner_failure(
+         evidence_kind,
+         version,
+         capability_receipt,
+         class,
+         command_sha256,
+         query_sha256,
+         mapping_sha256,
+         session_sha256,
+         duration_ms
+       ) do
+    refusal =
+      Refusal.new(
+        :REFUSED_OBDA_EXECUTION,
+        :ontop,
+        "Ontop process could not be executed within the admitted runner contract",
+        %{error_class: class}
+      )
+
+    {:error,
+     %Observation{
+       status: :BLOCKED,
+       standing: :obda_execution_unavailable,
+       system: :ontop,
+       system_version: version,
+       evidence_kind: evidence_kind,
+       exit_status: nil,
+       command_sha256: command_sha256,
+       query_sha256: query_sha256,
+       mapping_sha256: mapping_sha256,
+       session_sha256: session_sha256,
+       duration_ms: duration_ms,
+       capability_receipt: capability_receipt,
+       refusal: refusal,
+       bounded?: true,
+       rows: []
+     }}
+  end
+
+  defp observation_hash(fields) do
+    fields
+    |> :erlang.term_to_binary([:deterministic])
+    |> sha256()
+  end
+
+  defp retained_output(opts, output) do
+    if get(opts, :retain_raw_output, false), do: output, else: nil
+  end
+
+  defp bounded_integer(value, _default) when is_integer(value) and value > 0, do: value
+  defp bounded_integer(_value, default), do: default
+
+  defp elapsed(started), do: max(System.monotonic_time(:millisecond) - started, 0)
 
   defp required(opts, key) do
     case get(opts, key) do
@@ -195,7 +509,7 @@ defmodule AshR2RML.OBDA.Ontop do
            :REFUSED_OBDA_EXECUTION,
            :ontop,
            "missing required Ontop option #{key}",
-           %{value: value}
+           %{present?: not is_nil(value)}
          )}
     end
   end
