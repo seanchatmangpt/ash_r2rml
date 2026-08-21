@@ -7,320 +7,218 @@ SPDX-License-Identifier: MIT
 
 # Rules for working with AshR2ML
 
-## What AshR2ML is
+AshR2ML is a generic semantic mapping extension for Ash. It compiles Ash resource semantics into a normalized mapping IR and standards-valid W3C R2RML while leaving persistence to the resource's existing Ash data layer.
 
-AshR2ML is a semantic mapping extension for Ash resources. It compiles Ash metadata plus explicit RDF annotations into a normalized `AshR2ML.Mapping` and standards-valid W3C R2RML.
+AshR2ML is **not** an `Ash.DataLayer`, graph database, triplestore, migration engine, or SPARQL engine.
 
-AshR2ML does not persist records. Continue to use the Ash data layer appropriate for the application, normally `AshPostgres.DataLayer` for relational OBDA use cases.
-
-```elixir
-use Ash.Resource,
-  domain: MyApp.Domain,
-  data_layer: AshPostgres.DataLayer,
-  extensions: [AshR2ML.Resource]
-```
-
-The governing invariant is:
+## Core invariant
 
 ```text
-one Ash/relational subject
-        │
-        ├── Ash query surface
-        ├── SQL query surface
-        └── R2RML virtual RDF / SPARQL surface
+Ash.Resource + semantic metadata
+             │
+             ▼
+      AshR2ML.Mapping
+         ╱         ╲
+        ▼           ▼
+ relational DB     R2RML
+        │           │
+        └─────┬─────┘
+              ▼
+       ONE SUBJECT
+       Ash / SQL / SPARQL
 ```
 
-There is no implicit RDF replica and no dual-write contract.
+The RDF graph is normally virtual. A compatible OBDA engine rewrites SPARQL into SQL against the same relational database used by the Ash application.
 
-## Core rules
+## Rules by concern
 
-1. **Do not treat AshR2ML as an `Ash.DataLayer`.** Persistence belongs to AshPostgres or another data layer.
-2. **Do not hand-maintain equivalent semantic facts in several places.** Let AshR2ML derive table, column, join, and type information from Ash when it can.
-3. **Add only semantic information Ash cannot know:** class IRIs, predicate IRIs, subject construction, graph maps, explicit datatype/term-type overrides.
-4. **Never silently drop a resource, attribute, relationship, identity, or unsupported type from generated R2RML.** Return a typed refusal or unsupported result.
-5. **Database identity is not automatically RDF identity.** Define a subject map explicitly.
-6. **Relationships are semantic edges.** An Ash relationship with an RDF predicate must compile to an R2RML reference object map when its relational join is derivable.
-7. **Do not invent OWL equivalence.** Alignment metadata must preserve the exact asserted relationship.
-8. **Generated ontology-first Ash is a projection.** Repair the ontology/profile/SHACL/ggen source and regenerate instead of hand-editing generated modules.
-9. **ggen is a development-time manufacturer, not an ambient runtime requirement.** Applications consuming AshR2ML should not need ggen merely to execute Ash or render mappings from compiled metadata.
-10. **Compile success is not semantic proof.** Integration proof requires a real relational fixture and a real R2RML/OBDA execution path.
+| Concern | Rule |
+|---|---|
+| Installation and runtime boundary | [setup.md](usage-rules/setup.md) |
+| Public Spark/RDF DSL | [dsl.md](usage-rules/dsl.md) |
+| Normalized compiler representation | [semantic-ir.md](usage-rules/semantic-ir.md) |
+| RDF subject identity | [identities.md](usage-rules/identities.md) |
+| Ash relationships → RDF object properties | [relationships.md](usage-rules/relationships.md) |
+| Ash/RDF datatype correspondence | [datatypes.md](usage-rules/datatypes.md) |
+| Custom Ash datatype contracts | [custom-types.md](usage-rules/custom-types.md) |
+| Relational logical tables/views | [logical-tables.md](usage-rules/logical-tables.md) |
+| R2RML rendering/conformance | [r2rml.md](usage-rules/r2rml.md) |
+| Ash/SQL/SPARQL query boundaries | [query-surfaces.md](usage-rules/query-surfaces.md) |
+| Virtual RDF / OBDA boundary | [obda.md](usage-rules/obda.md) |
+| Ontology-first compilation | [ontology-first.md](usage-rules/ontology-first.md) |
+| ggen manufacturing | [ggen.md](usage-rules/ggen.md) |
+| Ash actions/mutation boundary | [actions.md](usage-rules/actions.md) |
+| Verification and semantic round trips | [testing.md](usage-rules/testing.md) |
 
-## Resource mapping
+Legacy donor-era filenames remain only as compatibility tombstones and must not be treated as active AshR2ML features.
 
-Each mapped resource declares one or more RDF classes and exactly one effective subject construction strategy.
+## Resource configuration
+
+A normal relational resource keeps its data layer and adds AshR2ML as an extension:
 
 ```elixir
-r2rml do
-  class "https://schema.org/Person"
+defmodule MyApp.Person do
+  use Ash.Resource,
+    domain: MyApp.Domain,
+    data_layer: AshPostgres.DataLayer,
+    extensions: [AshR2ML.Resource]
 
-  subject do
-    template "https://example.org/person/{id}"
-    term_type :iri
+  postgres do
+    table "people"
+    repo MyApp.Repo
+  end
+
+  r2rml do
+    class "https://schema.org/Person"
+
+    subject do
+      template "https://example.org/people/{id}"
+      term_type :iri
+    end
+  end
+
+  attributes do
+    uuid_primary_key :id
+
+    attribute :name, :string do
+      allow_nil? false
+
+      rdf do
+        predicate "http://xmlns.com/foaf/0.1/name"
+      end
+    end
   end
 end
 ```
 
-Subject strategies are:
+AshR2ML should infer relational facts already known by Ash/data-layer metadata and require explicit semantic facts only where inference would be unsafe.
 
-- template,
-- column,
-- constant,
-- blank node when explicitly admitted.
+## Mapping compiler
 
-A template may reference only known attributes or explicitly supported source expressions. Missing template fields are a compile-time error.
+All entry paths converge on `AshR2ML.Mapping` structures before rendering. The renderer must not rediscover Ash metadata independently.
 
-## Attribute mapping
+Canonical mapping concepts include:
 
-Use `rdf` metadata inside an Ash attribute.
-
-```elixir
-attribute :name, :string do
-  allow_nil? false
-
-  rdf do
-    predicate "http://xmlns.com/foaf/0.1/name"
-  end
-end
+```text
+Resource
+SubjectMap
+PredicateObjectMap
+ReferenceObjectMap
+JoinCondition
+Datatype
+GraphMap
 ```
 
-AshR2ML derives the source column and default RDF datatype from the Ash resource and data layer metadata.
+A mapping is deterministic and inspectable.
 
-Override only when necessary:
+## Semantic identity
 
-```elixir
-rdf do
-  predicate "https://example.org/amount"
-  datatype "http://www.w3.org/2001/XMLSchema#decimal"
-end
-```
+Database primary keys are not automatically public RDF identity. Every RDF subject requires an explicit deterministic subject strategy.
 
-A datatype override must be compatible with the Ash value representation. Lossy or unverifiable coercions are refused.
+A subject template may use Ash attributes only when those fields exist and form the intended stable semantic identity.
 
-## Relationship mapping
+Blank nodes are explicit, never a fallback for missing identity.
 
-Use RDF predicate metadata on the Ash relationship:
+## Relationships
 
-```elixir
-belongs_to :organization, MyApp.Organization do
-  allow_nil? false
+An Ash relationship with an RDF predicate must survive compilation as a semantic relationship. For relational resources, AshR2ML derives reference object maps and join conditions from proven Ash/data-layer metadata.
 
-  rdf do
-    predicate "https://schema.org/memberOf"
-  end
-end
-```
-
-For relational resources, AshR2ML derives:
-
-- parent triples map,
-- source/child column,
-- destination/parent column,
-- join condition,
-- target semantic identity.
-
-Do not duplicate foreign-key column names in the semantic DSL unless the Ash/data-layer relationship metadata cannot express them.
-
-If a relationship cannot be deterministically mapped, return a typed error such as `AshR2ML.Error.AmbiguousRelationship` rather than emitting an incomplete mapping.
-
-## Many-to-many and relationship resources
-
-A many-to-many relationship may compile through its join relationship/resource when the join is fully known.
-
-If the relationship itself carries domain facts—role, validity interval, provenance, quantity, authority, or other attributes—model it as a first-class Ash resource rather than trying to collapse those facts into a bare RDF edge.
-
-This preserves graph topology and relational meaning simultaneously.
+Never silently omit a relationship because the join is difficult to derive. Refuse instead.
 
 ## Datatypes
 
-AshR2ML maintains an explicit type-to-RDF mapping registry.
+Use an explicit registry. Unsupported types do not become strings silently.
 
-Unknown types do not fall back to `xsd:string`.
+Exact numeric, date/time, enum, structured, and custom types must preserve their admitted semantic representation.
 
-A custom type must register a lawful mapping capable of producing:
+## R2RML
 
-- an RDF datatype IRI or explicit term strategy,
-- a lexical representation,
-- validation that the conversion is information-preserving for the admitted use.
+Render standards-valid Turtle. Parse generated output with an independent RDF parser. Relationship mappings use `rr:RefObjectMap`; scalar properties use predicate-object maps; subject identity uses subject maps.
 
-If none exists, the mapping is `UNSUPPORTED`.
-
-## Logical tables
-
-For AshPostgres resources, the logical table is normally derived from the `postgres` DSL.
-
-AshR2ML also supports explicit logical-table SQL/query mappings when R2RML requires a logical view rather than a physical table, but these must be explicit and deterministic.
-
-Do not synthesize arbitrary SQL from semantic labels.
-
-## R2RML generation
-
-Generate one deterministic mapping graph for a resource set:
-
-```elixir
-{:ok, ttl} = AshR2ML.R2RML.render([
-  MyApp.Person,
-  MyApp.Organization
-])
-```
-
-The output must:
-
-- parse as RDF/Turtle,
-- use the W3C R2RML vocabulary correctly,
-- contain a stable triples map identifier for each mapped resource,
-- preserve configured class and predicate IRIs exactly,
-- emit reference object maps for relationships,
-- emit no undeclared semantic fallbacks.
-
-Output ordering should be deterministic so regeneration can be diffed and receipted.
+Do not confuse syntactically valid Turtle with a proven end-to-end virtual RDF graph.
 
 ## Ontology-first generation
 
-Ontology-first operation is a build/manufacturing workflow:
+Ontology-first applications use:
 
 ```text
-OWL/RDFS + application profile + SHACL
-                  │
-                  ▼
-                ggen
-                  │
-                  ▼
-          generated Ash.Resource
-                  │
-                  ▼
-          AshR2ML.Mapping
-                  │
-                  ▼
-                R2RML
-```
-
-Use SHACL as the operational closure boundary. Arbitrary OWL axioms are not automatically a relational schema.
-
-The generation pack may map, where deterministically admitted:
-
-- `sh:targetClass` → resource class mapping,
-- datatype property shape → Ash attribute,
-- `sh:minCount 1` → required attribute/relationship,
-- `sh:maxCount 1` object property → to-one relationship candidate,
-- many-valued object property → has-many/many-to-many/association-resource candidate,
-- explicit identity metadata → Ash identity + R2RML subject map.
-
-If more than one relational representation remains lawful after applying the profile and shapes, generation must refuse instead of choosing by convention.
-
-## Application-profile discipline
-
-Public ontologies do not contain application storage metadata. Keep these layers separate:
-
-```text
-public ontology
-      ↓
-application profile / alignments
-      ↓
+RDF/OWL
+   ↓
+application profile
+   ↓
 SHACL operational shapes
-      ↓
-AshR2ML/ggen compiler metadata
+   ↓
+ggen
+   ↓
+generated Ash.Resource
+   ↓
+AshR2ML.Mapping
 ```
 
-Do not modify or vendor-patch public ontology terms merely to add Ash modules, PostgreSQL table names, or subject templates.
+SHACL supplies operational closure. Arbitrary OWL is not deterministically compiled directly into SQL.
 
-## Typed errors and refusals
+If constraints do not select one lawful Ash/relational projection, generation fails closed.
 
-AshR2ML errors must state what semantic transition failed.
+## ggen
 
-Representative categories:
+ggen is the manufacturer, not the request-time runtime.
 
-- invalid IRI,
-- missing subject map,
-- missing predicate,
-- unsupported Ash type,
-- incompatible RDF datatype,
-- unresolved parent triples map,
-- ambiguous relationship,
-- invalid join condition,
-- non-unique semantic identity,
-- unsupported term type,
-- unproven equivalence.
+Generated Ash/R2RML surfaces are projections owned by ontology/profile/shapes, SPARQL gates/queries, and templates. Fix source authority and regenerate rather than hand-editing outputs.
 
-Compile-time DSL failures should use Spark DSL errors. Runtime mapping/rendering APIs should return typed errors rather than bare strings.
+## OBDA
 
-## Unknown versus unsupported
+AshR2ML does not implement SPARQL-to-SQL rewriting. A compatible external OBDA/R2RML engine owns that boundary.
 
-Do not collapse these states:
+The crown integration proves that a subject written/read through Ash is exposed with the same semantic identity, values, and relationships through SPARQL over generated R2RML.
 
-- **UNKNOWN** — the implementation could not determine the mapping from available metadata.
-- **UNSUPPORTED** — the construct is outside the library's admitted mapping capabilities.
-- **REFUSED** — the construct is understood but violates a semantic or safety invariant.
+## Typed failures
 
-Never replace any of them with a fabricated default.
-
-## OBDA and SPARQL
-
-AshR2ML does not implement SPARQL execution.
-
-Use a compatible R2RML/OBDA engine:
+AshR2ML fails closed at semantic boundaries. Representative classifications include:
 
 ```text
-SPARQL → OBDA rewrite → SQL → PostgreSQL
+REFUSED_INVALID_CLASS_IRI
+REFUSED_MISSING_SUBJECT_MAP
+REFUSED_NON_UNIQUE_SEMANTIC_IDENTITY
+REFUSED_UNMAPPED_DATATYPE
+REFUSED_AMBIGUOUS_RELATIONSHIP
+REFUSED_INVALID_JOIN_CONDITION
+REFUSED_RELATIONSHIP_WITHOUT_PREDICATE
+REFUSED_R2RML_JOIN_WITHOUT_IDENTITY
+REFUSED_UNPROVEN_EQUIVALENCE
+UNSUPPORTED_TERM_TYPE
+UNSUPPORTED_ASH_TYPE
 ```
 
-A library integration test is valid only when the external engine reads generated R2RML and queries a real relational fixture. Mocking the engine proves serialization, not OBDA behavior.
+Expected unsupported conditions are typed results, not guessed mappings.
 
-## Testing
+## Verification
 
-The verification ladder is:
-
-1. DSL parsing and Spark verifier tests;
-2. mapping IR unit tests;
-3. deterministic R2RML renderer tests;
-4. Turtle/RDF parser validation;
-5. AshPostgres fixture schema and CRUD tests;
-6. relationship-to-reference-object-map tests;
-7. real R2RML/OBDA SPARQL integration;
-8. ontology-first ggen round trip where relevant.
-
-The crown for a mapped fixture is:
+Use the ladder:
 
 ```text
-Ash-visible subject
-      ==
-SPARQL-visible virtual RDF subject
+pure mapping tests
+→ DSL/introspection tests
+→ R2RML render tests
+→ independent Turtle parse
+→ deterministic regeneration
+→ real relational integration
+→ real OBDA/SPARQL integration
+→ ontology-first ggen round trip
 ```
 
-for the admitted semantic identities, classes, datatype properties, and object-property relationships.
+A lower checkpoint can be `PARTIAL_ALIVE`. `ALIVE` requires the exact claimed external boundary to execute.
 
-## Generated code
+## Non-goals
 
-Generated files must state their owning source and replay command. They are not editing authorities.
+AshR2ML does not:
 
-A change to generated code should be made through the responsible:
-
-- ontology,
-- application profile,
-- SHACL shape,
-- ggen query,
-- ggen template,
-- compiler logic.
-
-Then regenerate and verify deterministic output.
-
-## Security and authority
-
-RDF metadata describes meaning. It does not grant execution authority.
-
-Neither ontology terms, SHACL shapes, R2RML mappings, generated code, nor SPARQL queries acquire ambient permission to run application actions or mutate production state.
-
-Ash authorization and application actuation boundaries remain authoritative.
-
-## Contributor rule
-
-When an implementation choice conflicts with these rules, preserve the semantic correspondence first:
-
-```text
-Ash resource/relationship
-      ↕
-relational representation
-      ↕
-R2RML mapping
-```
-
-A convenience API is not worth semantic drift.
+- replace AshPostgres or another Ash data layer;
+- write triples as its persistence model;
+- require Neo4j;
+- render Cypher;
+- manage graph indexes;
+- implement graph traversal expressions;
+- implement vector/spatial query engines;
+- implement SPARQL planning;
+- infer arbitrary OWL;
+- grant execution authority from RDF/SHACL facts.
