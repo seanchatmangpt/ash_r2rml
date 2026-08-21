@@ -108,7 +108,14 @@ defmodule AshR2ml.RdfIngestionAndObdaTest do
     assert compilation.status == :PARTIAL_ALIVE
     assert compilation.ash_source =~ "defmodule Example.Account"
     assert compilation.postgres_ddl =~ ~s(FOREIGN KEY ("organization_id"))
-    assert compilation.r2rml =~ "rr:parentTriplesMap <#Example_Organization>"
+
+    organization_mapping =
+      Enum.find(compilation.mapping_bundle.resources, fn resource ->
+        "https://example.com/ontology/Organization" in resource.class_iris
+      end)
+
+    organization_map_iri = AshR2ML.Mapping.mapping_identity(organization_mapping)
+    assert compilation.r2rml =~ "rr:parentTriplesMap <#{organization_map_iri}>"
 
     {organization_create, _} = :binary.match(compilation.postgres_ddl, ~s(CREATE TABLE IF NOT EXISTS "organizations"))
     {account_fk, _} = :binary.match(compilation.postgres_ddl, ~s(ALTER TABLE "accounts"))
