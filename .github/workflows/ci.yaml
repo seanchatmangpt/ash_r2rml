@@ -6,17 +6,27 @@ name: CI
 
 on: [push, pull_request]
 
-# Three gates:
+# Four gates:
 # - `types` is database-free: compile warnings-as-errors + Dialyzer.
 # - `test` preserves the full inherited Neo4j control suite.
 # - `obda` executes the bounded ontology-first crown against real PostgreSQL,
-#   official Ontop, and the Neo4j control graph. Technical parity still does
-#   not grant cutover authority.
+#   official Ontop, and the Neo4j control graph.
+# - the same `obda` job also executes the Ontop 5.5.0 standards-compliance
+#   protocol crown against PostGIS so GeoSPARQL functions have a lawful backend.
+# Technical parity still does not grant cutover authority.
+#
+# Cache identity includes the exact Elixir/Erlang toolchain. Do not restore an
+# older broad Mix cache: Rebar BEAM artifacts are not portable across arbitrary
+# runtime identities and a stale cache can fail before project source compiles.
+# PR jobs explicitly checkout the PR head SHA rather than GitHub's synthetic
+# merge ref so every receipt binds to the exact candidate being reviewed.
 jobs:
   types:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Set up Elixir / Erlang (from .tool-versions)
         uses: jdx/mise-action@v2
@@ -27,8 +37,7 @@ jobs:
           path: |
             deps
             _build
-          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
-          restore-keys: ${{ runner.os }}-mix-
+          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock', '.tool-versions') }}
 
       - name: Install dependencies
         run: mix deps.get
@@ -43,6 +52,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Set up Elixir / Erlang (from .tool-versions)
         uses: jdx/mise-action@v2
@@ -53,8 +64,7 @@ jobs:
           path: |
             deps
             _build
-          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
-          restore-keys: ${{ runner.os }}-mix-
+          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock', '.tool-versions') }}
 
       - name: Install dependencies
         run: mix deps.get
@@ -73,7 +83,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:16
+        image: postgis/postgis:16-3.4
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -88,6 +98,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Set up Elixir / Erlang (from .tool-versions)
         uses: jdx/mise-action@v2
@@ -98,8 +110,7 @@ jobs:
           path: |
             deps
             _build
-          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
-          restore-keys: ${{ runner.os }}-mix-
+          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock', '.tool-versions') }}
 
       - name: Install dependencies
         run: mix deps.get
@@ -137,12 +148,21 @@ jobs:
           ASH_R2RML_PGJDBC_SHA256: "6e0e4cc2d8cae902084f8a2b18728b073a6fd9d1f87c9d8bff8f298c18185b93"
         run: mix run test/integration/obda_crown.exs
 
-      - name: Publish bounded parity receipt
+      - name: Execute Ontop 5.5.0 SPARQL + GeoSPARQL compliance crown
+        env:
+          MIX_ENV: test
+          ASH_R2RML_ONTOP_JDBC_DIR: ${{ runner.temp }}/ontop-jdbc
+          ASH_R2RML_PGJDBC_SHA256: "6e0e4cc2d8cae902084f8a2b18728b073a6fd9d1f87c9d8bff8f298c18185b93"
+        run: mix run test/integration/ontop_compliance_crown.exs
+
+      - name: Publish bounded parity receipts
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ash-r2ml-obda-parity
-          path: tmp/ash_r2rml_obda/parity-receipt.json
+          path: |
+            tmp/ash_r2rml_obda/parity-receipt.json
+            tmp/ash_r2rml_ontop_compliance/compliance-receipt.json
           if-no-files-found: ignore
 
       - name: Stop Neo4j control database
