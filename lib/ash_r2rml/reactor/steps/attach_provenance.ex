@@ -30,7 +30,7 @@ defmodule AshR2RML.Reactor.Steps.AttachProvenance do
     Enum.reduce_while(bundle.resources || [], {:ok, []}, fn resource, {:ok, acc} ->
       config = resource_config(resource, provenance)
 
-      case AshR2RML.Mapping.Provenance.apply(resource, config) do
+      case AshR2RML.Mapping.Provenance.project(resource, config) do
         {:ok, projected} -> {:cont, {:ok, [projected | acc]}}
         {:error, refusal} -> {:halt, {:error, refusal}}
       end

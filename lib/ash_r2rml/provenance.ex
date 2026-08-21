@@ -6,7 +6,7 @@ defmodule AshR2RML.Mapping.Provenance do
   @moduledoc """
   Pure semantic plumbing for explicitly admitted W3C PROV-O projections.
 
-  Provenance is never invented by convention. `apply/2` accepts only provenance
+  Provenance is never invented by convention. `project/2` accepts only provenance
   choices supplied by the caller and verifies that field references, datatypes,
   and template references resolve against the mapped Ash resource before adding
   them.
@@ -20,11 +20,11 @@ defmodule AshR2RML.Mapping.Provenance do
   @xsd "http://www.w3.org/2001/XMLSchema#"
   @xsd_datetime @xsd <> "dateTime"
 
-  @doc "Apply explicitly configured provenance mappings to one normalized resource."
-  @spec apply(Resource.t(), map() | keyword() | nil) :: {:ok, Resource.t()} | {:error, Refusal.t()}
-  def apply(%Resource{} = resource, nil), do: {:ok, resource}
+  @doc "Project explicitly configured provenance mappings onto one normalized resource."
+  @spec project(Resource.t(), map() | keyword() | nil) :: {:ok, Resource.t()} | {:error, Refusal.t()}
+  def project(%Resource{} = resource, nil), do: {:ok, resource}
 
-  def apply(%Resource{} = resource, config) when is_map(config) or is_list(config) do
+  def project(%Resource{} = resource, config) when is_map(config) or is_list(config) do
     generated_at = get(config, :generated_at)
     derived_from = get(config, :derived_from)
 
@@ -42,7 +42,7 @@ defmodule AshR2RML.Mapping.Provenance do
     end
   end
 
-  def apply(%Resource{} = resource, other) do
+  def project(%Resource{} = resource, other) do
     {:error,
      Refusal.new(
        :REFUSED_UNPROVEN_EQUIVALENCE,
@@ -55,7 +55,7 @@ defmodule AshR2RML.Mapping.Provenance do
   @doc """
   Attach `prov:generatedAtTime` using the standard XSD dateTime contract.
 
-  Prefer `apply/2` when accepting caller input because it validates the source
+  Prefer `project/2` when accepting caller input because it validates the source
   field and datatype first. This lower-level function is retained for callers
   that already own that admission proof.
   """
@@ -206,11 +206,8 @@ defmodule AshR2RML.Mapping.Provenance do
   defp source_datatype_from_ash(module, field_name) when is_atom(module) do
     if Code.ensure_loaded?(module) and Ash.Resource.Info.resource?(module) do
       case Enum.find(Ash.Resource.Info.attributes(module), &(to_string(&1.name) == field_name)) do
-        nil ->
-          :unknown
-
-        attribute ->
-          Registry.resolve(attribute.type)
+        nil -> :unknown
+        attribute -> Registry.resolve(attribute.type)
       end
     else
       :unknown

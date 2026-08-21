@@ -135,7 +135,7 @@ defmodule AshR2RML.FullReactorPipelineTest do
       resource = hd(bundle.resources)
 
       assert {:error, refusal} =
-               AshR2RML.Mapping.Provenance.apply(resource, %{generated_at: :field_that_does_not_exist})
+               AshR2RML.Mapping.Provenance.project(resource, %{generated_at: :field_that_does_not_exist})
 
       assert refusal.code == :REFUSED_UNKNOWN_ATTRIBUTE
       assert "field_that_does_not_exist" not in refusal.evidence.available_fields
@@ -145,7 +145,7 @@ defmodule AshR2RML.FullReactorPipelineTest do
       assert {:ok, bundle} = AshR2RML.Compiler.compile_resources([PipelineUser])
       resource = hd(bundle.resources)
 
-      assert {:error, refusal} = AshR2RML.Mapping.Provenance.apply(resource, %{generated_at: :name})
+      assert {:error, refusal} = AshR2RML.Mapping.Provenance.project(resource, %{generated_at: :name})
       assert refusal.code == :REFUSED_UNMAPPED_DATATYPE
       assert refusal.evidence.rdf_datatype == "http://www.w3.org/2001/XMLSchema#string"
     end
