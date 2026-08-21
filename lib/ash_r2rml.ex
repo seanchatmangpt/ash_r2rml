@@ -87,6 +87,35 @@ defmodule AshR2RML do
   @doc "Render SHACL shapes graph from a bundle or Ash resource set."
   defdelegate render_shacl(resources_or_bundle), to: AshR2RML.SHACL, as: :render
 
+  @doc "Return the canonical Fortune-5 DfCM configuration graph."
+  defdelegate fortune5_dfcm_graph(), to: AshR2RML.Fortune5.DfCM, as: :default_graph
+
+  @doc "Lazily enumerate a bounded Fortune-5 DfCM design space."
+  def fortune5_candidates(opts \\ []) do
+    AshR2RML.Fortune5.DfCM.enumerate(AshR2RML.Fortune5.DfCM.default_graph(), opts)
+  end
+
+  @doc "Return the dependency-closed Fortune-5 capability catalog."
+  defdelegate fortune5_capabilities(), to: AshR2RML.Fortune5.CapabilityGraph, as: :catalog
+
+  @doc "Admit requested Fortune-5 capabilities against exact observations."
+  def fortune5_admit_capabilities(requested, observations \\ []) do
+    AshR2RML.Fortune5.CapabilityGraph.admit(requested, observations)
+  end
+
+  @doc "Construct the Fortune-5 production admission contract without actuating anything."
+  def fortune5_production_contract(contract \\ AshR2RML.Fortune5.ProductionClosure.default_contract()) do
+    AshR2RML.Fortune5.ProductionClosure.admit(contract)
+  end
+
+  @doc "Manufacture the maximal bounded Fortune-5 ggen path/content graph."
+  def compile_fortune5(resources_or_bundle, opts \\ []) do
+    AshR2RML.Fortune5.Ggen.compile(resources_or_bundle, opts)
+  end
+
+  @doc "Return the self-contained Fortune-5 ggen pack source graph."
+  defdelegate fortune5_ggen_pack(), to: AshR2RML.Fortune5.Ggen, as: :pack_source_files
+
   @doc "Validate and return compilation receipt for resources or profile."
   def validate(resources_or_profile) do
     case AshR2RML.Compiler.compile(resources_or_profile) do
