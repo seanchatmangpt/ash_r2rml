@@ -12,6 +12,7 @@ defmodule AshR2ml.CompilationReceipt do
     :profile_hash,
     :shacl_input_hash,
     :ir_sha256,
+    :mapping_sha256,
     :ash_sha256,
     :ecto_sha256,
     :postgres_sha256,
@@ -40,6 +41,7 @@ defmodule AshR2ml.CompilationReceipt do
           profile_hash: String.t() | nil,
           shacl_input_hash: String.t() | nil,
           ir_sha256: String.t() | nil,
+          mapping_sha256: String.t() | nil,
           ash_sha256: String.t() | nil,
           ecto_sha256: String.t() | nil,
           postgres_sha256: String.t() | nil,
@@ -58,7 +60,7 @@ defmodule AshR2ml.CompilationReceipt do
           executed: list(),
           verified: list(),
           blocked: list(),
-          refusals: [AshR2ml.Refusal.t()]
+          refusals: list()
         }
 end
 
@@ -69,6 +71,7 @@ defmodule AshR2ml.Compilation do
     :status,
     :standing,
     :ir,
+    :mapping_bundle,
     :ash_source,
     :ecto_migration,
     :postgres_ddl,
@@ -82,13 +85,14 @@ defmodule AshR2ml.Compilation do
           status: atom(),
           standing: atom(),
           ir: AshR2ml.SemanticIR.t() | nil,
+          mapping_bundle: AshR2ML.Mapping.Bundle.t() | nil,
           ash_source: String.t() | nil,
           ecto_migration: String.t() | nil,
           postgres_ddl: String.t() | nil,
           r2rml: String.t() | nil,
           shacl: String.t() | nil,
           receipt: AshR2ml.CompilationReceipt.t() | nil,
-          refusals: [AshR2ml.Refusal.t()]
+          refusals: list()
         }
 end
 
@@ -101,8 +105,12 @@ defmodule AshR2ml.Compiler do
       ontology/profile/SHACL-normalized input
           -> Admission
           -> SemanticIR
+          -> AshR2ML.Mapping.Bundle
           -> Ash + Ecto + PostgreSQL + R2RML + SHACL
           -> CompilationReceipt
+
+  The canonical public mapping bundle is the serialization boundary. The R2RML
+  renderer never reaches back into SemanticIR or Ash to rediscover decisions.
 
   This is CONSTRUCT only. It neither applies migrations nor starts an OBDA
   service, and therefore cannot grant cutover standing by itself.
@@ -127,9 +135,7 @@ defmodule AshR2ml.Compiler do
 
       {:ok, ir} ->
         case projection_refusals(ir) do
-          [] ->
-            render_all(ir)
-
+          [] -> render_all(ir)
           refusals ->
             {:error,
              %Compilation{
@@ -154,13 +160,7 @@ defmodule AshR2ml.Compiler do
 
   def cutover_ready?(_), do: false
 
-  @doc """
-  Attach an externally observed parity receipt.
-
-  The witness is data only; this function never executes SQL, SPARQL, or Cypher.
-  It requires `verified?: true` and a stable receipt identity from the verifier
-  that actually executed the comparison.
-  """
+  @doc "Attach an externally observed parity receipt without executing the compared systems."
   def attach_parity_witness(%CompilationReceipt{} = receipt, kind, witness)
       when kind in [:sparql_sql, :neo4j_postgres] and is_map(witness) do
     verified? = Map.get(witness, :verified?, Map.get(witness, "verified?", false))
@@ -223,19 +223,22 @@ defmodule AshR2ml.Compiler do
   end
 
   defp render_all(ir) do
-    with {:ok, ash_source} <- AshR2ml.Semantic.Ash.render(ir),
+    with {:ok, mapping_bundle} <- AshR2ML.SemanticAdapter.to_mapping(ir),
+         :ok <- AshR2ML.Mapping.validate(mapping_bundle),
+         {:ok, ash_source} <- AshR2ml.Semantic.Ash.render(ir),
          {:ok, ecto_migration} <- AshR2ml.Semantic.Ecto.render(ir),
          {:ok, postgres_ddl} <- AshR2ml.Semantic.SQL.render(ir),
-         {:ok, r2rml} <- AshR2ml.Semantic.R2RML.render(ir),
+         {:ok, r2rml} <- AshR2ML.R2RML.render(mapping_bundle),
          {:ok, shacl} <- AshR2ml.Semantic.SHACL.render(ir) do
       compilation_receipt =
-        receipt(ir, ash_source, ecto_migration, postgres_ddl, r2rml, shacl)
+        receipt(ir, mapping_bundle, ash_source, ecto_migration, postgres_ddl, r2rml, shacl)
 
       {:ok,
        %Compilation{
          status: :PARTIAL_ALIVE,
          standing: :constructed_not_actuated,
          ir: ir,
+         mapping_bundle: mapping_bundle,
          ash_source: ash_source,
          ecto_migration: ecto_migration,
          postgres_ddl: postgres_ddl,
@@ -245,6 +248,8 @@ defmodule AshR2ml.Compiler do
          refusals: []
        }}
     else
+      {:error, [%AshR2ML.Refusal{} = refusal | _]} -> public_refusal_compilation(ir, refusal)
+      {:error, %AshR2ML.Refusal{} = refusal} -> public_refusal_compilation(ir, refusal)
       {:error, %Refusal{} = refusal} -> refusal_compilation(ir, refusal)
 
       {:error, reason} ->
@@ -258,6 +263,18 @@ defmodule AshR2ml.Compiler do
 
         refusal_compilation(ir, refusal)
     end
+  end
+
+  defp public_refusal_compilation(ir, public_refusal) do
+    refusal =
+      Refusal.new(
+        :REFUSED_UNPROVEN_EQUIVALENCE,
+        public_refusal.subject,
+        "canonical mapping refused ontology-first projection: #{public_refusal.code}: #{public_refusal.detail}",
+        %{public_refusal: Map.from_struct(public_refusal)}
+      )
+
+    refusal_compilation(ir, refusal)
   end
 
   defp refusal_compilation(ir, refusal) do
@@ -295,14 +312,13 @@ defmodule AshR2ml.Compiler do
               )
             ]
 
-          true ->
-            []
+          true -> []
         end
       end)
     end)
   end
 
-  defp receipt(ir, ash_source, ecto_migration, postgres_ddl, r2rml, shacl) do
+  defp receipt(ir, mapping_bundle, ash_source, ecto_migration, postgres_ddl, r2rml, shacl) do
     resources = ir.resources
 
     %CompilationReceipt{
@@ -312,6 +328,7 @@ defmodule AshR2ml.Compiler do
       profile_hash: ir.profile_hash,
       shacl_input_hash: ir.shacl_hash,
       ir_sha256: sha256(canonical_ir(ir)),
+      mapping_sha256: sha256(canonical_term(mapping_bundle)),
       ash_sha256: sha256(ash_source),
       ecto_sha256: sha256(ecto_migration),
       postgres_sha256: sha256(postgres_ddl),
@@ -330,13 +347,14 @@ defmodule AshR2ml.Compiler do
       executed: [
         :admission,
         :semantic_ir,
+        :canonical_mapping_ir,
         :ash_render,
         :ecto_render,
         :postgres_render,
         :r2rml_render,
         :shacl_render
       ],
-      verified: [:single_ir_projection, :deterministic_render_identity],
+      verified: [:canonical_mapping_ir_projection, :deterministic_render_identity],
       blocked: [
         :sparql_sql_behavioral_parity,
         :neo4j_postgres_semantic_parity,
@@ -375,11 +393,7 @@ defmodule AshR2ml.Compiler do
     )
   end
 
-  defp canonical_ir(ir) do
-    ir
-    |> canonical_term()
-    |> :erlang.term_to_binary([:deterministic])
-  end
+  defp canonical_ir(ir), do: canonical_term(ir)
 
   defp canonical_term(%_{} = struct), do: struct |> Map.from_struct() |> canonical_term()
 
@@ -392,5 +406,6 @@ defmodule AshR2ml.Compiler do
   defp canonical_term(list) when is_list(list), do: Enum.map(list, &canonical_term/1)
   defp canonical_term(other), do: other
 
-  defp sha256(value), do: :crypto.hash(:sha256, value) |> Base.encode16(case: :lower)
+  defp sha256(value) when is_binary(value), do: :crypto.hash(:sha256, value) |> Base.encode16(case: :lower)
+  defp sha256(value), do: value |> :erlang.term_to_binary([:deterministic]) |> sha256()
 end
