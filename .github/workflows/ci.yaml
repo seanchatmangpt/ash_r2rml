@@ -14,6 +14,10 @@ on: [push, pull_request]
 # - the same `obda` job also executes the Ontop 5.5.0 standards-compliance
 #   protocol crown against PostGIS so GeoSPARQL functions have a lawful backend.
 # Technical parity still does not grant cutover authority.
+#
+# Cache identity includes the exact Elixir/Erlang toolchain. Do not restore an
+# older broad Mix cache: Rebar BEAM artifacts are not portable across arbitrary
+# runtime identities and a stale cache can fail before project source compiles.
 jobs:
   types:
     runs-on: ubuntu-latest
@@ -29,8 +33,7 @@ jobs:
           path: |
             deps
             _build
-          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
-          restore-keys: ${{ runner.os }}-mix-
+          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock', '.tool-versions') }}
 
       - name: Install dependencies
         run: mix deps.get
@@ -55,8 +58,7 @@ jobs:
           path: |
             deps
             _build
-          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
-          restore-keys: ${{ runner.os }}-mix-
+          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock', '.tool-versions') }}
 
       - name: Install dependencies
         run: mix deps.get
@@ -100,8 +102,7 @@ jobs:
           path: |
             deps
             _build
-          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
-          restore-keys: ${{ runner.os }}-mix-
+          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock', '.tool-versions') }}
 
       - name: Install dependencies
         run: mix deps.get
