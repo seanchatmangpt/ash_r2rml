@@ -4,17 +4,11 @@
 
 defmodule AshR2RML.GrandExample.PublishingReactor do
   @moduledoc """
-  Grand Example Publishing Reactor: 100% Feature Utilization across Ash, Reactor, and AshR2RML for tests.
+  Grand Example Publishing Reactor exercising Ash, Reactor, and AshR2RML public surfaces.
 
-  Combines:
-  - Middlewares (TelemetryLogger, Reactor.Middleware.Telemetry)
-  - Composed Sub-Reactors (`compose`)
-  - Concurrent batch iteration (`map` with `batch_size` and `allow_async?`)
-  - Fail-closed alignment verification & W3C PROV-O provenance attachment
-  - Actor-based policy projection filtering
-  - SPARQL multi-strategy behavioral differential parity checking (`where` guard)
-  - EEx Template rendering (`template`)
-  - Aggregated collection (`collect` with argument transform)
+  The example deliberately keeps semantic choices caller-owned. In particular,
+  PROV-O projection is driven by `metadata.provenance`; the workflow does not
+  manufacture application provenance conventions on its own.
   """
 
   use Reactor
@@ -30,12 +24,10 @@ defmodule AshR2RML.GrandExample.PublishingReactor do
   input(:observations)
   input(:metadata)
 
-  # 1. Composed Sub-Reactor: verifies inputs
   compose :verify_inputs, AshR2RML.GrandExample.SubReactors.InputVerifier do
     argument :resources, input(:resources)
   end
 
-  # 2. Map Step: iterates over resources concurrently to verify individual alignment
   map :verify_each_resource do
     source input(:resources)
     batch_size 2
@@ -50,37 +42,32 @@ defmodule AshR2RML.GrandExample.PublishingReactor do
     end
   end
 
-  # 3. Main Step: compile resources into normalized AshR2RML Bundle
   step :compile_bundle, AshR2RML.Reactor.Steps.CompileResources do
     argument :resources, input(:resources)
     max_retries 1
   end
 
-  # 4. Step: attach W3C PROV-O provenance assertions
   step :attach_provenance, AshR2RML.Reactor.Steps.AttachProvenance do
     argument :bundle, result(:compile_bundle)
+    argument :metadata, input(:metadata)
     wait_for :verify_each_resource
   end
 
-  # 5. Step: apply Ash policy projection filter
   step :apply_policy, AshR2RML.Reactor.Steps.ApplyPolicy do
     argument :bundle, result(:attach_provenance)
     argument :actor, input(:actor)
   end
 
-  # 6. Step: render final W3C R2RML Turtle mapping
   step :render_r2rml_turtle, AshR2RML.Reactor.Steps.RenderTurtle do
     argument :bundle, result(:apply_policy)
   end
 
-  # 7. Step: evaluate SPARQL behavioral parity differential concurrently
   step :evaluate_differential, AshR2RML.Reactor.Steps.EvaluateDifferential do
     argument :observations, input(:observations)
     argument :metadata, input(:metadata)
     where fn %{observations: obs}, _ctx -> is_list(obs) and length(obs) >= 2 end
   end
 
-  # 8. Template Step: generates EEx documentation manifest banner
   template :manifest_banner do
     argument :title, input(:manifest_title)
     argument :verification, result(:verify_inputs)
@@ -92,7 +79,6 @@ defmodule AshR2RML.GrandExample.PublishingReactor do
     """)
   end
 
-  # 9. Collect Step: aggregates all components into a publication package
   collect :publication_package do
     argument :banner, result(:manifest_banner)
     argument :turtle, result(:render_r2rml_turtle)

@@ -11,7 +11,7 @@ defmodule AshR2RML.GrandExampleE2ETest do
   alias AshR2RML.GrandExample.PublishingReactor
   alias AshR2RML.GrandExample.SemanticManifest
   alias AshR2RML.GrandExample.Types.SemVer
-  alias AshR2RML.SPARQL.Observation
+  alias AshR2RML.SPARQL.{Differential, Observation}
 
   defp build_observations do
     query_hash =
@@ -42,6 +42,19 @@ defmodule AshR2RML.GrandExampleE2ETest do
     ]
   end
 
+  defp publication_metadata do
+    %{
+      ontology: "https://schema.org",
+      subject: :schema_person,
+      provenance: %{
+        default: %{derived_from: "https://schema.org/Dataset/{id}"},
+        resources: %{
+          SemanticManifest => %{generated_at: :updated_at}
+        }
+      }
+    }
+  end
+
   describe "Grand Example: 100% Feature Utilization with Public Schema.org Ontologies" do
     test "custom SemVer type conforms to Ash.Type and AshR2RML.Type with standard XSD datatype" do
       assert AshR2RML.Datatype.Registry.supported?(SemVer)
@@ -50,13 +63,13 @@ defmodule AshR2RML.GrandExampleE2ETest do
       assert SemVer.to_rdf_lexical("1.2.3") == "v1.2.3"
     end
 
-    test "executes full PublishingReactor saga with compose, map, template, collect, prov-o, and differential" do
+    test "executes full PublishingReactor saga with explicit PROV-O and observed differential evidence" do
       inputs = %{
         resources: [Person, Organization, SemanticManifest],
         manifest_title: "Schema.org Public Enterprise Manifest",
         actor: %{id: "actor_admin", role: :admin},
         observations: build_observations(),
-        metadata: %{ontology: "https://schema.org"}
+        metadata: publication_metadata()
       }
 
       assert {:ok, package} = Reactor.run(PublishingReactor, inputs)
@@ -66,7 +79,6 @@ defmodule AshR2RML.GrandExampleE2ETest do
       assert package.banner =~ "Semantic Manifest: Schema.org Public Enterprise Manifest"
       assert package.banner =~ "Validated 3 resource mappings"
 
-      # Verify R2RML Turtle contains rendered public Schema.org classes, properties, and PROV-O provenance
       assert package.r2rml_turtle =~ "@prefix rr: <http://www.w3.org/ns/r2rml#>"
       assert package.r2rml_turtle =~ "rr:class <https://schema.org/Person>"
       assert package.r2rml_turtle =~ "rr:class <https://schema.org/Organization>"
@@ -76,12 +88,13 @@ defmodule AshR2RML.GrandExampleE2ETest do
       assert package.r2rml_turtle =~ "http://www.w3.org/ns/prov#generatedAtTime"
       assert package.r2rml_turtle =~ "http://www.w3.org/ns/prov#wasDerivedFrom"
 
-      # Verify SPARQL behavioral differential completed
+      assert package.differential_result.subject == :schema_person
       assert package.differential_result.verified? == true
+      assert map_size(package.differential_result.evidence_id_by_strategy) == 2
+      assert :ok = Differential.require_observed(package.differential_result)
     end
 
-    test "interacts with Ash SemanticManifest resource lifecycle and transactions" do
-      # 1. Create manifest record via Ash action
+    test "interacts with Ash SemanticManifest lifecycle without inventing provenance when none is supplied" do
       manifest =
         SemanticManifest
         |> Ash.Changeset.for_create(
@@ -96,7 +109,6 @@ defmodule AshR2RML.GrandExampleE2ETest do
 
       assert manifest.status == :draft
 
-      # 2. Run the Grand Publishing Reactor
       inputs = %{
         resources: [Person, Organization],
         manifest_title: manifest.title,
@@ -106,8 +118,9 @@ defmodule AshR2RML.GrandExampleE2ETest do
       }
 
       assert {:ok, package} = Reactor.run(PublishingReactor, inputs)
+      refute package.r2rml_turtle =~ "http://www.w3.org/ns/prov#generatedAtTime"
+      refute package.r2rml_turtle =~ "http://www.w3.org/ns/prov#wasDerivedFrom"
 
-      # 3. Update manifest record to published state with rendered Turtle
       updated_manifest =
         manifest
         |> Ash.Changeset.for_update(
@@ -122,7 +135,6 @@ defmodule AshR2RML.GrandExampleE2ETest do
       assert updated_manifest.status == :published
       assert updated_manifest.published_turtle =~ "rr:class <https://schema.org/Person>"
 
-      # 4. Test revert status undo action
       reverted_manifest =
         updated_manifest
         |> Ash.Changeset.for_update(:revert_status, %{}, domain: Domain)
