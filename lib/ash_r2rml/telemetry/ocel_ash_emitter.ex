@@ -4,26 +4,23 @@
 
 defmodule AshR2RML.Telemetry.OcelAshEmitter do
   @moduledoc """
-  Real Object-Centric Event Log (OCEL v2) event emission for every real Ash action,
-  Ash notification, and AshR2RML Reactor workflow execution step.
+  Real Object-Centric Event Log (OCEL v2) event emission for Ash actions,
+  notifications, and AshR2RML Reactor workflow execution.
 
-  Conforms to the standard IEEE/W3C OCEL 2.0 JSON specification:
-  - `ocel:eid` - Unique event identifier (UUIDv7)
-  - `ocel:activity` - Canonical activity name (`resource.action` or `ash_r2rml.reactor.step`)
-  - `ocel:timestamp` - ISO 8601 UTC timestamp
-  - `ocel:omap` - List of polymorphic object instance identifiers participating in the event
-  - `ocel:vmap` - Map of event attributes enriched with genuine Ash and semantic introspection
+  Reactor events preserve their execution identifier and the stable content
+  identity of each step result. This makes one OCEL stream sufficient to trace
+  concurrent Reactor work back to the exact semantic artifacts it produced,
+  without treating timestamps or scheduler order as semantic identity.
   """
 
   require Logger
 
+  alias AshR2RML.Evidence
+
   @action_types [:create, :read, :update, :destroy, :action]
   @default_log_path "priv/ocel/ash-actions.ndjson"
 
-  @doc """
-  Attaches `:telemetry` handlers for every configured Ash domain, for all CRUD action types,
-  generic actions, Ash notifications, and AshR2RML Reactor pipeline steps.
-  """
+  @doc "Attach telemetry handlers for configured Ash domains and AshR2RML Reactor events."
   @spec attach!(keyword()) :: [tuple()]
   def attach!(opts \\ []) do
     log_path = Keyword.get(opts, :log_path, default_log_path())
@@ -50,48 +47,56 @@ defmodule AshR2RML.Telemetry.OcelAshEmitter do
         handler_id
       end
 
-    # Ash Notification Handler
-    notification_event = [:ash, :notification, :stop]
     notification_handler_id = {__MODULE__, :ash, :notification, :stop}
     :telemetry.detach(notification_handler_id)
 
     :telemetry.attach(
       notification_handler_id,
-      notification_event,
+      [:ash, :notification, :stop],
       &__MODULE__.handle_notification_event/4,
       %{outcome: :stop, log_path: log_path}
     )
 
-    # AshR2RML Reactor Step Handler
-    reactor_step_event = [:ash_r2rml, :reactor, :step, :stop]
     reactor_step_handler_id = {__MODULE__, :ash_r2rml, :reactor, :step, :stop}
     :telemetry.detach(reactor_step_handler_id)
 
     :telemetry.attach(
       reactor_step_handler_id,
-      reactor_step_event,
+      [:ash_r2rml, :reactor, :step, :stop],
       &__MODULE__.handle_reactor_step_event/4,
       %{outcome: :stop, log_path: log_path}
     )
 
-    # AshR2RML Reactor Pipeline Completion Handler
-    reactor_pipe_event = [:ash_r2rml, :reactor, :pipeline, :stop]
     reactor_pipe_handler_id = {__MODULE__, :ash_r2rml, :reactor, :pipeline, :stop}
     :telemetry.detach(reactor_pipe_handler_id)
 
     :telemetry.attach(
       reactor_pipe_handler_id,
-      reactor_pipe_event,
+      [:ash_r2rml, :reactor, :pipeline, :stop],
       &__MODULE__.handle_reactor_pipeline_event/4,
       %{outcome: :stop, log_path: log_path}
     )
 
-    [reactor_pipe_handler_id, reactor_step_handler_id, notification_handler_id | ash_action_handlers]
+    reactor_pipe_error_handler_id = {__MODULE__, :ash_r2rml, :reactor, :pipeline, :exception}
+    :telemetry.detach(reactor_pipe_error_handler_id)
+
+    :telemetry.attach(
+      reactor_pipe_error_handler_id,
+      [:ash_r2rml, :reactor, :pipeline, :exception],
+      &__MODULE__.handle_reactor_pipeline_event/4,
+      %{outcome: :error, log_path: log_path}
+    )
+
+    [
+      reactor_pipe_error_handler_id,
+      reactor_pipe_handler_id,
+      reactor_step_handler_id,
+      notification_handler_id
+      | ash_action_handlers
+    ]
   end
 
-  @doc """
-  Detaches all telemetry handlers attached by this module.
-  """
+  @doc "Detach all telemetry handlers attached by this module."
   @spec detach_all!([tuple()]) :: :ok
   def detach_all!(handler_ids) do
     Enum.each(handler_ids, &:telemetry.detach/1)
@@ -148,11 +153,7 @@ defmodule AshR2RML.Telemetry.OcelAshEmitter do
         {metadata[:resource_short_name], nil, nil, nil}
       end
 
-    duration_ms =
-      case measurements[:duration] do
-        nil -> nil
-        native -> System.convert_time_unit(native, :native, :millisecond)
-      end
+    duration_ms = duration_ms(measurements)
 
     primary_object_id =
       cond do
@@ -187,15 +188,9 @@ defmodule AshR2RML.Telemetry.OcelAshEmitter do
     omap = Enum.uniq([primary_object_id | related_objects ++ actor_object])
 
     e2o =
-      [
-        %{"ocel:oid" => primary_object_id, "ocel:qualifier" => "target"}
-      ] ++
-        Enum.map(related_objects, fn r_oid ->
-          %{"ocel:oid" => r_oid, "ocel:qualifier" => "context"}
-        end) ++
-        Enum.map(actor_object, fn a_oid ->
-          %{"ocel:oid" => a_oid, "ocel:qualifier" => "actor"}
-        end)
+      [%{"ocel:oid" => primary_object_id, "ocel:qualifier" => "target"}] ++
+        Enum.map(related_objects, &%{"ocel:oid" => &1, "ocel:qualifier" => "context"}) ++
+        Enum.map(actor_object, &%{"ocel:oid" => &1, "ocel:qualifier" => "actor"})
 
     %{
       "ocel:eid" => Ash.UUIDv7.generate(),
@@ -223,13 +218,6 @@ defmodule AshR2RML.Telemetry.OcelAshEmitter do
     notification = metadata[:notification] || %{}
     resource = notification[:resource] || metadata[:resource]
     action = notification[:action] || metadata[:action]
-
-    duration_ms =
-      case measurements[:duration] do
-        nil -> nil
-        native -> System.convert_time_unit(native, :native, :millisecond)
-      end
-
     res_str = to_string(resource)
 
     %{
@@ -244,7 +232,7 @@ defmodule AshR2RML.Telemetry.OcelAshEmitter do
         "resource" => inspect(resource),
         "action" => to_string(action),
         "outcome" => to_string(outcome),
-        "duration_ms" => duration_ms
+        "duration_ms" => duration_ms(measurements)
       }
     }
   end
@@ -252,21 +240,12 @@ defmodule AshR2RML.Telemetry.OcelAshEmitter do
   defp build_reactor_step_ocel_event(measurements, metadata, outcome) do
     step_name = metadata[:step]
     result = metadata[:result]
-
-    duration_ms =
-      case measurements[:duration] do
-        nil -> nil
-        native -> System.convert_time_unit(native, :native, :millisecond)
-      end
+    execution_id = metadata[:execution_id] || Evidence.execution_id(metadata[:context])
+    result_evidence_id = metadata[:result_evidence_id] || Evidence.id(result)
 
     formatted_step = safe_step_name(step_name)
-    {omap, enriched_vmap} = extract_step_facts(step_name, result)
-
-    e2o =
-      Enum.map(omap, fn oid ->
-        qualifier = if(outcome == :error, do: "compensates", else: "target")
-        %{"ocel:oid" => oid, "ocel:qualifier" => qualifier}
-      end)
+    {object_ids, enriched_vmap} = extract_step_facts(step_name, result)
+    {omap, e2o} = with_execution_object(object_ids, execution_id, outcome)
 
     %{
       "ocel:eid" => Ash.UUIDv7.generate(),
@@ -280,7 +259,9 @@ defmodule AshR2RML.Telemetry.OcelAshEmitter do
           %{
             "step" => formatted_step,
             "outcome" => to_string(outcome),
-            "duration_ms" => duration_ms
+            "duration_ms" => duration_ms(measurements),
+            "execution_id" => execution_id,
+            "result_evidence_id" => result_evidence_id
           },
           enriched_vmap
         )
@@ -288,27 +269,26 @@ defmodule AshR2RML.Telemetry.OcelAshEmitter do
   end
 
   defp build_reactor_pipeline_event(measurements, metadata, outcome) do
-    result = metadata[:result]
-
-    duration_ms =
-      case measurements[:duration] do
-        nil -> nil
-        native -> System.convert_time_unit(native, :native, :millisecond)
-      end
+    result = metadata[:result] || metadata[:errors]
+    execution_id = metadata[:execution_id] || Evidence.execution_id(metadata[:context])
+    result_evidence_id = metadata[:result_evidence_id] || metadata[:error_evidence_id] || Evidence.id(result)
+    run_object = execution_object(execution_id) || "AshR2RML.Reactor.Pipeline"
 
     %{
       "ocel:eid" => Ash.UUIDv7.generate(),
-      "ocel:activity" => "ash_r2rml.reactor.pipeline_completed",
+      "ocel:activity" => if(outcome == :error, do: "ash_r2rml.reactor.pipeline_failed", else: "ash_r2rml.reactor.pipeline_completed"),
       "ocel:timestamp" => DateTime.utc_now() |> DateTime.to_iso8601(),
       "ocel:lifecycle" => to_string(outcome),
-      "ocel:omap" => ["AshR2RML.GrandExample.PublishingReactor"],
-      "ocel:e2o" => [%{"ocel:oid" => "AshR2RML.GrandExample.PublishingReactor", "ocel:qualifier" => "target"}],
+      "ocel:omap" => [run_object],
+      "ocel:e2o" => [%{"ocel:oid" => run_object, "ocel:qualifier" => "target"}],
       "ocel:vmap" => %{
-        "pipeline" => "AshR2RML.GrandExample.PublishingReactor",
+        "pipeline" => "AshR2RML.Reactor",
+        "execution_id" => execution_id,
+        "result_evidence_id" => result_evidence_id,
         "outcome" => to_string(outcome),
-        "duration_ms" => duration_ms,
+        "duration_ms" => duration_ms(measurements),
         "title" => if(is_map(result), do: Map.get(result, :title), else: nil),
-        "status" => if(is_map(result), do: to_string(Map.get(result, :status)), else: nil)
+        "status" => if(is_map(result) and Map.get(result, :status), do: to_string(Map.get(result, :status)), else: nil)
       }
     }
   end
@@ -323,42 +303,94 @@ defmodule AshR2RML.Telemetry.OcelAshEmitter do
   def safe_step_name({:__reactor__, :transform, step}), do: "transform.#{safe_step_name(step)}"
   def safe_step_name(other), do: inspect(other)
 
-  defp extract_step_facts(:compile_bundle, %AshR2RML.Mapping.Bundle{resources: res}) when is_list(res) do
+  defp extract_step_facts(step, %AshR2RML.Mapping.Bundle{resources: res} = bundle)
+       when step in [:compile_bundle, :compile_resources] and is_list(res) do
     omap = Enum.map(res, fn r -> to_string(Map.get(r, :ash_resource) || Map.get(r, :source_module)) end)
     class_iris = Enum.flat_map(res, fn r -> List.wrap(Map.get(r, :class_iris) || Map.get(r, :class_iri)) end)
 
-    {omap, %{"resource_count" => length(res), "class_iris" => class_iris}}
+    {omap,
+     %{
+       "resource_count" => length(res),
+       "class_iris" => class_iris,
+       "mapping_sha256" => Evidence.id(bundle)
+     }}
   end
 
-  defp extract_step_facts(:attach_provenance, %AshR2RML.Mapping.Bundle{resources: res}) when is_list(res) do
+  defp extract_step_facts(:attach_provenance, %AshR2RML.Mapping.Bundle{resources: res} = bundle)
+       when is_list(res) do
     omap = Enum.map(res, fn r -> to_string(Map.get(r, :ash_resource) || Map.get(r, :source_module)) end)
-    {omap, %{"resource_count" => length(res), "provenance_namespaces" => ["http://www.w3.org/ns/prov#"]}}
+
+    {omap,
+     %{
+       "resource_count" => length(res),
+       "provenance_namespaces" => ["http://www.w3.org/ns/prov#"],
+       "mapping_sha256" => Evidence.id(bundle)
+     }}
   end
 
   defp extract_step_facts(:render_r2rml_turtle, turtle) when is_binary(turtle) do
-    {["W3CR2RMLRenderer"], %{"format" => "text/turtle", "r2rml_turtle_byte_size" => byte_size(turtle)}}
+    {["W3CR2RMLRenderer"],
+     %{
+       "format" => "text/turtle",
+       "r2rml_turtle_byte_size" => byte_size(turtle),
+       "r2rml_sha256" => Evidence.sha256(turtle)
+     }}
   end
 
-  defp extract_step_facts(:evaluate_differential, %AshR2RML.SPARQL.DifferentialReceipt{
-         verified?: v,
-         strategies: s,
-         query_sha256: q
-       }) do
-    {["SPARQLDifferential"], %{"verified?" => v, "strategies" => Enum.map(s, &to_string/1), "query_sha256" => q}}
+  defp extract_step_facts(:evaluate_differential, %AshR2RML.SPARQL.DifferentialReceipt{} = receipt) do
+    {["SPARQLDifferential"],
+     %{
+       "verified?" => receipt.verified?,
+       "strategies" => Enum.map(receipt.strategies, &to_string/1),
+       "query_sha256" => receipt.query_sha256,
+       "differential_receipt_sha256" => receipt.receipt_sha256
+     }}
   end
 
   defp extract_step_facts(:manifest_banner, banner) when is_binary(banner) do
-    {["ManifestBanner"], %{"banner_length" => String.length(banner)}}
+    {["ManifestBanner"], %{"banner_length" => String.length(banner), "banner_sha256" => Evidence.sha256(banner)}}
   end
 
   defp extract_step_facts(step, _result) do
     {[safe_step_name(step)], %{}}
   end
 
+  defp with_execution_object(object_ids, execution_id, outcome) do
+    target_qualifier = if(outcome == :error, do: "compensates", else: "target")
+
+    target_relations =
+      Enum.map(object_ids, fn oid ->
+        %{"ocel:oid" => oid, "ocel:qualifier" => target_qualifier}
+      end)
+
+    case execution_object(execution_id) do
+      nil ->
+        {Enum.uniq(object_ids), target_relations}
+
+      run_object ->
+        {
+          Enum.uniq([run_object | object_ids]),
+          [%{"ocel:oid" => run_object, "ocel:qualifier" => "context"} | target_relations]
+        }
+    end
+  end
+
+  defp execution_object(execution_id) when is_binary(execution_id) and execution_id != "",
+    do: "reactor-run:#{execution_id}"
+
+  defp execution_object(_), do: nil
+
   defp get_r2rml_class(resource) do
     case Spark.Dsl.Extension.get_opt(resource, [:r2rml], :class_iri, nil) do
       nil -> Spark.Dsl.Extension.get_opt(resource, [:r2rml], :class, nil)
       class_iri -> class_iri
+    end
+  end
+
+  defp duration_ms(measurements) do
+    case measurements[:duration] do
+      nil -> nil
+      native -> System.convert_time_unit(native, :native, :millisecond)
     end
   end
 
