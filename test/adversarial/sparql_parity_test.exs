@@ -14,6 +14,7 @@ defmodule AshR2RML.Adversarial.SparqlParityTest do
   alias AshR2RML.OBDA.Ontop
   alias AshR2RML.SPARQL.{Differential, Local, Observation, Query, Result}
 
+  @ontop_image "ontop/ontop:5.5.0"
   @tmp_dir Path.expand("tmp/adversarial_sparql_parity")
   @jdbc_jar Path.expand("priv/ontop/jdbc/postgresql-42.7.4.jar")
 
@@ -130,16 +131,31 @@ defmodule AshR2RML.Adversarial.SparqlParityTest do
 
     File.write!(Path.join(@tmp_dir, "parity_mapping.ttl"), mapping_ttl)
 
+    password = resolve_postgres_password()
+
     # 3. Ontop properties
     props = """
     jdbc.url=jdbc:postgresql://xaas-db-1:5432/postgres
     jdbc.user=postgres
-    jdbc.password=389b534e82374bbafa3be820916178b8f0e0b3466f086408
+    jdbc.password=#{password}
     jdbc.driver=org.postgresql.Driver
     """
 
     File.write!(Path.join(@tmp_dir, "parity.properties"), props)
     :ok
+  end
+
+  defp resolve_postgres_password() do
+    case System.get_env("POSTGRES_PASSWORD") || System.get_env("PGPASSWORD") do
+      nil ->
+        case System.cmd("docker", ["exec", "xaas-db-1", "cat", "/run/secrets/postgrespassword"], stderr_to_stdout: true) do
+          {pass, 0} -> String.trim(pass)
+          _ -> "postgres"
+        end
+
+      pass ->
+        pass
+    end
   end
 
   defp build_local_rdf_graph do
@@ -233,7 +249,7 @@ defmodule AshR2RML.Adversarial.SparqlParityTest do
         "/workspace",
         "--entrypoint",
         "/opt/ontop/ontop",
-        "ontop/ontop"
+        @ontop_image
       ],
       mapping_path: "parity_mapping.ttl",
       properties_path: "parity.properties",

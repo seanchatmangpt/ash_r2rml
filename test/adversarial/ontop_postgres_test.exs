@@ -7,7 +7,7 @@ defmodule AshR2RML.Adversarial.OntopPostgresTest do
   Chicago-Style Live Ontop OBDA adversarial test suite.
   Zero mocking of core boundaries:
   - Real PostgreSQL container (`xaas-db-1`)
-  - Real `ontop/ontop:latest` in Docker on network `xaas_default`
+  - Real `ontop/ontop:5.5.0` in Docker on network `xaas_default`
   - Real PostgreSQL JDBC driver (`priv/ontop/jdbc/postgresql-42.7.4.jar`)
   - Real W3C R2RML multi-column joins, nullables, FILTER, OPTIONAL, ORDER BY, and datatypes.
   """
@@ -15,6 +15,7 @@ defmodule AshR2RML.Adversarial.OntopPostgresTest do
 
   alias AshR2RML.OBDA.Ontop
 
+  @ontop_image "ontop/ontop:5.5.0"
   @tmp_dir Path.expand("tmp/adversarial_ontop_postgres")
   @jdbc_jar Path.expand("priv/ontop/jdbc/postgresql-42.7.4.jar")
 
@@ -188,15 +189,30 @@ defmodule AshR2RML.Adversarial.OntopPostgresTest do
 
     File.write!(Path.join(@tmp_dir, "adversarial_mapping.ttl"), mapping_ttl)
 
+    password = resolve_postgres_password()
+
     props = """
     jdbc.url=jdbc:postgresql://xaas-db-1:5432/postgres
     jdbc.user=postgres
-    jdbc.password=389b534e82374bbafa3be820916178b8f0e0b3466f086408
+    jdbc.password=#{password}
     jdbc.driver=org.postgresql.Driver
     """
 
     File.write!(Path.join(@tmp_dir, "adversarial.properties"), props)
     :ok
+  end
+
+  defp resolve_postgres_password() do
+    case System.get_env("POSTGRES_PASSWORD") || System.get_env("PGPASSWORD") do
+      nil ->
+        case System.cmd("docker", ["exec", "xaas-db-1", "cat", "/run/secrets/postgrespassword"], stderr_to_stdout: true) do
+          {pass, 0} -> String.trim(pass)
+          _ -> "postgres"
+        end
+
+      pass ->
+        pass
+    end
   end
 
   defp run_ontop_query(query_str, filename) do
@@ -218,7 +234,7 @@ defmodule AshR2RML.Adversarial.OntopPostgresTest do
         "/workspace",
         "--entrypoint",
         "/opt/ontop/ontop",
-        "ontop/ontop"
+        @ontop_image
       ],
       mapping_path: "adversarial_mapping.ttl",
       properties_path: "adversarial.properties",

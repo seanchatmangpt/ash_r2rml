@@ -14,7 +14,7 @@ defmodule AshR2RML.ObdaCrown do
   @workspace "tmp/ash_r2rml_obda"
   @postgres_db "ash_r2rml"
   @postgres_user "postgres"
-  @postgres_password "postgres"
+  @postgres_password System.get_env("POSTGRES_PASSWORD") || System.get_env("PGPASSWORD") || "postgres"
   @neo4j_url "http://127.0.0.1:7474/db/neo4j/tx/commit"
   @ontop_image "ontop/ontop:5.5.0"
   @ontop_container "ash-r2ml-ontop-endpoint"
