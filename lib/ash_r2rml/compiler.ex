@@ -264,9 +264,6 @@ defmodule AshR2RML.Compiler do
       {:error, %AshR2RML.Refusal{} = refusal} ->
         public_refusal_compilation(ir, refusal)
 
-      {:error, %Refusal{} = refusal} ->
-        refusal_compilation(ir, refusal)
-
       {:error, reason} ->
         refusal =
           Refusal.new(
