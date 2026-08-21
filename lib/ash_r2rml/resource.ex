@@ -35,6 +35,12 @@ defmodule AshR2RML.Dsl.Reference do
   defstruct [:relationship, :predicate_iri, :inverse_predicate, :__identifier__, :__spark_metadata__]
 end
 
+defmodule AshR2RML.Dsl.SparqlQuery do
+  @moduledoc false
+  @enforce_keys [:name]
+  defstruct [:name, form: :select, select: [], where: [], __identifier__: nil, __spark_metadata__: nil]
+end
+
 defmodule AshR2RML.Dsl.Graph do
   @moduledoc false
   @enforce_keys [:iri]
@@ -108,6 +114,19 @@ defmodule AshR2RML.Resource do
     ]
   }
 
+  @sparql_query %Spark.Dsl.Entity{
+    name: :query,
+    args: [:name],
+    target: AshR2RML.Dsl.SparqlQuery,
+    identifier: :name,
+    schema: [
+      name: [type: :atom, required: true],
+      form: [type: {:one_of, [:select, :construct, :ask, :describe]}, default: :select],
+      select: [type: {:list, :atom}, default: []],
+      where: [type: :any, default: []]
+    ]
+  }
+
   @r2rml %Spark.Dsl.Section{
     name: :r2rml,
     describe: "Semantic mapping metadata normalized into AshR2RML.Mapping",
@@ -120,10 +139,16 @@ defmodule AshR2RML.Resource do
     singleton_entity_keys: [:subject]
   }
 
+  @sparql %Spark.Dsl.Section{
+    name: :sparql,
+    describe: "Declarative SPARQL query definitions compiled with the resource",
+    entities: [@sparql_query]
+  }
+
   def section, do: @r2rml
 
   use Spark.Dsl.Extension,
-    sections: [@r2rml],
+    sections: [@r2rml, @sparql],
     transformers: [AshR2RML.Resource.Persist],
     verifiers: [AshR2RML.Resource.Verify]
 end
@@ -474,6 +499,13 @@ defmodule AshR2RML.Resource.Info do
 
   def neo4j_control_present?(resource) do
     mapped?(resource)
+  end
+
+  @spec sparql_queries(module()) :: [AshR2RML.Dsl.SparqlQuery.t()]
+  def sparql_queries(resource) do
+    Spark.Dsl.Extension.get_entities(resource, [:sparql])
+  rescue
+    _ -> []
   end
 end
 
