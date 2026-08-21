@@ -1,3 +1,9 @@
+<!--
+SPDX-FileCopyrightText: 2026 ash_r2ml contributors <https://github.com/seanchatmangpt/ash_r2ml/graphs/contributors>
+
+SPDX-License-Identifier: MIT
+-->
+
 # AGENTS.md — AshR2ml side-by-side semantic projection
 
 This subtree is governed by the root `AGENTS.md` plus the following migration rules.
