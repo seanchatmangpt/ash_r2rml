@@ -1,232 +1,395 @@
 <!--
-SPDX-FileCopyrightText: 2026 ash_neo4j contributors <https://github.com/diffo-dev/ash_neo4j/graphs.contributors>
+SPDX-FileCopyrightText: 2026 ash_r2ml contributors
 
 SPDX-License-Identifier: MIT
 -->
 
-# Managing Neo4j Schema
+# Managing relational schema and R2RML
+
+AshR2ML does not manage a database schema itself. The Ash data layer—normally AshPostgres—continues to own relational persistence and migrations.
+
+AshR2ML manages the **semantic correspondence** between that relational schema and the virtual RDF graph exposed through R2RML.
+
+```text
+Ash.Resource
+    │
+    ├── AshPostgres → Ecto migration → PostgreSQL
+    │
+    └── AshR2ML → R2RML mapping → virtual RDF
+```
+
+The two branches must describe the same admitted subject.
+
+## Install
 
 ```elixir
 Mix.install(
   [
-    {:ash_neo4j, "~> 0.10"},
-    {:kino, "~> 0.14"}
+    {:ash, "~> 3.0"},
+    {:ash_postgres, "~> 2.0"},
+    {:ash_r2ml, "~> 1.0"}
   ],
   consolidate_protocols: false
 )
 ```
 
-## What this guide covers
-
-AshNeo4j has three manual DDL surfaces and a deliberate **no-migrations-on-boot** stance:
-
-* **identity uniqueness constraints** and **primary-key constraints** — `AshNeo4j.Constraint` (#20, #32)
-* **vector indexes** — `AshNeo4j.Vector` (#74)
-* (spatial POINT indexes — `AshNeo4j.Spatial` — follow the same shape; see `usage-rules/spatial.md`)
-
-This guide is a cohesive, runnable walk-through of creating and maintaining them.
-
-### Why manual
-
-AshNeo4j runs **no migrations on boot**. It never silently mutates your database schema on application start. Instead you call these helpers yourself — typically from a start-up or release task — so schema changes are explicit, reviewable, and under your control.
-
-Every statement uses `IF NOT EXISTS` / `IF EXISTS`, so the helpers are **idempotent and safe to re-run**. The dry-run functions (`constraint_statements/1`, `index_statements/3`) return the exact Cypher **without touching the database** — so the constraint/index sections below are runnable for review even before you connect.
-
-## Connecting
-
-Update the configuration for your local Neo4j and evaluate. (Only the live "create / drop / SHOW" cells need a connection — the dry-run cells do not.)
+## Define the resource once
 
 ```elixir
-config = [
-  uri: "bolt://localhost:7687",
-  auth: [username: "neo4j", password: "password"],
-  user_agent: "ashNeo4jSchemaHowTo/1",
-  pool_size: 5,
-  prefix: :default,
-  name: Bolt,
-  versions: [6.0, {5, 6..8}, {5, 0..4}],
-  log: false
-]
+defmodule Schema.Account do
+  use Ash.Resource,
+    domain: Schema.Domain,
+    data_layer: AshPostgres.DataLayer,
+    extensions: [AshR2ML.Resource]
 
-AshNeo4j.BoltyHelper.start(config)
-AshNeo4j.BoltyHelper.is_connected()
-```
-
-## Example resources
-
-A small domain with three constraint shapes: a single-attribute identity, a **composite** primary key, and a vector attribute.
-
-```elixir
-defmodule Schema.Domain do
-  use Ash.Domain, validate_config_inclusion?: false
-
-  resources do
-    allow_unregistered? true
+  postgres do
+    table "accounts"
+    repo Schema.Repo
   end
-end
 
-defmodule Schema.Product do
-  use Ash.Resource, domain: Schema.Domain, data_layer: AshNeo4j.DataLayer
+  r2rml do
+    class "https://example.org/Account"
 
-  neo4j do
-    label :Product
+    subject do
+      template "https://example.org/accounts/{id}"
+      term_type :iri
+    end
   end
 
   attributes do
     uuid_primary_key :id
-    attribute :sku, :string, allow_nil?: false, public?: true
-    attribute :name, :string, public?: true
+
+    attribute :account_number, :string do
+      allow_nil? false
+      public? true
+
+      rdf do
+        predicate "https://example.org/accountNumber"
+      end
+    end
+
+    attribute :balance, :decimal do
+      allow_nil? false
+      public? true
+
+      rdf do
+        predicate "https://example.org/balance"
+      end
+    end
   end
 
   identities do
-    # a single-attribute identity → one uniqueness constraint
-    identity :unique_sku, [:sku]
+    identity :account_number, [:account_number]
   end
 end
+```
 
-defmodule Schema.Listing do
-  use Ash.Resource, domain: Schema.Domain, data_layer: AshNeo4j.DataLayer
+AshPostgres derives and enforces the relational structure. AshR2ML derives the semantic mapping.
 
-  neo4j do
-    label :Listing
+## Generate relational migrations with AshPostgres
+
+Use the normal AshPostgres migration workflow for the application.
+
+Conceptually:
+
+```bash
+mix ash.codegen create_accounts
+mix ash.migrate
+```
+
+or the application's documented AshPostgres migration commands.
+
+AshR2ML deliberately does not duplicate this functionality.
+
+The resulting relational schema is expected to contain structures equivalent to:
+
+```sql
+CREATE TABLE accounts (
+  id uuid PRIMARY KEY,
+  account_number text NOT NULL,
+  balance numeric NOT NULL
+);
+
+CREATE UNIQUE INDEX accounts_account_number_index
+  ON accounts(account_number);
+```
+
+The exact SQL remains the responsibility of the relational data layer and migration system.
+
+## Generate the semantic mapping
+
+```elixir
+{:ok, ttl} = AshR2ML.R2RML.render([Schema.Account])
+File.write!("priv/r2rml/schema.ttl", ttl)
+```
+
+The mapping is equivalent to:
+
+```turtle
+<#Account>
+    a rr:TriplesMap ;
+    rr:logicalTable [ rr:tableName "accounts" ] ;
+    rr:subjectMap [
+        rr:template "https://example.org/accounts/{id}" ;
+        rr:class <https://example.org/Account> ;
+        rr:termType rr:IRI
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate <https://example.org/accountNumber> ;
+        rr:objectMap [
+            rr:column "account_number" ;
+            rr:datatype xsd:string
+        ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate <https://example.org/balance> ;
+        rr:objectMap [
+            rr:column "balance" ;
+            rr:datatype xsd:decimal
+        ]
+    ] .
+```
+
+No table or column is re-declared by hand in the semantic layer when AshR2ML can derive it from the resource/data layer.
+
+## Add a relational relationship
+
+```elixir
+defmodule Schema.Transaction do
+  use Ash.Resource,
+    domain: Schema.Domain,
+    data_layer: AshPostgres.DataLayer,
+    extensions: [AshR2ML.Resource]
+
+  postgres do
+    table "transactions"
+    repo Schema.Repo
   end
 
-  attributes do
-    # a composite primary key → one composite IS UNIQUE constraint
-    attribute :marketplace, :string, allow_nil?: false, primary_key?: true, public?: true
-    attribute :sku, :string, allow_nil?: false, primary_key?: true, public?: true
-    attribute :price, :integer, public?: true
-  end
-end
+  r2rml do
+    class "https://example.org/Transaction"
 
-defmodule Schema.Note do
-  use Ash.Resource, domain: Schema.Domain, data_layer: AshNeo4j.DataLayer
-
-  neo4j do
-    label :Note
+    subject do
+      template "https://example.org/transactions/{id}"
+      term_type :iri
+    end
   end
 
   attributes do
     uuid_primary_key :id
-    attribute :body, :string, public?: true
-    # a vector attribute → a VECTOR index (Cypher 25 / Neo4j ≥ 2025.06)
-    attribute :embedding, AshNeo4j.Type.Vector,
-      constraints: [element_type: :float32, dimensions: 1536],
-      public?: true
+
+    attribute :amount, :decimal do
+      allow_nil? false
+
+      rdf do
+        predicate "https://example.org/amount"
+      end
+    end
+  end
+
+  relationships do
+    belongs_to :account, Schema.Account do
+      allow_nil? false
+
+      rdf do
+        predicate "https://example.org/account"
+      end
+    end
   end
 end
 ```
 
-## Identities → uniqueness constraints (#20)
+The relational schema owns the foreign key:
 
-An Ash `identity` is enforced at the database level with a Neo4j uniqueness constraint — so you don't need `pre_check?` and its race window. A conflicting create surfaces as Ash's own `Ash.Error.Changes.InvalidAttribute` ("has already been taken").
-
-Inspect the Cypher first (no database needed):
-
-```elixir
-AshNeo4j.Constraint.constraint_statements(Schema.Product)
-#=> {:ok, ["CREATE CONSTRAINT product_pk IF NOT EXISTS FOR (n:Product) REQUIRE n.uuid IS UNIQUE",
-#         "CREATE CONSTRAINT product_unique_sku IF NOT EXISTS FOR (n:Product) REQUIRE n.sku IS UNIQUE"]}
+```text
+transactions.account_id → accounts.id
 ```
 
-Then create them (this one touches the database):
+AshR2ML converts that relationship to an R2RML reference object map:
 
-```elixir
-AshNeo4j.Constraint.create_constraints(Schema.Product)
-#=> {:ok, [%Bolty.Response{}, ...]}   # one per constraint; safe to re-run (IF NOT EXISTS)
+```turtle
+rr:predicateObjectMap [
+    rr:predicate <https://example.org/account> ;
+    rr:objectMap [
+        rr:parentTriplesMap <#Account> ;
+        rr:joinCondition [
+            rr:child "account_id" ;
+            rr:parent "id"
+        ]
+    ]
+] .
 ```
 
-Constraint names are derived: `<label_lower>_<identity_name>` for an identity (`product_unique_sku`), and `<label_lower>_pk` for the primary key (`product_pk`).
+## Schema changes
 
-## Composite primary keys (#32)
+A schema change may affect both relational storage and semantic projection.
 
-The resource's **primary key** also gets a uniqueness constraint — composite keys included, on Neo4j **Community Edition**. `Schema.Listing` has a composite `[:marketplace, :sku]` primary key:
+### Relational-only rename with stable semantics
 
-```elixir
-AshNeo4j.Constraint.constraint_statements(Schema.Listing)
-#=> {:ok, ["CREATE CONSTRAINT listing_pk IF NOT EXISTS FOR (n:Listing) REQUIRE (n.marketplace, n.sku) IS UNIQUE"]}
+Suppose the physical column changes from:
+
+```text
+account_number
 ```
 
-The primary-key constraint is **deduped**: if an identity already constrains the same attribute set, no redundant `_pk` constraint is created. Primary-key attributes are always required, so the constraint is always enforceable.
+to:
 
-```elixir
-AshNeo4j.Constraint.create_constraints(Schema.Listing)
+```text
+external_account_number
 ```
 
-## What's refused (not silently skipped)
+while the RDF predicate remains:
 
-Some identities **cannot** be enforced as a Neo4j uniqueness constraint:
-
-* `nils_distinct?: false` — Neo4j treats nulls as always-distinct in a uniqueness constraint
-* a **filtered** identity (`where:`) — a constraint can't carry a predicate
-
-Rather than silently leave such an identity unenforced (and permit the duplicates the constraint exists to prevent), AshNeo4j **refuses** — returning `{:error, %AshNeo4j.Error.UnsupportedIdentity{}}` and creating **nothing** for that resource (all-or-nothing). The same cases are rejected at compile time by `AshNeo4j.Verifiers.VerifyIdentities`, so you find out when you define the resource, not in production.
-
-```elixir
-defmodule Schema.Loose do
-  use Ash.Resource, domain: Schema.Domain, data_layer: AshNeo4j.DataLayer
-
-  neo4j do
-    label :Loose
-  end
-
-  attributes do
-    uuid_primary_key :id
-    attribute :email, :string, public?: true
-  end
-
-  identities do
-    identity :unique_email, [:email], nils_distinct?: false
-  end
-end
-
-AshNeo4j.Constraint.constraint_statements(Schema.Loose)
-#=> {:error, %AshNeo4j.Error.UnsupportedIdentity{reason: :nils_not_distinct, ...}}
+```text
+https://example.org/accountNumber
 ```
 
-## Vector indexes (#74)
+Update the Ash resource/data-layer source configuration and generate the migration. Do not change the RDF predicate merely because the physical column changed.
 
-A vector attribute is searchable without an index (a full scan), but an HNSW **VECTOR index** is what makes similarity search scale. Like constraints, you create it yourself. It requires Cypher 25 (Neo4j ≥ 2025.06).
+This is one reason semantic identity and predicates are independent from storage names.
 
-Dimensions and element type come from the attribute's `constraints`; the index options control naming, recreation, and the similarity function.
+### Semantic predicate change
 
-```elixir
-AshNeo4j.Vector.index_statements(Schema.Note, :embedding)
-#=> {:ok, "CREATE VECTOR INDEX note_embedding_vector IF NOT EXISTS FOR (n:Note) ON (n.embedding) " <>
-#         "OPTIONS {indexConfig: {`vector.dimensions`: 1536, `vector.similarity_function`: 'cosine'}}"}
-```
+If the domain meaning genuinely changes and the application adopts a new predicate IRI, update the semantic DSL/application profile and regenerate R2RML.
 
-```elixir
-# create it (Cypher 25 required)
-AshNeo4j.Vector.create_index(Schema.Note, :embedding)
+The relational table may remain unchanged.
 
-# changed :dimensions or :similarity_function? recreate drops then re-creates:
-AshNeo4j.Vector.create_index(Schema.Note, :embedding, recreate: true, similarity_function: :euclidean)
-```
+### Relationship ownership change
 
-## Maintaining
+Moving a foreign key or replacing a join table changes the relational path. AshR2ML must re-introspect the Ash relationship and regenerate the corresponding `rr:joinCondition`.
 
-Inspect what's actually on the server with native Cypher via the data layer's pool:
+Do not preserve a stale hand-authored join in R2RML.
+
+## Validate relational correspondence
+
+AshR2ML verifies that mapping references correspond to known Ash/data-layer structure before rendering.
 
 ```elixir
-{:ok, constraints} = AshNeo4j.Cypher.run("SHOW CONSTRAINTS")
-{:ok, indexes} = AshNeo4j.Cypher.run("SHOW INDEXES")
-{constraints, indexes}
+:ok = AshR2ML.verify([
+  Schema.Account,
+  Schema.Transaction
+])
 ```
 
-Drop when a resource's schema changes (both use `IF EXISTS`, so they're no-ops when absent):
+Verification includes:
 
-```elixir
-AshNeo4j.Constraint.drop_constraints(Schema.Product)
-AshNeo4j.Vector.drop_index(Schema.Note, :embedding)
+- logical table is resolvable,
+- mapped attributes have source columns or supported expressions,
+- subject-template fields exist,
+- relationship source/destination attributes resolve,
+- destination resource has a subject map,
+- join columns are compatible with the referenced identity,
+- RDF datatypes are lawful for the Ash value types.
+
+## Validate R2RML syntax
+
+Generated Turtle is parsed as RDF as part of the conformance suite.
+
+A mapping that renders text but cannot be parsed as RDF is a failed build, not a warning.
+
+## Validate with a real OBDA engine
+
+The strongest integration test runs the generated mapping against the real relational schema.
+
+```text
+fixtures inserted through Ash
+       ↓
+PostgreSQL
+       ↓
+generated R2RML
+       ↓
+OBDA engine
+       ↓
+SPARQL results
 ```
 
-A typical **release task** creates the schema for every resource on deploy — idempotent, so it's safe on every release:
+For example:
 
-```elixir
-for resource <- [Schema.Product, Schema.Listing] do
-  {resource, AshNeo4j.Constraint.create_constraints(resource)}
-end
+```sparql
+SELECT ?transaction ?account ?amount
+WHERE {
+  ?transaction a <https://example.org/Transaction> ;
+               <https://example.org/account> ?account ;
+               <https://example.org/amount> ?amount .
+}
 ```
 
-That's the whole schema surface: declare constraints and indexes in code, inspect the Cypher with the dry-run helpers, create them from a release task, and re-run freely. No migrations on boot, nothing implicit.
+The returned `?transaction` and `?account` IRIs must be the subject IRIs manufactured from the same rows Ash observes.
+
+## Ontology-first schema management
+
+When resources are generated from RDF/SHACL with ggen, the operational source hierarchy is:
+
+```text
+ontology/profile/SHACL
+      ↓
+ggen
+      ↓
+Ash resources
+      ↓
+AshPostgres migrations
+      +
+AshR2ML R2RML
+```
+
+Do not modify the generated Ash resource to repair a migration or mapping. Repair the application profile, SHACL shape, ggen query/template, or compiler logic and regenerate.
+
+## Drift detection
+
+There are three distinct drift classes.
+
+### Generated-source drift
+
+Generated Ash differs from what ggen would produce.
+
+Detect by regeneration and a clean diff check.
+
+### Relational drift
+
+The live PostgreSQL schema differs from the migrations/resource metadata expected by Ash.
+
+Detect with the application's normal AshPostgres/Ecto migration verification.
+
+### Semantic drift
+
+Generated R2RML no longer corresponds to the current Ash relationship, source column, datatype, or subject identity.
+
+Detect with `AshR2ML.verify/1`, deterministic regeneration, and the OBDA integration suite.
+
+## Release artifact
+
+A deployment that exposes SPARQL should publish the generated mapping alongside the application release, for example:
+
+```text
+priv/r2rml/application.ttl
+```
+
+The artifact should be generated from the same source revision used to build the application.
+
+A receipt can bind:
+
+```text
+application commit
+Ash resource digest
+migration digest
+AshR2ML mapping digest
+R2RML artifact digest
+```
+
+so an operator can prove which semantic graph projection corresponds to which deployed relational schema.
+
+## Operational rule
+
+Never treat R2RML as a second schema authority.
+
+The authority chain is:
+
+```text
+Ash / ontology-first source
+      ↓
+relational schema + semantic mapping
+      ↓
+PostgreSQL + virtual RDF
+```
+
+If the relational and semantic projections disagree, fix the authoritative model and regenerate both projections.

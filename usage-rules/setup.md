@@ -1,50 +1,87 @@
-<!--
-SPDX-FileCopyrightText: 2025 ash_neo4j contributors <https://github.com/diffo-dev/ash_neo4j/graphs.contributors>
-
-SPDX-License-Identifier: MIT
--->
-
 # Setup
 
-## Bolty and the Bolt protocol
+AshR2ML is a semantic mapping extension for Ash. It does not replace your data layer.
 
-AshNeo4j connects to Neo4j via the [Bolt protocol](https://neo4j.com/docs/bolt/current/) using [Bolty](https://hexdocs.pm/bolty/), a DBConnection-based driver. Bolty is a required dependency of AshNeo4j — you do not add it separately.
+## Dependencies
 
-There is no `Ecto.Repo`. Instead, Bolty runs as a named process (`Bolt`) in your application's supervision tree, backed by a DBConnection pool.
-
-## Configuration
-
-Add connection config to `config/runtime.exs` (credentials should not be in `config/config.exs`):
+A typical relational application uses AshR2ML beside AshPostgres:
 
 ```elixir
-config :bolty, Bolt,
-  uri: "bolt://localhost:7687",
-  auth: [username: "neo4j", password: "password"],
-  pool_size: 10,
-  name: Bolt
-```
-
-`name: Bolt` is required — AshNeo4j always refers to the connection pool by the name `Bolt`.
-
-## Supervision tree
-
-Add Bolty to your application's children in `lib/my_app/application.ex`:
-
-```elixir
-def start(_type, _args) do
-  children = [
-    {Bolty, Application.get_env(:bolty, Bolt)},
-    # ...
+def deps do
+  [
+    {:ash, "~> 3.0"},
+    {:ash_postgres, "~> 2.0"},
+    {:ash_r2ml, "~> 1.0"}
   ]
-
-  Supervisor.start_link(children, strategy: :one_for_one, name: MyApp.Supervisor)
 end
 ```
 
-## Igniter
+AshR2ML itself owns no database connection pool and requires no graph database.
 
-If your project uses Igniter, the above can be done automatically:
+## Resource configuration
 
-```bash
-mix igniter.install ash_neo4j
+Keep the existing data layer and add the AshR2ML extension:
+
+```elixir
+defmodule MyApp.Person do
+  use Ash.Resource,
+    domain: MyApp.Domain,
+    data_layer: AshPostgres.DataLayer,
+    extensions: [AshR2ML.Resource]
+
+  postgres do
+    table "people"
+    repo MyApp.Repo
+  end
+
+  r2rml do
+    class "https://schema.org/Person"
+
+    subject do
+      template "https://example.org/people/{id}"
+      term_type :iri
+    end
+  end
+end
 ```
+
+## Formatter and docs
+
+Add AshR2ML's Spark extension to formatter/cheat-sheet generation when the package installer has not already done so. Prefer the package's Igniter installer when available so formatter and documentation configuration stay synchronized with the installed version.
+
+## R2RML output
+
+Compile one or more resources to the normalized mapping IR and render Turtle:
+
+```elixir
+resources = [MyApp.Person]
+{:ok, ttl} = AshR2ML.R2RML.render(resources)
+File.write!("priv/r2rml/application.ttl", ttl)
+```
+
+Generated R2RML is a projection. Do not hand-edit it when the owning Ash resource or ontology-first generator can regenerate it.
+
+## OBDA engine
+
+AshR2ML generates mappings but does not execute SPARQL. Configure a compatible R2RML/OBDA engine separately and point it at:
+
+1. the same relational database used by the Ash application; and
+2. the generated R2RML mapping.
+
+The intended topology is one persisted subject with multiple query surfaces, not synchronized databases.
+
+## Ontology-first projects
+
+Ontology-first consumers use the shipped ggen pack as a development-time manufacturer:
+
+```text
+ontology/profile + SHACL
+        ↓
+       ggen
+        ↓
+generated Ash resources
+        ↓
+     AshR2ML
+```
+
+ggen is not required merely to execute a normal Ash application using already-generated resources.

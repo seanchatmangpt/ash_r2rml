@@ -1,0 +1,317 @@
+<!--
+SPDX-FileCopyrightText: 2026 ash_r2ml contributors
+
+SPDX-License-Identifier: MIT
+-->
+
+# Ash-first semantic mapping
+
+This guide starts with ordinary Ash resources and adds only the semantic information required to expose them as a virtual RDF graph.
+
+## Install
+
+```elixir
+Mix.install(
+  [
+    {:ash, "~> 3.0"},
+    {:ash_postgres, "~> 2.0"},
+    {:ash_r2ml, "~> 1.0"}
+  ],
+  consolidate_protocols: false
+)
+```
+
+AshR2ML is an extension, not a data layer.
+
+```elixir
+defmodule Example.Person do
+  use Ash.Resource,
+    domain: Example.Domain,
+    data_layer: AshPostgres.DataLayer,
+    extensions: [AshR2ML.Resource]
+end
+```
+
+## Define the domain
+
+```elixir
+defmodule Example.Domain do
+  use Ash.Domain
+
+  resources do
+    resource Example.Person
+    resource Example.Organization
+  end
+end
+```
+
+## Define a mapped organization
+
+```elixir
+defmodule Example.Organization do
+  use Ash.Resource,
+    domain: Example.Domain,
+    data_layer: AshPostgres.DataLayer,
+    extensions: [AshR2ML.Resource]
+
+  postgres do
+    table "organizations"
+    repo Example.Repo
+  end
+
+  r2rml do
+    class "https://schema.org/Organization"
+
+    subject do
+      template "https://example.org/organizations/{id}"
+      term_type :iri
+    end
+  end
+
+  attributes do
+    uuid_primary_key :id
+
+    attribute :name, :string do
+      allow_nil? false
+      public? true
+
+      rdf do
+        predicate "https://schema.org/name"
+      end
+    end
+  end
+end
+```
+
+The important division is:
+
+```text
+Ash/AshPostgres knows:
+  table
+  column
+  type
+  nullability
+  identity
+
+AshR2ML adds:
+  RDF class
+  predicate
+  subject IRI construction
+```
+
+## Define a relationship
+
+```elixir
+defmodule Example.Person do
+  use Ash.Resource,
+    domain: Example.Domain,
+    data_layer: AshPostgres.DataLayer,
+    extensions: [AshR2ML.Resource]
+
+  postgres do
+    table "people"
+    repo Example.Repo
+  end
+
+  r2rml do
+    class "http://xmlns.com/foaf/0.1/Person"
+
+    subject do
+      template "https://example.org/people/{id}"
+      term_type :iri
+    end
+  end
+
+  attributes do
+    uuid_primary_key :id
+
+    attribute :name, :string do
+      allow_nil? false
+      public? true
+
+      rdf do
+        predicate "http://xmlns.com/foaf/0.1/name"
+      end
+    end
+  end
+
+  relationships do
+    belongs_to :organization, Example.Organization do
+      allow_nil? false
+      public? true
+
+      rdf do
+        predicate "https://schema.org/memberOf"
+      end
+    end
+  end
+end
+```
+
+AshPostgres owns the relational relationship:
+
+```text
+people.organization_id → organizations.id
+```
+
+AshR2ML compiles the semantic relationship:
+
+```text
+<PersonIRI> schema:memberOf <OrganizationIRI>
+```
+
+No second relationship declaration is needed.
+
+## Inspect the normalized mapping
+
+```elixir
+person_mapping = AshR2ML.Resource.Info.mapping(Example.Person)
+organization_mapping = AshR2ML.Resource.Info.mapping(Example.Organization)
+
+{person_mapping, organization_mapping}
+```
+
+The person mapping contains:
+
+```text
+logical table: people
+class: foaf:Person
+subject template: https://example.org/people/{id}
+scalar predicate: foaf:name ← people.name
+relationship: schema:memberOf
+join: people.organization_id → organizations.id
+parent triples map: Organization
+```
+
+## Generate R2RML
+
+```elixir
+{:ok, turtle} =
+  AshR2ML.R2RML.render([
+    Example.Organization,
+    Example.Person
+  ])
+
+IO.puts(turtle)
+```
+
+The relationship is emitted as a reference object map rather than as a duplicated scalar foreign-key predicate.
+
+## Semantic identity is independent from database identity
+
+A resource can use a composite business identity in its subject template.
+
+```elixir
+r2rml do
+  class "https://example.org/Account"
+
+  subject do
+    template "https://example.org/accounts/{tenant_id}/{account_number}"
+    term_type :iri
+  end
+end
+```
+
+AshR2ML verifies both fields exist. If the configured subject construction is not deterministic for the resource, compilation fails.
+
+## Override an RDF datatype
+
+AshR2ML normally derives RDF datatypes from Ash types.
+
+Use an override only when the semantic datatype differs from the default registry and the conversion is lawful:
+
+```elixir
+attribute :amount, :decimal do
+  rdf do
+    predicate "https://example.org/amount"
+    datatype "http://www.w3.org/2001/XMLSchema#decimal"
+  end
+end
+```
+
+An incompatible override is refused.
+
+## Many-to-many
+
+A standard Ash many-to-many relationship can be mapped when AshR2ML can introspect the join resource/relationship and both semantic identities.
+
+```text
+Post --taggedWith--> Tag
+```
+
+The relational path may be:
+
+```text
+posts
+  ↑
+post_tags
+  ↓
+tags
+```
+
+AshR2ML emits a semantic object-property mapping that follows the join rather than exposing the join table as accidental RDF structure.
+
+When the join carries real domain facts, model it as a first-class mapped resource instead.
+
+## Validate before publishing mappings
+
+```elixir
+:ok = AshR2ML.verify([Example.Organization, Example.Person])
+{:ok, turtle} = AshR2ML.R2RML.render([Example.Organization, Example.Person])
+```
+
+Verification checks include:
+
+- valid class and predicate IRIs,
+- exactly one effective subject construction,
+- template fields resolve,
+- datatypes are supported,
+- relationship destinations are mapped,
+- relational join keys are resolvable,
+- destination semantic identity is available,
+- no mapping is silently omitted.
+
+## Use with an OBDA engine
+
+Write the mapping to a deployment artifact:
+
+```elixir
+File.mkdir_p!("priv/r2rml")
+File.write!("priv/r2rml/application.ttl", turtle)
+```
+
+Point a compatible R2RML/OBDA engine at:
+
+```text
+PostgreSQL connection
++
+priv/r2rml/application.ttl
+```
+
+Then a SPARQL query such as:
+
+```sparql
+SELECT ?person ?organization
+WHERE {
+  ?person <https://schema.org/memberOf> ?organization .
+}
+```
+
+is rewritten to SQL over the same relational state Ash uses.
+
+## Verification crown
+
+The semantic mapping is complete when the same fixture is observable through both paths:
+
+```text
+Ash.get!/Ash.read!
+      │
+      ├── Person id/name/organization
+      │
+PostgreSQL
+      │
+      └── R2RML → SPARQL
+            Person IRI/name/organization IRI
+```
+
+The identifiers and required relationships must correspond exactly under the configured subject maps.
