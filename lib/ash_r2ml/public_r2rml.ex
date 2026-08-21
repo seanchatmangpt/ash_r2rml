@@ -19,6 +19,7 @@ defmodule AshR2ML.R2RML do
     Resource,
     SubjectMap
   }
+
   alias AshR2ML.Refusal
 
   @prefixes """@prefix rr: <http://www.w3.org/ns/r2rml#> .
@@ -45,7 +46,6 @@ defmodule AshR2ML.R2RML do
 
   defp render_bundle(%Bundle{resources: resources}) do
     by_resource = Map.new(resources, &{&1.ash_resource, &1})
-
     base_maps = Enum.map(resources, &render_resource(&1, by_resource))
 
     bridge_maps =
@@ -71,9 +71,16 @@ defmodule AshR2ML.R2RML do
     all = base_maps ++ bridge_maps ++ inverse_maps
 
     case Enum.find(all, &match?({:error, _}, &1)) do
-      {:error, refusal} -> {:error, refusal}
+      {:error, refusal} ->
+        {:error, refusal}
+
       nil ->
-        rendered = all |> Enum.map(&unwrap/1) |> Enum.reject(&(&1 == "")) |> Enum.join("\n")
+        rendered =
+          all
+          |> Enum.map(&unwrap/1)
+          |> Enum.reject(&(&1 == ""))
+          |> Enum.join("\n")
+
         {:ok, rendered}
     end
   end
@@ -85,7 +92,9 @@ defmodule AshR2ML.R2RML do
       |> Enum.map(&render_reference(&1, by_resource))
 
     case Enum.find(references, &match?({:error, _}, &1)) do
-      {:error, refusal} -> {:error, refusal}
+      {:error, refusal} ->
+        {:error, refusal}
+
       nil ->
         property_maps = Enum.map(resource.predicate_object_maps, &render_property/1)
         ref_maps = Enum.map(references, &unwrap/1)
@@ -102,18 +111,19 @@ defmodule AshR2ML.R2RML do
 
   defp render_subject(resource) do
     subject = resource.subject_map
-    terms = [render_term_map(subject.strategy, subject.value)]
-    terms = terms ++ Enum.map(resource.class_iris, &"rr:class <#{&1}>")
-    terms = terms ++ render_term_type(subject.term_type, :subject)
-    terms = terms ++ Enum.flat_map(resource.graph_maps ++ subject.graph_maps, &render_graph_map/1)
-    Enum.join(terms, "; ")
+
+    ([render_subject_term_map(subject)] ++
+       Enum.map(resource.class_iris, &"rr:class <#{&1}>") ++
+       render_term_type(subject.term_type, :subject) ++
+       Enum.flat_map(resource.graph_maps ++ subject.graph_maps, &render_graph_map/1))
+    |> Enum.join("; ")
   end
 
   defp render_property(mapping) do
     object = mapping.object_map
 
     object_terms =
-      [render_term_map(object.strategy, object.value)] ++
+      [render_object_term_map(object)] ++
         render_object_datatype(object) ++
         render_term_type(object.term_type, :object)
 
@@ -153,7 +163,11 @@ defmodule AshR2ML.R2RML do
        when not is_map_key(metadata, :kind),
        do: {:ok, []}
 
-  defp bridge_maps(resource, %ReferenceObjectMap{metadata: %{kind: :many_to_many}} = reference, by_resource) do
+  defp bridge_maps(
+         resource,
+         %ReferenceObjectMap{metadata: %{kind: :many_to_many}} = reference,
+         by_resource
+       ) do
     with {:ok, parent} <- fetch_parent(reference, by_resource),
          {:ok, logical_table} <- through_logical_table(reference),
          {:ok, bridge_subject} <- bridge_subject(resource, reference, :source),
@@ -176,9 +190,14 @@ defmodule AshR2ML.R2RML do
 
   defp bridge_maps(_resource, _reference, _by_resource), do: {:ok, []}
 
-  defp inverse_maps(_resource, %ReferenceObjectMap{inverse_predicate: nil}, _by_resource), do: {:ok, []}
+  defp inverse_maps(_resource, %ReferenceObjectMap{inverse_predicate: nil}, _by_resource),
+    do: {:ok, []}
 
-  defp inverse_maps(resource, %ReferenceObjectMap{metadata: %{kind: :many_to_many}} = reference, by_resource) do
+  defp inverse_maps(
+         resource,
+         %ReferenceObjectMap{metadata: %{kind: :many_to_many}} = reference,
+         by_resource
+       ) do
     with {:ok, parent} <- fetch_parent(reference, by_resource),
          {:ok, logical_table} <- through_logical_table(reference),
          {:ok, inverse_subject} <- bridge_subject(parent, reference, :destination),
@@ -229,13 +248,16 @@ defmodule AshR2ML.R2RML do
            %{parent_resource: reference.parent_resource}
          )}
 
-      parent -> {:ok, parent}
+      parent ->
+        {:ok, parent}
     end
   end
 
   defp through_logical_table(reference) do
     case Map.get(reference.metadata, :through_logical_table) do
-      %LogicalTable{} = logical -> {:ok, logical}
+      %LogicalTable{} = logical ->
+        {:ok, logical}
+
       other ->
         {:error,
          Refusal.new(
@@ -281,7 +303,9 @@ defmodule AshR2ML.R2RML do
              )}
           end
 
-        :constant -> {:ok, render_bridge_subject_map(subject, subject.value, resource)}
+        :constant ->
+          {:ok, render_bridge_subject_map(subject, subject.value, resource)}
+
         other ->
           {:error,
            Refusal.new(
@@ -294,9 +318,11 @@ defmodule AshR2ML.R2RML do
     end
   end
 
-  defp render_bridge_subject_map(%SubjectMap{strategy: strategy, term_type: term_type}, value, resource) do
-    ([render_term_map(strategy, value)] ++
-       render_term_type(term_type, :subject) ++
+  defp render_bridge_subject_map(%SubjectMap{} = subject, value, resource) do
+    bridge_subject = %{subject | value: value}
+
+    ([render_subject_term_map(bridge_subject)] ++
+       render_term_type(subject.term_type, :subject) ++
        Enum.flat_map(resource.graph_maps, &render_graph_map/1))
     |> Enum.join("; ")
   end
@@ -305,7 +331,8 @@ defmodule AshR2ML.R2RML do
     metadata = reference.metadata
 
     cond do
-      Map.has_key?(metadata, :source_parent_column) and Map.has_key?(metadata, :source_join_column) ->
+      Map.has_key?(metadata, :source_parent_column) and
+          Map.has_key?(metadata, :source_join_column) ->
         {:ok, {metadata.source_parent_column, metadata.source_join_column}}
 
       match?(%AshR2ML.Mapping.JoinCondition{}, Map.get(metadata, :source_to_join)) ->
@@ -314,7 +341,11 @@ defmodule AshR2ML.R2RML do
 
       true ->
         {:error,
-         Refusal.new(:REFUSED_INVALID_JOIN_CONDITION, reference.relationship, "many_to_many source bridge columns are incomplete")}
+         Refusal.new(
+           :REFUSED_INVALID_JOIN_CONDITION,
+           reference.relationship,
+           "many_to_many source bridge columns are incomplete"
+         )}
     end
   end
 
@@ -322,7 +353,8 @@ defmodule AshR2ML.R2RML do
     metadata = reference.metadata
 
     cond do
-      Map.has_key?(metadata, :destination_parent_column) and Map.has_key?(metadata, :destination_join_column) ->
+      Map.has_key?(metadata, :destination_parent_column) and
+          Map.has_key?(metadata, :destination_join_column) ->
         {:ok, {metadata.destination_parent_column, metadata.destination_join_column}}
 
       match?(%AshR2ML.Mapping.JoinCondition{}, Map.get(metadata, :join_to_destination)) ->
@@ -331,7 +363,11 @@ defmodule AshR2ML.R2RML do
 
       true ->
         {:error,
-         Refusal.new(:REFUSED_INVALID_JOIN_CONDITION, reference.relationship, "many_to_many destination bridge columns are incomplete")}
+         Refusal.new(
+           :REFUSED_INVALID_JOIN_CONDITION,
+           reference.relationship,
+           "many_to_many destination bridge columns are incomplete"
+         )}
     end
   end
 
@@ -347,7 +383,8 @@ defmodule AshR2ML.R2RML do
     end
   end
 
-  defp render_logical_table(%LogicalTable{table_name: table, schema: schema}) when is_binary(table) do
+  defp render_logical_table(%LogicalTable{table_name: table, schema: schema})
+       when is_binary(table) do
     qualified = if is_binary(schema) and schema != "", do: schema <> "." <> table, else: table
     "rr:tableName #{literal(qualified)}"
   end
@@ -355,10 +392,48 @@ defmodule AshR2ML.R2RML do
   defp render_logical_table(%LogicalTable{sql_query: query}) when is_binary(query),
     do: "rr:sqlQuery #{literal(query)}"
 
-  defp render_term_map(:template, value), do: "rr:template #{literal(value)}"
-  defp render_term_map(:column, value), do: "rr:column #{literal(value)}"
-  defp render_term_map(:constant, value), do: "rr:constant <#{value}>"
-  defp render_term_map(:blank_node, value), do: "rr:template #{literal(value)}"
+  defp render_subject_term_map(%SubjectMap{strategy: :template, value: value}),
+    do: "rr:template #{literal(value)}"
+
+  defp render_subject_term_map(%SubjectMap{strategy: :column, value: value}),
+    do: "rr:column #{literal(value)}"
+
+  defp render_subject_term_map(%SubjectMap{strategy: :constant, value: value}),
+    do: "rr:constant <#{value}>"
+
+  defp render_subject_term_map(%SubjectMap{strategy: :blank_node, value: value}),
+    do: "rr:template #{literal(value)}"
+
+  defp render_object_term_map(%ObjectMap{strategy: :constant, term_type: :iri, value: value}),
+    do: "rr:constant <#{value}>"
+
+  defp render_object_term_map(
+         %ObjectMap{strategy: :constant, term_type: :literal, language: language, value: value}
+       )
+       when is_binary(language),
+       do: "rr:constant #{literal(value)}@#{language}"
+
+  defp render_object_term_map(
+         %ObjectMap{
+           strategy: :constant,
+           term_type: :literal,
+           datatype: %{rdf_datatype: datatype},
+           value: value
+         }
+       )
+       when is_binary(datatype),
+       do: "rr:constant #{literal(value)}^^<#{datatype}>"
+
+  defp render_object_term_map(%ObjectMap{strategy: :constant, term_type: :literal, value: value}),
+    do: "rr:constant #{literal(value)}"
+
+  defp render_object_term_map(%ObjectMap{strategy: :template, value: value}),
+    do: "rr:template #{literal(value)}"
+
+  defp render_object_term_map(%ObjectMap{strategy: :column, value: value}),
+    do: "rr:column #{literal(value)}"
+
+  defp render_object_datatype(%ObjectMap{strategy: :constant}), do: []
 
   defp render_object_datatype(%ObjectMap{language: language}) when is_binary(language),
     do: ["rr:language #{literal(language)}"]
@@ -373,9 +448,14 @@ defmodule AshR2ML.R2RML do
   defp render_term_type(:iri, :object), do: ["rr:termType rr:IRI"]
   defp render_term_type(:blank_node, _scope), do: ["rr:termType rr:BlankNode"]
 
-  defp render_graph_map(%GraphMap{strategy: :constant, value: value}), do: ["rr:graph <#{value}>"]
-  defp render_graph_map(%GraphMap{strategy: :template, value: value}), do: ["rr:graphMap [ rr:template #{literal(value)} ]"]
-  defp render_graph_map(%GraphMap{strategy: :column, value: value}), do: ["rr:graphMap [ rr:column #{literal(value)} ]"]
+  defp render_graph_map(%GraphMap{strategy: :constant, value: value}),
+    do: ["rr:graph <#{value}>"]
+
+  defp render_graph_map(%GraphMap{strategy: :template, value: value}),
+    do: ["rr:graphMap [ rr:template #{literal(value)} ]"]
+
+  defp render_graph_map(%GraphMap{strategy: :column, value: value}),
+    do: ["rr:graphMap [ rr:column #{literal(value)} ]"]
 
   defp render_join(join),
     do: "rr:joinCondition [ rr:child #{literal(join.child)}; rr:parent #{literal(join.parent)} ]"
@@ -387,7 +467,8 @@ defmodule AshR2ML.R2RML do
 
   defp bridge_id(resource, reference, direction) do
     payload =
-      {AshR2ML.Mapping.mapping_identity(resource), reference.relationship, reference.predicate_iri, direction}
+      {AshR2ML.Mapping.mapping_identity(resource), reference.relationship, reference.predicate_iri,
+       direction}
       |> :erlang.term_to_binary([:deterministic])
       |> then(&:crypto.hash(:sha256, &1))
       |> Base.encode16(case: :lower)
