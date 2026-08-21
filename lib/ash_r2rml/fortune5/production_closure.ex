@@ -6,10 +6,10 @@ defmodule AshR2RML.Fortune5.ProductionClosure do
   @moduledoc """
   Fortune-5 production admission contract for AshR2RML.
 
-  This module is intentionally SELECT/CONSTRUCT-oriented. It does not start
-  infrastructure, run migrations, write files, mutate data, or grant cutover
-  authority. It makes the production closure explicit enough for Spark, Reactor,
-  Igniter, ggen, CI, and operator receipts to converge on one auditable boundary.
+  This is a SELECT/CONSTRUCT boundary. It does not start infrastructure, run
+  migrations, write files, mutate data, or grant cutover authority. It records
+  the DfCM production invariants that Spark, Reactor, Igniter, ggen, CI, and
+  operator receipts must satisfy before a subject can claim production standing.
   """
 
   defmodule Refusal do
@@ -21,11 +21,7 @@ defmodule AshR2RML.Fortune5.ProductionClosure do
     @moduledoc "Admitted production target before runtime evidence is attached."
 
     defstruct version: "fortune5-dfcm-v1",
-              slo: %{
-                p99_cold_path_ms: 500,
-                max_queue_ms: 50,
-                timeout_ms: 30_000
-              },
+              slo: %{p99_cold_path_ms: 500, max_queue_ms: 50, timeout_ms: 30_000},
               capacity: %{
                 min_concurrent_operations: 1_000_000,
                 horizontal_scaling?: true,
@@ -150,33 +146,24 @@ defmodule AshR2RML.Fortune5.ProductionClosure do
     :authority_cutover_receipt
   ]
 
-  @doc "Return the default Fortune-5 DfCM production contract."
   def default_contract, do: %Contract{}
 
-  @doc "Admit a production contract without pretending construction equals runtime evidence."
   def admit(contract \\ default_contract()) do
     contract = normalize(contract)
     hard_failures = failed_hard_checks(contract)
     runtime_failures = failed_runtime_checks(contract)
     receipt = build_receipt(contract, hard_failures, runtime_failures)
 
-    if hard_failures == [] do
-      {:ok, receipt}
-    else
-      {:error, receipt}
-    end
+    if hard_failures == [], do: {:ok, receipt}, else: {:error, receipt}
   end
 
-  @doc "True only when hard production checks and runtime/cutover evidence are both present."
   def production_ready?(contract) do
-    case admit(contract) do
-      {:ok, %Receipt{production_ready?: true}} -> true
-      _ -> false
-    end
+    match?({:ok, %Receipt{production_ready?: true}}, admit(contract))
   end
 
-  @doc "Authorize one DO operation only when BRCE identity and replay evidence are present."
-  def authorize_do(contract \\ default_contract(), request) when is_map(request) do
+  def authorize_do(request), do: authorize_do(default_contract(), request)
+
+  def authorize_do(contract, request) when is_map(request) do
     contract = normalize(contract)
 
     required = [
@@ -191,16 +178,10 @@ defmodule AshR2RML.Fortune5.ProductionClosure do
 
     cond do
       contract.authority[:brce_required_for_do?] != true ->
-        {:error,
-         refusal(:REFUSED_AUTHORITY, :do, "DO authority requires BRCE in Fortune-5 mode", %{
-           required: :brce
-         })}
+        {:error, refusal(:REFUSED_AUTHORITY, :do, "DO authority requires BRCE in Fortune-5 mode", %{required: :brce})}
 
       missing != [] ->
-        {:error,
-         refusal(:REFUSED_UNRECEIPTED_ACTUATION, :do, "DO request is missing required BRCE fields", %{
-           missing: missing
-         })}
+        {:error, refusal(:REFUSED_UNRECEIPTED_ACTUATION, :do, "DO request is missing required BRCE fields", %{missing: missing})}
 
       true ->
         {:ok,
@@ -213,10 +194,8 @@ defmodule AshR2RML.Fortune5.ProductionClosure do
     end
   end
 
-  @doc "All production falsifiers tracked by this contract."
   def falsifiers, do: @hard_checks ++ @runtime_checks
 
-  @doc "Deterministic hash of any production closure term."
   def sha256(term) do
     term
     |> canonical()
@@ -225,28 +204,16 @@ defmodule AshR2RML.Fortune5.ProductionClosure do
     |> Base.encode16(case: :lower)
   end
 
-  defp normalize(%Contract{} = contract), do: contract
-
-  defp normalize(map) when is_map(map) do
-    base = Map.from_struct(default_contract())
-
-    base
-    |> deep_merge(atomize_keys(map))
-    |> then(&struct(Contract, &1))
-  end
-
-  defp normalize(keyword) when is_list(keyword), do: keyword |> Map.new() |> normalize()
-
   defp failed_hard_checks(contract) do
-    checks = %{
-      slo_p99_cold_path: get_in(contract.slo, [:p99_cold_path_ms]) <= 500,
-      slo_queue_bound: get_in(contract.slo, [:max_queue_ms]) <= 50,
-      capacity_concurrency: get_in(contract.capacity, [:min_concurrent_operations]) >= 1_000_000,
+    %{
+      slo_p99_cold_path: contract.slo[:p99_cold_path_ms] <= 500,
+      slo_queue_bound: contract.slo[:max_queue_ms] <= 50,
+      capacity_concurrency: contract.capacity[:min_concurrent_operations] >= 1_000_000,
       capacity_horizontal_scaling: contract.capacity[:horizontal_scaling?] == true,
       capacity_partitioned_execution: contract.capacity[:partitioned_execution?] == true,
       capacity_backpressure: contract.capacity[:backpressure?] == true,
-      availability_regions: get_in(contract.availability, [:min_regions]) >= 2,
-      availability_zones: get_in(contract.availability, [:min_availability_zones_per_region]) >= 3,
+      availability_regions: contract.availability[:min_regions] >= 2,
+      availability_zones: contract.availability[:min_availability_zones_per_region] >= 3,
       availability_rolling_deploys: contract.availability[:rolling_deploys?] == true,
       availability_failover: contract.availability[:failover_tested?] == true,
       availability_disaster_recovery: contract.availability[:disaster_recovery_tested?] == true,
@@ -274,20 +241,18 @@ defmodule AshR2RML.Fortune5.ProductionClosure do
       authority_brce_required: contract.authority[:brce_required_for_do?] == true,
       topology_selected_candidate: contract.selected_topology in contract.topology_candidates
     }
-
-    failed(checks)
+    |> failed()
   end
 
   defp failed_runtime_checks(contract) do
-    checks = %{
+    %{
       runtime_exact_subject_observed: contract.evidence[:exact_subject_runtime_observed?] == true,
       runtime_1m_concurrency_observed: contract.evidence[:stress_1m_concurrency_observed?] == true,
       runtime_exact_head_ci: present?(contract.evidence[:exact_head_ci_sha256]),
       runtime_obda_crown: present?(contract.evidence[:obda_crown_receipt_sha256]),
       authority_cutover_receipt: present?(contract.authority[:cutover_authority_receipt_sha256])
     }
-
-    failed(checks)
+    |> failed()
   end
 
   defp build_receipt(contract, hard_failures, runtime_failures) do
@@ -320,40 +285,18 @@ defmodule AshR2RML.Fortune5.ProductionClosure do
     %{receipt | receipt_sha256: sha256(Map.from_struct(receipt))}
   end
 
-  defp failed(checks) do
-    checks
-    |> Enum.reject(fn {_key, passed?} -> passed? end)
-    |> Enum.map(&elem(&1, 0))
-  end
-
+  defp failed(checks), do: checks |> Enum.reject(fn {_key, passed?} -> passed? end) |> Enum.map(&elem(&1, 0))
   defp refusal(code, subject, detail, evidence), do: %Refusal{code: code, subject: subject, detail: detail, evidence: evidence}
-
   defp present?(value), do: is_binary(value) and value != ""
-
-  defp atomize_keys(map) do
-    Map.new(map, fn
-      {key, value} when is_binary(key) -> {String.to_atom(key), atomize_value(value)}
-      {key, value} -> {key, atomize_value(value)}
-    end)
-  end
-
+  defp normalize(%Contract{} = contract), do: contract
+  defp normalize(keyword) when is_list(keyword), do: keyword |> Map.new() |> normalize()
+  defp normalize(map) when is_map(map), do: default_contract() |> Map.from_struct() |> deep_merge(atomize_keys(map)) |> then(&struct(Contract, &1))
+  defp atomize_keys(map), do: Map.new(map, fn {key, value} -> {if(is_binary(key), do: String.to_atom(key), else: key), atomize_value(value)} end)
   defp atomize_value(value) when is_map(value), do: atomize_keys(value)
   defp atomize_value(value), do: value
-
-  defp deep_merge(left, right) do
-    Map.merge(left, right, fn _key, left_value, right_value ->
-      if is_map(left_value) and is_map(right_value), do: deep_merge(left_value, right_value), else: right_value
-    end)
-  end
-
+  defp deep_merge(left, right), do: Map.merge(left, right, fn _key, left_value, right_value -> if is_map(left_value) and is_map(right_value), do: deep_merge(left_value, right_value), else: right_value end)
   defp canonical(%_{} = struct), do: struct |> Map.from_struct() |> canonical()
-
-  defp canonical(map) when is_map(map) do
-    map
-    |> Enum.map(fn {key, value} -> {canonical(key), canonical(value)} end)
-    |> Enum.sort_by(fn {key, _value} -> :erlang.term_to_binary(key, [:deterministic]) end)
-  end
-
+  defp canonical(map) when is_map(map), do: map |> Enum.map(fn {key, value} -> {canonical(key), canonical(value)} end) |> Enum.sort_by(fn {key, _value} -> :erlang.term_to_binary(key, [:deterministic]) end)
   defp canonical(list) when is_list(list), do: Enum.map(list, &canonical/1)
   defp canonical(tuple) when is_tuple(tuple), do: tuple |> Tuple.to_list() |> Enum.map(&canonical/1)
   defp canonical(other), do: other
