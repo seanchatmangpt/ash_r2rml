@@ -1,0 +1,47 @@
+# SPDX-FileCopyrightText: 2026 ash_r2rml contributors <https://github.com/seanchatmangpt/ash_r2rml/graphs/contributors>
+# SPDX-License-Identifier: MIT
+
+[project]
+name = "ash-r2rml-production"
+version = "0.1.0"
+description = "Deterministic production engineering projections from an admitted AshR2RML subject"
+authors = ["ash_r2rml contributors"]
+license = "MIT"
+repository = "https://github.com/seanchatmangpt/ash_r2rml"
+
+[ontology]
+source = "input.ttl"
+imports = ["vocabulary.ttl"]
+base_iri = "https://w3id.org/ash-r2rml/production#"
+
+[validation]
+gates = [
+  "gates/010_semantic_subject.rq",
+  "gates/020_no_ambient_do.rq",
+  "gates/030_candidate_identity.rq",
+  "gates/040_admission_receipt.rq",
+]
+strict_mode = true
+
+[generation]
+output_dir = "output"
+max_sparql_timeout_ms = 5000
+require_audit_trail = true
+determinism_salt = "ash-r2rml-production-v1"
+enable_llm = false
+
+[[generation.rules]]
+name = "candidate-contracts"
+query = { file = "queries/candidates.rq" }
+template = { file = "templates/candidate-contract.md.tmpl" }
+output_file = "generated/production/candidates/{{ sha }}/contract.md"
+skip_empty = true
+mode = "Overwrite"
+
+[[generation.rules]]
+name = "capability-matrix"
+query = { file = "queries/capabilities.rq" }
+template = { file = "templates/capability-matrix.md.tmpl" }
+output_file = "generated/production/capabilities/{{ capability }}/standing.md"
+skip_empty = true
+mode = "Overwrite"

@@ -1,0 +1,25 @@
+# SPDX-FileCopyrightText: 2026 ash_r2rml contributors <https://github.com/seanchatmangpt/ash_r2rml/graphs/contributors>
+# SPDX-License-Identifier: MIT
+
+@prefix p: <https://w3id.org/ash-r2rml/production#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+p:AdmittedSemanticSubject a rdfs:Class .
+p:AuthorityContract a rdfs:Class .
+p:EvidenceAdmission a rdfs:Class .
+p:ProjectionSet a rdfs:Class .
+p:DesignCandidate a rdfs:Class .
+p:CapabilityStanding a rdfs:Class .
+
+p:sha256 a rdf:Property .
+p:candidateSha256 a rdf:Property .
+p:capabilityId a rdf:Property .
+p:status a rdf:Property .
+p:receiptSha256 a rdf:Property .
+p:constructOnly a rdf:Property .
+p:ambientDo a rdf:Property .
+p:brceOnlyDo a rdf:Property .
+p:ontologySha256 a rdf:Property .
+p:shaclSha256 a rdf:Property .
+p:r2rmlSha256 a rdf:Property .
