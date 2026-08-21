@@ -51,9 +51,11 @@ defmodule AshR2RML.SPARQL.Differential do
   alias AshR2RML.Refusal
   alias AshR2RML.SPARQL.{DifferentialReceipt, Observation, Result}
 
-  @spec compare(term(), [Observation.t()], map()) ::
+  @spec compare(term(), [AshR2RML.SPARQL.Observation.t()], map()) ::
           {:ok, DifferentialReceipt.t()} | {:error, Refusal.t()}
-  def compare(subject, observations, metadata \\ %{}) when is_list(observations) and is_map(metadata) do
+  def compare(subject, observations, metadata \\ %{})
+
+  def compare(subject, observations, metadata) when is_list(observations) and is_map(metadata) do
     with :ok <- require_observations(observations),
          {:ok, query_sha256} <- common_query_identity(observations),
          :ok <- unique_strategies(observations) do

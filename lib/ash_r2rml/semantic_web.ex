@@ -51,16 +51,6 @@ defmodule AshR2RML.SPARQL.Query do
      }}
   end
 
-  def admit(%Elixir.SPARQL.Query{} = parsed, source) when is_binary(source) do
-    {:ok,
-     %__MODULE__{
-       source: source,
-       parsed: parsed,
-       form: parsed.form,
-       sha256: sha256(source)
-     }}
-  end
-
   def admit(source) when is_binary(source) do
     try do
       case Elixir.SPARQL.Query.new(source, default_prefixes: nil) do
@@ -75,15 +65,6 @@ defmodule AshR2RML.SPARQL.Query do
              "SPARQL.ex refused the query during language admission",
              %{reason: inspect(reason)}
            )}
-
-        other ->
-          {:error,
-           Refusal.new(
-             :REFUSED_UNPROVEN_EQUIVALENCE,
-             :sparql_query,
-             "SPARQL.ex did not return an admitted query",
-             %{result: inspect(other)}
-           )}
       end
     rescue
       exception ->
@@ -91,10 +72,20 @@ defmodule AshR2RML.SPARQL.Query do
          Refusal.new(
            :REFUSED_UNPROVEN_EQUIVALENCE,
            :sparql_query,
-           "SPARQL query parsing raised",
-           %{exception: Exception.message(exception)}
+           "SPARQL.ex raised during language admission",
+           %{reason: Exception.message(exception)}
          )}
     end
+  end
+
+  def admit(%Elixir.SPARQL.Query{} = parsed, source) when is_binary(source) do
+    {:ok,
+     %__MODULE__{
+       source: source,
+       parsed: parsed,
+       form: parsed.form,
+       sha256: sha256(source)
+     }}
   end
 
   def admit(other) do

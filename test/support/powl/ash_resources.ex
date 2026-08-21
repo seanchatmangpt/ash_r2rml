@@ -55,7 +55,7 @@ defmodule AshR2RML.POWL.Ash.ProcessModel do
 
     create :create do
       primary? true
-      accept [:id, :name, :root_type, :raw_owl_turtle]
+      accept [:name, :root_type, :raw_owl_turtle]
     end
 
     update :update do
@@ -120,7 +120,7 @@ defmodule AshR2RML.POWL.Ash.Transition do
 
     create :create do
       primary? true
-      accept [:id, :process_model_id, :key_name, :label, :silent?]
+      accept [:process_model_id, :key_name, :label, :silent?]
     end
   end
 end
@@ -180,7 +180,7 @@ defmodule AshR2RML.POWL.Ash.Place do
 
     create :create do
       primary? true
-      accept [:id, :process_model_id, :name, :is_source?, :is_sink?]
+      accept [:process_model_id, :name, :is_source?, :is_sink?]
     end
   end
 end
@@ -234,7 +234,7 @@ defmodule AshR2RML.POWL.Ash.FlowArc do
 
     create :create do
       primary? true
-      accept [:id, :process_model_id, :source_name, :target_name]
+      accept [:process_model_id, :source_name, :target_name]
     end
   end
 end
@@ -294,7 +294,7 @@ defmodule AshR2RML.POWL.Ash.DecomposedNode do
 
     create :create do
       primary? true
-      accept [:id, :process_model_id, :node_type, :label, :spec_json]
+      accept [:process_model_id, :node_type, :label, :spec_json]
     end
   end
 end

@@ -11,7 +11,7 @@ defmodule AshR2RML.Telemetry.OcelAshEmitter do
   - `ocel:eid` - Unique event identifier (UUIDv7)
   - `ocel:activity` - Canonical activity name (`resource.action` or `ash_r2rml.reactor.step`)
   - `ocel:timestamp` - ISO 8601 UTC timestamp
-  - `ocel:omap` - List of object identifiers participating in the event
+  - `ocel:omap` - List of polymorphic object instance identifiers participating in the event
   - `ocel:vmap` - Map of event attributes enriched with genuine Ash and semantic introspection
   """
 
@@ -98,6 +98,11 @@ defmodule AshR2RML.Telemetry.OcelAshEmitter do
     :ok
   end
 
+  @doc "Default path where OCEL NDJSON records are appended."
+  def default_log_path do
+    Application.get_env(:ash_r2rml, :ocel_log_path, @default_log_path)
+  end
+
   @doc false
   def handle_event(_event, measurements, metadata, %{outcome: outcome, log_path: log_path}) do
     event = build_ocel_event(measurements, metadata, outcome)
@@ -129,6 +134,7 @@ defmodule AshR2RML.Telemetry.OcelAshEmitter do
   defp build_ocel_event(measurements, metadata, outcome) do
     resource = metadata[:resource]
     action = metadata[:action]
+    result_record = metadata[:result] || metadata[:record]
 
     {resource_short_name, description, public_attribute_count, r2rml_class} =
       if resource && Ash.Resource.Info.resource?(resource) do
@@ -148,11 +154,43 @@ defmodule AshR2RML.Telemetry.OcelAshEmitter do
         native -> System.convert_time_unit(native, :native, :millisecond)
       end
 
+    primary_object_id =
+      cond do
+        is_map(result_record) && Map.get(result_record, :id) ->
+          "#{resource_short_name}:#{result_record.id}"
+
+        metadata[:id] ->
+          "#{resource_short_name}:#{metadata[:id]}"
+
+        true ->
+          to_string(resource_short_name)
+      end
+
+    related_objects =
+      if is_struct(result_record) do
+        for {k, v} <- Map.from_struct(result_record),
+            is_binary(v) and String.ends_with?(to_string(k), "_id") and not is_nil(v) do
+          prefix = to_string(k) |> String.replace_suffix("_id", "")
+          "#{prefix}:#{v}"
+        end
+      else
+        []
+      end
+
+    actor_object =
+      case metadata[:actor] do
+        %{id: aid} -> ["actor:#{aid}"]
+        aid when is_binary(aid) -> ["actor:#{aid}"]
+        _ -> []
+      end
+
+    omap = Enum.uniq([primary_object_id | related_objects ++ actor_object])
+
     %{
       "ocel:eid" => Ash.UUIDv7.generate(),
       "ocel:activity" => "#{resource_short_name}.#{action}",
       "ocel:timestamp" => DateTime.utc_now() |> DateTime.to_iso8601(),
-      "ocel:omap" => [to_string(resource_short_name)],
+      "ocel:omap" => omap,
       "ocel:vmap" => %{
         "domain" => inspect(metadata[:domain]),
         "resource" => inspect(resource),
@@ -248,90 +286,57 @@ defmodule AshR2RML.Telemetry.OcelAshEmitter do
     }
   end
 
-  defp extract_step_facts(:verify_inputs, result) do
-    case result do
-      %{resource_count: count} -> {["InputVerifier"], %{"resource_count" => count, "valid?" => true}}
-      _ -> {["InputVerifier"], %{}}
-    end
+  def safe_step_name(step_name) when is_atom(step_name), do: to_string(step_name)
+
+  def safe_step_name({Reactor.Step.Map, map_name, inner_step, index}),
+    do: "#{map_name}.#{safe_step_name(inner_step)}.#{index}"
+
+  def safe_step_name({:compose, sub_name}), do: "compose.#{safe_step_name(sub_name)}"
+  def safe_step_name({:__reactor__, :transform, key, step}), do: "transform.#{key}.#{safe_step_name(step)}"
+  def safe_step_name({:__reactor__, :transform, step}), do: "transform.#{safe_step_name(step)}"
+  def safe_step_name(other), do: inspect(other)
+
+  defp extract_step_facts(:compile_bundle, %AshR2RML.Mapping.Bundle{resources: res}) when is_list(res) do
+    omap = Enum.map(res, fn r -> to_string(Map.get(r, :ash_resource) || Map.get(r, :source_module)) end)
+    class_iris = Enum.flat_map(res, fn r -> List.wrap(Map.get(r, :class_iris) || Map.get(r, :class_iri)) end)
+
+    {omap, %{"resource_count" => length(res), "class_iris" => class_iris}}
   end
 
-  defp extract_step_facts(:compile_bundle, result) do
-    case result do
-      %AshR2RML.Mapping.Bundle{resources: res_list} ->
-        omap = Enum.map(res_list, &to_string(&1.ash_resource))
-        classes = Enum.flat_map(res_list, & &1.class_iris)
-        {omap, %{"resource_count" => length(res_list), "class_iris" => classes}}
-
-      _ ->
-        {["Compiler"], %{}}
-    end
-  end
-
-  defp extract_step_facts(:attach_provenance, result) do
-    case result do
-      %AshR2RML.Mapping.Bundle{resources: res_list} ->
-        omap = Enum.map(res_list, &to_string(&1.ash_resource))
-        {omap, %{"provenance_namespaces" => ["http://www.w3.org/ns/prov#"], "resource_count" => length(res_list)}}
-
-      _ ->
-        {["Provenance"], %{}}
-    end
+  defp extract_step_facts(:attach_provenance, %AshR2RML.Mapping.Bundle{resources: res}) when is_list(res) do
+    omap = Enum.map(res, fn r -> to_string(Map.get(r, :ash_resource) || Map.get(r, :source_module)) end)
+    {omap, %{"resource_count" => length(res), "provenance_namespaces" => ["http://www.w3.org/ns/prov#"]}}
   end
 
   defp extract_step_facts(:render_r2rml_turtle, turtle) when is_binary(turtle) do
-    {["W3CR2RMLRenderer"], %{"r2rml_turtle_byte_size" => byte_size(turtle), "format" => "text/turtle"}}
+    {["W3CR2RMLRenderer"], %{"format" => "text/turtle", "r2rml_turtle_byte_size" => byte_size(turtle)}}
   end
 
-  defp extract_step_facts(:evaluate_differential, result) do
-    case result do
-      %AshR2RML.SPARQL.DifferentialReceipt{verified?: v?, strategies: strats, query_sha256: hash} ->
-        {["SPARQLDifferential"],
-         %{"verified?" => v?, "strategies" => Enum.map(strats, &to_string/1), "query_sha256" => hash}}
-
-      _ ->
-        {["SPARQLDifferential"], %{"verified?" => false}}
-    end
+  defp extract_step_facts(:evaluate_differential, %AshR2RML.SPARQL.DifferentialReceipt{
+         verified?: v,
+         strategies: s,
+         query_sha256: q
+       }) do
+    {["SPARQLDifferential"], %{"verified?" => v, "strategies" => Enum.map(s, &to_string/1), "query_sha256" => q}}
   end
 
   defp extract_step_facts(:manifest_banner, banner) when is_binary(banner) do
     {["ManifestBanner"], %{"banner_length" => String.length(banner)}}
   end
 
-  defp extract_step_facts(:publication_package, result) when is_map(result) do
-    {["PublicationPackage"], %{"status" => to_string(result[:status]), "title" => result[:title]}}
-  end
-
   defp extract_step_facts(step, _result) do
     {[safe_step_name(step)], %{}}
   end
 
-  defp safe_step_name(step) when is_atom(step), do: to_string(step)
-  defp safe_step_name(step) when is_binary(step), do: step
-  defp safe_step_name({Reactor.Step.Map, map_name, inner_step, idx}), do: "#{map_name}.#{inner_step}.#{idx}"
-  defp safe_step_name({:compose, sub_name}), do: "compose.#{sub_name}"
-  defp safe_step_name(step), do: inspect(step)
-
   defp get_r2rml_class(resource) do
-    if function_exported?(Spark.Dsl.Extension, :get_opt, 4) do
-      case Spark.Dsl.Extension.get_opt(resource, [:r2rml], :class_iri, nil) do
-        nil -> Spark.Dsl.Extension.get_opt(resource, [:r2rml], :class, nil)
-        class_iri -> class_iri
-      end
-    else
-      nil
+    case Spark.Dsl.Extension.get_opt(resource, [:r2rml], :class_iri, nil) do
+      nil -> Spark.Dsl.Extension.get_opt(resource, [:r2rml], :class, nil)
+      class_iri -> class_iri
     end
-  rescue
-    _ -> nil
   end
 
   defp append_ocel_event!(event, log_path) do
-    line = Jason.encode!(event) <> "\n"
-    File.write!(log_path, line, [:append])
-  rescue
-    error ->
-      Logger.error("AshR2RML.Telemetry.OcelAshEmitter failed to append OCEL event: #{inspect(error)}")
+    json_line = Jason.encode!(event) <> "\n"
+    File.write!(log_path, json_line, [:append])
   end
-
-  @doc "Default path of the OCEL v2 log"
-  def default_log_path, do: @default_log_path
 end

@@ -83,12 +83,27 @@ defmodule AshR2RML.OBDA.Ontop do
   @doc "Parse Ontop SELECT CSV output into deterministic string-keyed row maps."
   @spec parse_csv(String.t()) :: [map()]
   def parse_csv(output) when is_binary(output) do
-    records =
+    clean_lines =
       output
-      |> String.replace_prefix("\uFEFF", "")
-      |> String.to_charlist()
-      |> parse_csv_chars([], [], [], false)
-      |> Enum.reverse()
+      |> String.split("\n", trim: true)
+      |> Enum.reject(fn line ->
+        trimmed = String.trim(line)
+
+        trimmed == "" or
+          String.contains?(trimmed, "|-INFO") or
+          String.contains?(trimmed, "|-WARN") or
+          String.contains?(trimmed, "|-ERROR") or
+          String.contains?(trimmed, "it.unibz.inf.ontop") or
+          String.contains?(trimmed, "org.eclipse.rdf4j")
+      end)
+
+    records =
+      Enum.map(clean_lines, fn line ->
+        line
+        |> String.replace_prefix("\uFEFF", "")
+        |> String.split(",")
+        |> Enum.map(&String.trim/1)
+      end)
       |> Enum.reject(&(&1 == [] or Enum.all?(&1, fn field -> field == "" end)))
 
     case records do
@@ -178,84 +193,60 @@ defmodule AshR2RML.OBDA.Ontop do
            standing: :invalid_obda_invocation,
            system: :ontop,
            evidence_kind: evidence_kind,
+           exit_status: nil,
+           command_sha256: nil,
+           query_sha256: nil,
+           mapping_sha256: nil,
            refusal: refusal,
            rows: []
          }}
     end
   end
 
+  defp append_option(args, _flag, nil), do: args
+  defp append_option(args, flag, value), do: args ++ [flag, to_string(value)]
+
   defp required(opts, key) do
     case get(opts, key) do
-      value when is_binary(value) and value != "" ->
-        {:ok, value}
-
-      value ->
+      nil ->
         {:error,
          Refusal.new(
-           :REFUSED_OBDA_EXECUTION,
+           :REFUSED_MISSING_MAPPING,
            :ontop,
-           "missing required Ontop option #{key}",
-           %{value: value}
+           "Missing required Ontop argument :#{key}",
+           %{missing_key: key}
          )}
+
+      value ->
+        {:ok, to_string(value)}
     end
   end
 
-  defp append_option(args, _flag, nil), do: args
-  defp append_option(args, _flag, ""), do: args
-  defp append_option(args, flag, value), do: args ++ [flag, value]
+  defp get(opts, key, default \\ nil)
+  defp get(opts, key, default) when is_list(opts), do: Keyword.get(opts, key, default)
+  defp get(opts, key, default) when is_map(opts), do: Map.get(opts, key, default)
 
-  defp redact(args), do: redact(args, [])
-  defp redact([], acc), do: Enum.reverse(acc)
-  defp redact(["--db-password", _password | rest], acc), do: redact(rest, ["***", "--db-password" | acc])
-  defp redact([value | rest], acc), do: redact(rest, [value | acc])
+  defp hash_file_or_value(path, value) do
+    cond do
+      is_binary(path) and File.exists?(path) ->
+        sha256(File.read!(path))
 
-  defp hash_file_or_value(path, fallback) when is_binary(path) do
-    case File.read(path) do
-      {:ok, value} -> sha256(value)
-      _ -> if(is_binary(fallback), do: sha256(fallback), else: nil)
+      is_binary(value) ->
+        sha256(value)
+
+      true ->
+        nil
     end
   end
 
-  defp hash_file_or_value(_, fallback) when is_binary(fallback), do: sha256(fallback)
-  defp hash_file_or_value(_, _), do: nil
+  defp sha256(data), do: :crypto.hash(:sha256, data) |> Base.encode16(case: :lower)
 
-  defp get(opts, key, default \\ nil) when is_list(opts), do: Keyword.get(opts, key, default)
-
-  defp get(opts, key, default) when is_map(opts) do
-    Map.get(opts, key, Map.get(opts, Atom.to_string(key), default))
+  defp redact(args) do
+    Enum.chunk_every(args, 2, 1, [nil])
+    |> Enum.map(fn
+      ["--db-password", _pass] -> "--db-password [REDACTED]"
+      [other, _] -> other
+      [single] -> single
+    end)
   end
-
-  defp parse_csv_chars([], field, row, rows, _quoted), do: finish_csv(field, row, rows)
-
-  defp parse_csv_chars([?", ?" | rest], field, row, rows, true),
-    do: parse_csv_chars(rest, [?" | field], row, rows, true)
-
-  defp parse_csv_chars([?" | rest], field, row, rows, true),
-    do: parse_csv_chars(rest, field, row, rows, false)
-
-  defp parse_csv_chars([?" | rest], [], row, rows, false),
-    do: parse_csv_chars(rest, [], row, rows, true)
-
-  defp parse_csv_chars([44 | rest], field, row, rows, false),
-    do: parse_csv_chars(rest, [], [csv_field(field) | row], rows, false)
-
-  defp parse_csv_chars([?\r, ?\n | rest], field, row, rows, false) do
-    completed = Enum.reverse([csv_field(field) | row])
-    parse_csv_chars(rest, [], [], [completed | rows], false)
-  end
-
-  defp parse_csv_chars([?\n | rest], field, row, rows, false) do
-    completed = Enum.reverse([csv_field(field) | row])
-    parse_csv_chars(rest, [], [], [completed | rows], false)
-  end
-
-  defp parse_csv_chars([char | rest], field, row, rows, quoted),
-    do: parse_csv_chars(rest, [char | field], row, rows, quoted)
-
-  defp finish_csv([], [], rows), do: rows
-  defp finish_csv(field, row, rows), do: [Enum.reverse([csv_field(field) | row]) | rows]
-
-  defp csv_field(chars), do: chars |> Enum.reverse() |> List.to_string()
-
-  defp sha256(value), do: :crypto.hash(:sha256, value) |> Base.encode16(case: :lower)
 end

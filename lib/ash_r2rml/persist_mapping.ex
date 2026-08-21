@@ -6,7 +6,7 @@ defmodule AshR2RML.PersistMapping do
   @moduledoc false
   use Spark.Dsl.Transformer
 
-  alias AshR2RML.{AttributeMapping, Mapping, RelationshipMapping}
+  alias AshR2RML.{AttributeMapping, RelationshipMapping}
   alias Spark.Dsl.{Transformer, Verifier}
 
   @impl true
