@@ -8,7 +8,7 @@ defmodule AshR2RML.GrandExample.SubReactors.InputVerifier do
   """
   use Reactor
 
-  input :resources
+  input(:resources)
 
   step :validate_resource_list do
     argument :resources, input(:resources)

@@ -20,15 +20,15 @@ defmodule AshR2RML.GrandExample.PublishingReactor do
   use Reactor
 
   middlewares do
-    middleware AshR2RML.Reactor.Middleware.TelemetryLogger
-    middleware Reactor.Middleware.Telemetry
+    middleware(AshR2RML.Reactor.Middleware.TelemetryLogger)
+    middleware(Reactor.Middleware.Telemetry)
   end
 
-  input :resources
-  input :manifest_title
-  input :actor
-  input :observations
-  input :metadata
+  input(:resources)
+  input(:manifest_title)
+  input(:actor)
+  input(:observations)
+  input(:metadata)
 
   # 1. Composed Sub-Reactor: verifies inputs
   compose :verify_inputs, AshR2RML.GrandExample.SubReactors.InputVerifier do
@@ -39,7 +39,7 @@ defmodule AshR2RML.GrandExample.PublishingReactor do
   map :verify_each_resource do
     source input(:resources)
     batch_size 2
-    allow_async? true
+    allow_async?(true)
 
     step :verify_single do
       argument :resource, element(:verify_each_resource)
@@ -85,11 +85,11 @@ defmodule AshR2RML.GrandExample.PublishingReactor do
     argument :title, input(:manifest_title)
     argument :verification, result(:verify_inputs)
 
-    template """
+    template("""
     # Semantic Manifest: <%= @title %>
     Validated <%= @verification.resource_count %> resource mappings.
     Generated via AshR2RML Reactor Pipeline.
-    """
+    """)
   end
 
   # 9. Collect Step: aggregates all components into a publication package
