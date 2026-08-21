@@ -2,8 +2,13 @@
 #
 # SPDX-License-Identifier: MIT
 
-# Real bounded crown: RDF/SHACL -> SemanticIR -> PostgreSQL + R2RML -> Ontop
-# SPARQL, plus a Neo4j control observation over the same semantic fixture.
+# Real bounded crown:
+# - Turtle/SHACL and JSON-LD/SHACL converge on one mapping
+# - generated PostgreSQL + R2RML executes through Ontop CLI
+# - the same admitted query executes through SPARQL.Client against Ontop HTTP
+# - SPARQL.ex executes an equivalent query over a local RDF.ex control graph
+# - Neo4j remains the inherited control graph
+# Technical parity never grants cutover authority.
 
 defmodule AshR2ml.ObdaCrown do
   @workspace "tmp/ash_r2ml_obda"
@@ -11,6 +16,8 @@ defmodule AshR2ml.ObdaCrown do
   @postgres_user "postgres"
   @postgres_password "postgres"
   @neo4j_url "http://127.0.0.1:7474/db/neo4j/tx/commit"
+  @ontop_container "ash-r2ml-ontop-endpoint"
+  @ontop_endpoint "http://127.0.0.1:8080/sparql"
 
   @profile """
   @prefix sh: <http://www.w3.org/ns/shacl#> .
@@ -87,6 +94,14 @@ defmodule AshR2ml.ObdaCrown do
   ORDER BY ?account
   """
 
+  @local_sparql """
+  PREFIX ex: <https://example.com/ontology/>
+  SELECT ?account ?organization
+  WHERE {
+    ?account ex:memberOf ?organization .
+  }
+  """
+
   @sql """
   SELECT
     'https://example.com/id/account/' || id AS account,
@@ -105,7 +120,25 @@ defmodule AshR2ml.ObdaCrown do
     File.rm_rf!(@workspace)
     File.mkdir_p!(@workspace)
 
+    {:ok, admitted_query} = AshR2ML.admit_sparql(@sparql)
+    unless admitted_query.form == :select, do: raise("SPARQL.ex did not admit crown SELECT query")
+
     {:ok, compilation} = AshR2ml.compile_turtle(@profile, ontology_hash: sha256(@profile))
+
+    # The exact same RDF/SHACL subject must survive a JSON-LD serialization round-trip.
+    profile_graph = RDF.Turtle.read_string!(@profile)
+    {:ok, profile_jsonld} = AshR2ML.JSONLD.encode_rdf(profile_graph, pretty: false)
+    {:ok, jsonld_bundle} = AshR2ML.compile_jsonld(profile_jsonld, ontology_hash: sha256(@profile))
+    {:ok, jsonld_r2rml} = AshR2ML.R2RML.render(jsonld_bundle)
+
+    unless jsonld_r2rml == compilation.r2rml,
+      do: raise("Turtle/JSON-LD mapping manufacture diverged")
+
+    {:ok, jsonld_ggen_bundle} =
+      AshR2ML.Ggen.compile_jsonld_bundle(profile_jsonld, ontology_hash: sha256(@profile))
+
+    unless jsonld_ggen_bundle.files["priv/r2rml/mapping.ttl"] == compilation.r2rml,
+      do: raise("ggen JSON-LD input path diverged from Turtle mapping manufacture")
 
     mapping_host = Path.expand(Path.join(@workspace, "mapping.ttl"))
     query_host = Path.expand(Path.join(@workspace, "query.rq"))
@@ -141,7 +174,8 @@ defmodule AshR2ml.ObdaCrown do
     workspace = File.cwd!()
     container_root = "/workspace/" <> @workspace
 
-    {:ok, sparql_observation} =
+    # Execution topology 1: official Ontop CLI process.
+    {:ok, cli_observation} =
       AshR2ML.OBDA.Ontop.query(%{
         binary: "docker",
         prefix_args: [
@@ -163,30 +197,96 @@ defmodule AshR2ml.ObdaCrown do
         query: @sparql
       })
 
-    unless sparql_observation.evidence_kind == :system_process do
-      raise "OBDA crown requires a real system-process observation"
-    end
+    unless cli_observation.evidence_kind == :system_process,
+      do: raise("OBDA crown requires a real Ontop CLI process observation")
 
     fixture_sha256 = sha256(fixture_sql)
 
-    sparql_sql =
+    cli_sql =
       AshR2ml.Parity.compare(
         :sparql_sql,
-        :organization_account,
-        sparql_observation.rows,
+        :organization_account_cli,
+        cli_observation.rows,
         sql_rows,
         %{
-          left_system: :ontop,
+          left_system: :ontop_cli,
           right_system: :postgres,
           left_query: @sparql,
           right_query: @sql,
           fixture_sha256: fixture_sha256,
-          mapping_sha256: sparql_observation.mapping_sha256
+          mapping_sha256: cli_observation.mapping_sha256
         }
       )
 
-    unless sparql_sql.verified?, do: raise("SPARQL/PostgreSQL parity mismatch")
+    unless cli_sql.verified?, do: raise("Ontop CLI/PostgreSQL parity mismatch")
 
+    # Execution topology 2: a live SPARQL 1.1 Protocol endpoint queried by SPARQL.Client.
+    start_ontop_endpoint!(workspace, container_root)
+
+    protocol_observation =
+      try do
+        {:ok, observation} =
+          AshR2ML.SPARQL.Protocol.query(
+            @ontop_endpoint,
+            @sparql,
+            request_method: :get,
+            protocol_version: "1.1",
+            result_format: :json
+          )
+
+        observation
+      after
+        stop_ontop_endpoint!()
+      end
+
+    unless protocol_observation.evidence_kind == :sparql_protocol,
+      do: raise("SPARQL.Client crown requires a real protocol observation")
+
+    protocol_sql =
+      AshR2ml.Parity.compare(
+        :sparql_sql,
+        :organization_account_protocol,
+        protocol_observation.rows,
+        sql_rows,
+        %{
+          left_system: :sparql_client,
+          right_system: :postgres,
+          left_query: @sparql,
+          right_query: @sql,
+          fixture_sha256: fixture_sha256,
+          mapping_sha256: cli_observation.mapping_sha256
+        }
+      )
+
+    unless protocol_sql.verified?, do: raise("SPARQL.Client/PostgreSQL parity mismatch")
+
+    unless protocol_observation.result_sha256 ==
+             AshR2ML.SPARQL.Result.hash_rows(cli_observation.rows),
+      do: raise("SPARQL.Client and Ontop CLI normalized result identities differ")
+
+    # Execution topology 3: SPARQL.ex over a local RDF.ex graph describing the same fixture.
+    local_graph = local_fixture_graph()
+    {:ok, local_observation} = AshR2ML.SPARQL.Local.query(local_graph, @local_sparql)
+
+    local_sql =
+      AshR2ml.Parity.compare(
+        :sparql_sql,
+        :organization_account_local_rdf,
+        local_observation.rows,
+        sql_rows,
+        %{
+          left_system: :sparql_ex,
+          right_system: :postgres,
+          left_query: @local_sparql,
+          right_query: @sql,
+          fixture_sha256: fixture_sha256,
+          mapping_sha256: cli_observation.mapping_sha256
+        }
+      )
+
+    unless local_sql.verified?, do: raise("SPARQL.ex local RDF/PostgreSQL semantic mismatch")
+
+    # Execution topology 4: inherited Neo4j control graph.
     seed_neo4j!()
     neo4j_rows = neo4j_query!(@neo4j_query)
 
@@ -202,7 +302,7 @@ defmodule AshR2ml.ObdaCrown do
           left_query: @neo4j_query,
           right_query: @sql,
           fixture_sha256: fixture_sha256,
-          mapping_sha256: sparql_observation.mapping_sha256
+          mapping_sha256: cli_observation.mapping_sha256
         }
       )
 
@@ -210,7 +310,7 @@ defmodule AshR2ml.ObdaCrown do
 
     technical_receipt =
       compilation.receipt
-      |> AshR2ml.Compiler.attach_parity_witness(:sparql_sql, Map.from_struct(sparql_sql))
+      |> AshR2ml.Compiler.attach_parity_witness(:sparql_sql, Map.from_struct(protocol_sql))
       |> AshR2ml.Compiler.attach_parity_witness(
         :neo4j_postgres,
         Map.from_struct(neo4j_postgres)
@@ -230,8 +330,15 @@ defmodule AshR2ml.ObdaCrown do
       Jason.encode!(
         json_term(%{
           status: :PARTIAL_ALIVE,
-          standing: :bounded_real_obda_and_control_parity,
-          sparql_sql: sparql_sql,
+          standing: :bounded_multi_engine_semantic_parity,
+          serialization_parity: %{
+            turtle_r2rml_sha256: sha256(compilation.r2rml),
+            jsonld_r2rml_sha256: sha256(jsonld_r2rml),
+            verified?: jsonld_r2rml == compilation.r2rml
+          },
+          sparql_ex_local_sql: local_sql,
+          ontop_cli_sql: cli_sql,
+          sparql_client_sql: protocol_sql,
           neo4j_postgres: neo4j_postgres,
           compilation_receipt: technical_receipt
         }),
@@ -239,7 +346,74 @@ defmodule AshR2ml.ObdaCrown do
       )
     )
 
-    IO.puts("ALIVE bounded corpus: RDF/SHACL -> Postgres/R2RML -> Ontop and Neo4j/Postgres parity")
+    IO.puts(
+      "ALIVE bounded corpus: Turtle/JSON-LD + SPARQL.ex/SPARQL.Client/Ontop + Postgres/Neo4j parity"
+    )
+  end
+
+  defp local_fixture_graph do
+    member_of = RDF.iri("https://example.com/ontology/memberOf")
+
+    RDF.Graph.new([
+      {RDF.iri("https://example.com/id/account/acct-1"), member_of,
+       RDF.iri("https://example.com/id/organization/org-1")},
+      {RDF.iri("https://example.com/id/account/acct-2"), member_of,
+       RDF.iri("https://example.com/id/organization/org-1")},
+      {RDF.iri("https://example.com/id/account/acct-3"), member_of,
+       RDF.iri("https://example.com/id/organization/org-2")}
+    ])
+  end
+
+  defp start_ontop_endpoint!(workspace, container_root) do
+    stop_ontop_endpoint!()
+
+    {_container_id, 0} =
+      System.cmd(
+        "docker",
+        [
+          "run",
+          "-d",
+          "--rm",
+          "--name",
+          @ontop_container,
+          "--network",
+          "host",
+          "-e",
+          "ONTOP_LOG_LEVEL=ERROR",
+          "-v",
+          "#{workspace}:/workspace:ro",
+          "ontop/ontop:5.5.0",
+          "ontop",
+          "endpoint",
+          "-m",
+          container_root <> "/mapping.ttl",
+          "-p",
+          container_root <> "/postgres.properties"
+        ],
+        stderr_to_stdout: true
+      )
+
+    wait_for_endpoint!(60)
+  end
+
+  defp wait_for_endpoint!(0), do: raise("Ontop SPARQL endpoint did not become ready")
+
+  defp wait_for_endpoint!(attempts) do
+    case System.cmd(
+           "curl",
+           ["--fail", "--silent", "--show-error", "http://127.0.0.1:8080/"],
+           stderr_to_stdout: true
+         ) do
+      {_output, 0} -> :ok
+      _ ->
+        Process.sleep(1_000)
+        wait_for_endpoint!(attempts - 1)
+    end
+  end
+
+  defp stop_ontop_endpoint! do
+    _ = System.cmd("docker", ["rm", "-f", @ontop_container], stderr_to_stdout: true)
+    :ok
   end
 
   defp reset_postgres! do

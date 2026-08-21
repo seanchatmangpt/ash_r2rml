@@ -9,6 +9,10 @@ defmodule AshR2ml.Ggen do
   `AshR2ml` does not invoke ggen or write files. It manufactures a path/content
   graph so ggen can own rendering, filesystem actuation, migration versioning,
   replay, and receipts without independently reconstructing semantic decisions.
+
+  Turtle and JSON-LD are alternate RDF input serializations. Both are admitted
+  into the same normalized profile before manufacture so ggen never receives a
+  serialization-specific semantic fork.
   """
 
   alias AshR2ml.Compilation
@@ -40,6 +44,14 @@ defmodule AshR2ml.Ggen do
   @spec compile_turtle_bundle(String.t(), keyword()) :: {:ok, map()} | {:error, term()}
   def compile_turtle_bundle(turtle, opts \\ []) do
     with {:ok, profile} <- AshR2ml.Ingestion.from_turtle(turtle, opts) do
+      compile_bundle(profile)
+    end
+  end
+
+  @doc "Parse a JSON-LD 1.1 RDF/SHACL profile, then manufacture the same deterministic ggen bundle."
+  @spec compile_jsonld_bundle(String.t() | map() | list(), keyword()) :: {:ok, map()} | {:error, term()}
+  def compile_jsonld_bundle(jsonld, opts \\ []) do
+    with {:ok, profile} <- AshR2ML.JSONLD.ingest(jsonld, opts) do
       compile_bundle(profile)
     end
   end

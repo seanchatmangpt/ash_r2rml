@@ -8,12 +8,15 @@ defmodule AshR2ML.Ingestion do
 
   Parsing and SHACL closure are implemented by the ontology-first migration
   compiler, then lowered into the same canonical `AshR2ML.Mapping.Bundle` used
-  by Ash-first compilation. This keeps the public mapping IR as the convergence
-  point without duplicating RDF parsing logic.
+  by Ash-first compilation. Turtle and JSON-LD therefore differ only at the RDF
+  serialization boundary, not in semantic admission or mapping manufacture.
   """
 
   @spec from_turtle(String.t(), keyword()) :: {:ok, map()} | {:error, term()}
   def from_turtle(turtle, opts \\ []), do: AshR2ml.Ingestion.from_turtle(turtle, opts)
+
+  @spec from_jsonld(String.t() | map() | list(), keyword()) :: {:ok, map()} | {:error, term()}
+  def from_jsonld(jsonld, opts \\ []), do: AshR2ML.JSONLD.ingest(jsonld, opts)
 
   @spec compile_turtle(String.t(), keyword()) ::
           {:ok, AshR2ML.Mapping.Bundle.t()} | {:error, term()}
@@ -22,6 +25,10 @@ defmodule AshR2ML.Ingestion do
       AshR2ML.Compiler.compile_profile(profile)
     end
   end
+
+  @spec compile_jsonld(String.t() | map() | list(), keyword()) ::
+          {:ok, AshR2ML.Mapping.Bundle.t()} | {:error, term()}
+  def compile_jsonld(jsonld, opts \\ []), do: AshR2ML.JSONLD.compile(jsonld, opts)
 end
 
 defmodule AshR2ML.OBDA.Ontop do
@@ -40,4 +47,5 @@ defmodule AshR2ML.Ggen do
 
   defdelegate compile_bundle(profile), to: AshR2ml.Ggen
   def compile_turtle_bundle(turtle, opts \\ []), do: AshR2ml.Ggen.compile_turtle_bundle(turtle, opts)
+  def compile_jsonld_bundle(jsonld, opts \\ []), do: AshR2ml.Ggen.compile_jsonld_bundle(jsonld, opts)
 end
