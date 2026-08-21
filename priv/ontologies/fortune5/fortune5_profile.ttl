@@ -1,0 +1,208 @@
+# SPDX-FileCopyrightText: 2026 ash_r2rml contributors <https://github.com/seanchatmangpt/ash_r2rml/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix prof: <http://www.w3.org/ns/dx/prof/> .
+@prefix role: <http://www.w3.org/ns/dx/prof/role/> .
+@prefix dcat: <http://www.w3.org/ns/dcat#> .
+@prefix prov: <http://www.w3.org/ns/prov#> .
+@prefix org: <http://www.w3.org/ns/org#> .
+@prefix odrl: <http://www.w3.org/ns/odrl/2/> .
+@prefix p-plan: <http://purl.org/net/p-plan#> .
+@prefix sosa: <http://www.w3.org/ns/sosa/> .
+@prefix ssn: <http://www.w3.org/ns/ssn/> .
+@prefix time: <http://www.w3.org/2006/time#> .
+@prefix qudt: <http://qudt.org/schema/qudt/> .
+@prefix unit: <http://qudt.org/vocab/unit/> .
+@prefix spdx: <https://spdx.org/rdf/3.0.0/terms/> .
+@prefix dqv: <http://www.w3.org/ns/dqv#> .
+@prefix earl: <http://www.w3.org/ns/earl#> .
+@prefix r2rml: <http://www.w3.org/ns/r2rml#> .
+@prefix f5prof: <https://enterprise.fortune5.com/profile/standards#> .
+
+<https://enterprise.fortune5.com/profile/standards>
+    a prof:Profile, owl:Ontology ;
+    rdfs:label "Fortune 5 Enterprise Semantic Standards & Evidence Architecture Profile"@en ;
+    dcterms:title "Fortune 5 DXWG Application Profile for Enterprise Semantic Governance"@en ;
+    dcterms:description "W3C DXWG Application Profile formally binding public standard ontologies (ORG, SKOS, ODRL, P-Plan, SOSA/SSN, TIME, QUDT, SPDX, DQV, DCAT, EARL, R2RML) into a unified enterprise semantic, operational admission, and verification evidence plane."@en ;
+    dcterms:publisher <https://enterprise.fortune5.com/org/architecture-board> ;
+    dcterms:issued "2026-08-21T00:00:00Z"^^xsd:dateTime ;
+    dcterms:modified "2026-08-21T16:28:00Z"^^xsd:dateTime ;
+    owl:versionInfo "1.0.0" ;
+    prof:isProfileOf
+        <http://www.w3.org/ns/org#> ,
+        <http://www.w3.org/2004/02/skos/core#> ,
+        <http://www.w3.org/ns/odrl/2/> ,
+        <http://purl.org/net/p-plan#> ,
+        <http://www.w3.org/ns/sosa/> ,
+        <http://www.w3.org/ns/ssn/> ,
+        <http://www.w3.org/2006/time#> ,
+        <http://qudt.org/schema/qudt/> ,
+        <https://spdx.org/rdf/3.0.0/terms/> ,
+        <http://www.w3.org/ns/dqv#> ,
+        <http://www.w3.org/ns/dcat#> ,
+        <http://www.w3.org/ns/earl#> ,
+        <http://www.w3.org/ns/r2rml#> ;
+    prof:hasResource
+        f5prof:ResourceOrg ,
+        f5prof:ResourceSkos ,
+        f5prof:ResourceOdrl ,
+        f5prof:ResourcePPlan ,
+        f5prof:ResourceSosaSsn ,
+        f5prof:ResourceTime ,
+        f5prof:ResourceQudt ,
+        f5prof:ResourceSpdx ,
+        f5prof:ResourceDqv ,
+        f5prof:ResourceDcat ,
+        f5prof:ResourceEarl ,
+        f5prof:ResourceR2rml ,
+        f5prof:ResourceOperationalShapes .
+
+# ----------------------------------------------------------------------
+# 1. W3C ORG (Organization Ontology) Binding
+# ----------------------------------------------------------------------
+f5prof:ResourceOrg
+    a prof:ResourceDescriptor ;
+    rdfs:label "W3C Organization Ontology Specification & Vocab Binding"@en ;
+    dcterms:description "Binds enterprise organizational hierarchy, business units, divisions, roles, and membership to org:Organization, org:OrganizationalUnit, org:Role, and org:Membership."@en ;
+    prof:hasRole role:vocabulary, role:specification ;
+    prof:hasArtifact <http://www.w3.org/ns/org#> ;
+    dcterms:format "text/turtle" .
+
+# ----------------------------------------------------------------------
+# 2. SKOS (Simple Knowledge Organization System) Binding
+# ----------------------------------------------------------------------
+f5prof:ResourceSkos
+    a prof:ResourceDescriptor ;
+    rdfs:label "W3C SKOS Controlled Vocabularies & Concept Schemes"@en ;
+    dcterms:description "Binds enterprise taxonomies, data classifications, business glossaries, and controlled status codes to skos:ConceptScheme, skos:Concept, skos:prefLabel, and skos:broader/narrower."@en ;
+    prof:hasRole role:vocabulary, role:specification ;
+    prof:hasArtifact <http://www.w3.org/2004/02/skos/core#> ;
+    dcterms:format "text/turtle" .
+
+# ----------------------------------------------------------------------
+# 3. W3C ODRL 2.2 (Open Digital Rights Language) Binding
+# ----------------------------------------------------------------------
+f5prof:ResourceOdrl
+    a prof:ResourceDescriptor ;
+    rdfs:label "W3C ODRL 2.2 Policy, Permission, Prohibition & Duty Binding"@en ;
+    dcterms:description "Binds enterprise security policies, SLA enforcement duties, credential rotation obligations, data access permissions, and governance prohibitions to odrl:Policy, odrl:Permission, odrl:Prohibition, and odrl:Duty."@en ;
+    prof:hasRole role:vocabulary, role:specification ;
+    prof:hasArtifact <http://www.w3.org/ns/odrl/2/> ;
+    dcterms:format "text/turtle" .
+
+# ----------------------------------------------------------------------
+# 4. P-Plan (Process Planning Model Ontology) Binding
+# ----------------------------------------------------------------------
+f5prof:ResourcePPlan
+    a prof:ResourceDescriptor ;
+    rdfs:label "P-Plan Process Planning & Scientific/Business Workflow Binding"@en ;
+    dcterms:description "Binds enterprise pipelines, saga orchestrations, decomposition stages, and step plans to p-plan:Plan, p-plan:Step, p-plan:Variable, and p-plan:isStepOfPlan."@en ;
+    prof:hasRole role:vocabulary, role:specification ;
+    prof:hasArtifact <http://purl.org/net/p-plan#> ;
+    dcterms:format "text/turtle" .
+
+# ----------------------------------------------------------------------
+# 5. W3C SOSA / SSN (Sensor, Observation, Sample, and Actuation) Binding
+# ----------------------------------------------------------------------
+f5prof:ResourceSosaSsn
+    a prof:ResourceDescriptor ;
+    rdfs:label "W3C SOSA/SSN Observability & Telemetry Binding"@en ;
+    dcterms:description "Binds enterprise observability metrics, distributed tracing probes, hardware sensors, and latency observations to sosa:Observation, sosa:Sensor, sosa:observedProperty, sosa:hasFeatureOfInterest, and sosa:hasResult."@en ;
+    prof:hasRole role:vocabulary, role:specification ;
+    prof:hasArtifact <http://www.w3.org/ns/sosa/> ;
+    dcterms:format "text/turtle" .
+
+# ----------------------------------------------------------------------
+# 6. W3C Time Ontology in OWL Binding
+# ----------------------------------------------------------------------
+f5prof:ResourceTime
+    a prof:ResourceDescriptor ;
+    rdfs:label "W3C Time Ontology Temporal Entities & Intervals Binding"@en ;
+    dcterms:description "Binds temporal timestamps, SLA evaluation windows, rotation periods, and execution durations to time:Instant, time:Interval, time:TemporalEntity, time:hasBeginning, time:hasEnd, and time:hasDuration."@en ;
+    prof:hasRole role:vocabulary, role:specification ;
+    prof:hasArtifact <http://www.w3.org/2006/time#> ;
+    dcterms:format "text/turtle" .
+
+# ----------------------------------------------------------------------
+# 7. QUDT (Quantities, Units, Dimensions and Data Types) Binding
+# ----------------------------------------------------------------------
+f5prof:ResourceQudt
+    a prof:ResourceDescriptor ;
+    rdfs:label "QUDT Scientific & Computational Units of Measure Binding"@en ;
+    dcterms:description "Binds numerical measurements, latencies, byte throughput, network bandwidth, memory allocations, and percentages to qudt:QuantityValue, qudt:numericValue, and standard units from http://qudt.org/vocab/unit/ (unit:MilliSEC, unit:SEC, unit:BYTE, unit:PERCENT)."@en ;
+    prof:hasRole role:vocabulary, role:specification ;
+    prof:hasArtifact <http://qudt.org/schema/qudt/> ;
+    dcterms:format "text/turtle" .
+
+# ----------------------------------------------------------------------
+# 8. SPDX 3.0 (Software Package Data Exchange) Binding
+# ----------------------------------------------------------------------
+f5prof:ResourceSpdx
+    a prof:ResourceDescriptor ;
+    rdfs:label "SPDX 3.0 Software Supply Chain, SBOM & Security Integrity Binding"@en ;
+    dcterms:description "Binds cryptographic artifact checksums, software package manifests, license metadata, vulnerability provenance, and cryptographic signatures to spdx:Package, spdx:File, spdx:Checksum, and spdx:checksumValue."@en ;
+    prof:hasRole role:vocabulary, role:specification ;
+    prof:hasArtifact <https://spdx.org/rdf/3.0.0/terms/> ;
+    dcterms:format "text/turtle" .
+
+# ----------------------------------------------------------------------
+# 9. W3C DQV (Data Quality Vocabulary) Binding
+# ----------------------------------------------------------------------
+f5prof:ResourceDqv
+    a prof:ResourceDescriptor ;
+    rdfs:label "W3C DQV Data Quality Dimensions & Quality Metrics Binding"@en ;
+    dcterms:description "Binds dataset completeness, precision, schema conformance scores, and data quality evaluations to dqv:QualityMeasurement, dqv:Metric, dqv:Dimension, dqv:isMeasurementOf, and dqv:value."@en ;
+    prof:hasRole role:vocabulary, role:specification ;
+    prof:hasArtifact <http://www.w3.org/ns/dqv#> ;
+    dcterms:format "text/turtle" .
+
+# ----------------------------------------------------------------------
+# 10. W3C DCAT 3 (Data Catalog Vocabulary) Binding
+# ----------------------------------------------------------------------
+f5prof:ResourceDcat
+    a prof:ResourceDescriptor ;
+    rdfs:label "W3C DCAT 3 Enterprise Data Catalogs, Datasets & Distributions"@en ;
+    dcterms:description "Binds enterprise dataset catalogs, physical table representations, streaming endpoints, and data service distributions to dcat:Catalog, dcat:Dataset, dcat:Distribution, and dcat:DataService."@en ;
+    prof:hasRole role:vocabulary, role:specification ;
+    prof:hasArtifact <http://www.w3.org/ns/dcat#> ;
+    dcterms:format "text/turtle" .
+
+# ----------------------------------------------------------------------
+# 11. W3C EARL 1.0 (Evaluation and Report Language) Binding
+# ----------------------------------------------------------------------
+f5prof:ResourceEarl
+    a prof:ResourceDescriptor ;
+    rdfs:label "W3C EARL 1.0 Automated Test Assertions & Conformance Reports"@en ;
+    dcterms:description "Binds automated adversarial verification results, test assertions, pass/fail evidence, and auditor evaluations to earl:Assertion, earl:TestResult, earl:TestCriterion, earl:passed, earl:failed, and earl:cantTell."@en ;
+    prof:hasRole role:vocabulary, role:specification ;
+    prof:hasArtifact <http://www.w3.org/ns/earl#> ;
+    dcterms:format "text/turtle" .
+
+# ----------------------------------------------------------------------
+# 12. W3C R2RML (Relational to RDF Mapping Language) Binding
+# ----------------------------------------------------------------------
+f5prof:ResourceR2rml
+    a prof:ResourceDescriptor ;
+    rdfs:label "W3C R2RML Relational-to-RDF Mapping Standard Binding"@en ;
+    dcterms:description "Binds relational database schemas, tables, primary keys, and foreign keys to virtual RDF graphs via r2rml:TriplesMap, r2rml:SubjectMap, r2rml:PredicateObjectMap, and r2rml:RefObjectMap."@en ;
+    prof:hasRole role:vocabulary, role:specification ;
+    prof:hasArtifact <http://www.w3.org/ns/r2rml#> ;
+    dcterms:format "text/turtle" .
+
+# ----------------------------------------------------------------------
+# 13. Operational SHACL Validation Shapes Resource
+# ----------------------------------------------------------------------
+f5prof:ResourceOperationalShapes
+    a prof:ResourceDescriptor ;
+    rdfs:label "Fortune 5 Operational Admission & Governance SHACL Shapes"@en ;
+    dcterms:description "SHACL shapes defining mandatory operational criteria: multi-region deployments, latency SLA thresholds, credential rotation duty constraints, and audit trail provenance integrity."@en ;
+    prof:hasRole role:validation, role:schema ;
+    prof:hasArtifact <file:///priv/ontologies/fortune5/operational_shapes.ttl> ;
+    dcterms:format "text/turtle" .

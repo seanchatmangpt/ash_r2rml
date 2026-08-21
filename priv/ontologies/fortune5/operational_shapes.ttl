@@ -1,0 +1,258 @@
+# SPDX-FileCopyrightText: 2026 ash_r2rml contributors <https://github.com/seanchatmangpt/ash_r2rml/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix org: <http://www.w3.org/ns/org#> .
+@prefix odrl: <http://www.w3.org/ns/odrl/2/> .
+@prefix p-plan: <http://purl.org/net/p-plan#> .
+@prefix sosa: <http://www.w3.org/ns/sosa/> .
+@prefix ssn: <http://www.w3.org/ns/ssn/> .
+@prefix time: <http://www.w3.org/2006/time#> .
+@prefix qudt: <http://qudt.org/schema/qudt/> .
+@prefix unit: <http://qudt.org/vocab/unit/> .
+@prefix spdx: <https://spdx.org/rdf/3.0.0/terms/> .
+@prefix dqv: <http://www.w3.org/ns/dqv#> .
+@prefix dcat: <http://www.w3.org/ns/dcat#> .
+@prefix earl: <http://www.w3.org/ns/earl#> .
+@prefix r2rml: <http://www.w3.org/ns/r2rml#> .
+@prefix prov: <http://www.w3.org/ns/prov#> .
+@prefix f5: <https://enterprise.fortune5.com/ontology/> .
+@prefix f5shape: <https://enterprise.fortune5.com/shapes/> .
+
+# ======================================================================
+# Fortune 5 Operational Admission Criteria SHACL Shapes
+# ======================================================================
+
+<https://enterprise.fortune5.com/shapes>
+    a owl:Ontology ;
+    rdfs:label "Fortune 5 Operational Admission & Evidence SHACL Shapes"@en ;
+    dcterms:title "SHACL Shapes for Enterprise Operational Admission, SLA, Security & Audit Governance"@en ;
+    dcterms:description "Formal W3C SHACL shape definitions enforcing multi-region deployment topologies, SLA latency thresholds, cryptographic credential rotation duties, and audit trail lineage obligations across Fortune 5 systems."@en ;
+    owl:versionInfo "1.0.0" .
+
+# ----------------------------------------------------------------------
+# 1. Multi-Region Deployment Shape
+# ----------------------------------------------------------------------
+f5shape:MultiRegionDeploymentShape
+    a sh:NodeShape ;
+    sh:targetClass f5:MultiRegionDeployment ;
+    rdfs:label "Multi-Region Deployment Admission Shape"@en ;
+    rdfs:comment "Enforces that all production services maintain high-availability deployment across at least two approved geographical regions with sub-second replication lag."@en ;
+    sh:property [
+        sh:path f5:serviceId ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:message "Each multi-region deployment must declare a unique serviceId string."@en ;
+    ] ;
+    sh:property [
+        sh:path f5:primaryRegion ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "us-east-1" "us-west-2" "eu-central-1" "ap-southeast-1" "sa-east-1" ) ;
+        sh:message "primaryRegion must be exactly one approved enterprise cloud region."@en ;
+    ] ;
+    sh:property [
+        sh:path f5:failoverRegion ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+        sh:in ( "us-east-1" "us-west-2" "eu-central-1" "ap-southeast-1" "sa-east-1" ) ;
+        sh:message "failoverRegion must contain at least one approved enterprise standby region."@en ;
+    ] ;
+    sh:property [
+        sh:path f5:region ;
+        sh:datatype xsd:string ;
+        sh:minCount 2 ;
+        sh:message "High availability requires active deployment in at least 2 distinct regions."@en ;
+    ] ;
+    sh:property [
+        sh:path f5:maxReplicationLagMs ;
+        sh:datatype xsd:decimal ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:maxInclusive 1000.0 ;
+        sh:message "Maximum cross-region replication lag must not exceed 1000.0 milliseconds."@en ;
+    ] ;
+    sh:property [
+        sh:path f5:availabilitySlaTarget ;
+        sh:datatype xsd:decimal ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:minInclusive 0.9999 ;
+        sh:message "Availability SLA target must be at least four-nines (0.9999)."@en ;
+    ] .
+
+# ----------------------------------------------------------------------
+# 2. SLA Latency Constraints Shape (SOSA + QUDT)
+# ----------------------------------------------------------------------
+f5shape:SLALatencyConstraintShape
+    a sh:NodeShape ;
+    sh:targetClass sosa:Observation ;
+    rdfs:label "SLA Latency Observation Constraint Shape"@en ;
+    rdfs:comment "Enforces that telemetry latency observations include feature of interest, valid timestamp, and meet P99 SLA threshold <= 50.0 milliseconds measured with QUDT units."@en ;
+    sh:property [
+        sh:path sosa:observedProperty ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( f5:P99Latency f5:RequestLatency f5:P95Latency f5:ExecutionDuration ) ;
+        sh:message "Observation must target an admitted latency property."@en ;
+    ] ;
+    sh:property [
+        sh:path sosa:hasFeatureOfInterest ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:message "Observation must specify the exact service or endpoint feature of interest."@en ;
+    ] ;
+    sh:property [
+        sh:path sosa:resultTime ;
+        sh:datatype xsd:dateTime ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:message "Observation must include an ISO 8601 result timestamp."@en ;
+    ] ;
+    sh:property [
+        sh:path sosa:hasResult ;
+        sh:node f5shape:LatencyQuantityValueShape ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:message "Observation must link to a valid QUDT latency quantity value."@en ;
+    ] .
+
+f5shape:LatencyQuantityValueShape
+    a sh:NodeShape ;
+    rdfs:label "QUDT Latency Quantity Value Shape"@en ;
+    sh:property [
+        sh:path qudt:numericValue ;
+        sh:datatype xsd:decimal ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:maxInclusive 50.0 ;
+        sh:message "P99 latency numeric value must not exceed 50.0 ms SLA threshold."@en ;
+    ] ;
+    sh:property [
+        sh:path qudt:unit ;
+        sh:hasValue unit:MilliSEC ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:message "Latency unit must be unit:MilliSEC (http://qudt.org/vocab/unit/MilliSEC)."@en ;
+    ] .
+
+# ----------------------------------------------------------------------
+# 3. Credential Rotation Duty Shape (ODRL + TIME)
+# ----------------------------------------------------------------------
+f5shape:CredentialRotationDutyShape
+    a sh:NodeShape ;
+    sh:targetClass odrl:Duty ;
+    rdfs:label "Credential Rotation Duty Shape"@en ;
+    rdfs:comment "Enforces automated cryptographic key & credential rotation policy: mandatory action, target secret, 90-day maximum lifetime, and accountable organizational unit."@en ;
+    sh:property [
+        sh:path odrl:action ;
+        sh:hasValue f5:rotateCredential ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:message "Duty action must be f5:rotateCredential."@en ;
+    ] ;
+    sh:property [
+        sh:path odrl:target ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:message "Duty must bind to a specific credential target."@en ;
+    ] ;
+    sh:property [
+        sh:path f5:maxAgeDays ;
+        sh:datatype xsd:integer ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:maxInclusive 90 ;
+        sh:message "Maximum credential age before rotation must not exceed 90 days."@en ;
+    ] ;
+    sh:property [
+        sh:path f5:lastRotatedAt ;
+        sh:datatype xsd:dateTime ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:message "Credential must record the last rotation timestamp as xsd:dateTime."@en ;
+    ] ;
+    sh:property [
+        sh:path odrl:assignee ;
+        sh:minCount 1 ;
+        sh:message "Duty must be assigned to an organizational unit or security agent."@en ;
+    ] .
+
+# ----------------------------------------------------------------------
+# 4. Audit Trail Obligation Shape (PROV-O + SPDX + DQV + EARL)
+# ----------------------------------------------------------------------
+f5shape:AuditTrailObligationShape
+    a sh:NodeShape ;
+    sh:targetClass prov:Activity ;
+    rdfs:label "Audit Trail Lineage & Integrity Shape"@en ;
+    rdfs:comment "Enforces complete immutable audit trails: start/end timestamps, agent provenance, input entity tracking, SHA-256 artifact verification, and quality/test assertions."@en ;
+    sh:property [
+        sh:path prov:startedAtTime ;
+        sh:datatype xsd:dateTime ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:message "Audit activity must record startedAtTime."@en ;
+    ] ;
+    sh:property [
+        sh:path prov:endedAtTime ;
+        sh:datatype xsd:dateTime ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:message "Audit activity must record endedAtTime."@en ;
+    ] ;
+    sh:property [
+        sh:path prov:wasAssociatedWith ;
+        sh:minCount 1 ;
+        sh:message "Audit activity must associate with at least one authenticated prov:Agent or org:OrganizationalUnit."@en ;
+    ] ;
+    sh:property [
+        sh:path prov:used ;
+        sh:minCount 1 ;
+        sh:message "Audit activity must track input resources/entities via prov:used."@en ;
+    ] ;
+    sh:property [
+        sh:path spdx:checksum ;
+        sh:node f5shape:SpdxChecksumShape ;
+        sh:minCount 1 ;
+        sh:message "Audit activity must record a cryptographic SHA-256 checksum of execution state."@en ;
+    ] ;
+    sh:property [
+        sh:path f5:evidenceAssertion ;
+        sh:class earl:Assertion ;
+        sh:minCount 1 ;
+        sh:message "Audit trail must link to at least one EARL 1.0 test assertion."@en ;
+    ] ;
+    sh:property [
+        sh:path dqv:hasQualityMeasurement ;
+        sh:class dqv:QualityMeasurement ;
+        sh:minCount 1 ;
+        sh:message "Audit trail must attach a DQV quality measurement confirming data integrity."@en ;
+    ] .
+
+f5shape:SpdxChecksumShape
+    a sh:NodeShape ;
+    rdfs:label "SPDX Cryptographic SHA-256 Checksum Shape"@en ;
+    sh:property [
+        sh:path spdx:algorithm ;
+        sh:hasValue spdx:checksumAlgorithm_sha256 ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:message "Checksum algorithm must be spdx:checksumAlgorithm_sha256."@en ;
+    ] ;
+    sh:property [
+        sh:path spdx:checksumValue ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:pattern "^[a-fA-F0-9]{64}$" ;
+        sh:message "Checksum value must be a valid 64-character hexadecimal SHA-256 string."@en ;
+    ] .

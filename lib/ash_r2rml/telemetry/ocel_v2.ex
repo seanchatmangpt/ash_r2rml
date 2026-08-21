@@ -21,9 +21,6 @@ defmodule AshR2RML.Telemetry.OCEL2 do
   - Deterministic replay, point-in-time state reconstruction, and multigraph querying
   """
 
-  alias AshR2RML.POWL.Model.ChoiceGraph
-  alias AshR2RML.POWL.Model.PartialOrder
-  alias AshR2RML.POWL.WorkflowNet
   alias AshR2RML.Refusal
 
   @standard_e2o_qualifiers [
@@ -288,7 +285,7 @@ defmodule AshR2RML.Telemetry.OCEL2 do
   - Temporal ordering and causality violations
   - Lifecycle state progression anomalies
   """
-  @spec check_conformance(list(map()) | %Log{}, list(String.t()) | %PartialOrder{} | %ChoiceGraph{} | %WorkflowNet{}) ::
+  @spec check_conformance(list(map()) | %Log{}, list(String.t()) | struct() | map()) ::
           {:ok, %ConformanceReport{}} | {:error, Refusal.t()}
   def check_conformance(events_or_log, model_or_expected)
 
@@ -416,7 +413,7 @@ defmodule AshR2RML.Telemetry.OCEL2 do
     {:ok, report}
   end
 
-  def check_conformance(events, %WorkflowNet{} = net) when is_list(events) do
+  def check_conformance(events, %{transitions: _, labels: _} = net) when is_list(events) do
     # Verify events against workflow net transitions and valid firing sequence
     sorted_events = sort_events_chronologically(events)
     activity_labels = Enum.map(sorted_events, & &1["ocel:activity"])
