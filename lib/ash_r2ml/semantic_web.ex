@@ -6,9 +6,9 @@ defmodule AshR2ML.SPARQL.Query do
   @moduledoc """
   Admitted SPARQL query identity.
 
-  Query parsing is delegated to SPARQL.ex. The SHA-256 identity intentionally
-  covers the exact lexical query supplied by the caller; AshR2ML does not claim
-  semantic canonicalization of arbitrary SPARQL algebra.
+  Parsing is delegated to SPARQL.ex. The receipt identity covers the exact
+  lexical query supplied by the caller; it is not a claim of canonical SPARQL
+  algebra equivalence.
   """
 
   alias AshR2ML.Refusal
@@ -24,43 +24,59 @@ defmodule AshR2ML.SPARQL.Query do
         }
 
   @spec admit(String.t() | Elixir.SPARQL.Query.t()) :: {:ok, t()} | {:error, Refusal.t()}
+  def admit(%Elixir.SPARQL.Query{query_string: source} = parsed) when is_binary(source) do
+    {:ok,
+     %__MODULE__{
+       source: source,
+       parsed: parsed,
+       form: parsed.form,
+       sha256: sha256(source)
+     }}
+  end
+
   def admit(%Elixir.SPARQL.Query{} = parsed) do
-    source = parsed.query_string || to_string(parsed)
-    {:ok, %__MODULE__{source: source, parsed: parsed, form: parsed.form, sha256: sha256(source)}}
+    {:error,
+     Refusal.new(
+       :REFUSED_UNPROVEN_EQUIVALENCE,
+       :sparql_query,
+       "parsed SPARQL query has no lexical query identity",
+       %{form: parsed.form}
+     )}
   end
 
   def admit(source) when is_binary(source) do
-    case Elixir.SPARQL.Query.new(source, default_prefixes: nil) do
-      %Elixir.SPARQL.Query{} = parsed ->
-        {:ok, %__MODULE__{source: source, parsed: parsed, form: parsed.form, sha256: sha256(source)}}
+    try do
+      case Elixir.SPARQL.Query.new(source, default_prefixes: nil) do
+        %Elixir.SPARQL.Query{} = parsed -> admit(parsed)
 
-      {:error, reason} ->
+        {:error, reason} ->
+          {:error,
+           Refusal.new(
+             :REFUSED_UNPROVEN_EQUIVALENCE,
+             :sparql_query,
+             "SPARQL.ex refused the query during language admission",
+             %{reason: inspect(reason)}
+           )}
+
+        other ->
+          {:error,
+           Refusal.new(
+             :REFUSED_UNPROVEN_EQUIVALENCE,
+             :sparql_query,
+             "SPARQL.ex did not return an admitted query",
+             %{result: inspect(other)}
+           )}
+      end
+    rescue
+      exception ->
         {:error,
          Refusal.new(
            :REFUSED_UNPROVEN_EQUIVALENCE,
            :sparql_query,
-           "SPARQL.ex refused the query during language admission",
-           %{reason: inspect(reason)}
-         )}
-
-      other ->
-        {:error,
-         Refusal.new(
-           :REFUSED_UNPROVEN_EQUIVALENCE,
-           :sparql_query,
-           "SPARQL.ex did not return an admitted query",
-           %{result: inspect(other)}
+           "SPARQL query parsing raised",
+           %{exception: Exception.message(exception)}
          )}
     end
-  rescue
-    exception ->
-      {:error,
-       Refusal.new(
-         :REFUSED_UNPROVEN_EQUIVALENCE,
-         :sparql_query,
-         "SPARQL query parsing raised",
-         %{exception: Exception.message(exception)}
-       )}
   end
 
   def admit(other) do
@@ -77,7 +93,7 @@ defmodule AshR2ML.SPARQL.Query do
 end
 
 defmodule AshR2ML.SPARQL.Observation do
-  @moduledoc "Evidence-bounded observation from one explicitly selected SPARQL execution strategy."
+  @moduledoc "Evidence-bounded observation from one selected SPARQL execution strategy."
 
   @enforce_keys [:strategy, :query_sha256, :query_form, :status, :standing, :evidence_kind, :rows]
   defstruct [
@@ -125,11 +141,7 @@ defmodule AshR2ML.SPARQL.Result do
 
   def normalize(data) do
     try do
-      rows =
-        data
-        |> RDF.Data.statements()
-        |> Enum.map(&normalize_statement/1)
-
+      rows = data |> RDF.Data.statements() |> Enum.map(&normalize_statement/1)
       {:ok, :rdf, rows}
     rescue
       _ ->
@@ -176,31 +188,28 @@ defmodule AshR2ML.SPARQL.Result do
   defp normalize_term(nil), do: nil
 
   defp normalize_term(value) do
-    if RDF.Term.term?(value) do
-      RDF.Term.value(value)
-    else
-      value
-    end
+    if RDF.Term.term?(value), do: RDF.Term.value(value), else: value
   rescue
     _ -> value
   end
 end
 
 defmodule AshR2ML.SPARQL.Local do
-  @moduledoc "Explicit local SPARQL.ex execution against an RDF.ex data structure."
+  @moduledoc "Explicit SPARQL.ex execution against an RDF.ex data structure."
 
-  alias AshR2ML.{Refusal, SPARQL}
+  alias AshR2ML.Refusal
+  alias AshR2ML.SPARQL.{Observation, Query, Result}
 
-  @spec query(RDF.Data.Source.t(), String.t() | SPARQL.Query.t()) ::
-          {:ok, SPARQL.Observation.t()} | {:error, Refusal.t()}
+  @spec query(RDF.Data.Source.t(), String.t() | Query.t()) ::
+          {:ok, Observation.t()} | {:error, Refusal.t()}
   def query(data, query) do
-    with {:ok, admitted} <- SPARQL.Query.admit(query) do
+    with {:ok, admitted} <- Query.admit(query) do
       try do
         result = Elixir.SPARQL.execute_query(data, admitted.parsed)
 
-        with {:ok, result_kind, rows} <- SPARQL.Result.normalize(result) do
+        with {:ok, result_kind, rows} <- Result.normalize(result) do
           {:ok,
-           %SPARQL.Observation{
+           %Observation{
              strategy: :local_rdf,
              query_sha256: admitted.sha256,
              query_form: admitted.form,
@@ -208,7 +217,7 @@ defmodule AshR2ML.SPARQL.Local do
              standing: :observed_local_rdf_execution,
              evidence_kind: :in_memory_execution,
              result_kind: result_kind,
-             result_sha256: SPARQL.Result.hash_rows(rows),
+             result_sha256: Result.hash_rows(rows),
              rows: rows,
              metadata: %{engine: :sparql_ex}
            }}
@@ -233,17 +242,18 @@ end
 
 defmodule AshR2ML.SPARQL.Protocol do
   @moduledoc """
-  Read-only SPARQL Protocol execution through SPARQL.Client.
+  Read-only W3C SPARQL Protocol execution through SPARQL.Client.
 
-  This module intentionally exposes query operations only. SPARQL Update is not
-  delegated because AshR2ML verification does not acquire remote mutation
-  authority from the presence of a protocol client dependency.
+  SPARQL.Client also implements update operations, but this module deliberately
+  exposes queries only. Verification capability never manufactures remote
+  mutation authority.
   """
 
-  alias AshR2ML.{Refusal, SPARQL}
+  alias AshR2ML.Refusal
+  alias AshR2ML.SPARQL.{Observation, Query, Result}
 
-  @spec query(String.t(), String.t() | SPARQL.Query.t(), keyword()) ::
-          {:ok, SPARQL.Observation.t()} | {:error, term()}
+  @spec query(String.t(), String.t() | Query.t(), keyword()) ::
+          {:ok, Observation.t()} | {:error, term()}
   def query(endpoint, query, opts \\ []) when is_binary(endpoint) do
     do_query(
       endpoint,
@@ -256,17 +266,19 @@ defmodule AshR2ML.SPARQL.Protocol do
   end
 
   @doc "Injected client path for deterministic unit tests. Never a remote-query witness."
+  @spec query_with(String.t(), String.t() | Query.t(), keyword(), function()) ::
+          {:ok, Observation.t()} | {:error, term()}
   def query_with(endpoint, query, opts, client_fun)
       when is_binary(endpoint) and is_function(client_fun, 3) do
     do_query(endpoint, query, opts, client_fun, :injected_client, :test_double_only)
   end
 
   defp do_query(endpoint, query, opts, client_fun, evidence_kind, standing) do
-    with {:ok, admitted} <- SPARQL.Query.admit(query),
+    with {:ok, admitted} <- Query.admit(query),
          {:ok, result} <- client_fun.(admitted.parsed, endpoint, opts),
-         {:ok, result_kind, rows} <- SPARQL.Result.normalize(result) do
+         {:ok, result_kind, rows} <- Result.normalize(result) do
       {:ok,
-       %SPARQL.Observation{
+       %Observation{
          strategy: :protocol,
          query_sha256: admitted.sha256,
          query_form: admitted.form,
@@ -275,13 +287,14 @@ defmodule AshR2ML.SPARQL.Protocol do
          evidence_kind: evidence_kind,
          endpoint: endpoint,
          result_kind: result_kind,
-         result_sha256: SPARQL.Result.hash_rows(rows),
+         result_sha256: Result.hash_rows(rows),
          rows: rows,
          metadata: %{client: :sparql_client}
        }}
     else
       {:error, %Refusal{} = refusal} -> {:error, refusal}
       {:error, reason} -> {:error, reason}
+
       other ->
         {:error,
          Refusal.new(
@@ -322,68 +335,29 @@ defmodule AshR2ML.SPARQL do
   @moduledoc """
   DfCM SPARQL execution calculus.
 
-  Local RDF.ex execution, SPARQL Protocol execution, and the existing Ontop CLI
-  path remain distinct lawful candidates. When multiple candidates are present,
-  no strategy is selected unless the caller explicitly closes the choice.
+  Local RDF execution, SPARQL Protocol execution, and the existing Ontop CLI
+  path remain distinct candidates. Multiple available candidates remain
+  unresolved until the caller explicitly closes the choice.
   """
 
-  alias AshR2ML.{Refusal, SPARQL}
+  alias AshR2ML.Refusal
+  alias AshR2ML.SPARQL.{Local, Observation, Plan, Protocol, Query, Result}
 
-  @spec explore(String.t() | SPARQL.Query.t(), keyword()) ::
-          {:ok, SPARQL.Plan.t()} | {:error, Refusal.t()}
+  @spec explore(String.t() | Query.t(), keyword()) :: {:ok, Plan.t()} | {:error, Refusal.t()}
   def explore(query, opts \\ []) do
-    with {:ok, admitted} <- SPARQL.Query.admit(query) do
+    with {:ok, admitted} <- Query.admit(query) do
       candidates =
         []
-        |> maybe_candidate(Keyword.has_key?(opts, :data), :local_rdf)
+        |> maybe_candidate(not is_nil(Keyword.get(opts, :data)), :local_rdf)
         |> maybe_candidate(is_binary(Keyword.get(opts, :endpoint)), :protocol)
         |> maybe_candidate(not is_nil(Keyword.get(opts, :ontop)), :ontop_cli)
 
-      case candidates do
-        [] ->
-          {:error,
-           Refusal.new(
-             :REFUSED_UNPROVEN_EQUIVALENCE,
-             :sparql_execution,
-             "no SPARQL execution candidate was supplied",
-             %{expected: [:data, :endpoint, :ontop]}
-           )}
-
-        _ ->
-          explicit = Keyword.get(opts, :strategy)
-
-          cond do
-            explicit && explicit not in candidates ->
-              {:error,
-               Refusal.new(
-                 :REFUSED_UNPROVEN_EQUIVALENCE,
-                 :sparql_execution,
-                 "selected SPARQL execution strategy is not available",
-                 %{selected: explicit, candidates: candidates}
-               )}
-
-            true ->
-              selected = explicit || if(length(candidates) == 1, do: hd(candidates))
-
-              {:ok,
-               %SPARQL.Plan{
-                 query: admitted,
-                 candidates: candidates,
-                 selected: selected,
-                 context: %{
-                   data: Keyword.get(opts, :data),
-                   endpoint: Keyword.get(opts, :endpoint),
-                   client_opts: Keyword.get(opts, :client_opts, []),
-                   ontop: Keyword.get(opts, :ontop)
-                 }
-               }}
-          end
-      end
+      build_plan(admitted, candidates, opts)
     end
   end
 
-  @spec execute(SPARQL.Plan.t()) :: {:ok, SPARQL.Observation.t()} | {:error, term()}
-  def execute(%SPARQL.Plan{selected: nil} = plan) do
+  @spec execute(Plan.t()) :: {:ok, Observation.t()} | {:error, term()}
+  def execute(%Plan{selected: nil} = plan) do
     {:error,
      Refusal.new(
        :REFUSED_UNPROVEN_EQUIVALENCE,
@@ -393,23 +367,21 @@ defmodule AshR2ML.SPARQL do
      )}
   end
 
-  def execute(%SPARQL.Plan{selected: :local_rdf, query: query, context: %{data: data}}) do
-    SPARQL.Local.query(data, query)
-  end
+  def execute(%Plan{selected: :local_rdf, query: query, context: %{data: data}})
+      when not is_nil(data),
+      do: Local.query(data, query)
 
-  def execute(%SPARQL.Plan{selected: :protocol, query: query, context: context}) do
-    SPARQL.Protocol.query(context.endpoint, query, context.client_opts)
-  end
+  def execute(%Plan{selected: :protocol, query: query, context: %{endpoint: endpoint} = context})
+      when is_binary(endpoint),
+      do: Protocol.query(endpoint, query, context.client_opts)
 
-  def execute(%SPARQL.Plan{selected: :ontop_cli, query: query, context: %{ontop: ontop}})
+  def execute(%Plan{selected: :ontop_cli, query: query, context: %{ontop: ontop}})
       when is_map(ontop) do
-    opts = ontop |> Map.put_new(:query, query.source)
-
-    with {:ok, observation} <- AshR2ML.OBDA.Ontop.query(opts) do
+    with {:ok, observation} <- AshR2ML.OBDA.Ontop.query(Map.put_new(ontop, :query, query.source)) do
       rows = observation.rows
 
       {:ok,
-       %SPARQL.Observation{
+       %Observation{
          strategy: :ontop_cli,
          query_sha256: query.sha256,
          query_form: query.form,
@@ -417,17 +389,14 @@ defmodule AshR2ML.SPARQL do
          standing: observation.standing,
          evidence_kind: observation.evidence_kind,
          result_kind: :bindings,
-         result_sha256: SPARQL.Result.hash_rows(rows),
+         result_sha256: Result.hash_rows(rows),
          rows: rows,
-         metadata: %{
-           engine: :ontop,
-           mapping_sha256: observation.mapping_sha256
-         }
+         metadata: %{engine: :ontop, mapping_sha256: observation.mapping_sha256}
        }}
     end
   end
 
-  def execute(%SPARQL.Plan{} = plan) do
+  def execute(%Plan{} = plan) do
     {:error,
      Refusal.new(
        :REFUSED_UNPROVEN_EQUIVALENCE,
@@ -435,6 +404,45 @@ defmodule AshR2ML.SPARQL do
        "selected SPARQL execution strategy lacks its required execution context",
        %{selected: plan.selected, candidates: plan.candidates}
      )}
+  end
+
+  defp build_plan(_query, [], _opts) do
+    {:error,
+     Refusal.new(
+       :REFUSED_UNPROVEN_EQUIVALENCE,
+       :sparql_execution,
+       "no SPARQL execution candidate was supplied",
+       %{expected: [:data, :endpoint, :ontop]}
+     )}
+  end
+
+  defp build_plan(query, candidates, opts) do
+    explicit = Keyword.get(opts, :strategy)
+
+    if explicit && explicit not in candidates do
+      {:error,
+       Refusal.new(
+         :REFUSED_UNPROVEN_EQUIVALENCE,
+         :sparql_execution,
+         "selected SPARQL execution strategy is not available",
+         %{selected: explicit, candidates: candidates}
+       )}
+    else
+      selected = explicit || if(length(candidates) == 1, do: hd(candidates))
+
+      {:ok,
+       %Plan{
+         query: query,
+         candidates: candidates,
+         selected: selected,
+         context: %{
+           data: Keyword.get(opts, :data),
+           endpoint: Keyword.get(opts, :endpoint),
+           client_opts: Keyword.get(opts, :client_opts, []),
+           ontop: Keyword.get(opts, :ontop)
+         }
+       }}
+    end
   end
 
   defp maybe_candidate(values, true, candidate), do: values ++ [candidate]
@@ -446,28 +454,24 @@ defmodule AshR2ML.JSONLD do
   JSON-LD 1.1 projection and ingestion through JSON-LD.ex.
 
   JSON-LD and Turtle are alternate RDF serializations feeding the same SHACL
-  admission boundary. Remote contexts are refused by default because network
-  context resolution would otherwise make ontology compilation depend on
-  ambient mutable state; callers must explicitly opt in to remote contexts.
+  admission boundary. Remote contexts are refused by default because ambient
+  network context resolution would make compilation depend on mutable external
+  state without a receipt.
   """
 
   alias AshR2ML.Refusal
 
-  @spec to_rdf(String.t() | map() | list(), keyword()) :: {:ok, RDF.Dataset.t()} | {:error, Refusal.t()}
+  @spec to_rdf(String.t() | map() | list(), keyword()) ::
+          {:ok, RDF.Dataset.t()} | {:error, Refusal.t()}
   def to_rdf(input, opts \\ []) do
-    with {:ok, document} <- decode_document(input),
-         :ok <- admit_contexts(document, opts) do
-      {:ok, JSON.LD.to_rdf(document)}
+    try do
+      with {:ok, document} <- decode_document(input),
+           :ok <- admit_contexts(document, opts) do
+        {:ok, JSON.LD.to_rdf(document)}
+      end
+    rescue
+      exception -> jsonld_error(:to_rdf, exception)
     end
-  rescue
-    exception ->
-      {:error,
-       Refusal.new(
-         :REFUSED_UNPROVEN_EQUIVALENCE,
-         :jsonld,
-         "JSON-LD.ex failed to project the document to RDF",
-         %{exception: Exception.message(exception)}
-       )}
   end
 
   @spec ingest(String.t() | map() | list(), keyword()) :: {:ok, map()} | {:error, term()}
@@ -475,76 +479,77 @@ defmodule AshR2ML.JSONLD do
     source = if is_binary(input), do: input, else: Jason.encode!(input)
 
     with {:ok, data} <- to_rdf(input, opts) do
-      AshR2ml.Ingestion.from_graph(
-        data,
-        Keyword.put_new(opts, :source_sha256, sha256(source))
-      )
+      AshR2ml.Ingestion.from_graph(data, Keyword.put_new(opts, :source_sha256, sha256(source)))
     end
   end
 
   @spec compile(String.t() | map() | list(), keyword()) ::
           {:ok, AshR2ML.Mapping.Bundle.t()} | {:error, term()}
   def compile(input, opts \\ []) do
-    with {:ok, profile} <- ingest(input, opts) do
-      AshR2ML.Compiler.compile_profile(profile)
-    end
+    with {:ok, profile} <- ingest(input, opts), do: AshR2ML.Compiler.compile_profile(profile)
   end
 
   @spec expand(String.t() | map() | list(), keyword()) :: {:ok, term()} | {:error, Refusal.t()}
   def expand(input, opts \\ []) do
-    with {:ok, document} <- decode_document(input),
-         :ok <- admit_contexts(document, opts) do
-      {:ok, JSON.LD.expand(document)}
+    try do
+      with {:ok, document} <- decode_document(input),
+           :ok <- admit_contexts(document, opts) do
+        {:ok, JSON.LD.expand(document)}
+      end
+    rescue
+      exception -> jsonld_error(:expand, exception)
     end
-  rescue
-    exception -> jsonld_error(:expand, exception)
   end
 
   @spec compact(String.t() | map() | list(), map() | String.t(), keyword()) ::
           {:ok, map()} | {:error, Refusal.t()}
   def compact(input, context, opts \\ []) do
-    with {:ok, document} <- decode_document(input),
-         :ok <- admit_contexts(document, opts),
-         :ok <- admit_contexts(%{"@context" => context}, opts) do
-      {:ok, JSON.LD.compact(document, context)}
+    try do
+      with {:ok, document} <- decode_document(input),
+           :ok <- admit_contexts(document, opts),
+           :ok <- admit_contexts(%{"@context" => context}, opts) do
+        {:ok, JSON.LD.compact(document, context)}
+      end
+    rescue
+      exception -> jsonld_error(:compact, exception)
     end
-  rescue
-    exception -> jsonld_error(:compact, exception)
   end
 
   @spec encode_rdf(RDF.Data.Source.t(), keyword()) :: {:ok, String.t()} | {:error, Refusal.t()}
   def encode_rdf(data, opts \\ []) do
     try do
-      document = JSON.LD.from_rdf(data)
-
-      document =
-        case Keyword.get(opts, :context) do
-          nil -> document
-          context ->
-            case admit_contexts(%{"@context" => context}, opts) do
-              :ok -> JSON.LD.compact(document, context)
-              {:error, refusal} -> throw({:refusal, refusal})
-            end
-        end
-
-      json_opts = if Keyword.get(opts, :pretty, true), do: [pretty: true], else: []
-
-      case Jason.encode(document, json_opts) do
-        {:ok, json} -> {:ok, json}
+      with {:ok, document} <- maybe_compact(JSON.LD.from_rdf(data), opts),
+           {:ok, json} <- Jason.encode(document, json_options(opts)) do
+        {:ok, json}
+      else
+        {:error, %Refusal{} = refusal} -> {:error, refusal}
         {:error, reason} -> jsonld_error(:encode, reason)
       end
-    catch
-      {:refusal, refusal} -> {:error, refusal}
     rescue
       exception -> jsonld_error(:encode, exception)
     end
   end
+
+  defp maybe_compact(document, opts) do
+    case Keyword.get(opts, :context) do
+      nil ->
+        {:ok, document}
+
+      context ->
+        with :ok <- admit_contexts(%{"@context" => context}, opts) do
+          {:ok, JSON.LD.compact(document, context)}
+        end
+    end
+  end
+
+  defp json_options(opts), do: if(Keyword.get(opts, :pretty, true), do: [pretty: true], else: [])
 
   defp decode_document(input) when is_map(input) or is_list(input), do: {:ok, input}
 
   defp decode_document(input) when is_binary(input) do
     case Jason.decode(input) do
       {:ok, document} -> {:ok, document}
+
       {:error, reason} ->
         {:error,
          Refusal.new(
@@ -567,7 +572,7 @@ defmodule AshR2ML.JSONLD do
   end
 
   defp admit_contexts(document, opts) do
-    remote = remote_contexts(document) |> Enum.uniq() |> Enum.sort()
+    remote = document |> remote_contexts() |> Enum.uniq() |> Enum.sort()
 
     if remote == [] or Keyword.get(opts, :allow_remote_contexts?, false) do
       :ok
