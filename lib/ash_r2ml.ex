@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 ash_r2ml contributors <https://github.com/seanchatmangpt/ash_r2ml/graphs/contributors>
+#
 # SPDX-License-Identifier: MIT
 
 defmodule AshR2ml do
