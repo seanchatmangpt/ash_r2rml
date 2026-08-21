@@ -41,21 +41,16 @@ defmodule AshR2RML.DfCM.CandidateSet do
          :ok <- require_subset(requested, universe, relationship) do
       candidates = Enum.filter(universe, &(&1 in requested))
 
-      case relationship.storage_strategy do
-        nil ->
-          {:ok, %{relationship | storage_candidates: candidates}}
-
-        selected when selected in candidates ->
-          {:ok, %{relationship | storage_candidates: candidates}}
-
-        selected ->
-          {:error,
-           Refusal.new(
-             :REFUSED_AMBIGUOUS_RELATIONSHIP,
-             relationship.name,
-             "selected storage strategy is outside the admitted candidate set",
-             %{selected: selected, admitted_candidates: candidates}
-           )}
+      if is_nil(relationship.storage_strategy) or relationship.storage_strategy in candidates do
+        {:ok, %{relationship | storage_candidates: candidates}}
+      else
+        {:error,
+         Refusal.new(
+           :REFUSED_AMBIGUOUS_RELATIONSHIP,
+           relationship.name,
+           "selected storage strategy is outside the admitted candidate set",
+           %{selected: relationship.storage_strategy, admitted_candidates: candidates}
+         )}
       end
     end
   end
@@ -97,6 +92,7 @@ defmodule AshR2RML.DfCM.CandidateSet do
     |> Enum.reduce_while({:ok, []}, fn value, {:ok, acc} ->
       case normalize_candidate(value) do
         {:ok, candidate} -> {:cont, {:ok, [candidate | acc]}}
+
         :error ->
           {:halt,
            {:error,
