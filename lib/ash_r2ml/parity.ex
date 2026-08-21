@@ -22,6 +22,24 @@ defmodule AshR2ml.ParityReceipt do
     right_count: 0,
     metadata: %{}
   ]
+
+  @type t :: %__MODULE__{
+          kind: :sparql_sql | :neo4j_postgres,
+          subject: term(),
+          left_system: atom() | String.t(),
+          right_system: atom() | String.t(),
+          left_query_sha256: String.t() | nil,
+          right_query_sha256: String.t() | nil,
+          left_result_sha256: String.t(),
+          right_result_sha256: String.t(),
+          fixture_sha256: String.t() | nil,
+          mapping_sha256: String.t() | nil,
+          verified?: boolean(),
+          receipt_sha256: String.t(),
+          left_count: non_neg_integer(),
+          right_count: non_neg_integer(),
+          metadata: map()
+        }
 end
 
 defmodule AshR2ml.Parity do
@@ -71,6 +89,10 @@ defmodule AshR2ml.Parity do
     |> Enum.sort_by(&:erlang.term_to_binary(&1, [:deterministic]))
   end
 
+  defp canonical(%Decimal{} = decimal), do: Decimal.to_string(decimal, :normal)
+  defp canonical(%DateTime{} = datetime), do: DateTime.to_iso8601(datetime)
+  defp canonical(%NaiveDateTime{} = datetime), do: NaiveDateTime.to_iso8601(datetime)
+  defp canonical(%Date{} = date), do: Date.to_iso8601(date)
   defp canonical(%_{} = struct), do: struct |> Map.from_struct() |> canonical()
 
   defp canonical(map) when is_map(map) do
@@ -81,10 +103,6 @@ defmodule AshR2ml.Parity do
 
   defp canonical(list) when is_list(list), do: Enum.map(list, &canonical/1)
   defp canonical(tuple) when is_tuple(tuple), do: tuple |> Tuple.to_list() |> Enum.map(&canonical/1)
-  defp canonical(%Decimal{} = decimal), do: Decimal.to_string(decimal, :normal)
-  defp canonical(%DateTime{} = datetime), do: DateTime.to_iso8601(datetime)
-  defp canonical(%NaiveDateTime{} = datetime), do: NaiveDateTime.to_iso8601(datetime)
-  defp canonical(%Date{} = date), do: Date.to_iso8601(date)
   defp canonical(value) when is_atom(value) and value not in [true, false, nil], do: Atom.to_string(value)
   defp canonical(value), do: value
 
