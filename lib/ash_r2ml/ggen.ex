@@ -35,22 +35,25 @@ defmodule AshR2ml.Ggen do
 
   defp receipt_json(%Compilation{receipt: receipt}) do
     receipt
-    |> Map.from_struct()
-    |> stringify_storage_maps()
+    |> json_term()
     |> Jason.encode(pretty: true)
   end
 
-  defp stringify_storage_maps(receipt) do
-    receipt
-    |> Map.update(:storage_candidates, %{}, &stringify_relation_map/1)
-    |> Map.update(:selected_storage, %{}, &stringify_relation_map/1)
-    |> Map.update(:refusals, [], fn refusals -> Enum.map(refusals, &Map.from_struct/1) end)
+  defp json_term(%_{} = struct), do: struct |> Map.from_struct() |> json_term()
+
+  defp json_term(map) when is_map(map) do
+    Map.new(map, fn {key, value} -> {json_key(key), json_term(value)} end)
   end
 
-  defp stringify_relation_map(map) do
-    Map.new(map, fn
-      {{class_iri, relationship}, value} -> {class_iri <> "#" <> to_string(relationship), value}
-      {key, value} -> {to_string(key), value}
-    end)
-  end
+  defp json_term(list) when is_list(list), do: Enum.map(list, &json_term/1)
+  defp json_term(tuple) when is_tuple(tuple), do: tuple |> Tuple.to_list() |> Enum.map(&json_term/1)
+  defp json_term(value) when value in [true, false, nil], do: value
+  defp json_term(value) when is_atom(value), do: Atom.to_string(value)
+  defp json_term(value) when is_binary(value) or is_number(value), do: value
+  defp json_term(value), do: inspect(value)
+
+  defp json_key({class_iri, relationship}), do: class_iri <> "#" <> to_string(relationship)
+  defp json_key(key) when is_binary(key), do: key
+  defp json_key(key) when is_atom(key), do: Atom.to_string(key)
+  defp json_key(key), do: inspect(key)
 end
