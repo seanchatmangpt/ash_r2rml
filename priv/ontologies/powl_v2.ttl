@@ -1,0 +1,96 @@
+# SPDX-FileCopyrightText: 2026 ash_r2rml contributors <https://github.com/seanchatmangpt/ash_r2rml/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix powl: <https://w3id.org/powl/v2#> .
+
+<https://w3id.org/powl/v2>
+    a owl:Ontology ;
+    rdfs:label "POWL 2.0: Partially Ordered Workflow Language Ontology"@en ;
+    rdfs:comment "Formal OWL 2 ontology representing POWL 2.0 hierarchical process models with Choice Graphs and Partial Orders as defined by Kourani, Park, and van der Aalst (2026)."@en ;
+    owl:versionInfo "2.0.0" .
+
+# Core Classes
+powl:Model a owl:Class ;
+    rdfs:label "POWL Model"@en ;
+    rdfs:comment "Base class for all POWL 2.0 hierarchical process tree nodes."@en .
+
+powl:Transition a owl:Class ;
+    rdfs:subClassOf powl:Model ;
+    rdfs:label "Transition"@en ;
+    rdfs:comment "An atomic executable activity in a workflow."@en .
+
+powl:SilentTransition a owl:Class ;
+    rdfs:subClassOf powl:Transition ;
+    rdfs:label "Silent Transition (tau)"@en ;
+    rdfs:comment "An unobservable routing transition."@en .
+
+powl:PartialOrder a owl:Class ;
+    rdfs:subClassOf powl:Model ;
+    rdfs:label "Partial Order"@en ;
+    rdfs:comment "Models non-block-structured concurrency with causal ordering dependencies (equivalent to Marked Graphs)."@en .
+
+powl:ChoiceGraph a owl:Class ;
+    rdfs:subClassOf powl:Model ;
+    rdfs:label "Choice Graph"@en ;
+    rdfs:comment "Models non-block-structured decisions, exclusive choices, and arbitrary cycles with start and end delimiters (equivalent to State Machines)."@en .
+
+powl:Node a owl:Class ;
+    rdfs:label "Choice Graph Node"@en .
+
+powl:StartNode a owl:Class ;
+    rdfs:subClassOf powl:Node ;
+    rdfs:label "Unique Start Node (|>)"@en .
+
+powl:EndNode a owl:Class ;
+    rdfs:subClassOf powl:Node ;
+    rdfs:label "Unique End Node ([])"@en .
+
+powl:Edge a owl:Class ;
+    rdfs:label "Control Flow Edge"@en .
+
+# Object Properties
+powl:hasChild a owl:ObjectProperty ;
+    rdfs:domain powl:Model ;
+    rdfs:range powl:Model ;
+    rdfs:label "has child submodel"@en .
+
+powl:precedes a owl:ObjectProperty ;
+    rdfs:domain powl:Model ;
+    rdfs:range powl:Model ;
+    rdfs:label "precedes in partial order"@en .
+
+powl:hasEdge a owl:ObjectProperty ;
+    rdfs:domain powl:ChoiceGraph ;
+    rdfs:range powl:Edge ;
+    rdfs:label "has edge"@en .
+
+powl:sourceNode a owl:ObjectProperty ;
+    rdfs:domain powl:Edge ;
+    rdfs:range powl:Node ;
+    rdfs:label "source node"@en .
+
+powl:targetNode a owl:ObjectProperty ;
+    rdfs:domain powl:Edge ;
+    rdfs:range powl:Node ;
+    rdfs:label "target node"@en .
+
+powl:mapsToModel a owl:ObjectProperty ;
+    rdfs:domain powl:Node ;
+    rdfs:range powl:Model ;
+    rdfs:label "maps to submodel"@en .
+
+# Datatype Properties
+powl:activityLabel a owl:DatatypeProperty ;
+    rdfs:domain powl:Transition ;
+    rdfs:range xsd:string ;
+    rdfs:label "activity label"@en .
+
+powl:nodeId a owl:DatatypeProperty ;
+    rdfs:domain powl:Node ;
+    rdfs:range xsd:string ;
+    rdfs:label "node identifier"@en .
