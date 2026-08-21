@@ -11,7 +11,7 @@ defmodule AshR2RML.SparkFeaturesTest do
       extensions: [AshR2RML.Resource]
 
     r2rml do
-      property :name, "https://schema.org/name"
+      property(:name, "https://schema.org/name")
     end
   end
 
@@ -28,11 +28,11 @@ defmodule AshR2RML.SparkFeaturesTest do
     end
 
     r2rml do
-      table_name "fragment_resources"
-      class "https://schema.org/FragmentThing"
+      table_name("fragment_resources")
+      class("https://schema.org/FragmentThing")
 
       subject do
-        template "https://example.org/fragment/{id}"
+        template("https://example.org/fragment/{id}")
       end
     end
   end

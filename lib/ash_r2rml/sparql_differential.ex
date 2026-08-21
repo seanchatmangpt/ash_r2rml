@@ -77,8 +77,7 @@ defmodule AshR2RML.SPARQL.Differential do
         metadata: metadata
       }
 
-      {:ok,
-       struct!(DifferentialReceipt, Map.put(seed, :receipt_sha256, sha256(canonical(seed))))}
+      {:ok, struct!(DifferentialReceipt, Map.put(seed, :receipt_sha256, sha256(canonical(seed))))}
     end
   end
 
@@ -149,7 +148,8 @@ defmodule AshR2RML.SPARQL.Differential do
     identities = observations |> Enum.map(& &1.query_sha256) |> Enum.uniq()
 
     case identities do
-      [identity] when is_binary(identity) and identity != "" -> {:ok, identity}
+      [identity] when is_binary(identity) and identity != "" ->
+        {:ok, identity}
 
       _ ->
         {:error,

@@ -70,8 +70,7 @@ defmodule AshR2RML.Admission do
   end
 
   defp normalize_resources(_) do
-    {:error,
-     [Refusal.new(:REFUSED_UNPROVEN_EQUIVALENCE, :resources, "profile resources must be a list")]}
+    {:error, [Refusal.new(:REFUSED_UNPROVEN_EQUIVALENCE, :resources, "profile resources must be a list")]}
   end
 
   defp normalize_resource(raw) when is_map(raw) do
@@ -98,8 +97,7 @@ defmodule AshR2RML.Admission do
   end
 
   defp normalize_resource(other) do
-    {:error,
-     Refusal.new(:REFUSED_UNMAPPED_RESOURCE_CLASS, other, "resource profile entry must be a map")}
+    {:error, Refusal.new(:REFUSED_UNMAPPED_RESOURCE_CLASS, other, "resource profile entry must be a map")}
   end
 
   defp normalize_attributes(values) when is_list(values) do
@@ -172,8 +170,7 @@ defmodule AshR2RML.Admission do
   end
 
   defp normalize_identities(_) do
-    {:error,
-     Refusal.new(:REFUSED_NON_UNIQUE_SEMANTIC_IDENTITY, :identities, "identities must be a list")}
+    {:error, Refusal.new(:REFUSED_NON_UNIQUE_SEMANTIC_IDENTITY, :identities, "identities must be a list")}
   end
 
   defp normalize_relationships(values) when is_list(values) do
@@ -207,8 +204,7 @@ defmodule AshR2RML.Admission do
   end
 
   defp normalize_relationships(_) do
-    {:error,
-     Refusal.new(:REFUSED_UNPROVEN_EQUIVALENCE, :relationships, "relationships must be a list")}
+    {:error, Refusal.new(:REFUSED_UNPROVEN_EQUIVALENCE, :relationships, "relationships must be a list")}
   end
 
   defp normalize_actions(values) when is_list(values) do
@@ -490,10 +486,18 @@ defmodule AshR2RML.Admission do
 
   defp verify_strategy(resource, relationship, destination) do
     case relationship.storage_strategy do
-      :foreign_key -> verify_foreign_key(resource, relationship, destination)
-      :join_table -> verify_join_table(resource, relationship, destination)
-      :association_resource -> verify_association_resource(relationship)
-      nil -> []
+      :foreign_key ->
+        verify_foreign_key(resource, relationship, destination)
+
+      :join_table ->
+        verify_join_table(resource, relationship, destination)
+
+      :association_resource ->
+        verify_association_resource(relationship)
+
+      nil ->
+        []
+
       _ ->
         [
           Refusal.new(

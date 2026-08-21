@@ -164,15 +164,25 @@ defmodule AshNeo4j.Functions.StIntersectsTest do
 
   describe "st_intersects(path, polygon) via Ash.Query" do
     test "finds places whose fibre path has a vertex inside the search polygon" do
-      sydney_path = Place |> Ash.create!(%{name: "Sydney fibre", path: %Geo.LineString{
-        coordinates: [{151.21, -33.87}, {151.30, -33.50}],
-        srid: 4326
-      }})
+      sydney_path =
+        Place
+        |> Ash.create!(%{
+          name: "Sydney fibre",
+          path: %Geo.LineString{
+            coordinates: [{151.21, -33.87}, {151.30, -33.50}],
+            srid: 4326
+          }
+        })
 
-      melbourne_path = Place |> Ash.create!(%{name: "Melbourne fibre", path: %Geo.LineString{
-        coordinates: [{144.96, -37.81}, {145.10, -37.50}],
-        srid: 4326
-      }})
+      melbourne_path =
+        Place
+        |> Ash.create!(%{
+          name: "Melbourne fibre",
+          path: %Geo.LineString{
+            coordinates: [{144.96, -37.81}, {145.10, -37.50}],
+            srid: 4326
+          }
+        })
 
       search = polygon(151.0, -34.0, 151.5, -33.5)
 

@@ -17,20 +17,21 @@ defmodule AshR2RML.PureDslSparqlTest do
     end
 
     r2rml do
-      table_name "people"
-      class "https://schema.org/Person"
+      table_name("people")
+      class("https://schema.org/Person")
 
       subject do
-        template "https://example.org/people/{id}"
+        template("https://example.org/people/{id}")
       end
 
-      property :name, "https://schema.org/name"
+      property(:name, "https://schema.org/name")
     end
 
     sparql do
       query :find_all_people do
-        form :select
+        form(:select)
         select [:name]
+
         where [
           {:person, "http://www.w3.org/1999/02/22-rdf-syntax-ns#type", "https://schema.org/Person"},
           {:person, "https://schema.org/name", :name}
@@ -38,7 +39,8 @@ defmodule AshR2RML.PureDslSparqlTest do
       end
 
       query :count_people do
-        form :ask
+        form(:ask)
+
         where [
           {:person, "http://www.w3.org/1999/02/22-rdf-syntax-ns#type", "https://schema.org/Person"}
         ]

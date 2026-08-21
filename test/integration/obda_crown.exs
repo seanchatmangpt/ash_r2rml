@@ -256,7 +256,7 @@ defmodule AshR2RML.ObdaCrown do
 
     unless protocol_observation.result_sha256 ==
              AshR2RML.SPARQL.Result.hash_rows(cli_observation.rows),
-      do: raise("SPARQL.Client and Ontop CLI normalized result identities differ")
+           do: raise("SPARQL.Client and Ontop CLI normalized result identities differ")
 
     # Execution topology 3: SPARQL.ex over a local RDF.ex graph describing the same fixture.
     local_graph = local_fixture_graph()
@@ -347,9 +347,7 @@ defmodule AshR2RML.ObdaCrown do
       )
     )
 
-    IO.puts(
-      "ALIVE bounded corpus: Turtle/JSON-LD + SPARQL.ex/SPARQL.Client/Ontop + Postgres/Neo4j parity"
-    )
+    IO.puts("ALIVE bounded corpus: Turtle/JSON-LD + SPARQL.ex/SPARQL.Client/Ontop + Postgres/Neo4j parity")
   end
 
   defp local_fixture_graph do
@@ -445,7 +443,9 @@ defmodule AshR2RML.ObdaCrown do
            ["--fail", "--silent", "--show-error", "http://127.0.0.1:8080/"],
            stderr_to_stdout: true
          ) do
-      {_output, 0} -> :ok
+      {_output, 0} ->
+        :ok
+
       _ ->
         Process.sleep(1_000)
         wait_for_endpoint!(attempts - 1)

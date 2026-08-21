@@ -15,13 +15,14 @@ defmodule AshR2RML.EquivalenceAndFalsifierTest do
       extensions: [AshR2RML]
 
     r2rml do
-      class_iri "http://www.opengis.net/ont/geosparql#Feature"
-      subject_template "https://example.org/id/location/{id}"
-      table_name "locations"
-      typed_attribute_mappings [
+      class_iri("http://www.opengis.net/ont/geosparql#Feature")
+      subject_template("https://example.org/id/location/{id}")
+      table_name("locations")
+
+      typed_attribute_mappings([
         {:geometry, "http://www.opengis.net/ont/geosparql#asWKT", "http://www.opengis.net/ont/geosparql#wktLiteral"},
         {:embedding, "https://example.org/ontology/embedding", "http://www.w3.org/2001/XMLSchema#string"}
-      ]
+      ])
     end
 
     attributes do
@@ -38,12 +39,13 @@ defmodule AshR2RML.EquivalenceAndFalsifierTest do
       extensions: [AshR2RML]
 
     r2rml do
-      class_iri "https://example.org/ontology/CustomThing"
-      subject_template "https://example.org/id/custom/{id}"
-      table_name "custom_things"
-      attribute_mappings [
+      class_iri("https://example.org/ontology/CustomThing")
+      subject_template("https://example.org/id/custom/{id}")
+      table_name("custom_things")
+
+      attribute_mappings([
         {:custom_field, "https://example.org/ontology/customField"}
-      ]
+      ])
     end
 
     attributes do
@@ -97,9 +99,9 @@ defmodule AshR2RML.EquivalenceAndFalsifierTest do
           extensions: [AshR2RML]
 
         r2rml do
-          class_iri "https://example.org/ontology/Invalid"
-          subject_template "https://example.org/id/invalid/{id}"
-          table_name "invalids"
+          class_iri("https://example.org/ontology/Invalid")
+          subject_template("https://example.org/id/invalid/{id}")
+          table_name("invalids")
         end
 
         attributes do
@@ -111,7 +113,11 @@ defmodule AshR2RML.EquivalenceAndFalsifierTest do
       invalid_mapping = %AshR2RML.Mapping.Resource{
         ash_resource: UnmappedTemplateResource,
         logical_table: %AshR2RML.Mapping.LogicalTable{table_name: "invalids"},
-        subject_map: %AshR2RML.Mapping.SubjectMap{strategy: :template, value: "https://example.org/id/invalid/{unmapped_column}", term_type: :iri},
+        subject_map: %AshR2RML.Mapping.SubjectMap{
+          strategy: :template,
+          value: "https://example.org/id/invalid/{unmapped_column}",
+          term_type: :iri
+        },
         class_iris: ["https://example.org/ontology/Invalid"]
       }
 

@@ -57,7 +57,7 @@ defmodule AshR2RML.OBDA.Ontop do
       prefix_args = get(opts, :prefix_args, []) |> List.wrap()
 
       args =
-        prefix_args ++ ["query", "-m", mapping, "-q", query]
+        (prefix_args ++ ["query", "-m", mapping, "-q", query])
         |> append_option("-p", get(opts, :properties_path))
         |> append_option("-t", get(opts, :ontology_path))
         |> append_option("--db-url", get(opts, :db_url))
@@ -186,7 +186,9 @@ defmodule AshR2RML.OBDA.Ontop do
 
   defp required(opts, key) do
     case get(opts, key) do
-      value when is_binary(value) and value != "" -> {:ok, value}
+      value when is_binary(value) and value != "" ->
+        {:ok, value}
+
       value ->
         {:error,
          Refusal.new(

@@ -61,8 +61,7 @@ defmodule AshR2RML.SemanticWebStackTest do
   test "local RDF execution produces parity-ready native rows" do
     graph =
       RDF.Graph.new([
-        {RDF.iri("https://example.com/a"), RDF.iri("https://example.com/rel"),
-         RDF.iri("https://example.com/b")}
+        {RDF.iri("https://example.com/a"), RDF.iri("https://example.com/rel"), RDF.iri("https://example.com/b")}
       ])
 
     assert {:ok, observation} = AshR2RML.SPARQL.Local.query(graph, @query)

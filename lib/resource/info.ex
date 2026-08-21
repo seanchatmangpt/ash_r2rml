@@ -47,6 +47,7 @@ defmodule AshNeo4j.Resource.Info do
     case Extension.get_persisted(resource, :domain_fragment_label, nil) do
       nil ->
         domain = Extension.get_persisted(resource, :domain, nil)
+
         if domain do
           case AshNeo4j.DataLayer.Domain.Info.neo4j_label(domain) do
             {:ok, label} -> label
@@ -352,8 +353,8 @@ defmodule AshNeo4j.Resource.Info do
   @spec preserve_node_relationships(Ash.Resource.t()) :: list(tuple())
   def preserve_node_relationships(resource) when is_atom(resource) do
     Enum.reduce(relate(resource), AshNeo4j.DataLayer.Info.neo4j_guard!(resource), fn {name, edge_label, edge_direction,
-                                                                               destination_label},
-                                                                              acc ->
+                                                                                      destination_label},
+                                                                                     acc ->
       relationship = Ash.Resource.Info.relationship(resource, name)
       reverse_node_relationship = reverse_node_relationship(resource, relationship.name)
 

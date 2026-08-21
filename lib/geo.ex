@@ -91,14 +91,28 @@ defmodule AshNeo4j.Geo do
       %Geo.Point{coordinates: {151.0, -33.0}, srid: 4326}
   """
   @spec force_2d(Geo.geometry()) :: Geo.geometry()
-  def force_2d(%Geo.PointZ{coordinates: {x, y, _z}} = g), do: %Geo.Point{coordinates: {x, y}, srid: 4326, properties: g.properties}
-  def force_2d(%Geo.LineStringZ{coordinates: c} = g), do: %Geo.LineString{coordinates: drop_z(c), srid: 4326, properties: g.properties}
-  def force_2d(%Geo.PolygonZ{coordinates: c} = g), do: %Geo.Polygon{coordinates: drop_z(c), srid: 4326, properties: g.properties}
-  def force_2d(%Geo.MultiPointZ{coordinates: c} = g), do: %Geo.MultiPoint{coordinates: drop_z(c), srid: 4326, properties: g.properties}
-  def force_2d(%Geo.MultiLineStringZ{coordinates: c} = g), do: %Geo.MultiLineString{coordinates: drop_z(c), srid: 4326, properties: g.properties}
-  def force_2d(%Geo.MultiPolygonZ{coordinates: c} = g), do: %Geo.MultiPolygon{coordinates: drop_z(c), srid: 4326, properties: g.properties}
+  def force_2d(%Geo.PointZ{coordinates: {x, y, _z}} = g),
+    do: %Geo.Point{coordinates: {x, y}, srid: 4326, properties: g.properties}
+
+  def force_2d(%Geo.LineStringZ{coordinates: c} = g),
+    do: %Geo.LineString{coordinates: drop_z(c), srid: 4326, properties: g.properties}
+
+  def force_2d(%Geo.PolygonZ{coordinates: c} = g),
+    do: %Geo.Polygon{coordinates: drop_z(c), srid: 4326, properties: g.properties}
+
+  def force_2d(%Geo.MultiPointZ{coordinates: c} = g),
+    do: %Geo.MultiPoint{coordinates: drop_z(c), srid: 4326, properties: g.properties}
+
+  def force_2d(%Geo.MultiLineStringZ{coordinates: c} = g),
+    do: %Geo.MultiLineString{coordinates: drop_z(c), srid: 4326, properties: g.properties}
+
+  def force_2d(%Geo.MultiPolygonZ{coordinates: c} = g),
+    do: %Geo.MultiPolygon{coordinates: drop_z(c), srid: 4326, properties: g.properties}
+
   # already 2D — no-op, so callers can project uniformly
-  def force_2d(%mod{} = g) when mod in [Geo.Point, Geo.LineString, Geo.Polygon, Geo.MultiPoint, Geo.MultiLineString, Geo.MultiPolygon], do: g
+  def force_2d(%mod{} = g)
+      when mod in [Geo.Point, Geo.LineString, Geo.Polygon, Geo.MultiPoint, Geo.MultiLineString, Geo.MultiPolygon],
+      do: g
 
   defp drop_z({x, y, _z}), do: {x, y}
   defp drop_z(list) when is_list(list), do: Enum.map(list, &drop_z/1)

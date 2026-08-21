@@ -18,14 +18,14 @@ defmodule AshR2RML.W3CComplianceTest do
     end
 
     r2rml do
-      table_name "articles"
-      class "https://schema.org/Article"
+      table_name("articles")
+      class("https://schema.org/Article")
 
       subject do
-        column :id
+        column(:id)
       end
 
-      property :title, "https://schema.org/headline", language_column: :lang_code
+      property(:title, "https://schema.org/headline", language_column: :lang_code)
     end
   end
 

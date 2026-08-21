@@ -54,6 +54,7 @@ defmodule AshNeo4j.GeoJsonTest do
         coordinates: [{151.21, -33.87}, {151.30, -33.50}, {151.78, -32.93}],
         srid: 4326
       }
+
       decoded = line |> GeoJson.encode!() |> Jason.decode!()
 
       # [west, south, east, north]
@@ -68,6 +69,7 @@ defmodule AshNeo4j.GeoJsonTest do
         ],
         srid: 4326
       }
+
       decoded = poly |> GeoJson.encode!() |> Jason.decode!()
 
       assert decoded["bbox"] == [0.0, 0.0, 10.0, 10.0]
@@ -81,6 +83,7 @@ defmodule AshNeo4j.GeoJsonTest do
         ],
         srid: 4326
       }
+
       decoded = multi |> GeoJson.encode!() |> Jason.decode!()
 
       assert decoded["bbox"] == [0.0, 0.0, 11.0, 11.0]
@@ -94,6 +97,7 @@ defmodule AshNeo4j.GeoJsonTest do
         ],
         srid: 4326
       }
+
       decoded = multi |> GeoJson.encode!() |> Jason.decode!()
 
       assert decoded["bbox"] == [0.0, 0.0, 11.0, 11.0]
@@ -123,8 +127,7 @@ defmodule AshNeo4j.GeoJsonTest do
              ],
              srid: 4326
            }},
-          {"MultiPoint",
-           %Geo.MultiPoint{coordinates: [{1.0, 1.0}, {2.0, 2.0}], srid: 4326}},
+          {"MultiPoint", %Geo.MultiPoint{coordinates: [{1.0, 1.0}, {2.0, 2.0}], srid: 4326}},
           {"MultiLineString",
            %Geo.MultiLineString{
              coordinates: [[{0.0, 0.0}, {1.0, 1.0}], [{10.0, 10.0}, {11.0, 11.0}]],
@@ -157,6 +160,7 @@ defmodule AshNeo4j.GeoJsonTest do
         coordinates: [{0.0, 0.0}, {10.0, 5.0}, {3.0, 12.0}],
         srid: 4326
       }
+
       assert GeoJson.bbox(line) == [0.0, 0.0, 10.0, 12.0]
     end
 
@@ -165,6 +169,7 @@ defmodule AshNeo4j.GeoJsonTest do
         coordinates: [[{1.0, 1.0}, {2.0, 2.0}], [{-5.0, -5.0}, {0.0, 0.0}]],
         srid: 4326
       }
+
       assert GeoJson.bbox(multi) == [-5.0, -5.0, 2.0, 2.0]
     end
 
@@ -176,6 +181,7 @@ defmodule AshNeo4j.GeoJsonTest do
         ],
         srid: 4326
       }
+
       assert GeoJson.bbox(multi) == [0.0, 0.0, 101.0, 101.0]
     end
   end

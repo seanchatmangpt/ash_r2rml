@@ -55,11 +55,17 @@ defmodule AshR2RML.PersistMapping do
     relationships =
       Transformer.get_option(dsl, [:r2rml], :relationship_mappings, [])
       |> Enum.map(fn {relationship_name, predicate_iri} ->
-        rel_from_info = try do Ash.Resource.Info.relationship(resource, relationship_name) rescue _ -> nil end
+        rel_from_info =
+          try do
+            Ash.Resource.Info.relationship(resource, relationship_name)
+          rescue
+            _ -> nil
+          end
+
         dsl_rel =
           rel_from_info ||
-            (Transformer.get_entities(dsl, [:relationships])
-             |> Enum.find(&(&1.name == relationship_name)))
+            Transformer.get_entities(dsl, [:relationships])
+            |> Enum.find(&(&1.name == relationship_name))
 
         source_attr =
           (dsl_rel && Map.get(dsl_rel, :source_attribute)) ||

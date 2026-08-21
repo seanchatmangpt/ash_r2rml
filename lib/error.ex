@@ -147,7 +147,8 @@ defmodule AshNeo4j.Error.UnsupportedFilterFragment do
   end
 
   defp explain(:combined),
-    do: "the fragment is combined with other filter conditions; only a filter that is a single fragment(...) is supported"
+    do:
+      "the fragment is combined with other filter conditions; only a filter that is a single fragment(...) is supported"
 
   defp explain({:unsupported_argument, arg}),
     do: "a fragment argument must be an attribute reference or a literal, got #{inspect(arg)}"
@@ -279,4 +280,3 @@ defmodule AshNeo4j.Error.Neo4j do
   defp category("Neo.ClientError.Security." <> _), do: :security
   defp category(_), do: :other
 end
-

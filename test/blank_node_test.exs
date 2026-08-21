@@ -17,15 +17,15 @@ defmodule AshR2RML.BlankNodeTest do
     end
 
     r2rml do
-      table_name "bnodes"
-      class "https://schema.org/Thing"
+      table_name("bnodes")
+      class("https://schema.org/Thing")
 
       subject do
-        template "bnode_{id}"
-        term_type :blank_node
+        template("bnode_{id}")
+        term_type(:blank_node)
       end
 
-      property :label, "https://schema.org/name"
+      property(:label, "https://schema.org/name")
     end
   end
 

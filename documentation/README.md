@@ -1,45 +1,70 @@
-# AshR2RML documentation
+# AshR2RML Documentation Hub (Diátaxis Framework)
 
-AshR2RML maps ordinary Ash resources to a normalized semantic mapping IR and standards-valid W3C R2RML while leaving persistence to the active Ash data layer.
+AshR2RML maps ordinary Ash resources to a normalized semantic mapping IR (`AshR2RML.Mapping`) and standards-valid W3C R2RML Turtle while leaving relational persistence to the active Ash data layer (such as `AshPostgres`).
 
-## Start here
+The documentation is organized using the **[Diátaxis documentation framework](https://diataxis.fr/)** into four distinct quadrants:
 
-- [Canonical Livebook](../ash_r2rml.livemd) — runnable end-to-end mental model.
-- [Architecture](topics/architecture.md) — one-subject architecture, compiler layers, and boundaries.
-- [Ash-first mapping](how_to/ash_first.livemd) — annotate an existing Ash/AshPostgres application.
-- [Ontology-first generation](how_to/ontology_first.livemd) — RDF/OWL + SHACL + ggen → AshR2RML.
-- [Relational schema and R2RML](how_to/managing_schema.livemd) — keep relational schema and semantic projection aligned.
+```text
+               LEARNING-ORIENTED          MOSTLY PRACTICAL
+                       │                         │
+  TUTORIALS ───────────┼─────────── HOW-TO GUIDES
+                       │
+ ──────────────────────┼─────────────────────────
+                       │
+  REFERENCE ───────────┼─────────── EXPLANATION (TOPICS)
+                       │
+                MOSTLY THEORETICAL       UNDERSTANDING-ORIENTED
+```
 
-## Reference
+---
 
-- [Support matrix](reference/support_matrix.md)
-- [Usage rules index](../usage-rules.md)
-- [Semantic mapping IR](../usage-rules/semantic-ir.md)
-- [R2RML](../usage-rules/r2rml.md)
-- [DSL](../usage-rules/dsl.md)
-- [Semantic identities](../usage-rules/identities.md)
-- [Relationships](../usage-rules/relationships.md)
-- [Datatypes](../usage-rules/datatypes.md)
-- [Custom Ash types](../usage-rules/custom-types.md)
-- [Logical tables](../usage-rules/logical-tables.md)
+## 🎓 1. Tutorials (Learning-Oriented)
 
-## Integration
+Hands-on, step-by-step lessons for newcomers to learn AshR2RML from scratch.
 
-- [Query surfaces](../usage-rules/query-surfaces.md)
-- [OBDA and virtual RDF](../usage-rules/obda.md)
-- [Ontology-first rules](../usage-rules/ontology-first.md)
-- [ggen manufacturing](../usage-rules/ggen.md)
-- [Testing and semantic round trips](../usage-rules/testing.md)
-- [Actions and mutation boundary](../usage-rules/actions.md)
+- [Getting Started with AshR2RML](tutorials/getting_started.md) — Build your first mapped resource, compile to IR, render Turtle, and validate RDF output.
+- [Canonical Runnable Livebook](../ash_r2rml.livemd) — Interactive end-to-end mental model and execution sandbox.
 
-## Project history
+---
 
-- [Migration from the AshNeo4j donor](topics/migration_from_ash_neo4j.md)
-- [`CHANGELOG.md`](../CHANGELOG.md) preserves donor release history rather than rewriting historical Neo4j releases as AshR2RML releases.
+## 🛠️ 2. How-To Guides (Task-Oriented)
 
-## Product boundary
+Recipes and practical guides for solving specific real-world tasks.
 
-AshR2RML does not replace AshPostgres, implement a database driver, store triples, execute SPARQL, or require a graph database. Its job is deterministic semantic correspondence:
+- [Ash-First Mapping Guide](how_to/ash_first.livemd) — Annotate an existing Ash/AshPostgres application with RDF metadata.
+- [Ontology-First Generation](how_to/ontology_first.livemd) — Generate Ash resources from RDF/OWL profiles and SHACL shapes via `ggen`.
+- [Managing Relational Schema & R2RML](how_to/managing_schema.livemd) — Keep PostgreSQL DDL migrations and semantic projections synchronized.
+- [Integrating with OBDA Query Engines](how_to/obda_integration.md) — Execute virtual SPARQL queries against AshPostgres via Ontop/GraphDB.
+
+---
+
+## 📋 3. Reference (Information-Oriented)
+
+Strict, technical specifications, API contracts, DSL references, and refusal catalogs.
+
+- [AshR2RML DSL Reference](reference/dsl_reference.md) — Complete specification for `r2rml`, `subject`, `rdf`, and `sparql` Spark DSL extensions.
+- [Normalized Mapping IR Reference](reference/mapping_ir.md) — Structural reference for `AshR2RML.Mapping.*` IR structs.
+- [Typed Refusals Catalog](reference/typed_refusals.md) — Exhaustive list of compile-time and runtime refusal exceptions (`REFUSED_*`).
+- [Feature Support Matrix](reference/support_matrix.md) — Compatibility matrix for W3C R2RML features and Ash data layers.
+- [Usage Rules Index](../usage-rules.md) — Specifications for [semantic IR](../usage-rules/semantic-ir.md), [R2RML](../usage-rules/r2rml.md), [identities](../usage-rules/identities.md), [relationships](../usage-rules/relationships.md), [datatypes](../usage-rules/datatypes.md), and [ggen](../usage-rules/ggen.md).
+
+---
+
+## 💡 4. Explanation / Topics (Understanding-Oriented)
+
+Conceptual essays, system architecture, theoretical rationale, and product invariants.
+
+- [One-Subject Architecture & Compiler Layers](topics/architecture.md) — Compiler architecture and database boundaries.
+- [Core Semantic Correspondence](topics/semantic_correspondence.md) — Principles of mapping Ash resources to R2RML constructs and SHACL closure.
+- [Ash vs W3C R2RML Side-by-Side](topics/r2rml-side-by-side.md) — Comparative overview of Ash DSL and R2RML Turtle structures.
+- [Closed-World Elixir vs Open-World RDF](topics/rdf-elixir-semantic-execution.md) — Semantic execution models in application code vs graph query engines.
+- [AshNeo4j Migration History](topics/migration_from_ash_neo4j.md) — Background and context on the fork from AshNeo4j.
+
+---
+
+## Product Boundary Invariant
+
+AshR2RML is **not** an `Ash.DataLayer`, graph database, triplestore, or SPARQL engine. Its job is deterministic semantic compilation:
 
 ```text
 Ash.Resource + RDF metadata
@@ -48,7 +73,7 @@ Ash.Resource + RDF metadata
       ╱       ╲
 relational    R2RML
    state        │
-      ╲       OBDA
-       ╲       ╱
-      one subject
+ (AshPostgres) OBDA Engine
+      ╲       ╱
+     one subject
 ```

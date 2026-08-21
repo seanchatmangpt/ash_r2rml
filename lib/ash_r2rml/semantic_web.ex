@@ -26,7 +26,9 @@ defmodule AshR2RML.SPARQL.Query do
   @spec load_file(String.t(), keyword()) :: {:ok, t()} | {:error, Refusal.t()}
   def load_file(file_path, _opts \\ []) when is_binary(file_path) do
     case File.read(file_path) do
-      {:ok, content} -> admit(content)
+      {:ok, content} ->
+        admit(content)
+
       {:error, reason} ->
         {:error,
          Refusal.new(
@@ -62,7 +64,8 @@ defmodule AshR2RML.SPARQL.Query do
   def admit(source) when is_binary(source) do
     try do
       case Elixir.SPARQL.Query.new(source, default_prefixes: nil) do
-        %Elixir.SPARQL.Query{} = parsed -> admit(parsed, source)
+        %Elixir.SPARQL.Query{} = parsed ->
+          admit(parsed, source)
 
         {:error, reason} ->
           {:error,
@@ -307,8 +310,11 @@ defmodule AshR2RML.SPARQL.Protocol do
          metadata: %{client: :sparql_client}
        }}
     else
-      {:error, %Refusal{} = refusal} -> {:error, refusal}
-      {:error, reason} -> {:error, reason}
+      {:error, %Refusal{} = refusal} ->
+        {:error, refusal}
+
+      {:error, reason} ->
+        {:error, reason}
 
       other ->
         {:error,
@@ -572,7 +578,8 @@ defmodule AshR2RML.JSONLD do
 
   defp decode_document(input) when is_binary(input) do
     case Jason.decode(input) do
-      {:ok, document} -> {:ok, document}
+      {:ok, document} ->
+        {:ok, document}
 
       {:error, reason} ->
         {:error,

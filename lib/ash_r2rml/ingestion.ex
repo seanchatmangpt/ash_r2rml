@@ -291,18 +291,13 @@ defmodule AshR2RML.Ingestion do
               target_class: target_class,
               min_count: min_count,
               max_count: max_count,
-              storage_strategy:
-                optional_storage_strategy(index, property_shape, @r2ml <> "storageStrategy"),
+              storage_strategy: optional_storage_strategy(index, property_shape, @r2ml <> "storageStrategy"),
               source_key: optional_atom(index, property_shape, @r2ml <> "sourceKey", predicate_iri),
-              destination_key:
-                optional_atom(index, property_shape, @r2ml <> "destinationKey", predicate_iri),
+              destination_key: optional_atom(index, property_shape, @r2ml <> "destinationKey", predicate_iri),
               join_table: optional_literal(index, property_shape, @r2ml <> "joinTable"),
-              source_join_column:
-                optional_literal(index, property_shape, @r2ml <> "sourceJoinColumn"),
-              destination_join_column:
-                optional_literal(index, property_shape, @r2ml <> "destinationJoinColumn"),
-              association_resource:
-                optional_literal(index, property_shape, @r2ml <> "associationResource"),
+              source_join_column: optional_literal(index, property_shape, @r2ml <> "sourceJoinColumn"),
+              destination_join_column: optional_literal(index, property_shape, @r2ml <> "destinationJoinColumn"),
+              association_resource: optional_literal(index, property_shape, @r2ml <> "associationResource"),
               properties: [],
               provenance: %{property_shape: term_sort_key(property_shape)}
             }}}
@@ -334,7 +329,9 @@ defmodule AshR2RML.Ingestion do
 
   defp required_iri(index, subject, predicate, refusal_subject) do
     case objects(index, subject, predicate) do
-      [object] -> require_iri_term(object, refusal_subject)
+      [object] ->
+        require_iri_term(object, refusal_subject)
+
       values ->
         {:error,
          Refusal.new(
@@ -363,7 +360,8 @@ defmodule AshR2RML.Ingestion do
            "expected an absolute RDF IRI; complex/blank-node SHACL paths are not admitted"
          )}
 
-      iri -> {:ok, iri}
+      iri ->
+        {:ok, iri}
     end
   end
 
@@ -379,7 +377,8 @@ defmodule AshR2RML.Ingestion do
                "#{predicate} must be an RDF literal"
              )}
 
-          value -> {:ok, to_string(value)}
+          value ->
+            {:ok, to_string(value)}
         end
 
       values ->
@@ -410,7 +409,8 @@ defmodule AshR2RML.Ingestion do
           _ -> default
         end
 
-      _ -> default
+      _ ->
+        default
     end
   end
 
@@ -418,23 +418,29 @@ defmodule AshR2RML.Ingestion do
     case objects(index, subject, predicate) do
       [object] ->
         case literal_value(object) do
-          value when is_integer(value) -> value
+          value when is_integer(value) ->
+            value
+
           value when is_binary(value) ->
             case Integer.parse(value) do
               {integer, ""} -> integer
               _ -> default
             end
 
-          _ -> default
+          _ ->
+            default
         end
 
-      _ -> default
+      _ ->
+        default
     end
   end
 
   defp optional_atom(index, subject, predicate, refusal_subject) do
     case optional_literal(index, subject, predicate) do
-      nil -> nil
+      nil ->
+        nil
+
       value ->
         case safe_atom(value, refusal_subject) do
           {:ok, atom} -> atom

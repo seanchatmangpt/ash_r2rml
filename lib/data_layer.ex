@@ -372,7 +372,8 @@ defmodule AshNeo4j.DataLayer do
   defp map_identity_conflict({:error, %AshNeo4j.Error.Neo4j{category: :constraint}} = error, resource, changeset) do
     case conflicting_identity(resource, changeset.attributes) do
       %{keys: keys} ->
-        {:error, Enum.map(keys, &Ash.Error.Changes.InvalidAttribute.exception(field: &1, message: "has already been taken"))}
+        {:error,
+         Enum.map(keys, &Ash.Error.Changes.InvalidAttribute.exception(field: &1, message: "has already been taken"))}
 
       nil ->
         error
@@ -569,7 +570,8 @@ defmodule AshNeo4j.DataLayer do
 
           case map_size(object_id) do
             0 ->
-              {:error, internal("couldn't resolve the node to unrelate from #{inspect(resource)}.#{object_relationship_name}")}
+              {:error,
+               internal("couldn't resolve the node to unrelate from #{inspect(resource)}.#{object_relationship_name}")}
 
             _ ->
               {_relationship_name, edge_label, object_to_subject_direction, _destination_label} =
@@ -611,7 +613,8 @@ defmodule AshNeo4j.DataLayer do
                    relationship: object_relationship_name
                  )}
               else
-                {:error, internal("couldn't resolve the node to relate from #{inspect(resource)}.#{object_relationship_name}")}
+                {:error,
+                 internal("couldn't resolve the node to relate from #{inspect(resource)}.#{object_relationship_name}")}
               end
 
             _ ->
@@ -665,7 +668,9 @@ defmodule AshNeo4j.DataLayer do
 
                 case map_size(object_id) do
                   0 ->
-                    {:halt, {:error, internal("couldn't resolve the node to unrelate for #{inspect(resource)}.#{relationship_name}")}}
+                    {:halt,
+                     {:error,
+                      internal("couldn't resolve the node to unrelate for #{inspect(resource)}.#{relationship_name}")}}
 
                   _ ->
                     case Neo4jHelper.unrelate_nodes(
@@ -700,7 +705,11 @@ defmodule AshNeo4j.DataLayer do
 
                     case map_size(object_id) do
                       0 ->
-                        {:halt, {:error, internal("couldn't resolve the node to relate for #{inspect(resource)}.#{relationship_name} from argument #{inspect(argument)}")}}
+                        {:halt,
+                         {:error,
+                          internal(
+                            "couldn't resolve the node to relate for #{inspect(resource)}.#{relationship_name} from argument #{inspect(argument)}"
+                          )}}
 
                       _ ->
                         subject_exclusive? = ResourceInfo.source_exclusive?(resource, relationship_name)
@@ -1070,7 +1079,7 @@ defmodule AshNeo4j.DataLayer do
 
   defp contains_pushdown_only?(%module{} = struct) do
     pushdown_only_function?(module) or
-      (struct |> Map.from_struct() |> Map.values() |> Enum.any?(&contains_pushdown_only?/1))
+      struct |> Map.from_struct() |> Map.values() |> Enum.any?(&contains_pushdown_only?/1)
   end
 
   defp contains_pushdown_only?(map) when is_map(map), do: map |> Map.values() |> Enum.any?(&contains_pushdown_only?/1)
@@ -1972,7 +1981,16 @@ defmodule AshNeo4j.DataLayer do
 
   # Handles aggregates whose filter is a set of simple scalar == conditions that can be
   # expressed as WHERE clauses in Cypher, avoiding full record loading in Elixir.
-  defp run_simple_filtered_aggregate(mapping, neo4j_pk, ids, aggregate, mode, path_segments, neo4j_field, dest_conditions) do
+  defp run_simple_filtered_aggregate(
+         mapping,
+         neo4j_pk,
+         ids,
+         aggregate,
+         mode,
+         path_segments,
+         neo4j_field,
+         dest_conditions
+       ) do
     query =
       case mode do
         :per_record ->

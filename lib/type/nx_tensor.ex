@@ -88,12 +88,14 @@ defmodule AshNeo4j.Type.NxTensor do
       type: [
         type: {:one_of, @nx_types},
         default: @default_type,
-        doc: "Nx element type — one of #{inspect(@nx_types)}. Defaults to `#{inspect(@default_type)}`; input is cast to it."
+        doc:
+          "Nx element type — one of #{inspect(@nx_types)}. Defaults to `#{inspect(@default_type)}`; input is cast to it."
       ],
       shape: [
         type: {:list, :pos_integer},
         required: true,
-        doc: "The tensor shape (e.g. `[9, 9]`), rank 1 to 3. Declared schema — used on write and read; never stored or inferred."
+        doc:
+          "The tensor shape (e.g. `[9, 9]`), rank 1 to 3. Declared schema — used on write and read; never stored or inferred."
       ],
       store: [
         type: {:one_of, [:property, :packed]},

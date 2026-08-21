@@ -33,7 +33,15 @@ end
 defmodule AshR2RML.Dsl.Reference do
   @moduledoc false
   @enforce_keys [:relationship, :predicate_iri]
-  defstruct [:relationship, :predicate_iri, :inverse_predicate, :guard_class, :__identifier__, :__spark_metadata__, direction: :outgoing]
+  defstruct [
+    :relationship,
+    :predicate_iri,
+    :inverse_predicate,
+    :guard_class,
+    :__identifier__,
+    :__spark_metadata__,
+    direction: :outgoing
+  ]
 end
 
 defmodule AshR2RML.Dsl.SparqlQuery do
@@ -164,6 +172,7 @@ defmodule AshR2RML.Resource.Persist do
 
   alias AshR2RML.Datatype.Registry
   alias AshR2RML.Introspection
+
   alias AshR2RML.Mapping.{
     GraphMap,
     ObjectMap,
@@ -172,6 +181,7 @@ defmodule AshR2RML.Resource.Persist do
     Resource,
     SubjectMap
   }
+
   alias AshR2RML.Refusal
   alias Spark.Dsl.{Transformer, Verifier}
 
@@ -390,7 +400,8 @@ defmodule AshR2RML.Resource.Persist do
                term_type: :literal
              }}
 
-          {:error, refusal} -> {:error, refusal}
+          {:error, refusal} ->
+            {:error, refusal}
         end
     end
   end
@@ -485,12 +496,12 @@ defmodule AshR2RML.Resource.Verify do
 
       mapping ->
         case AshR2RML.Mapping.validate(mapping) do
-          :ok -> :ok
+          :ok ->
+            :ok
+
           {:error, refusals} ->
             {:error,
-             Spark.Error.DslError.exception(
-               message: Enum.map_join(refusals, "; ", &"#{&1.code}: #{&1.detail}")
-             )}
+             Spark.Error.DslError.exception(message: Enum.map_join(refusals, "; ", &"#{&1.code}: #{&1.detail}"))}
         end
     end
   end
@@ -546,6 +557,7 @@ defmodule AshR2RML.Resource.LegacyAdapter do
 
   alias AshR2RML.Datatype.Registry
   alias AshR2RML.Introspection
+
   alias AshR2RML.Mapping.{
     GraphMap,
     LogicalTable,
@@ -555,6 +567,7 @@ defmodule AshR2RML.Resource.LegacyAdapter do
     Resource,
     SubjectMap
   }
+
   alias AshR2RML.Refusal
 
   def convert(resource) do
@@ -582,14 +595,24 @@ defmodule AshR2RML.Resource.LegacyAdapter do
               Enum.map(safe_spark_opt(resource, [:r2rml], :attribute_mappings) || [], fn {attr, pred} ->
                 %AshR2RML.AttributeMapping{attribute: attr, column: to_string(attr), predicate_iri: pred}
               end) ++
-              Enum.map(safe_spark_opt(resource, [:r2rml], :typed_attribute_mappings) || [], fn {attr, pred, dt} ->
-                %AshR2RML.AttributeMapping{attribute: attr, column: to_string(attr), predicate_iri: pred, datatype_iri: dt}
-              end),
+                Enum.map(safe_spark_opt(resource, [:r2rml], :typed_attribute_mappings) || [], fn {attr, pred, dt} ->
+                  %AshR2RML.AttributeMapping{
+                    attribute: attr,
+                    column: to_string(attr),
+                    predicate_iri: pred,
+                    datatype_iri: dt
+                  }
+                end),
             relationships:
               Enum.map(safe_spark_opt(resource, [:r2rml], :relationship_mappings) || [], fn {rel_name, pred} ->
                 rel = Ash.Resource.Info.relationship(resource, rel_name)
-                source_attr = (rel && (rel.source_attribute || Map.get(rel, :source_attribute))) || (rel && rel.type == :belongs_to && :"#{rel_name}_id")
+
+                source_attr =
+                  (rel && (rel.source_attribute || Map.get(rel, :source_attribute))) ||
+                    (rel && rel.type == :belongs_to && :"#{rel_name}_id")
+
                 dest_attr = (rel && (rel.destination_attribute || Map.get(rel, :destination_attribute))) || :id
+
                 %AshR2RML.RelationshipMapping{
                   relationship: rel_name,
                   predicate_iri: pred,
@@ -599,6 +622,7 @@ defmodule AshR2RML.Resource.LegacyAdapter do
                 }
               end)
           }
+
           convert_legacy(resource, legacy)
         else
           {:error,
@@ -712,7 +736,8 @@ defmodule AshR2RML.Resource.LegacyAdapter do
                    }
                  }}
 
-              error -> error
+              error ->
+                error
             end
         end
 

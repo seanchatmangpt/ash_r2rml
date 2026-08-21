@@ -47,8 +47,7 @@ defmodule AshR2RML.OntologyFirstCompilerTest do
         },
         %{
           iri: "https://xaas.example/resource/Account",
-          class_iri:
-            "https://spec.edmcouncil.org/fibo/ontology/FBC/FinancialPositions/FinancialPositions/Account",
+          class_iri: "https://spec.edmcouncil.org/fibo/ontology/FBC/FinancialPositions/FinancialPositions/Account",
           shape_iri: "https://xaas.example/shapes/AccountShape",
           module: "Xaas.Account",
           repo_module: "Xaas.Repo",
@@ -177,7 +176,8 @@ defmodule AshR2RML.OntologyFirstCompilerTest do
               [Map.put(relationship, :storage_strategy, nil) | rest]
             end)
 
-          other -> other
+          other ->
+            other
         end)
       end)
 
@@ -205,7 +205,8 @@ defmodule AshR2RML.OntologyFirstCompilerTest do
               |> Map.delete(:ash_type)
               |> Map.delete(:postgres_type)
 
-            other -> other
+            other ->
+              other
           end)
         end)
       end)

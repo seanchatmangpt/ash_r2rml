@@ -23,11 +23,11 @@ defmodule AshR2RML.R2RML do
   alias AshR2RML.Refusal
 
   @prefixes """
-@prefix rr: <http://www.w3.org/ns/r2rml#> .
-@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
-@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+  @prefix rr: <http://www.w3.org/ns/r2rml#> .
+  @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+  @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 
-"""
+  """
 
   @spec render(Bundle.t() | module() | [module()]) :: {:ok, String.t()} | {:error, term()}
   def render(%Bundle{} = bundle) do
@@ -416,20 +416,16 @@ defmodule AshR2RML.R2RML do
   defp render_object_term_map(%ObjectMap{strategy: :constant, term_type: :iri, value: value}),
     do: "rr:constant <#{value}>"
 
-  defp render_object_term_map(
-         %ObjectMap{strategy: :constant, term_type: :literal, language: language, value: value}
-       )
+  defp render_object_term_map(%ObjectMap{strategy: :constant, term_type: :literal, language: language, value: value})
        when is_binary(language),
        do: "rr:constant #{literal(value)}@#{language}"
 
-  defp render_object_term_map(
-         %ObjectMap{
-           strategy: :constant,
-           term_type: :literal,
-           datatype: %{rdf_datatype: datatype},
-           value: value
-         }
-       )
+  defp render_object_term_map(%ObjectMap{
+         strategy: :constant,
+         term_type: :literal,
+         datatype: %{rdf_datatype: datatype},
+         value: value
+       })
        when is_binary(datatype),
        do: "rr:constant #{literal(value)}^^<#{datatype}>"
 
@@ -476,8 +472,7 @@ defmodule AshR2RML.R2RML do
 
   defp bridge_id(resource, reference, direction) do
     payload =
-      {AshR2RML.Mapping.mapping_identity(resource), reference.relationship, reference.predicate_iri,
-       direction}
+      {AshR2RML.Mapping.mapping_identity(resource), reference.relationship, reference.predicate_iri, direction}
       |> :erlang.term_to_binary([:deterministic])
       |> then(&:crypto.hash(:sha256, &1))
       |> Base.encode16(case: :lower)

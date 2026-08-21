@@ -13,15 +13,15 @@ defmodule AshR2RML.ResourceTest.Organization do
   end
 
   r2rml do
-    table_name "organizations"
+    table_name("organizations")
 
-    class "https://www.w3.org/ns/org#Organization"
+    class("https://www.w3.org/ns/org#Organization")
 
     subject do
-      template "https://example.test/organization/{id}"
+      template("https://example.test/organization/{id}")
     end
 
-    property :name, "http://xmlns.com/foaf/0.1/name"
+    property(:name, "http://xmlns.com/foaf/0.1/name")
   end
 end
 
@@ -42,16 +42,16 @@ defmodule AshR2RML.ResourceTest.Account do
   end
 
   r2rml do
-    table_name "accounts"
+    table_name("accounts")
 
-    class "https://example.test/ontology/Account"
+    class("https://example.test/ontology/Account")
 
     subject do
-      template "https://example.test/account/{id}"
+      template("https://example.test/account/{id}")
     end
 
-    property :account_number, "https://example.test/ontology/accountNumber"
-    reference :organization, "https://www.w3.org/ns/org#memberOf"
+    property(:account_number, "https://example.test/ontology/accountNumber")
+    reference(:organization, "https://www.w3.org/ns/org#memberOf")
   end
 end
 

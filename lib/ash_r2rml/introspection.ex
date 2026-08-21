@@ -62,7 +62,15 @@ defmodule AshR2RML.Introspection do
 
   defp extract_identities(resource, dsl) do
     primary_from_ash = if resource, do: List.wrap(Ash.Resource.Info.primary_key(resource)), else: []
-    primary_from_dsl = if dsl, do: Spark.Dsl.Transformer.get_entities(dsl, [:attributes]) |> Enum.filter(& Map.get(&1, :primary_key?)) |> Enum.map(& &1.name), else: []
+
+    primary_from_dsl =
+      if dsl,
+        do:
+          Spark.Dsl.Transformer.get_entities(dsl, [:attributes])
+          |> Enum.filter(&Map.get(&1, :primary_key?))
+          |> Enum.map(& &1.name),
+        else: []
+
     primary = Enum.uniq(primary_from_ash ++ primary_from_dsl)
 
     declared =
@@ -116,8 +124,12 @@ defmodule AshR2RML.Introspection do
 
   defp relationship_metadata(resource, relationship) do
     case Map.get(relationship, :type) do
-      :many_to_many -> many_to_many_metadata(resource, relationship)
-      type when type in [:belongs_to, :has_one, :has_many] -> simple_relationship_metadata(resource, relationship)
+      :many_to_many ->
+        many_to_many_metadata(resource, relationship)
+
+      type when type in [:belongs_to, :has_one, :has_many] ->
+        simple_relationship_metadata(resource, relationship)
+
       type ->
         {:error,
          Refusal.new(

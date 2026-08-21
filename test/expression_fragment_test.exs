@@ -55,7 +55,9 @@ defmodule AshNeo4j.ExpressionFragmentTest do
       expression =
         Ash.Query.filter(Post, fragment("apoc.text.levenshteinDistance(?, ?) <= ?", title, "John Smith", 2)).filter.expression
 
-      assert {:ok, {"(apoc.text.levenshteinDistance(s.title, $frag_0) <= $frag_1)", %{"frag_0" => "John Smith", "frag_1" => 2}}} =
+      assert {:ok,
+              {"(apoc.text.levenshteinDistance(s.title, $frag_0) <= $frag_1)",
+               %{"frag_0" => "John Smith", "frag_1" => 2}}} =
                QueryHelper.render_fragment(expression, mapping())
     end
   end

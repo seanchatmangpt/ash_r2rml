@@ -121,7 +121,8 @@ defmodule AshR2RML.Compiler do
   @spec explore(map()) :: {:ok, SemanticIR.t()} | {:error, [Refusal.t()]}
   def explore(profile), do: Admission.admit(profile)
 
-  @spec compile(map() | module() | [module()]) :: {:ok, Compilation.t() | AshR2RML.Mapping.Bundle.t()} | {:error, Compilation.t() | Refusal.t()}
+  @spec compile(map() | module() | [module()]) ::
+          {:ok, Compilation.t() | AshR2RML.Mapping.Bundle.t()} | {:error, Compilation.t() | Refusal.t()}
   def compile(resources) when is_atom(resources) or is_list(resources) do
     case compile_resources(resources) do
       {:ok, bundle} -> {:ok, bundle}
@@ -142,7 +143,9 @@ defmodule AshR2RML.Compiler do
 
       {:ok, ir} ->
         case projection_refusals(ir) do
-          [] -> render_all(ir)
+          [] ->
+            render_all(ir)
+
           refusals ->
             {:error,
              %Compilation{
@@ -255,9 +258,14 @@ defmodule AshR2RML.Compiler do
          refusals: []
        }}
     else
-      {:error, [%AshR2RML.Refusal{} = refusal | _]} -> public_refusal_compilation(ir, refusal)
-      {:error, %AshR2RML.Refusal{} = refusal} -> public_refusal_compilation(ir, refusal)
-      {:error, %Refusal{} = refusal} -> refusal_compilation(ir, refusal)
+      {:error, [%AshR2RML.Refusal{} = refusal | _]} ->
+        public_refusal_compilation(ir, refusal)
+
+      {:error, %AshR2RML.Refusal{} = refusal} ->
+        public_refusal_compilation(ir, refusal)
+
+      {:error, %Refusal{} = refusal} ->
+        refusal_compilation(ir, refusal)
 
       {:error, reason} ->
         refusal =
@@ -319,7 +327,8 @@ defmodule AshR2RML.Compiler do
               )
             ]
 
-          true -> []
+          true ->
+            []
         end
       end)
     end)
@@ -467,6 +476,7 @@ defmodule AshR2RML.SemanticAdapter do
     Resource,
     SubjectMap
   }
+
   alias AshR2RML.Refusal
 
   @spec to_mapping(AshR2RML.SemanticIR.t()) :: {:ok, Bundle.t()} | {:error, Refusal.t()}

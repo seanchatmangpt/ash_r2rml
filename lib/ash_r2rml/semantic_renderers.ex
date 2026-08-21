@@ -85,17 +85,18 @@ defmodule AshR2RML.Semantic.Ash do
   defp render_attribute(resource, attribute) do
     primary? = primary_key?(resource, attribute.name)
 
-    options = [
-      "allow_nil?: #{inspect(if(primary?, do: false, else: attribute.nullable))}",
-      "public?: true",
-      if(primary?, do: "primary_key?: true", else: nil),
-      if(attribute.column != to_string(attribute.name),
-        do: "source: #{inspect(String.to_atom(attribute.column))}",
-        else: nil
-      )
-    ]
-    |> Enum.reject(&is_nil/1)
-    |> Enum.join(", ")
+    options =
+      [
+        "allow_nil?: #{inspect(if(primary?, do: false, else: attribute.nullable))}",
+        "public?: true",
+        if(primary?, do: "primary_key?: true", else: nil),
+        if(attribute.column != to_string(attribute.name),
+          do: "source: #{inspect(String.to_atom(attribute.column))}",
+          else: nil
+        )
+      ]
+      |> Enum.reject(&is_nil/1)
+      |> Enum.join(", ")
 
     "    attribute #{inspect(attribute.name)}, #{ash_type(attribute.ash_type)}, #{options}"
   end
@@ -318,11 +319,11 @@ defmodule AshR2RML.Semantic.R2RML do
   alias AshR2RML.SemanticIR.Relationship
 
   @prefixes """
-@prefix rr: <http://www.w3.org/ns/r2rml#> .
-@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
-@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+  @prefix rr: <http://www.w3.org/ns/r2rml#> .
+  @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+  @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 
-"""
+  """
 
   def render(%AshR2RML.SemanticIR{resources: resources}) do
     resources = Enum.sort_by(resources, & &1.class_iri)
@@ -468,7 +469,7 @@ defmodule AshR2RML.SHACL do
         refs =
           Enum.map(resource.reference_object_maps, fn ref ->
             parent = Map.get(by_resource, ref.parent_resource)
-            parent_class = parent && List.first(parent.class_iris) || ref.parent_resource
+            parent_class = (parent && List.first(parent.class_iris)) || ref.parent_resource
             "  sh:property [ sh:path <#{ref.predicate_iri}>; sh:class <#{parent_class}> ]"
           end)
 
@@ -481,7 +482,9 @@ defmodule AshR2RML.SHACL do
         """
       end)
 
-    {:ok, "@prefix sh: <http://www.w3.org/ns/shacl#> .\n@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .\n\n" <> Enum.join(shapes, "\n")}
+    {:ok,
+     "@prefix sh: <http://www.w3.org/ns/shacl#> .\n@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .\n\n" <>
+       Enum.join(shapes, "\n")}
   end
 
   def render(resources) do

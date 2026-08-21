@@ -17,14 +17,14 @@ defmodule AshR2RML.AdvancedGraphFeaturesTest do
     end
 
     r2rml do
-      table_name "organizations"
-      class ["https://schema.org/Organization", "https://schema.org/Corporation"]
+      table_name("organizations")
+      class(["https://schema.org/Organization", "https://schema.org/Corporation"])
 
       subject do
-        template "https://example.org/organizations/{id}"
+        template("https://example.org/organizations/{id}")
       end
 
-      property :name, "https://schema.org/name"
+      property(:name, "https://schema.org/name")
     end
   end
 
@@ -44,15 +44,15 @@ defmodule AshR2RML.AdvancedGraphFeaturesTest do
     end
 
     r2rml do
-      table_name "people"
-      class "https://schema.org/Person"
+      table_name("people")
+      class("https://schema.org/Person")
 
       subject do
-        template "https://example.org/people/{id}"
+        template("https://example.org/people/{id}")
       end
 
-      property :name, "https://schema.org/name"
-      reference :organization, "https://schema.org/memberOf", inverse_predicate: "https://schema.org/hasMember"
+      property(:name, "https://schema.org/name")
+      reference(:organization, "https://schema.org/memberOf", inverse_predicate: "https://schema.org/hasMember")
     end
   end
 

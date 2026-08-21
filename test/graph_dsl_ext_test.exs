@@ -16,11 +16,11 @@ defmodule AshR2RML.GraphDslExtTest do
     end
 
     r2rml do
-      table_name "targets"
-      class "https://schema.org/Target"
+      table_name("targets")
+      class("https://schema.org/Target")
 
       subject do
-        template "https://example.org/targets/{id}"
+        template("https://example.org/targets/{id}")
       end
     end
   end
@@ -42,14 +42,14 @@ defmodule AshR2RML.GraphDslExtTest do
     end
 
     r2rml do
-      table_name "sources"
-      class "https://schema.org/Source"
+      table_name("sources")
+      class("https://schema.org/Source")
 
       subject do
-        template "https://example.org/sources/{id}"
+        template("https://example.org/sources/{id}")
       end
 
-      reference :target, "https://schema.org/targetRef", direction: :incoming, guard_class: "https://schema.org/Target"
+      reference(:target, "https://schema.org/targetRef", direction: :incoming, guard_class: "https://schema.org/Target")
     end
   end
 

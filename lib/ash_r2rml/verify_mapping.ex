@@ -123,9 +123,7 @@ defmodule AshR2RML.VerifyMapping do
 
     if missing == [],
       do: :ok,
-      else:
-        {:error,
-         "subject_template must contain every primary-key column placeholder; missing #{inspect(missing)}"}
+      else: {:error, "subject_template must contain every primary-key column placeholder; missing #{inspect(missing)}"}
   end
 
   defp primary_key_in_template(_resource, value),

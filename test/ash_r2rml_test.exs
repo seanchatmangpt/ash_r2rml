@@ -8,12 +8,13 @@ defmodule AshR2RMLTest.Organization do
     extensions: [AshR2RML]
 
   r2rml do
-    class_iri "http://www.w3.org/ns/org#Organization"
-    subject_template "https://xaas.example/id/organization/{id}"
-    table_name "organizations"
-    attribute_mappings [
+    class_iri("http://www.w3.org/ns/org#Organization")
+    subject_template("https://xaas.example/id/organization/{id}")
+    table_name("organizations")
+
+    attribute_mappings([
       {:name, "http://xmlns.com/foaf/0.1/name"}
-    ]
+    ])
   end
 
   attributes do
@@ -28,18 +29,21 @@ defmodule AshR2RMLTest.Account do
     extensions: [AshR2RML]
 
   r2rml do
-    class_iri "https://spec.edmcouncil.org/fibo/ontology/FBC/FinancialPositions/FinancialPositions/Account"
-    subject_template "https://xaas.example/id/account/{id}"
-    table_name "accounts"
-    attribute_mappings [
+    class_iri("https://spec.edmcouncil.org/fibo/ontology/FBC/FinancialPositions/FinancialPositions/Account")
+    subject_template("https://xaas.example/id/account/{id}")
+    table_name("accounts")
+
+    attribute_mappings([
       {:account_number, "https://xaas.example/ontology/accountNumber"}
-    ]
-    typed_attribute_mappings [
+    ])
+
+    typed_attribute_mappings([
       {:balance, "https://xaas.example/ontology/balance", "http://www.w3.org/2001/XMLSchema#decimal"}
-    ]
-    relationship_mappings [
+    ])
+
+    relationship_mappings([
       {:organization, "http://www.w3.org/ns/org#memberOf"}
-    ]
+    ])
   end
 
   attributes do
@@ -63,12 +67,13 @@ defmodule AshR2RMLTest.Neo4jControl do
   end
 
   r2rml do
-    class_iri "https://xaas.example/ontology/Control"
-    subject_template "https://xaas.example/id/control/{id}"
-    table_name "controls"
-    attribute_mappings [
+    class_iri("https://xaas.example/ontology/Control")
+    subject_template("https://xaas.example/id/control/{id}")
+    table_name("controls")
+
+    attribute_mappings([
       {:name, "https://xaas.example/ontology/name"}
-    ]
+    ])
   end
 
   attributes do
@@ -130,13 +135,14 @@ defmodule AshR2RMLTest do
         extensions: [AshR2RML]
 
       r2rml do
-        class_iri "https://example.org/ontology/SpatialLocation"
-        subject_template "https://example.org/id/location/{id}"
-        table_name "locations"
-        typed_attribute_mappings [
+        class_iri("https://example.org/ontology/SpatialLocation")
+        subject_template("https://example.org/id/location/{id}")
+        table_name("locations")
+
+        typed_attribute_mappings([
           {:location, "http://www.opengis.net/ont/geosparql#asWKT", "http://www.opengis.net/ont/geosparql#wktLiteral"},
           {:embedding, "https://example.org/ontology/embedding", "http://www.w3.org/2001/XMLSchema#string"}
-        ]
+        ])
       end
 
       attributes do

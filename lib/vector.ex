@@ -92,7 +92,6 @@ defmodule AshNeo4j.Vector do
 
   # --- guards ------------------------------------------------------------
 
-
   # --- resolution --------------------------------------------------------
 
   defp resolve_spec(resource, attr, opts) do
@@ -118,8 +117,7 @@ defmodule AshNeo4j.Vector do
   defp resolve_label(resource) do
     case ResourceInfo.module_label(resource) do
       nil ->
-        {:error,
-         "AshNeo4j.Vector: #{inspect(resource)} has no Neo4j module label — is it an AshNeo4j resource?"}
+        {:error, "AshNeo4j.Vector: #{inspect(resource)} has no Neo4j module label — is it an AshNeo4j resource?"}
 
       label ->
         {:ok, label}
@@ -147,8 +145,7 @@ defmodule AshNeo4j.Vector do
         end
 
       other ->
-        {:error,
-         "AshNeo4j.Vector: attribute #{inspect(attr)} is #{inspect(other)}, not AshNeo4j.Type.Vector"}
+        {:error, "AshNeo4j.Vector: attribute #{inspect(attr)} is #{inspect(other)}, not AshNeo4j.Type.Vector"}
     end
   end
 

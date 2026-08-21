@@ -82,8 +82,7 @@ defmodule AshR2RML.ParityAndGgenTest do
       AshR2RML.Parity.compare(:sparql_sql, "cloud:belongsToAccount", left, right, %{
         fixture_sha256: "fixture",
         mapping_sha256: "mapping",
-        left_query:
-          "SELECT ?resource ?account WHERE { ?resource <urn:belongsToAccount> ?account }",
+        left_query: "SELECT ?resource ?account WHERE { ?resource <urn:belongsToAccount> ?account }",
         right_query: "SELECT resource, account FROM resources"
       })
 
