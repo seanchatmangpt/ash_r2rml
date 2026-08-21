@@ -7,8 +7,8 @@ defmodule AshR2ml.Ggen do
   ggen-facing deterministic compilation bundle.
 
   `AshR2ml` does not invoke ggen or write files. It manufactures a path/content
-  graph so ggen can own rendering, filesystem actuation, replay, and receipts
-  without having to independently reconstruct semantic decisions.
+  graph so ggen can own rendering, filesystem actuation, migration versioning,
+  replay, and receipts without independently reconstructing semantic decisions.
   """
 
   alias AshR2ml.Compilation
@@ -16,7 +16,8 @@ defmodule AshR2ml.Ggen do
   @spec compile_bundle(map()) :: {:ok, map()} | {:error, Compilation.t() | term()}
   def compile_bundle(profile) do
     with {:ok, compilation} <- AshR2ml.Compiler.compile(profile),
-         {:ok, receipt_json} <- receipt_json(compilation) do
+         {:ok, receipt_json} <- encode_json(compilation.receipt),
+         {:ok, catalog_json} <- encode_json(compilation.ir) do
       {:ok,
        %{
          status: :PARTIAL_ALIVE,
@@ -24,17 +25,19 @@ defmodule AshR2ml.Ggen do
          receipt: compilation.receipt,
          files: %{
            "generated/ash/ontology_resources.ex" => compilation.ash_source,
+           "generated/ecto/semantic_schema_migration.exs" => compilation.ecto_migration,
            "generated/sql/semantic_schema.sql" => compilation.postgres_ddl,
            "priv/r2rml/xaas.ttl" => compilation.r2rml,
            "generated/shacl/operational-profile.ttl" => compilation.shacl,
+           "generated/catalog/resource-map.json" => catalog_json,
            "receipts/semantic-compilation.json" => receipt_json
          }
        }}
     end
   end
 
-  defp receipt_json(%Compilation{receipt: receipt}) do
-    receipt
+  defp encode_json(value) do
+    value
     |> json_term()
     |> Jason.encode(pretty: true)
   end
