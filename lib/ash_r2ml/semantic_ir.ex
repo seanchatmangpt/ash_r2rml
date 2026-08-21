@@ -2,65 +2,6 @@
 #
 # SPDX-License-Identifier: MIT
 
-defmodule AshR2ml.SemanticIR do
-  @moduledoc """
-  Canonical ontology-first compilation object.
-
-  The IR is intentionally independent of Ash source, PostgreSQL DDL, R2RML
-  serialization, and SHACL serialization. Those are projections of this object,
-  not independent authoring surfaces.
-  """
-
-  defstruct ontology_hash: nil,
-            profile_hash: nil,
-            shacl_hash: nil,
-            resources: []
-
-  @type t :: %__MODULE__{
-          ontology_hash: String.t() | nil,
-          profile_hash: String.t() | nil,
-          shacl_hash: String.t() | nil,
-          resources: [AshR2ml.SemanticIR.Resource.t()]
-        }
-end
-
-defmodule AshR2ml.SemanticIR.Resource do
-  @moduledoc "Closed operational projection of an admitted class/shape pair."
-
-  @enforce_keys [:iri, :class_iri, :shape_iri, :module, :table, :subject_template]
-  defstruct [
-    :iri,
-    :class_iri,
-    :shape_iri,
-    :module,
-    :repo_module,
-    :table,
-    :subject_template,
-    identities: [],
-    attributes: [],
-    relationships: [],
-    actions: [],
-    policies: [],
-    provenance: %{}
-  ]
-
-  @type t :: %__MODULE__{
-          iri: String.t(),
-          class_iri: String.t(),
-          shape_iri: String.t(),
-          module: module() | String.t(),
-          repo_module: module() | String.t() | nil,
-          table: String.t(),
-          subject_template: String.t(),
-          identities: [AshR2ml.SemanticIR.Identity.t()],
-          attributes: [AshR2ml.SemanticIR.Attribute.t()],
-          relationships: [AshR2ml.SemanticIR.Relationship.t()],
-          actions: [AshR2ml.SemanticIR.Action.t()],
-          policies: [AshR2ml.SemanticIR.Policy.t()],
-          provenance: map()
-        }
-end
-
 defmodule AshR2ml.SemanticIR.Identity do
   @moduledoc "Semantic identity used by Ash, SQL uniqueness, and rr:template admission."
 
@@ -140,6 +81,7 @@ defmodule AshR2ml.SemanticIR.Relationship do
   ]
 
   @type storage_strategy :: :foreign_key | :join_table | :association_resource
+
   @type t :: %__MODULE__{
           name: atom(),
           predicate_iri: String.t(),
@@ -164,12 +106,89 @@ end
 
 defmodule AshR2ml.SemanticIR.Action do
   @moduledoc "Verb projection. Actions are not manufactured as RDF classes by default."
+
   @enforce_keys [:name]
   defstruct [:name, :kind, :input_shape, :output_shape, provenance: %{}]
+
+  @type t :: %__MODULE__{
+          name: atom(),
+          kind: atom() | nil,
+          input_shape: term(),
+          output_shape: term(),
+          provenance: map()
+        }
 end
 
 defmodule AshR2ml.SemanticIR.Policy do
   @moduledoc "Authorization/governance projection aligned separately from ontology classes."
+
   @enforce_keys [:name]
   defstruct [:name, :effect, :expression, :odrl_iri, provenance: %{}]
+
+  @type t :: %__MODULE__{
+          name: atom(),
+          effect: atom() | nil,
+          expression: term(),
+          odrl_iri: String.t() | nil,
+          provenance: map()
+        }
+end
+
+defmodule AshR2ml.SemanticIR.Resource do
+  @moduledoc "Closed operational projection of an admitted class/shape pair."
+
+  @enforce_keys [:iri, :class_iri, :shape_iri, :module, :table, :subject_template]
+  defstruct [
+    :iri,
+    :class_iri,
+    :shape_iri,
+    :module,
+    :repo_module,
+    :table,
+    :subject_template,
+    identities: [],
+    attributes: [],
+    relationships: [],
+    actions: [],
+    policies: [],
+    provenance: %{}
+  ]
+
+  @type t :: %__MODULE__{
+          iri: String.t(),
+          class_iri: String.t(),
+          shape_iri: String.t(),
+          module: module() | String.t(),
+          repo_module: module() | String.t() | nil,
+          table: String.t(),
+          subject_template: String.t(),
+          identities: [AshR2ml.SemanticIR.Identity.t()],
+          attributes: [AshR2ml.SemanticIR.Attribute.t()],
+          relationships: [AshR2ml.SemanticIR.Relationship.t()],
+          actions: [AshR2ml.SemanticIR.Action.t()],
+          policies: [AshR2ml.SemanticIR.Policy.t()],
+          provenance: map()
+        }
+end
+
+defmodule AshR2ml.SemanticIR do
+  @moduledoc """
+  Canonical ontology-first compilation object.
+
+  The IR is intentionally independent of Ash source, Ecto migrations,
+  PostgreSQL DDL, R2RML serialization, and SHACL serialization. Those are
+  projections of this object, not independent authoring surfaces.
+  """
+
+  defstruct ontology_hash: nil,
+            profile_hash: nil,
+            shacl_hash: nil,
+            resources: []
+
+  @type t :: %__MODULE__{
+          ontology_hash: String.t() | nil,
+          profile_hash: String.t() | nil,
+          shacl_hash: String.t() | nil,
+          resources: [AshR2ml.SemanticIR.Resource.t()]
+        }
 end
