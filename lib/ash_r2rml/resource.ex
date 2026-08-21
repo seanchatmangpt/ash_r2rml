@@ -154,7 +154,8 @@ defmodule AshR2RML.Resource do
   use Spark.Dsl.Extension,
     sections: [@r2rml, @sparql],
     transformers: [AshR2RML.Resource.Persist],
-    verifiers: [AshR2RML.Resource.Verify]
+    verifiers: [AshR2RML.Resource.Verify],
+    single_extension_kinds: [:ash_r2rml]
 end
 
 defmodule AshR2RML.Resource.Persist do
