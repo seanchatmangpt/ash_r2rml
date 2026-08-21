@@ -27,12 +27,20 @@ defmodule AshR2ml.Ggen do
            "generated/ash/ontology_resources.ex" => compilation.ash_source,
            "generated/ecto/semantic_schema_migration.exs" => compilation.ecto_migration,
            "generated/sql/semantic_schema.sql" => compilation.postgres_ddl,
-           "priv/r2rml/xaas.ttl" => compilation.r2rml,
+           "priv/r2rml/mapping.ttl" => compilation.r2rml,
            "generated/shacl/operational-profile.ttl" => compilation.shacl,
            "generated/catalog/resource-map.json" => catalog_json,
            "receipts/semantic-compilation.json" => receipt_json
          }
        }}
+    end
+  end
+
+  @doc "Parse an RDF/SHACL Turtle profile, then manufacture the same deterministic ggen bundle."
+  @spec compile_turtle_bundle(String.t(), keyword()) :: {:ok, map()} | {:error, term()}
+  def compile_turtle_bundle(turtle, opts \\ []) do
+    with {:ok, profile} <- AshR2ml.Ingestion.from_turtle(turtle, opts) do
+      compile_bundle(profile)
     end
   end
 

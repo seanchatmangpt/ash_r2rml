@@ -12,18 +12,18 @@ defmodule AshR2ml.ParityAndGgenTest do
       shacl_hash: "shacl:one",
       resources: [
         %{
-          iri: "https://xaas.example/resource/Organization",
+          iri: "https://example.org/resource/Organization",
           class_iri: "https://www.w3.org/ns/org#Organization",
-          shape_iri: "https://xaas.example/shapes/OrganizationShape",
-          module: "Xaas.Organization",
-          repo_module: "Xaas.Repo",
+          shape_iri: "https://example.org/shapes/OrganizationShape",
+          module: "Example.Organization",
+          repo_module: "Example.Repo",
           table: "organizations",
-          subject_template: "https://xaas.example/id/organization/{id}",
+          subject_template: "https://example.org/id/organization/{id}",
           identities: [%{name: :primary, keys: [:id], primary?: true}],
           attributes: [
             %{
               name: :id,
-              predicate_iri: "https://xaas.example/ontology/id",
+              predicate_iri: "https://example.org/ontology/id",
               datatype_iri: "http://www.w3.org/2001/XMLSchema#string",
               ash_type: :uuid,
               postgres_type: "UUID",
@@ -52,7 +52,7 @@ defmodule AshR2ml.ParityAndGgenTest do
     assert Map.has_key?(bundle.files, "generated/ash/ontology_resources.ex")
     assert Map.has_key?(bundle.files, "generated/ecto/semantic_schema_migration.exs")
     assert Map.has_key?(bundle.files, "generated/sql/semantic_schema.sql")
-    assert Map.has_key?(bundle.files, "priv/r2rml/xaas.ttl")
+    assert Map.has_key?(bundle.files, "priv/r2rml/mapping.ttl")
     assert Map.has_key?(bundle.files, "generated/shacl/operational-profile.ttl")
     assert Map.has_key?(bundle.files, "generated/catalog/resource-map.json")
     assert Map.has_key?(bundle.files, "receipts/semantic-compilation.json")

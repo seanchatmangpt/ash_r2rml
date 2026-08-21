@@ -17,6 +17,9 @@ defmodule AshR2ml do
   * `AshR2ml.Compiler` is the ontology-first path. It admits a closed operational
     application profile into one `AshR2ml.SemanticIR`, then manufactures Ash,
     PostgreSQL, R2RML, and SHACL projections from that same object.
+  * `AshR2ml.Ingestion` parses RDF/Turtle + SHACL into that normalized profile.
+  * `AshR2ml.OBDA.Ontop` is an operator-invoked external execution adapter for
+    real SPARQL-over-R2RML observation; it is never invoked implicitly by compile.
 
   The DSL is therefore not promoted to canonical truth. In the mature path ggen
   consumes `AshR2ml.Ggen.compile_bundle/1`, writes the generated projections, and
@@ -109,6 +112,15 @@ defmodule AshR2ml do
   @doc "Compile one admitted operational profile into Ash/PostgreSQL/R2RML/SHACL projections."
   defdelegate compile(profile), to: AshR2ml.Compiler
 
+  @doc "Parse Turtle/SHACL into the normalized closed application profile."
+  def ingest_turtle(turtle, opts \\ []), do: AshR2ml.Ingestion.from_turtle(turtle, opts)
+
+  @doc "Parse Turtle/SHACL and compile it through the ontology-first SemanticIR path."
+  def compile_turtle(turtle, opts \\ []), do: AshR2ml.Ingestion.compile_turtle(turtle, opts)
+
   @doc "Build the deterministic ggen-facing output bundle without filesystem actuation."
   defdelegate compile_bundle(profile), to: AshR2ml.Ggen
+
+  @doc "Build the deterministic ggen bundle directly from RDF/Turtle + SHACL."
+  def compile_turtle_bundle(turtle, opts \\ []), do: AshR2ml.Ggen.compile_turtle_bundle(turtle, opts)
 end
