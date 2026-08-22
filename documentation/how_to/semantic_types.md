@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 ash_r2rml contributors <https://github.com/seanchatmangpt/ash_r2rml/graphs/contributors>
+SPDX-License-Identifier: MIT
+-->
+
 # Semantic types from public ontologies
 
 AshR2RML treats public semantic value spaces as the authority and Ash types as executable projections. The semantic type compiler is SELECT/CONSTRUCT only: it does not apply migrations, write application data, invoke ggen, or grant production authority.
