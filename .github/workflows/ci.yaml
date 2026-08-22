@@ -12,6 +12,11 @@ on: [push, pull_request]
 # - `obda` executes the bounded ontology-first crown against real PostgreSQL,
 #   official Ontop, and the Neo4j control graph. Technical parity still does
 #   not grant cutover authority.
+#
+# BEAM artifacts are not portable across arbitrary OTP/Elixir worlds. Cache
+# identity therefore binds both .tool-versions and mix.lock exactly. Do not use
+# a broad restore prefix for deps/_build: stale rebar plugin BEAMs can load as
+# corrupt modules and manufacture false source failures.
 jobs:
   types:
     runs-on: ubuntu-latest
@@ -21,19 +26,18 @@ jobs:
       - name: Set up Elixir / Erlang (from .tool-versions)
         uses: jdx/mise-action@v2
 
-      - name: Cache deps and build (incl. Dialyzer PLT)
+      - name: Cache exact-toolchain deps and build (incl. Dialyzer PLT)
         uses: actions/cache@v4
         with:
           path: |
             deps
             _build
-          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
-          restore-keys: ${{ runner.os }}-mix-
+          key: ${{ runner.os }}-mix-${{ hashFiles('.tool-versions') }}-${{ hashFiles('**/mix.lock') }}
 
       - name: Install dependencies
         run: mix deps.get
 
-      - name: Compile (1.20 type checker + warnings as errors)
+      - name: Compile with warnings as errors
         run: mix compile --force --warnings-as-errors
 
       - name: Dialyzer
@@ -47,14 +51,13 @@ jobs:
       - name: Set up Elixir / Erlang (from .tool-versions)
         uses: jdx/mise-action@v2
 
-      - name: Cache deps and build
+      - name: Cache exact-toolchain deps and build
         uses: actions/cache@v4
         with:
           path: |
             deps
             _build
-          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
-          restore-keys: ${{ runner.os }}-mix-
+          key: ${{ runner.os }}-mix-${{ hashFiles('.tool-versions') }}-${{ hashFiles('**/mix.lock') }}
 
       - name: Install dependencies
         run: mix deps.get
@@ -92,14 +95,13 @@ jobs:
       - name: Set up Elixir / Erlang (from .tool-versions)
         uses: jdx/mise-action@v2
 
-      - name: Cache deps and build
+      - name: Cache exact-toolchain deps and build
         uses: actions/cache@v4
         with:
           path: |
             deps
             _build
-          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
-          restore-keys: ${{ runner.os }}-mix-
+          key: ${{ runner.os }}-mix-${{ hashFiles('.tool-versions') }}-${{ hashFiles('**/mix.lock') }}
 
       - name: Install dependencies
         run: mix deps.get
