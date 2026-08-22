@@ -76,11 +76,13 @@ defmodule AshR2RML.Types.LangString do
 
   @impl Ash.Type
   def dump_to_native(nil, _), do: {:ok, nil}
+
   def dump_to_native(%__MODULE__{} = value, _) do
     with {:ok, value} <- validate(value) do
       {:ok, %{"value" => value.value, "language" => value.language}}
     end
   end
+
   def dump_to_native(_, _), do: :error
 
   @impl AshR2RML.Type
@@ -99,6 +101,7 @@ defmodule AshR2RML.Types.LangString do
       {:error, "invalid language tag"}
     end
   end
+
   defp validate(_), do: {:error, "language-tagged value requires string value and language"}
 end
 
@@ -135,12 +138,18 @@ defmodule AshR2RML.Types.Concept do
 
   @impl Ash.Type
   def dump_to_native(nil, _), do: {:ok, nil}
+
   def dump_to_native(%__MODULE__{} = concept, constraints) do
     with {:ok, concept} <- validate(concept, constraints) do
       {:ok, %{"iri" => concept.iri, "scheme" => concept.scheme}}
     end
   end
+
   def dump_to_native(_, _), do: :error
+
+  @impl Ash.Type
+  def equal?(%__MODULE__{iri: left}, %__MODULE__{iri: right}), do: left == right
+  def equal?(_, _), do: false
 
   @impl AshR2RML.Type
   def to_rdf(%__MODULE__{iri: iri}), do: {:iri, iri}
@@ -197,17 +206,20 @@ defmodule AshR2RML.Types.Quantity do
 
   @impl Ash.Type
   def dump_to_native(nil, _), do: {:ok, nil}
+
   def dump_to_native(%__MODULE__{} = quantity, constraints) do
     with {:ok, quantity} <- validate(quantity, constraints) do
       {:ok, %{"value" => quantity.value, "unit" => quantity.unit, "quantity_kind" => quantity.quantity_kind}}
     end
   end
+
   def dump_to_native(_, _), do: :error
 
   @impl AshR2RML.Type
   def to_rdf(%__MODULE__{} = quantity) do
     {:node, %{type: "http://qudt.org/schema/qudt/QuantityValue", numeric_value: quantity.value, unit: quantity.unit, quantity_kind: quantity.quantity_kind}}
   end
+
   def to_rdf(_), do: {:error, :invalid_quantity}
 
   @impl AshR2RML.Type
@@ -259,11 +271,13 @@ defmodule AshR2RML.Types.TemporalInterval do
 
   @impl Ash.Type
   def dump_to_native(nil, _), do: {:ok, nil}
+
   def dump_to_native(%__MODULE__{} = interval, _) do
     with {:ok, interval} <- validate(interval) do
       {:ok, %{"beginning" => interval.beginning, "ending" => interval.ending}}
     end
   end
+
   def dump_to_native(_, _), do: :error
 
   @impl AshR2RML.Type
