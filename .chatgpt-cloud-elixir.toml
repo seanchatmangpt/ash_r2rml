@@ -1,0 +1,55 @@
+schema_version = 1
+subject = "ash_r2rml"
+repository = "https://github.com/seanchatmangpt/ash_r2rml.git"
+standing_scope = "offline_in_memory_semantic_mapping_and_ocel"
+
+[runtime]
+otp = "27.2.4"
+elixir = "1.18.4"
+
+[identity]
+source = "git_commit_and_tree"
+lockfile = "mix.lock"
+
+[build]
+network_required = true
+commands = [
+  "mix deps.get",
+  "MIX_ENV=test mix compile --force --warnings-as-errors",
+  "MIX_ENV=test mix test test/fortune5/"
+]
+
+[offline]
+commands = [
+  "MIX_ENV=test mix compile --force --warnings-as-errors",
+  "MIX_ENV=test mix test test/fortune5/"
+]
+public_modules = [
+  "AshR2RML.Compiler",
+  "AshR2RML.Telemetry.OCEL2",
+  "AshR2RML.Telemetry.OcelAshEmitter"
+]
+
+[process_intelligence]
+interchange = ["ocel2_json", "ocel_ndjson", "json_receipts"]
+capabilities = ["validate", "reconstruct", "conformance", "semantic_mapping"]
+
+[authority]
+select_construct_only = true
+production_actuation = false
+cutover_authority = false
+
+[external_crowns]
+excluded = ["postgresql", "ontop", "docker", "neo4j", "production_cutover"]
+
+[receipt]
+required_fields = [
+  "subject_sha",
+  "subject_tree_sha",
+  "runtime",
+  "lock_sha256",
+  "commands",
+  "exit_codes",
+  "fortune5_tests",
+  "standing"
+]
