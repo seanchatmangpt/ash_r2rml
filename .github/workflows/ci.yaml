@@ -6,6 +6,10 @@ name: CI
 
 on: [push, pull_request]
 
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 # Three gates:
 # - `types` is database-free: compile warnings-as-errors + Dialyzer.
 # - `test` preserves the full inherited Neo4j control suite.
