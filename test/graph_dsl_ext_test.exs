@@ -33,8 +33,8 @@ defmodule AshR2RML.GraphDslExtTest do
 
     attributes do
       uuid_primary_key :id
-      attribute :location, AshGeo.Geometry, public?: true
-      attribute :embedding, :term, public?: true
+      attribute :location, :string, public?: true
+      attribute :embedding, :string, public?: true
     end
 
     relationships do

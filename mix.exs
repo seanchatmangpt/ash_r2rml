@@ -1,21 +1,21 @@
-# SPDX-FileCopyrightText: 2025 ash_neo4j contributors <https://github.com/diffo-dev/ash_neo4j/graphs.contributors>
+# SPDX-FileCopyrightText: 2026 ash_r2rml contributors <https://github.com/seanchatmangpt/ash_r2rml/graphs/contributors>
 #
 # SPDX-License-Identifier: MIT
 
-defmodule AshNeo4j.MixProject do
+defmodule AshR2RML.MixProject do
   @moduledoc false
   use Mix.Project
 
-  @version "0.10.1"
-  @name "AshNeo4j"
-  @description "Ash DataLayer for Neo4j"
-  @github_url "https://github.com/diffo-dev/ash_neo4j"
+  @version "0.1.0"
+  @name "AshR2RML"
+  @description "W3C R2RML and RDF semantic mapping compiler for Ash Framework"
+  @github_url "https://github.com/seanchatmangpt/ash_r2rml"
 
   def project do
     [
-      app: :ash_neo4j,
+      app: :ash_r2rml,
       version: @version,
-      elixir: "~> 1.18",
+      elixir: "~> 1.17",
       start_permanent: Mix.env() == :prod,
       package: package(),
       deps: deps(),
@@ -32,19 +32,8 @@ defmodule AshNeo4j.MixProject do
       aliases: aliases(),
       name: @name,
       source_url: @github_url,
-      homepage_url: "https://diffo.dev/diffo/ash_neo4j",
-      description: @description,
-      usage_rules: usage_rules()
-    ]
-  end
-
-  defp usage_rules do
-    [
-      skills: [
-        location: ".claude/skills",
-        # Pull in pre-built skills shipped directly by packages
-        package_skills: [:bolty, ~r/^bolty/]
-      ]
+      homepage_url: "https://github.com/seanchatmangpt/ash_r2rml",
+      description: @description
     ]
   end
 
@@ -69,41 +58,31 @@ defmodule AshNeo4j.MixProject do
       extras: [
         {"README.md", title: "Home"},
         {"LICENSES/MIT.md", title: "License"},
-        {"ash_neo4j_datalayer.livemd", title: "AshNeo4j Livebook"},
-        {"documentation/how_to/managing_schema.livemd", title: "Managing Neo4j Schema"},
-        {"documentation/dsls/DSL-AshNeo4j.DataLayer.md", search_data: Spark.Docs.search_data_for(AshNeo4j.DataLayer)},
+        {"ash_r2rml.livemd", title: "AshR2RML Livebook"},
         "CHANGELOG.md"
       ],
       groups_for_extras: [
         Tutorials: ~r'documentation/tutorials',
-        "How To": [~r'documentation/how_to', "ash_neo4j_datalayer.livemd"],
+        "How To": ~r'documentation/how_to',
         Topics: ~r'documentation/topics',
-        DSLs: ~r'documentation/dsls',
-        "About AshNeo4j": [
+        "About AshR2RML": [
           "CHANGELOG.md"
         ]
       ],
-      logo: "logos/diffo.jpg",
       groups_for_modules: [
-        AshNeo4j: [
-          AshNeo4j,
-          AshNeo4j.DataLayer,
-          AshNeo4j.Sandbox
+        AshR2RML: [
+          AshR2RML,
+          AshR2RML.Resource,
+          AshR2RML.Compiler,
+          AshR2RML.Mapping,
+          AshR2RML.Ggen,
+          AshR2RML.Ingestion,
+          AshR2RML.OBDA,
+          AshR2RML.Policy,
+          AshR2RML.Provenance
         ],
-        Introspection: [
-          AshNeo4j.DataLayer.Info,
-          AshNeo4j.Resource.Info,
-          AshNeo4j.EdgeDescriptor,
-          AshNeo4j.ResourceMapping
-        ],
-        Cypher: ~r/AshNeo4j\.Cypher/,
-        Utilities: [
-          AshNeo4j.BoltyHelper,
-          AshNeo4j.Neo4jHelper,
-          AshNeo4j.Mermaid,
-          AshNeo4j.QueryHelper,
-          AshNeo4j.Util
-        ],
+        Reactor: ~r/AshR2RML\.Reactor/,
+        Telemetry: ~r/AshR2RML\.Telemetry/,
         Internals: ~r/.*/
       ]
     ]
@@ -112,16 +91,14 @@ defmodule AshNeo4j.MixProject do
   defp package do
     [
       maintainers: [
-        "Matt Beanland <matt@diffo.dev>"
+        "AshR2RML contributors"
       ],
       licenses: ["MIT"],
       files:
-        ~w(lib .formatter.exs mix.exs README* LICENSE* CHANGELOG* documentation usage-rules.md usage-rules ash_neo4j_datalayer.livemd),
+        ~w(lib .formatter.exs mix.exs README* LICENSE* CHANGELOG* ash_r2rml.livemd priv),
       links: %{
-        "GitHub" => "https://github.com/diffo-dev/ash_neo4j",
-        "Changelog" => "https://github.com/diffo-dev/ash_neo4j/blob/main/CHANGELOG.md",
-        "Website" => "https://diffo.dev",
-        "REUSE Compliance" => "https://api.reuse.software/info/github.com/diffo-dev/ash_neo4j"
+        "GitHub" => @github_url,
+        "Changelog" => "#{@github_url}/blob/main/CHANGELOG.md"
       }
     ]
   end
@@ -129,29 +106,25 @@ defmodule AshNeo4j.MixProject do
   # Run "mix help compile.app" to learn about applications.
   def application do
     [
-      extra_applications: [:logger]
+      extra_applications: [:logger, :crypto]
     ]
   end
 
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:ash, ash_version("~> 3.0 and >= 3.28.0")},
+      {:ash, "~> 3.0 and >= 3.28.0"},
       {:spark, ">= 2.7.0"},
       {:rdf, "~> 3.0"},
-      # RDF-Elixir standards stack used by the semantic verification surfaces.
       {:sparql, "~> 0.3.12"},
       {:sparql_client, "~> 0.5.1"},
       {:json_ld, "~> 1.0.1"},
-      {:ash_state_machine, "~> 0.2.12", only: [:dev, :test]},
-      {:bolty, bolty_version("~> 0.2.1")},
-      {:geo, "~> 3.6"},
-      {:ash_geo, "~> 0.3"},
-      {:topo, "~> 1.0"},
-      {:nx, "~> 0.9"},
       {:jason, "~> 1.4"},
       {:telemetry, "~> 1.0"},
       {:igniter, ">= 0.6.29 and < 1.0.0-0", [env: :prod, hex: "igniter", repo: "hexpm", optional: true]},
+      {:reactor, ">= 0.9.0", optional: true},
+      {:ash_state_machine, "~> 0.2.12", only: [:dev, :test]},
+      {:simple_sat, ">= 0.0.0", only: [:dev, :test]},
       {:ex_doc, "~> 0.37", only: [:dev, :test], runtime: false},
       {:ex_check, "~> 0.12", only: [:dev, :test]},
       {:git_ops, "~> 2.7", only: [:dev], runtime: false},
@@ -160,42 +133,16 @@ defmodule AshNeo4j.MixProject do
       {:sobelow, ">= 0.0.0", only: [:dev, :test], runtime: false},
       {:excoveralls, "~> 0.18.0", only: [:dev, :test]},
       {:mix_audit, ">= 0.0.0", only: [:dev, :test], runtime: false},
-      {:benchee, "~> 1.3", only: [:dev, :test]},
-      {:reactor, ">= 0.9.0", optional: true},
-      {:simple_sat, ">= 0.0.0", only: [:dev, :test]},
-      {:usage_rules, "~> 1.2", optional: true}
+      {:benchee, "~> 1.3", only: [:dev, :test]}
     ]
-  end
-
-  defp bolty_version(default_version) do
-    case System.get_env("BOLTY_VERSION") do
-      nil -> default_version
-      "local" -> [path: "../bolty"]
-      "main" -> [git: "https://github.com/diffo-dev/bolty.git"]
-      version -> "~> #{version}"
-    end
-  end
-
-  defp ash_version(default_version) do
-    case System.get_env("ASH_VERSION") do
-      nil -> default_version
-      "local" -> [path: "../ash"]
-      "main" -> [git: "https://github.com/ash-project/ash.git"]
-      version -> "~> #{version}"
-    end
   end
 
   defp aliases do
     [
       sobelow: "sobelow --skip",
       credo: "credo --strict",
-      docs: [
-        "spark.cheat_sheets",
-        "docs",
-        "spark.replace_doc_links"
-      ],
-      "spark.formatter": "spark.formatter --extensions AshNeo4j.DataLayer,AshNeo4j.DataLayer.Domain",
-      "spark.cheat_sheets": "spark.cheat_sheets --extensions AshNeo4j.DataLayer,AshNeo4j.DataLayer.Domain"
+      "spark.formatter": "spark.formatter --extensions AshR2RML.Resource",
+      "spark.cheat_sheets": "spark.cheat_sheets --extensions AshR2RML.Resource"
     ]
   end
 end
