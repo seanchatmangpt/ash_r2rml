@@ -33,10 +33,9 @@ defmodule AshR2RML.Adversarial.ReactorSagaTest do
     end
 
     def reset do
-      if Process.whereis(__MODULE__) do
-        Agent.update(__MODULE__, fn _ -> [] end)
-      else
-        start_link()
+      case Agent.start_link(fn -> [] end, name: __MODULE__) do
+        {:ok, _pid} -> :ok
+        {:error, {:already_started, _pid}} -> Agent.update(__MODULE__, fn _ -> [] end)
       end
     end
 
