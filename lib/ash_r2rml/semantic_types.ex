@@ -33,7 +33,9 @@ defmodule AshR2RML.SemanticTypes do
   end
 
   @spec resolve(String.t(), keyword()) :: {:ok, SemanticType.t()} | {:error, Refusal.t()}
-  def resolve(iri, opts \\ []) when is_binary(iri) do
+  def resolve(iri, opts \\ [])
+
+  def resolve(iri, opts) when is_binary(iri) do
     if SemanticType.absolute_iri?(iri) do
       providers(opts)
       |> Enum.reduce_while(:unknown, fn provider, _acc ->
@@ -179,22 +181,39 @@ defmodule AshR2RML.SemanticTypes do
       |> Enum.flat_map(fn key ->
         expected_type = Map.fetch!(expected_types, key)
         observed_type = Map.fetch!(observed_types, key)
+
         semantic_differences(expected_type, observed_type)
-        |> Enum.map(fn field -> %{kind: :changed, semantic_type: key, field: field, expected: get(expected_type, field), observed: get(observed_type, field)} end)
+        |> Enum.map(fn field ->
+          %{
+            kind: :changed,
+            semantic_type: key,
+            field: field,
+            expected: get(expected_type, field),
+            observed: get(observed_type, field)
+          }
+        end)
       end)
 
-    changes = Enum.map(missing, &%{kind: :missing_observed, semantic_type: &1}) ++ Enum.map(extra, &%{kind: :extra_observed, semantic_type: &1}) ++ changed
+    changes =
+      Enum.map(missing, &%{kind: :missing_observed, semantic_type: &1}) ++
+        Enum.map(extra, &%{kind: :extra_observed, semantic_type: &1}) ++ changed
 
-    status = cond do
-      changes == [] -> :ALIGNED
-      changed != [] -> :LOSSY
-      missing != [] and extra != [] -> :AMBIGUOUS
-      missing != [] -> :ONTOLOGY_AHEAD
-      extra != [] -> :ASH_AHEAD
-      true -> :REFUSED
-    end
+    status =
+      cond do
+        changes == [] -> :ALIGNED
+        changed != [] -> :LOSSY
+        missing != [] and extra != [] -> :AMBIGUOUS
+        missing != [] -> :ONTOLOGY_AHEAD
+        extra != [] -> :ASH_AHEAD
+        true -> :REFUSED
+      end
 
-    %Diff{status: status, changes: changes, expected_id: get(expected_map, :plan_id), observed_id: get(observed_map, :plan_id)}
+    %Diff{
+      status: status,
+      changes: changes,
+      expected_id: get(expected_map, :plan_id),
+      observed_id: get(observed_map, :plan_id)
+    }
   end
 
   @spec round_trip(SemanticType.t(), term()) :: {:ok, map()} | {:error, Refusal.t()}
@@ -204,11 +223,31 @@ defmodule AshR2RML.SemanticTypes do
          {:ok, loaded} <- normalize_result(Ash.Type.cast_stored(type.ash_type, native, type.constraints)),
          {:ok, rdf, semantic_loaded} <- semantic_round_trip(type, loaded),
          true <- Ash.Type.equal?(type.ash_type, loaded, semantic_loaded) do
-      {:ok, %{semantic_type_id: type.id, input: value, casted: casted, native: native, loaded: loaded, rdf: rdf, restored: semantic_loaded}}
+      {:ok,
+       %{
+         semantic_type_id: type.id,
+         input: value,
+         casted: casted,
+         native: native,
+         loaded: loaded,
+         rdf: rdf,
+         restored: semantic_loaded
+       }}
     else
-      false -> {:error, Refusal.new(:REFUSED_SEMANTIC_ROUND_TRIP, type.name, "semantic round trip changed the value")}
-      {:error, reason} -> {:error, Refusal.new(:REFUSED_SEMANTIC_ROUND_TRIP, type.name, "semantic type round trip failed", %{reason: inspect(reason)})}
-      :error -> {:error, Refusal.new(:REFUSED_SEMANTIC_ROUND_TRIP, type.name, "Ash type rejected the value")}
+      false ->
+        {:error, Refusal.new(:REFUSED_SEMANTIC_ROUND_TRIP, type.name, "semantic round trip changed the value")}
+
+      {:error, reason} ->
+        {:error,
+         Refusal.new(
+           :REFUSED_SEMANTIC_ROUND_TRIP,
+           type.name,
+           "semantic type round trip failed",
+           %{reason: inspect(reason)}
+         )}
+
+      :error ->
+        {:error, Refusal.new(:REFUSED_SEMANTIC_ROUND_TRIP, type.name, "Ash type rejected the value")}
     end
   end
 
@@ -216,29 +255,53 @@ defmodule AshR2RML.SemanticTypes do
   def admit_property(%SemanticType{} = type, ash_type) do
     cond do
       type.semantic_kind in [:value_object, :resource] ->
-        {:error, Refusal.new(:REFUSED_SEMANTIC_TYPE_REQUIRES_RESOURCE_PROJECTION, type.name, "value-object/resource semantics cannot be collapsed into a scalar R2RML property map", %{semantic_kind: type.semantic_kind})}
+        {:error,
+         Refusal.new(
+           :REFUSED_SEMANTIC_TYPE_REQUIRES_RESOURCE_PROJECTION,
+           type.name,
+           "value-object/resource semantics cannot be collapsed into a scalar R2RML property map",
+           %{semantic_kind: type.semantic_kind}
+         )}
 
-      semantic_ash_compatible?(type, ash_type) -> :ok
-      true -> {:error, Refusal.new(:REFUSED_SEMANTIC_TYPE_ASH_MISMATCH, type.name, "Ash attribute type does not match the admitted semantic projection", %{expected: inspect(type.ash_type), observed: inspect(ash_type)})}
+      semantic_ash_compatible?(type, ash_type) ->
+        :ok
+
+      true ->
+        {:error,
+         Refusal.new(
+           :REFUSED_SEMANTIC_TYPE_ASH_MISMATCH,
+           type.name,
+           "Ash attribute type does not match the admitted semantic projection",
+           %{expected: inspect(type.ash_type), observed: inspect(ash_type)}
+         )}
     end
   end
 
   defp compile_entry(iri, opts) when is_binary(iri), do: resolve(iri, opts)
+
   defp compile_entry(%{} = entry, opts) do
     iri = get(entry, :iri) || get(entry, :source_iri)
     raw_selected = get(entry, :selected_representation)
     selected = representation(raw_selected)
 
     if not is_nil(raw_selected) and is_nil(selected) do
-      {:error, Refusal.new(:REFUSED_SEMANTIC_TYPE_REPRESENTATION, iri, "unknown semantic type representation", %{selected: raw_selected, allowed: @representation_atoms})}
+      {:error,
+       Refusal.new(
+         :REFUSED_SEMANTIC_TYPE_REPRESENTATION,
+         iri,
+         "unknown semantic type representation",
+         %{selected: raw_selected, allowed: @representation_atoms}
+       )}
     else
-      overrides = [
-        selected_representation: selected,
-        concept_scheme_iri: get(entry, :concept_scheme_iri),
-        quantity_kind: get(entry, :quantity_kind),
-        allowed_units: get(entry, :allowed_units),
-        name: existing_atom(get(entry, :name))
-      ] |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+      overrides =
+        [
+          selected_representation: selected,
+          concept_scheme_iri: get(entry, :concept_scheme_iri),
+          quantity_kind: get(entry, :quantity_kind),
+          allowed_units: get(entry, :allowed_units),
+          name: existing_atom(get(entry, :name))
+        ]
+        |> Enum.reject(fn {_key, value} -> is_nil(value) end)
 
       with {:ok, type} <- resolve(iri, Keyword.merge(opts, overrides)),
            {:ok, type} <- apply_entry_overrides(type, entry) do
@@ -247,22 +310,38 @@ defmodule AshR2RML.SemanticTypes do
     end
   end
 
-  defp compile_entry(other, _opts), do: {:error, Refusal.new(:REFUSED_SEMANTIC_PROFILE_INVALID, other, "semantic type entry must be an IRI or map")}
+  defp compile_entry(other, _opts),
+    do:
+      {:error,
+       Refusal.new(
+         :REFUSED_SEMANTIC_PROFILE_INVALID,
+         other,
+         "semantic type entry must be an IRI or map"
+       )}
 
   defp apply_overrides(type, opts) do
-    attrs = %{
-      selected_representation: Keyword.get(opts, :selected_representation, type.selected_representation),
-      concept_scheme_iri: Keyword.get(opts, :concept_scheme_iri, type.concept_scheme_iri)
-    } |> Enum.reject(fn {_key, value} -> is_nil(value) end) |> Map.new()
+    attrs =
+      %{
+        selected_representation: Keyword.get(opts, :selected_representation, type.selected_representation),
+        concept_scheme_iri: Keyword.get(opts, :concept_scheme_iri, type.concept_scheme_iri)
+      }
+      |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+      |> Map.new()
 
     AshR2RML.SemanticType.DfCM.select(struct(type, attrs))
   end
 
   defp apply_entry_overrides(type, entry) do
     fields = [:concept_scheme_iri, :storage_type, :postgres_type, :constraints, :shacl_constraints, :provenance]
-    attrs = Enum.reduce(fields, %{}, fn field, acc ->
-      case get(entry, field) do nil -> acc; value -> Map.put(acc, field, value) end
-    end)
+
+    attrs =
+      Enum.reduce(fields, %{}, fn field, acc ->
+        case get(entry, field) do
+          nil -> acc
+          value -> Map.put(acc, field, value)
+        end
+      end)
+
     selected = representation(get(entry, :selected_representation))
     attrs = if selected, do: Map.put(attrs, :selected_representation, selected), else: attrs
     name = existing_atom(get(entry, :name))
@@ -272,11 +351,36 @@ defmodule AshR2RML.SemanticTypes do
 
   defp verify_type(%SemanticType{} = type) do
     []
-    |> maybe_refuse(not is_nil(type.source_iri) and not SemanticType.absolute_iri?(type.source_iri), :REFUSED_SEMANTIC_TYPE_INVALID, type.name, "source IRI is not absolute")
-    |> maybe_refuse(type.semantic_kind == :literal and not SemanticType.absolute_iri?(type.datatype_iri), :REFUSED_SEMANTIC_TYPE_INVALID, type.name, "literal semantic type requires an absolute datatype IRI")
-    |> maybe_refuse(type.semantic_kind in [:concept, :value_object, :resource] and not SemanticType.absolute_iri?(type.class_iri), :REFUSED_SEMANTIC_TYPE_INVALID, type.name, "semantic kind requires an absolute class IRI")
-    |> maybe_refuse(not is_nil(type.concept_scheme_iri) and not SemanticType.absolute_iri?(type.concept_scheme_iri), :REFUSED_SEMANTIC_TYPE_INVALID, type.name, "concept scheme IRI is not absolute")
-    |> maybe_refuse(type.selected_representation && type.selected_representation not in type.representation_candidates, :REFUSED_SEMANTIC_TYPE_REPRESENTATION, type.name, "selected representation is outside the candidate set")
+    |> maybe_refuse(
+      not is_nil(type.source_iri) and not SemanticType.absolute_iri?(type.source_iri),
+      :REFUSED_SEMANTIC_TYPE_INVALID,
+      type.name,
+      "source IRI is not absolute"
+    )
+    |> maybe_refuse(
+      type.semantic_kind == :literal and not SemanticType.absolute_iri?(type.datatype_iri),
+      :REFUSED_SEMANTIC_TYPE_INVALID,
+      type.name,
+      "literal semantic type requires an absolute datatype IRI"
+    )
+    |> maybe_refuse(
+      type.semantic_kind in [:concept, :value_object, :resource] and not SemanticType.absolute_iri?(type.class_iri),
+      :REFUSED_SEMANTIC_TYPE_INVALID,
+      type.name,
+      "semantic kind requires an absolute class IRI"
+    )
+    |> maybe_refuse(
+      not is_nil(type.concept_scheme_iri) and not SemanticType.absolute_iri?(type.concept_scheme_iri),
+      :REFUSED_SEMANTIC_TYPE_INVALID,
+      type.name,
+      "concept scheme IRI is not absolute"
+    )
+    |> maybe_refuse(
+      type.selected_representation && type.selected_representation not in type.representation_candidates,
+      :REFUSED_SEMANTIC_TYPE_REPRESENTATION,
+      type.name,
+      "selected representation is outside the candidate set"
+    )
   end
 
   defp maybe_refuse(acc, false, _code, _subject, _detail), do: acc
@@ -300,8 +404,12 @@ defmodule AshR2RML.SemanticTypes do
   defp normalize_result(:error), do: :error
   defp normalize_result(other), do: {:error, {:unexpected_ash_type_result, other}}
 
-  defp semantic_ash_compatible?(%SemanticType{ash_type: expected}, observed) when expected == observed, do: true
-  defp semantic_ash_compatible?(%SemanticType{semantic_kind: kind}, observed) when kind in [:iri, :concept], do: observed in [:string, Ash.Type.String] or AshR2RML.Type.semantic_type?(observed)
+  defp semantic_ash_compatible?(%SemanticType{ash_type: expected}, observed) when expected == observed,
+    do: true
+
+  defp semantic_ash_compatible?(%SemanticType{semantic_kind: kind}, observed) when kind in [:iri, :concept],
+    do: observed in [:string, Ash.Type.String] or AshR2RML.Type.semantic_type?(observed)
+
   defp semantic_ash_compatible?(_type, _observed), do: false
 
   defp plan_hash(types, providers) do
@@ -314,7 +422,10 @@ defmodule AshR2RML.SemanticTypes do
   defp manifest_type(type), do: type |> SemanticType.canonical() |> Map.put(:id, type.id)
   defp normalize_manifest(%Plan{} = plan), do: manifest(plan)
   defp normalize_manifest(%{} = manifest), do: manifest
-  defp index_manifest_types(manifest), do: manifest |> get(:types, []) |> Map.new(fn type -> {type_identity(type), type} end)
+
+  defp index_manifest_types(manifest),
+    do: manifest |> get(:types, []) |> Map.new(fn type -> {type_identity(type), type} end)
+
   defp type_identity(type), do: get(type, :source_iri) || to_string(get(type, :name))
 
   defp semantic_differences(left, right) do
@@ -324,7 +435,10 @@ defmodule AshR2RML.SemanticTypes do
 
   defp normalize_compare(value) when is_atom(value), do: Atom.to_string(value)
   defp normalize_compare(value) when is_list(value), do: Enum.map(value, &normalize_compare/1)
-  defp normalize_compare(value) when is_map(value), do: Map.new(value, fn {key, item} -> {normalize_compare(key), normalize_compare(item)} end)
+
+  defp normalize_compare(value) when is_map(value),
+    do: Map.new(value, fn {key, item} -> {normalize_compare(key), normalize_compare(item)} end)
+
   defp normalize_compare(value), do: value
 
   defp type_key(type), do: type.source_iri || Atom.to_string(type.name)
@@ -335,10 +449,17 @@ defmodule AshR2RML.SemanticTypes do
 
   defp existing_atom(nil), do: nil
   defp existing_atom(value) when is_atom(value), do: value
+
   defp existing_atom(value) when is_binary(value) do
-    try do String.to_existing_atom(value) rescue ArgumentError -> nil end
+    try do
+      String.to_existing_atom(value)
+    rescue
+      ArgumentError -> nil
+    end
   end
 
   defp entry?(map), do: is_binary(get(map, :iri)) or is_binary(get(map, :source_iri))
-  defp get(map, key, default \\ nil) when is_map(map), do: Map.get(map, key, Map.get(map, Atom.to_string(key), default))
+
+  defp get(map, key, default \\ nil) when is_map(map),
+    do: Map.get(map, key, Map.get(map, Atom.to_string(key), default))
 end
