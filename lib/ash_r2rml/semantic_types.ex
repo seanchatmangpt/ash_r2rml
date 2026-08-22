@@ -376,7 +376,8 @@ defmodule AshR2RML.SemanticTypes do
       "concept scheme IRI is not absolute"
     )
     |> maybe_refuse(
-      type.selected_representation && type.selected_representation not in type.representation_candidates,
+      not is_nil(type.selected_representation) and
+        type.selected_representation not in type.representation_candidates,
       :REFUSED_SEMANTIC_TYPE_REPRESENTATION,
       type.name,
       "selected representation is outside the candidate set"
