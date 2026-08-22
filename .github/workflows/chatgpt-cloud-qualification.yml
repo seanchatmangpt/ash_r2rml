@@ -102,6 +102,23 @@ jobs:
               f.write('\n')
           PY
 
+      - name: Observe qualification through OCEL relay
+        env:
+          OCEL_INGEST_URL: ${{ secrets.OCEL_INGEST_URL }}
+          OCEL_INGEST_TOKEN: ${{ secrets.OCEL_INGEST_TOKEN }}
+          OCEL_SPOOL_DIR: tmp/chatgpt-cloud/ocel-spool
+        run: |
+          python3 scripts/emit-ocel.py \
+            --activity ash_r2rml.qualification.completed \
+            --standing ALIVE \
+            --authority-domain OBSERVE \
+            --agent-id "github-actions:${GITHUB_REPOSITORY}" \
+            --run-id "$GITHUB_RUN_ID" \
+            --sequence "$GITHUB_RUN_ATTEMPT" \
+            --repo "$GITHUB_REPOSITORY" \
+            --sha "$SUBJECT_SHA" \
+            --receipt tmp/chatgpt-cloud/qualification-receipt.json
+
       - name: Upload qualification receipt
         if: always()
         uses: actions/upload-artifact@v4
@@ -111,5 +128,6 @@ jobs:
             tmp/chatgpt-cloud/qualification-receipt.json
             tmp/chatgpt-cloud/compile.log
             tmp/chatgpt-cloud/fortune5.log
+            tmp/chatgpt-cloud/ocel-spool/
           if-no-files-found: error
           retention-days: 14
