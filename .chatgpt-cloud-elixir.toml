@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 ash_r2rml contributors
+# SPDX-License-Identifier: MIT
+
 schema_version = 1
 subject = "ash_r2rml"
 repository = "https://github.com/seanchatmangpt/ash_r2rml.git"
