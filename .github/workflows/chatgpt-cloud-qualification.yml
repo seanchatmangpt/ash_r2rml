@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 ash_r2rml contributors
+# SPDX-License-Identifier: MIT
+
 name: ChatGPT Cloud Qualification
 
 on:
