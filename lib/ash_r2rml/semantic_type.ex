@@ -264,18 +264,19 @@ defmodule AshR2RML.SemanticType.DfCM do
       nil ->
         {:ok, %{type | id: SemanticType.hash(type)}}
 
-      selected when selected in candidates ->
-        selected_type = %{type | selected_representation: selected}
-        {:ok, %{selected_type | id: SemanticType.hash(selected_type)}}
-
       selected ->
-        {:error,
-         Refusal.new(
-           :REFUSED_SEMANTIC_TYPE_REPRESENTATION,
-           type.name,
-           "selected representation is not in the admitted DfCM candidate set",
-           %{selected: selected, candidates: candidates}
-         )}
+        if selected in candidates do
+          selected_type = %{type | selected_representation: selected}
+          {:ok, %{selected_type | id: SemanticType.hash(selected_type)}}
+        else
+          {:error,
+           Refusal.new(
+             :REFUSED_SEMANTIC_TYPE_REPRESENTATION,
+             type.name,
+             "selected representation is not in the admitted DfCM candidate set",
+             %{selected: selected, candidates: candidates}
+           )}
+        end
     end
   end
 end
