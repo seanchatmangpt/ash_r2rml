@@ -1,0 +1,28 @@
+# SPDX-FileCopyrightText: 2026 ash_r2rml contributors <https://github.com/seanchatmangpt/ash_r2rml/graphs/contributors>
+# SPDX-License-Identifier: MIT
+
+version = 1
+
+[[annotations]]
+path = "documentation/**"
+precedence = "closest"
+SPDX-FileCopyrightText = "2026 ash_r2rml contributors <https://github.com/seanchatmangpt/ash_r2rml/graphs/contributors>"
+SPDX-License-Identifier = "MIT"
+
+[[annotations]]
+path = "usage-rules/**"
+precedence = "closest"
+SPDX-FileCopyrightText = "2026 ash_r2rml contributors <https://github.com/seanchatmangpt/ash_r2rml/graphs/contributors>"
+SPDX-License-Identifier = "MIT"
+
+[[annotations]]
+path = "priv/ggen/ash-r2rml-pack/**"
+precedence = "closest"
+SPDX-FileCopyrightText = "2026 ash_r2rml contributors <https://github.com/seanchatmangpt/ash_r2rml/graphs/contributors>"
+SPDX-License-Identifier = "MIT"
+
+[[annotations]]
+path = "priv/ocel/**"
+precedence = "closest"
+SPDX-FileCopyrightText = "2026 ash_r2rml contributors <https://github.com/seanchatmangpt/ash_r2rml/graphs/contributors>"
+SPDX-License-Identifier = "MIT"
