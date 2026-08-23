@@ -14,7 +14,7 @@ concurrency:
 # Four evidence gates:
 # - `types` is database-free: clean dependency resolution, compile warnings-as-errors, Dialyzer.
 # - `production` exercises the DfCM/evidence/ggen production architecture from a clean dependency tree.
-# - `test` preserves the full inherited Neo4j control suite.
+# - `test` executes the DfCM semantic-integrity Livebook contract and preserves the full inherited Neo4j control suite.
 # - `obda` executes the bounded ontology-first crown against real PostgreSQL,
 #   official Ontop, and the Neo4j control graph. Technical parity still does
 #   not grant cutover authority.
@@ -87,6 +87,9 @@ jobs:
           set -euo pipefail
           rm -rf deps _build
           mix deps.get
+
+      - name: Execute DfCM semantic-integrity Livebook contract
+        run: mix test test/livebook_semantic_integrity_test.exs test/dfcm_semantic_execution_integrity_test.exs
 
       - name: Start Neo4j test databases (bolt5 → 7687, bolt6 → 7689, apoc → 7691)
         run: docker compose up -d --wait --wait-timeout 300
