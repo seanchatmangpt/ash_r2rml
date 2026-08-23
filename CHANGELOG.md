@@ -11,7 +11,15 @@ See [Conventional Commits](Https://conventionalcommits.org) for commit guideline
 
 <!-- changelog -->
 
-## [v0.10.1](https://github.com/diffo-dev/ash_neo4j/compare/v0.10.0...v0.10.1) (2026-06-21)
+## [v26.8.22](https://github.com/seanchatmangpt/ash_r2rml/releases/tag/v26.8.22) (2026-08-22)
+
+### Features & Architectural Highlights:
+* **W3C R2RML Compilation Engine**: Full standards-valid compilation of Ash resources into W3C R2RML Turtle mappings (`AshR2RML.Compiler`, `AshR2RML.Mapping`).
+* **Ontop 5.5 OBDA Integration**: Virtual SPARQL-to-SQL execution against live PostgreSQL with 100% semantic identity preservation.
+* **DfCM Semantic Types & Ontology Generator**: Ontology-first semantic type compiler and provider ecosystem (`AshR2RML.SemanticTypes`).
+* **Ash.Reactor Saga Integration**: Complete Zach Daniel-style step modules, middleware telemetry, and compensation rollback pipelines (`AshR2RML.Reactor`).
+* **IEEE OCEL 2.0 Telemetry Stream**: Signed event envelopes and live fly client transport (`AshR2RML.Telemetry.FlyClient`).
+* **Exhaustive Verification**: 320+ automated tests across Fortune 5 profiles, adversarial refusal codes, and clean-room deterministic replay.
 
 
 

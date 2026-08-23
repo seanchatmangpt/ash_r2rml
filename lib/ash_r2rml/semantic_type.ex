@@ -160,11 +160,20 @@ defmodule AshR2RML.SemanticType do
 
   defp canonical_term(value) when is_map(value) do
     value
-    |> Enum.map(fn {key, item} -> {canonical_term(key), canonical_term(item)} end)
-    |> Enum.sort()
+    |> Enum.map(fn {key, item} -> {to_string(canonical_term(key)), canonical_term(item)} end)
+    |> Map.new()
   end
 
-  defp canonical_term(value) when is_list(value), do: Enum.map(value, &canonical_term/1)
+  defp canonical_term(value) when is_list(value) do
+    if Keyword.keyword?(value) do
+      value
+      |> Enum.map(fn {k, v} -> {to_string(k), canonical_term(v)} end)
+      |> Map.new()
+    else
+      Enum.map(value, &canonical_term/1)
+    end
+  end
+
   defp canonical_term(value) when is_tuple(value), do: value |> Tuple.to_list() |> Enum.map(&canonical_term/1)
   defp canonical_term(value) when is_atom(value), do: Atom.to_string(value)
   defp canonical_term(value), do: value

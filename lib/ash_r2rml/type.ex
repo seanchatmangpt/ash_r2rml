@@ -124,6 +124,9 @@ defmodule AshR2RML.Type do
       def to_rdf_lexical(value), do: to_string(value)
 
       @impl AshR2RML.Type
+      def from_rdf_lexical(value), do: {:ok, value}
+
+      @impl AshR2RML.Type
       def to_rdf(value) do
         case semantic_kind() do
           :literal ->

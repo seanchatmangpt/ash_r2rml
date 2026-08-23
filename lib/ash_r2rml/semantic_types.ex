@@ -389,7 +389,7 @@ defmodule AshR2RML.SemanticTypes do
 
   defp semantic_round_trip(%SemanticType{ash_type: ash_type}, loaded) do
     if AshR2RML.Type.semantic_type?(ash_type) do
-      with rdf when not match?({:error, _}, rdf) <- AshR2RML.Type.encode(ash_type, loaded),
+      with {:ok, rdf} <- encode_rdf(ash_type, loaded),
            {:ok, restored} <- AshR2RML.Type.decode(ash_type, rdf) do
         {:ok, rdf, restored}
       else
@@ -397,6 +397,13 @@ defmodule AshR2RML.SemanticTypes do
       end
     else
       {:ok, {:projection_value, loaded}, loaded}
+    end
+  end
+
+  defp encode_rdf(ash_type, loaded) do
+    case AshR2RML.Type.encode(ash_type, loaded) do
+      {:error, reason} -> {:error, reason}
+      rdf -> {:ok, rdf}
     end
   end
 
