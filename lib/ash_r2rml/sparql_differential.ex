@@ -21,6 +21,9 @@ defmodule AshR2RML.SPARQL.DifferentialReceipt do
     :verified?,
     :receipt_sha256,
     row_count_by_strategy: %{},
+    evidence_id_by_strategy: %{},
+    evidence_kind_by_strategy: %{},
+    standing_by_strategy: %{},
     metadata: %{}
   ]
 
@@ -32,6 +35,9 @@ defmodule AshR2RML.SPARQL.DifferentialReceipt do
           verified?: boolean(),
           receipt_sha256: String.t(),
           row_count_by_strategy: %{atom() => non_neg_integer()},
+          evidence_id_by_strategy: %{atom() => String.t()},
+          evidence_kind_by_strategy: %{atom() => atom()},
+          standing_by_strategy: %{atom() => atom()},
           metadata: map()
         }
 end
@@ -41,15 +47,19 @@ defmodule AshR2RML.SPARQL.Differential do
   Compares multiple observed SPARQL execution topologies without privileging one.
 
   A differential receipt is evidence over observations of the **same admitted
-  lexical query**. It is deliberately not used to claim equivalence between
-  different SPARQL query strings, even when a human believes them equivalent.
+  lexical query**. The receipt binds the normalized result hashes *and* the
+  content identities/evidence kinds of the observations that produced them.
+  Result equality therefore remains distinguishable from observed external
+  execution.
 
   Observation order is irrelevant; fewer than two strategies, duplicate
   strategies, and mixed query identities fail closed.
   """
 
-  alias AshR2RML.Refusal
+  alias AshR2RML.{Evidence, Refusal}
   alias AshR2RML.SPARQL.{DifferentialReceipt, Observation, Result}
+
+  @test_double_evidence [:injected_client, :injected_runner, :test_double, :mock]
 
   @spec compare(term(), [AshR2RML.SPARQL.Observation.t()], map()) ::
           {:ok, DifferentialReceipt.t()} | {:error, Refusal.t()}
@@ -61,12 +71,11 @@ defmodule AshR2RML.SPARQL.Differential do
          :ok <- unique_strategies(observations) do
       ordered = Enum.sort_by(observations, &to_string(&1.strategy))
 
-      hashes =
-        Map.new(ordered, fn observation ->
-          {observation.strategy, Result.hash_rows(observation.rows)}
-        end)
-
+      hashes = Map.new(ordered, &{&1.strategy, Result.hash_rows(&1.rows)})
       counts = Map.new(ordered, &{&1.strategy, length(&1.rows)})
+      evidence_ids = Map.new(ordered, &{&1.strategy, Evidence.id(&1)})
+      evidence_kinds = Map.new(ordered, &{&1.strategy, &1.evidence_kind})
+      standings = Map.new(ordered, &{&1.strategy, &1.standing})
       distinct_results = hashes |> Map.values() |> MapSet.new() |> MapSet.size()
 
       seed = %{
@@ -75,6 +84,9 @@ defmodule AshR2RML.SPARQL.Differential do
         strategies: Enum.map(ordered, & &1.strategy),
         result_sha256_by_strategy: hashes,
         row_count_by_strategy: counts,
+        evidence_id_by_strategy: evidence_ids,
+        evidence_kind_by_strategy: evidence_kinds,
+        standing_by_strategy: standings,
         verified?: distinct_results == 1,
         metadata: metadata
       }
@@ -116,6 +128,55 @@ defmodule AshR2RML.SPARQL.Differential do
            receipt.subject,
            "required SPARQL execution topologies produced different normalized multisets",
            %{result_sha256_by_strategy: receipt.result_sha256_by_strategy}
+         )}
+
+      true ->
+        :ok
+    end
+  end
+
+  @doc "Require that a matching differential was produced only by non-test-double observations."
+  @spec require_observed(DifferentialReceipt.t()) :: :ok | {:error, Refusal.t()}
+  def require_observed(%DifferentialReceipt{} = receipt) do
+    synthetic =
+      receipt.evidence_kind_by_strategy
+      |> Enum.filter(fn {_strategy, kind} -> kind in @test_double_evidence end)
+      |> Map.new()
+
+    test_double_standings =
+      receipt.standing_by_strategy
+      |> Enum.filter(fn {_strategy, standing} -> standing == :test_double_only end)
+      |> Map.new()
+
+    cond do
+      not receipt.verified? ->
+        {:error,
+         Refusal.new(
+           :REFUSED_UNPROVEN_EQUIVALENCE,
+           receipt.subject,
+           "SPARQL observations do not agree",
+           %{result_sha256_by_strategy: receipt.result_sha256_by_strategy}
+         )}
+
+      synthetic != %{} or test_double_standings != %{} ->
+        {:error,
+         Refusal.new(
+           :REFUSED_UNPROVEN_EQUIVALENCE,
+           receipt.subject,
+           "matching rows include test-double evidence and cannot establish observed execution parity",
+           %{
+             evidence_kind_by_strategy: receipt.evidence_kind_by_strategy,
+             standing_by_strategy: receipt.standing_by_strategy
+           }
+         )}
+
+      map_size(receipt.evidence_id_by_strategy) != length(receipt.strategies) ->
+        {:error,
+         Refusal.new(
+           :REFUSED_UNPROVEN_EQUIVALENCE,
+           receipt.subject,
+           "differential receipt does not identify every contributing observation",
+           %{evidence_id_by_strategy: receipt.evidence_id_by_strategy}
          )}
 
       true ->
