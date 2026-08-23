@@ -15,20 +15,19 @@ concurrency:
 # - `types` is database-free: clean dependency resolution, compile warnings-as-errors, Dialyzer.
 # - `production` exercises the DfCM/evidence/ggen production architecture from a clean dependency tree.
 # - `test` executes the DfCM semantic-integrity Livebook contract and preserves the full inherited Neo4j control suite.
-# - `obda` executes the bounded ontology-first crown against real PostgreSQL,
-#   official Ontop, and the Neo4j control graph. Technical parity still does
-#   not grant cutover authority.
+# - `obda` executes the ontology-first parity crown plus the Ontop 5.5.0 standards-compliance crown
+#   against PostGIS, official Ontop, and the Neo4j control graph. Technical parity does not grant cutover authority.
 #
-# Deliberately do not cache `deps/` or `_build/`. Rebar dependencies may place
-# toolchain-specific artifacts and plugins beneath their source trees; restoring
-# those trees across an incompatible OTP/rebar state can produce a green or red
-# build for reasons unrelated to the exact subject. Reproducibility is worth
-# more than a few minutes of CI latency at this boundary.
+# PR jobs explicitly checkout the PR head SHA rather than GitHub's synthetic merge ref,
+# binding receipts to the exact candidate. `deps/` and `_build/` are never cached: Rebar
+# artifacts are toolchain-sensitive and stale restoration can manufacture false evidence.
 jobs:
   types:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Set up Elixir / Erlang (from .tool-versions)
         uses: jdx/mise-action@v2
@@ -51,6 +50,8 @@ jobs:
       MIX_ENV: test
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Set up Elixir / Erlang (from .tool-versions)
         uses: jdx/mise-action@v2
@@ -78,6 +79,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Set up Elixir / Erlang (from .tool-versions)
         uses: jdx/mise-action@v2
@@ -105,7 +108,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:16
+        image: postgis/postgis:16-3.4
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -120,6 +123,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Set up Elixir / Erlang (from .tool-versions)
         uses: jdx/mise-action@v2
@@ -163,12 +168,21 @@ jobs:
           ASH_R2RML_PGJDBC_SHA256: "6e0e4cc2d8cae902084f8a2b18728b073a6fd9d1f87c9d8bff8f298c18185b93"
         run: mix run test/integration/obda_crown.exs
 
-      - name: Publish bounded parity receipt
+      - name: Execute Ontop 5.5.0 SPARQL + GeoSPARQL compliance crown
+        env:
+          MIX_ENV: test
+          ASH_R2RML_ONTOP_JDBC_DIR: ${{ runner.temp }}/ontop-jdbc
+          ASH_R2RML_PGJDBC_SHA256: "6e0e4cc2d8cae902084f8a2b18728b073a6fd9d1f87c9d8bff8f298c18185b93"
+        run: mix run test/integration/ontop_compliance_crown.exs
+
+      - name: Publish bounded parity receipts
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ash-r2ml-obda-parity
-          path: tmp/ash_r2rml_obda/parity-receipt.json
+          path: |
+            tmp/ash_r2rml_obda/parity-receipt.json
+            tmp/ash_r2rml_ontop_compliance/compliance-receipt.json
           if-no-files-found: ignore
 
       - name: Stop Neo4j control database
