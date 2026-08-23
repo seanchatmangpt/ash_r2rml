@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2026 ash_neo4j contributors <https://github.com/diffo-dev/ash_neo4j/graphs/contributors>
+# SPDX-FileCopyrightText: 2026 ash_neo4j contributors <https://github.com/diffo-dev/ash_neo4j/graphs.contributors>
 # SPDX-FileCopyrightText: 2026 ash_r2rml contributors <https://github.com/seanchatmangpt/ash_r2rml/graphs/contributors>
 #
 # SPDX-License-Identifier: MIT
@@ -12,7 +12,8 @@ concurrency:
   cancel-in-progress: true
 
 # Four evidence gates:
-# - `types` is database-free: clean dependency resolution, compile warnings-as-errors, Dialyzer.
+# - `types` is database-free: clean dependency resolution, format, compile warnings-as-errors,
+#   Dialyzer, and exact-candidate Hex package construction.
 # - `production` exercises the DfCM/evidence/ggen production architecture from a clean dependency tree.
 # - `test` executes semantic-integrity and replayable-evidence Livebook contracts, lineage falsifiers,
 #   and the full inherited Neo4j control suite.
@@ -39,11 +40,17 @@ jobs:
           rm -rf deps _build
           mix deps.get
 
+      - name: Check formatting
+        run: mix format --check-formatted
+
       - name: Compile (warnings as errors)
         run: mix compile --force --warnings-as-errors
 
       - name: Dialyzer
         run: mix dialyzer
+
+      - name: Build exact release-candidate Hex package
+        run: mix hex.build
 
   production:
     runs-on: ubuntu-latest
