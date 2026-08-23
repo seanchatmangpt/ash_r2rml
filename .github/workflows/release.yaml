@@ -9,22 +9,36 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: read
+
 jobs:
   publish:
-    name: Publish to Hex.pm
+    name: Publish exact admitted tag to Hex.pm
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
+      - name: Checkout exact tag subject
         uses: actions/checkout@v4
 
-      - name: Set up Elixir / Erlang
-        uses: erlef/setup-beam@v1
-        with:
-          elixir-version: '1.18.2'
-          otp-version: '27.2'
+      - name: Set up repository Elixir / Erlang toolchain
+        uses: jdx/mise-action@v2
 
-      - name: Install dependencies
-        run: mix deps.get
+      - name: Refuse tag/version identity mismatch
+        shell: bash
+        run: |
+          set -euo pipefail
+          project_version="$(sed -n 's/.*@version "\([^"]*\)".*/\1/p' mix.exs | head -n 1)"
+          test -n "${project_version}"
+          test "${GITHUB_REF_NAME}" = "v${project_version}"
+
+      - name: Resolve dependencies from clean state
+        run: |
+          set -euo pipefail
+          rm -rf deps _build
+          mix deps.get
+
+      - name: Compile exact release subject
+        run: mix compile --force --warnings-as-errors
 
       - name: Build Hex package
         run: mix hex.build
