@@ -16,7 +16,7 @@ concurrency:
 #   Dialyzer, and exact-candidate Hex package construction.
 # - `production` exercises the DfCM/evidence/ggen production architecture from a clean dependency tree.
 # - `test` executes semantic-integrity and replayable-evidence Livebook contracts, lineage falsifiers,
-#   and the full inherited Neo4j control suite.
+#   and the complete live-engine suite, including the adversarial Ontop/PostgreSQL command.
 # - `obda` executes the ontology-first parity crown plus the Ontop 5.5.0 standards-compliance crown
 #   against PostGIS, official Ontop, and the Neo4j control graph. Technical parity does not grant cutover authority.
 #
@@ -108,17 +108,32 @@ jobs:
       - name: Execute evidence-lineage falsifiers
         run: mix test test/evidence_lineage_test.exs test/reactor_evidence_replay_test.exs
 
-      - name: Start Neo4j test databases (bolt5 → 7687, bolt6 → 7689, apoc → 7691)
+      - name: Supply PostgreSQL JDBC driver for live adversarial Ontop test
+        env:
+          PGJDBC_VERSION: "42.7.4"
+        run: |
+          set -euo pipefail
+          jdbc_dir="priv/ontop/jdbc"
+          jdbc_jar="${jdbc_dir}/postgresql-${PGJDBC_VERSION}.jar"
+          mkdir -p "${jdbc_dir}"
+          curl --fail --location --silent --show-error \
+            "https://repo1.maven.org/maven2/org/postgresql/postgresql/${PGJDBC_VERSION}/postgresql-${PGJDBC_VERSION}.jar" \
+            --output "${jdbc_jar}"
+          expected_sha1="$(curl --fail --location --silent --show-error "https://repo1.maven.org/maven2/org/postgresql/postgresql/${PGJDBC_VERSION}/postgresql-${PGJDBC_VERSION}.jar.sha1")"
+          echo "${expected_sha1}  ${jdbc_jar}" | sha1sum --check --strict
+
+      - name: Start complete live verification topology
         run: docker compose up -d --wait --wait-timeout 300
 
-      - name: Test (default + cypher25 + bolt6 + apoc + slow)
+      - name: Test complete live suite
         env:
           NEO4J_ENABLED: "true"
+          POSTGRES_PASSWORD: postgres
         run: mix test --include cypher25 --include bolt6 --include apoc --include slow
 
-      - name: Stop Neo4j test databases
+      - name: Stop live verification topology
         if: always()
-        run: docker compose down
+        run: docker compose down -v
 
   obda:
     runs-on: ubuntu-latest
