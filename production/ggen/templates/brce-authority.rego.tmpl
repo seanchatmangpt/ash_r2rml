@@ -1,0 +1,18 @@
+# SPDX-FileCopyrightText: 2026 ash_r2rml contributors <https://github.com/seanchatmangpt/ash_r2rml/graphs/contributors>
+# SPDX-License-Identifier: MIT
+# Generated policy for candidate {{ sha }}. Policy evaluation does not manufacture authority.
+
+package ash_r2rml.production
+
+default allow_do := false
+
+allow_do if {
+  input.candidate_sha256 == "{{ sha }}"
+  input.role == "brce_actuator"
+  input.brce == true
+  input.authority_sha256 != ""
+  input.pre_state_sha256 != ""
+  input.post_state_sha256 != ""
+  input.replay_plan_sha256 != ""
+  input.brce_receipt_sha256 != ""
+}

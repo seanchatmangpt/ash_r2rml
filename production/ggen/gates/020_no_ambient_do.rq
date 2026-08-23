@@ -1,0 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_r2rml contributors <https://github.com/seanchatmangpt/ash_r2rml/graphs/contributors>
+# SPDX-License-Identifier: MIT
+# MESSAGE: model/manufacturing input may never carry ambient DO authority
+PREFIX p: <https://w3id.org/ash-r2rml/production#>
+ASK {
+  ?boundary a p:AuthorityContract ; p:ambientDo true .
+}
