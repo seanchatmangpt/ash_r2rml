@@ -128,7 +128,7 @@ defmodule AshR2RML.Type do
 
       @impl AshR2RML.Type
       def to_rdf(value) do
-        case semantic_kind() do
+        case apply(__MODULE__, :semantic_kind, []) do
           :literal ->
             case datatype_iri() do
               datatype when is_binary(datatype) ->
@@ -156,7 +156,9 @@ defmodule AshR2RML.Type do
       end
 
       def from_rdf({:iri, iri}) do
-        if semantic_kind() in [:iri, :concept] do
+        kind = apply(__MODULE__, :semantic_kind, [])
+
+        if kind in [:iri, :concept] do
           if function_exported?(__MODULE__, :from_rdf_lexical, 1) do
             from_rdf_lexical(iri)
           else
@@ -176,6 +178,7 @@ defmodule AshR2RML.Type do
                      shacl_constraints: 0,
                      xsd_datatype: 0,
                      to_rdf_lexical: 1,
+                     from_rdf_lexical: 1,
                      to_rdf: 1,
                      from_rdf: 1
     end
