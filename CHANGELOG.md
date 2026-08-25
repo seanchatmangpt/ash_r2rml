@@ -11,6 +11,19 @@ See [Conventional Commits](Https://conventionalcommits.org) for commit guideline
 
 <!-- changelog -->
 
+## [v26.8.25](https://github.com/seanchatmangpt/ash_r2rml/releases/tag/v26.8.25) (2026-08-25)
+
+### Features & Architectural Highlights:
+* **`Ash.DataLayer.Ets` as a First-Class Backend**: `AshR2RML.DataLayer.backend/1` and a `storage_backend: :postgres | :ets` compiler option make `Ash.DataLayer.Ets` a fully supported compilation and query-execution target alongside `AshPostgres`.
+* **`AshR2RML.OBDA.InMemory`**: the ETS-side OBDA counterpart to Ontop — materializes real `Ash.DataLayer.Ets` rows into a real `RDF.Graph` via the canonical mapping IR and executes full SPARQL (`SELECT`/`ASK`/`CONSTRUCT`/`DESCRIBE`, single- and composite-key cross-resource joins) in-process through `AshR2RML.SPARQL.Local`.
+* **Field-Policy Security Hardening**: real Ash field-policy enforcement across both OBDA surfaces — enforced directly by `AshR2RML.OBDA.InMemory`'s use of `Ash.read!/2`, and structurally closed for the Ontop/Postgres surface by the new `AshR2RML.Security.sanitize_mapping/2`, which strips any field-policy-protected R2RML-mapped attribute from an `AshPostgres`-backed mapping before it can be rendered. Confirmed against a live Postgres 15.2 + Ontop 5.5.0 stack.
+* **RDF/Turtle Injection Hardening**: subject/object IRIs built from row data in `AshR2RML.OBDA.InMemory` are now validated or percent-encoded before touching the graph, matching Ontop's own confirmed `rr:template` behavior.
+* **Real Benchmark Suite**: `bench/compilation_and_rendering.exs` and `bench/obda_query_latency.exs` measure real compilation and OBDA query-latency numbers against AshR2RML's own supported stack only (Ash, `Ash.DataLayer.Ets`, `AshPostgres`, Ontop) — recorded in `bench/RESULTS.md`.
+
+### Bug Fixes:
+* fixed a struct-update typing violation in `AshR2RML.Telemetry.OCEL2.reconstruct_from_events/1` that failed a forced `mix compile --warnings-as-errors`.
+* made custom `AshR2RML.Type` lexical decoders lawfully overridable.
+
 ## [v26.8.22](https://github.com/seanchatmangpt/ash_r2rml/releases/tag/v26.8.22) (2026-08-22)
 
 ### Features & Architectural Highlights:
