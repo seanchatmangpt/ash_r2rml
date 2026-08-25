@@ -94,8 +94,7 @@ defmodule AshR2RML.MixProject do
         "AshR2RML contributors"
       ],
       licenses: ["MIT"],
-      files:
-        ~w(lib .formatter.exs mix.exs README* LICENSE* CHANGELOG* ash_r2rml.livemd priv),
+      files: ~w(lib .formatter.exs mix.exs README* LICENSE* CHANGELOG* ash_r2rml.livemd priv),
       links: %{
         "GitHub" => @github_url,
         "Changelog" => "#{@github_url}/blob/main/CHANGELOG.md"
@@ -114,6 +113,7 @@ defmodule AshR2RML.MixProject do
   defp deps do
     [
       {:ash, "~> 3.0 and >= 3.28.0"},
+      {:ash_postgres, "~> 2.0", only: [:test]},
       {:spark, ">= 2.7.0"},
       {:rdf, "~> 3.0"},
       {:sparql, "~> 0.3.12"},

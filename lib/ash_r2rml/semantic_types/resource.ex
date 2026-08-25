@@ -5,7 +5,16 @@
 defmodule AshR2RML.SemanticTypes.Dsl.Type do
   @moduledoc false
   @enforce_keys [:name, :iri]
-  defstruct [:name, :iri, :selected_representation, :concept_scheme_iri, :quantity_kind, allowed_units: [], __identifier__: nil, __spark_metadata__: nil]
+  defstruct [
+    :name,
+    :iri,
+    :selected_representation,
+    :concept_scheme_iri,
+    :quantity_kind,
+    allowed_units: [],
+    __identifier__: nil,
+    __spark_metadata__: nil
+  ]
 end
 
 defmodule AshR2RML.SemanticTypes.Resource do
@@ -24,14 +33,20 @@ defmodule AshR2RML.SemanticTypes.Resource do
     schema: [
       name: [type: :atom, required: true],
       iri: [type: :string, required: true],
-      selected_representation: [type: {:one_of, [:builtin, :new_type, :custom_type, :registry, :composite, :embedded, :jsonb, :resource]}],
+      selected_representation: [
+        type: {:one_of, [:builtin, :new_type, :custom_type, :registry, :composite, :embedded, :jsonb, :resource]}
+      ],
       concept_scheme_iri: [type: :string],
       quantity_kind: [type: :string],
       allowed_units: [type: {:list, :string}, default: []]
     ]
   }
 
-  @section %Spark.Dsl.Section{name: :semantic_types, describe: "Public ontology value spaces and DfCM representation selections", entities: [@semantic_type]}
+  @section %Spark.Dsl.Section{
+    name: :semantic_types,
+    describe: "Public ontology value spaces and DfCM representation selections",
+    entities: [@semantic_type]
+  }
 
   use Spark.Dsl.Extension,
     sections: [@section],

@@ -27,7 +27,14 @@ defmodule AshR2RML.Negative.AdmissionNegativeTest do
             table_name: "items",
             subject_template: "https://example.com/items/{id}",
             attributes: [
-              %{name: :id, column: "id", predicate_iri: "https://example.com/id", datatype: "http://example.com/custom_unknown_type", min_count: 1, max_count: 1}
+              %{
+                name: :id,
+                column: "id",
+                predicate_iri: "https://example.com/id",
+                datatype: "http://example.com/custom_unknown_type",
+                min_count: 1,
+                max_count: 1
+              }
             ],
             identities: [
               %{name: :primary, keys: [:id], primary?: true}

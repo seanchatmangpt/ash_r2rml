@@ -48,18 +48,25 @@ defmodule AshR2RML.SemanticTypes do
       |> case do
         :unknown ->
           {:error,
-           Refusal.new(:UNSUPPORTED_SEMANTIC_TYPE, iri, "no configured public-ontology provider admits this semantic type", %{
-             providers: Enum.map(providers(opts), & &1.id())
-           })}
+           Refusal.new(
+             :UNSUPPORTED_SEMANTIC_TYPE,
+             iri,
+             "no configured public-ontology provider admits this semantic type",
+             %{
+               providers: Enum.map(providers(opts), & &1.id())
+             }
+           )}
 
-        result -> result
+        result ->
+          result
       end
     else
       {:error, Refusal.new(:REFUSED_SEMANTIC_TYPE_INVALID, iri, "semantic type identifier must be an absolute IRI")}
     end
   end
 
-  def resolve(other, _opts), do: {:error, Refusal.new(:REFUSED_SEMANTIC_TYPE_INVALID, other, "semantic type identifier must be an IRI string")}
+  def resolve(other, _opts),
+    do: {:error, Refusal.new(:REFUSED_SEMANTIC_TYPE_INVALID, other, "semantic type identifier must be an IRI string")}
 
   @doc "Construct an explicit RDF IRI semantic type without inventing an ontology class."
   @spec iri_type(keyword()) :: {:ok, SemanticType.t()} | {:error, Refusal.t()}
@@ -101,7 +108,14 @@ defmodule AshR2RML.SemanticTypes do
         end
 
       true ->
-        {:error, [Refusal.new(:REFUSED_SEMANTIC_PROFILE_INVALID, :source, "binary semantic source must be JSON or an absolute IRI")]}
+        {:error,
+         [
+           Refusal.new(
+             :REFUSED_SEMANTIC_PROFILE_INVALID,
+             :source,
+             "binary semantic source must be JSON or an absolute IRI"
+           )
+         ]}
     end
   end
 
@@ -129,7 +143,16 @@ defmodule AshR2RML.SemanticTypes do
     end
   end
 
-  def compile(other, _opts), do: {:error, [Refusal.new(:REFUSED_SEMANTIC_PROFILE_INVALID, other, "semantic source must be an IRI, profile map, list, or JSON document")]}
+  def compile(other, _opts),
+    do:
+      {:error,
+       [
+         Refusal.new(
+           :REFUSED_SEMANTIC_PROFILE_INVALID,
+           other,
+           "semantic source must be an IRI, profile map, list, or JSON document"
+         )
+       ]}
 
   @spec plan(term(), keyword()) :: {:ok, Plan.t()} | {:error, [Refusal.t()]}
   def plan(source, opts \\ []) do
@@ -146,6 +169,7 @@ defmodule AshR2RML.SemanticTypes do
 
   @spec verify(Plan.t() | [SemanticType.t()]) :: :ok | {:error, [Refusal.t()]}
   def verify(%Plan{types: types}), do: verify(types)
+
   def verify(types) when is_list(types) do
     refusals = Enum.flat_map(types, &verify_type/1)
     if refusals == [], do: :ok, else: {:error, refusals}
@@ -437,7 +461,16 @@ defmodule AshR2RML.SemanticTypes do
   defp type_identity(type), do: get(type, :source_iri) || to_string(get(type, :name))
 
   defp semantic_differences(left, right) do
-    [:semantic_kind, :ash_type, :datatype_iri, :class_iri, :concept_scheme_iri, :selected_representation, :constraints, :shacl_constraints]
+    [
+      :semantic_kind,
+      :ash_type,
+      :datatype_iri,
+      :class_iri,
+      :concept_scheme_iri,
+      :selected_representation,
+      :constraints,
+      :shacl_constraints
+    ]
     |> Enum.filter(fn field -> normalize_compare(get(left, field)) != normalize_compare(get(right, field)) end)
   end
 

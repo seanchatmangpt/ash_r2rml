@@ -27,7 +27,11 @@ defmodule AshR2RML.SemanticTypes.Generator do
 
   @spec igniter_files(Plan.t(), atom() | String.t(), keyword()) :: {:ok, map()} | {:error, term()}
   def igniter_files(%Plan{} = plan, app_name, opts \\ []) do
-    namespace = Keyword.get_lazy(opts, :namespace, fn -> app_name |> to_string() |> Macro.camelize() |> then(&("#{&1}.SemanticTypes")) end)
+    namespace =
+      Keyword.get_lazy(opts, :namespace, fn ->
+        app_name |> to_string() |> Macro.camelize() |> then(&"#{&1}.SemanticTypes")
+      end)
+
     app_path = app_name |> to_string() |> String.replace("-", "_")
 
     with {:ok, manifest} <- AshR2RML.SemanticTypes.manifest_json(plan) do
@@ -41,7 +45,10 @@ defmodule AshR2RML.SemanticTypes.Generator do
 
   @spec render_elixir(Plan.t(), String.t()) :: String.t()
   def render_elixir(%Plan{} = plan, namespace) do
-    generated = plan.types |> Enum.filter(&(&1.selected_representation == :new_type)) |> Enum.map_join("\n\n", &render_new_type(&1, namespace))
+    generated =
+      plan.types
+      |> Enum.filter(&(&1.selected_representation == :new_type))
+      |> Enum.map_join("\n\n", &render_new_type(&1, namespace))
 
     catalog = """
     defmodule #{namespace}.Catalog do

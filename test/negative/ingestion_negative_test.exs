@@ -51,7 +51,12 @@ defmodule AshR2RML.Negative.IngestionNegativeTest do
       """
 
       assert {:error, [refusal | _]} = Ingestion.from_turtle(incomplete_shape)
-      assert refusal.code in [:REFUSED_SHACL_PROFILE_INCOMPLETE, :REFUSED_UNMAPPED_RESOURCE_CLASS, :REFUSED_INVALID_CLASS_IRI]
+
+      assert refusal.code in [
+               :REFUSED_SHACL_PROFILE_INCOMPLETE,
+               :REFUSED_UNMAPPED_RESOURCE_CLASS,
+               :REFUSED_INVALID_CLASS_IRI
+             ]
     end
   end
 end

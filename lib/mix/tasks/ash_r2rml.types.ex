@@ -6,17 +6,26 @@ defmodule AshR2RML.Mix.SemanticTypes do
   @moduledoc false
 
   def load_source([]), do: Mix.raise("expected a semantic profile path, JSON document, or public IRI")
+
   def load_source(args) do
     source = Enum.join(args, " ")
+
     if length(args) == 1 and File.regular?(hd(args)) do
-      case File.read(hd(args)) do {:ok, content} -> content; {:error, reason} -> Mix.raise("cannot read #{hd(args)}: #{inspect(reason)}") end
+      case File.read(hd(args)) do
+        {:ok, content} -> content
+        {:error, reason} -> Mix.raise("cannot read #{hd(args)}: #{inspect(reason)}")
+      end
     else
       source
     end
   end
 
   def load_json(path) do
-    with {:ok, content} <- File.read(path), {:ok, value} <- Jason.decode(content) do value else {:error, reason} -> Mix.raise("cannot decode #{path}: #{inspect(reason)}") end
+    with {:ok, content} <- File.read(path), {:ok, value} <- Jason.decode(content) do
+      value
+    else
+      {:error, reason} -> Mix.raise("cannot decode #{path}: #{inspect(reason)}")
+    end
   end
 
   def plan!(args) do
@@ -46,7 +55,12 @@ defmodule Mix.Tasks.AshR2rml.Types.Plan do
   use Mix.Task
   @shortdoc "Plans public-ontology semantic type projections without writing files"
   @impl Mix.Task
-  def run(args), do: args |> AshR2RML.Mix.SemanticTypes.plan!() |> AshR2RML.SemanticTypes.manifest() |> AshR2RML.Mix.SemanticTypes.print_json()
+  def run(args),
+    do:
+      args
+      |> AshR2RML.Mix.SemanticTypes.plan!()
+      |> AshR2RML.SemanticTypes.manifest()
+      |> AshR2RML.Mix.SemanticTypes.print_json()
 end
 
 defmodule Mix.Tasks.AshR2rml.Types.Inspect do
@@ -54,6 +68,7 @@ defmodule Mix.Tasks.AshR2rml.Types.Inspect do
   @shortdoc "Inspects admitted semantic types for one or more public IRIs"
   @impl Mix.Task
   def run([]), do: Mix.raise("expected one or more public semantic type IRIs")
+
   def run(args) do
     case AshR2RML.SemanticTypes.plan(args) do
       {:ok, plan} -> AshR2RML.Mix.SemanticTypes.print_json(AshR2RML.SemanticTypes.manifest(plan))
@@ -66,7 +81,12 @@ defmodule Mix.Tasks.AshR2rml.Types.Manifest do
   use Mix.Task
   @shortdoc "Emits the stable semantic-type-plan JSON manifest"
   @impl Mix.Task
-  def run(args), do: args |> AshR2RML.Mix.SemanticTypes.plan!() |> AshR2RML.SemanticTypes.manifest() |> AshR2RML.Mix.SemanticTypes.print_json()
+  def run(args),
+    do:
+      args
+      |> AshR2RML.Mix.SemanticTypes.plan!()
+      |> AshR2RML.SemanticTypes.manifest()
+      |> AshR2RML.Mix.SemanticTypes.print_json()
 end
 
 defmodule Mix.Tasks.AshR2rml.Types.Verify do
@@ -75,9 +95,18 @@ defmodule Mix.Tasks.AshR2rml.Types.Verify do
   @impl Mix.Task
   def run(args) do
     plan = AshR2RML.Mix.SemanticTypes.plan!(args)
+
     case AshR2RML.SemanticTypes.verify(plan) do
-      :ok -> AshR2RML.Mix.SemanticTypes.print_json(%{status: :PARTIAL_ALIVE, standing: :construct_only, plan_id: plan.id, verified_types: length(plan.types)})
-      {:error, refusals} -> Mix.raise(AshR2RML.Mix.SemanticTypes.format_refusals(refusals))
+      :ok ->
+        AshR2RML.Mix.SemanticTypes.print_json(%{
+          status: :PARTIAL_ALIVE,
+          standing: :construct_only,
+          plan_id: plan.id,
+          verified_types: length(plan.types)
+        })
+
+      {:error, refusals} ->
+        Mix.raise(AshR2RML.Mix.SemanticTypes.format_refusals(refusals))
     end
   end
 end
@@ -98,6 +127,7 @@ defmodule Mix.Tasks.AshR2rml.Types.Diff do
     observed = AshR2RML.Mix.SemanticTypes.load_json(observed)
     expected |> AshR2RML.SemanticTypes.diff(observed) |> AshR2RML.Mix.SemanticTypes.print_json()
   end
+
   def run(_), do: Mix.raise("usage: mix ash_r2rml.types.diff EXPECTED.json OBSERVED.json")
 end
 

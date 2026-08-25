@@ -32,7 +32,14 @@ defmodule AshR2RML.Negative.IdentityNegativeTest do
       }
 
       refusals = extract_refusals(Mapping.validate(mapping))
-      assert Enum.any?(refusals, fn r -> r.code in [:REFUSED_NON_UNIQUE_SEMANTIC_IDENTITY, :REFUSED_INVALID_SUBJECT_TEMPLATE, :REFUSED_MISSING_SUBJECT_MAP] end)
+
+      assert Enum.any?(refusals, fn r ->
+               r.code in [
+                 :REFUSED_NON_UNIQUE_SEMANTIC_IDENTITY,
+                 :REFUSED_INVALID_SUBJECT_TEMPLATE,
+                 :REFUSED_MISSING_SUBJECT_MAP
+               ]
+             end)
     end
   end
 

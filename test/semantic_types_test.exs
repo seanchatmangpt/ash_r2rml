@@ -14,7 +14,15 @@ defmodule AshR2RML.SemanticTypesTest do
   @time "http://www.w3.org/2006/time#"
 
   test "public providers converge on one deterministic semantic type plan" do
-    iris = [@xsd <> "positiveInteger", @rdf <> "langString", @skos <> "Concept", @qudt <> "QuantityValue", @geo <> "wktLiteral", @time <> "Interval"]
+    iris = [
+      @xsd <> "positiveInteger",
+      @rdf <> "langString",
+      @skos <> "Concept",
+      @qudt <> "QuantityValue",
+      @geo <> "wktLiteral",
+      @time <> "Interval"
+    ]
+
     assert {:ok, first} = SemanticTypes.plan(iris)
     assert {:ok, second} = SemanticTypes.plan(Enum.reverse(iris))
     assert first.id == second.id
@@ -67,14 +75,31 @@ defmodule AshR2RML.SemanticTypesTest do
     assert {:ok, type} = SemanticTypes.resolve(@skos <> "Concept", concept_scheme_iri: scheme)
     assert {:ok, receipt} = SemanticTypes.round_trip(type, %{iri: "https://example.org/status/shipped", scheme: scheme})
     assert receipt.rdf == {:iri, "https://example.org/status/shipped"}
-    assert {:error, _} = SemanticTypes.round_trip(type, %{iri: "https://example.org/status/shipped", scheme: "https://example.org/scheme/other"})
+
+    assert {:error, _} =
+             SemanticTypes.round_trip(type, %{
+               iri: "https://example.org/status/shipped",
+               scheme: "https://example.org/scheme/other"
+             })
   end
 
   test "QUDT quantity is a value object rather than an xsd:string collapse" do
-    assert {:ok, type} = SemanticTypes.resolve(@qudt <> "QuantityValue", quantity_kind: "http://qudt.org/vocab/quantitykind/Mass", allowed_units: ["http://qudt.org/vocab/unit/KiloGM"])
+    assert {:ok, type} =
+             SemanticTypes.resolve(@qudt <> "QuantityValue",
+               quantity_kind: "http://qudt.org/vocab/quantitykind/Mass",
+               allowed_units: ["http://qudt.org/vocab/unit/KiloGM"]
+             )
+
     assert type.semantic_kind == :value_object
     refute :builtin in type.representation_candidates
-    assert {:ok, receipt} = SemanticTypes.round_trip(type, %{value: 82.3, unit: "http://qudt.org/vocab/unit/KiloGM", quantity_kind: "http://qudt.org/vocab/quantitykind/Mass"})
+
+    assert {:ok, receipt} =
+             SemanticTypes.round_trip(type, %{
+               value: 82.3,
+               unit: "http://qudt.org/vocab/unit/KiloGM",
+               quantity_kind: "http://qudt.org/vocab/quantitykind/Mass"
+             })
+
     assert {:node, node} = receipt.rdf
     assert node.type == @qudt <> "QuantityValue"
     assert node.unit == "http://qudt.org/vocab/unit/KiloGM"

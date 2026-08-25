@@ -10,22 +10,30 @@ if Code.ensure_loaded?(Igniter) do
     @impl Igniter.Mix.Task
     def igniter(igniter) do
       source = AshR2RML.Mix.SemanticTypes.load_source(igniter.args.argv)
-      plan = case AshR2RML.SemanticTypes.plan(source) do
-        {:ok, plan} -> plan
-        {:error, refusals} -> Mix.raise(AshR2RML.Mix.SemanticTypes.format_refusals(refusals))
-      end
+
+      plan =
+        case AshR2RML.SemanticTypes.plan(source) do
+          {:ok, plan} -> plan
+          {:error, refusals} -> Mix.raise(AshR2RML.Mix.SemanticTypes.format_refusals(refusals))
+        end
 
       app_name = Igniter.Project.Application.app_name(igniter)
-      files = case AshR2RML.SemanticTypes.Generator.igniter_files(plan, app_name) do
-        {:ok, files} -> files
-        {:error, reason} -> Mix.raise("semantic type generation failed: #{inspect(reason)}")
-      end
 
-      igniter = Enum.reduce(files, igniter, fn {path, content}, acc ->
-        Igniter.create_new_file(acc, path, content, on_exists: :overwrite)
-      end)
+      files =
+        case AshR2RML.SemanticTypes.Generator.igniter_files(plan, app_name) do
+          {:ok, files} -> files
+          {:error, reason} -> Mix.raise("semantic type generation failed: #{inspect(reason)}")
+        end
 
-      Igniter.add_notice(igniter, "Semantic type plan #{plan.id} admitted; generated projections remain CONSTRUCT-only.")
+      igniter =
+        Enum.reduce(files, igniter, fn {path, content}, acc ->
+          Igniter.create_new_file(acc, path, content, on_exists: :overwrite)
+        end)
+
+      Igniter.add_notice(
+        igniter,
+        "Semantic type plan #{plan.id} admitted; generated projections remain CONSTRUCT-only."
+      )
     end
   end
 else
@@ -34,7 +42,9 @@ else
     @shortdoc "Explains how to enable the Igniter semantic type generator"
     @impl Mix.Task
     def run(_args) do
-      Mix.raise("ash_r2rml.gen.semantic_types requires Igniter; add {:igniter, \"~> 0.6\", only: [:dev, :test]} or run through mix igniter.install")
+      Mix.raise(
+        "ash_r2rml.gen.semantic_types requires Igniter; add {:igniter, \"~> 0.6\", only: [:dev, :test]} or run through mix igniter.install"
+      )
     end
   end
 end

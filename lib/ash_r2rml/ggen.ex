@@ -53,13 +53,14 @@ defmodule AshR2RML.Ggen do
   def compile_semantic_types_bundle(source, opts \\ []) do
     with {:ok, plan} <- AshR2RML.SemanticTypes.plan(source, opts),
          {:ok, files} <- AshR2RML.SemanticTypes.Generator.files(plan, opts),
-         {:ok, receipt_json} <- encode_json(%{
-           plan_id: plan.id,
-           standing: :construct_only,
-           status: :PARTIAL_ALIVE,
-           providers: plan.providers,
-           type_ids: Enum.map(plan.types, & &1.id)
-         }) do
+         {:ok, receipt_json} <-
+           encode_json(%{
+             plan_id: plan.id,
+             standing: :construct_only,
+             status: :PARTIAL_ALIVE,
+             providers: plan.providers,
+             type_ids: Enum.map(plan.types, & &1.id)
+           }) do
       {:ok,
        %{
          status: :PARTIAL_ALIVE,
