@@ -19,16 +19,19 @@ jobs:
   manufacture:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      SUBJECT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - name: Checkout exact consumer subject
         uses: actions/checkout@v4
         with:
+          ref: ${{ env.SUBJECT_SHA }}
           persist-credentials: false
 
       - name: Record exact consumer subject
         run: |
-          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
-          printf 'consumer=%s\n' "${GITHUB_SHA}"
+          test "$(git rev-parse HEAD)" = "${SUBJECT_SHA}"
+          printf 'consumer=%s\n' "${SUBJECT_SHA}"
           printf 'producer=%s\n' "ddfa602bfbab57b7ed5150f61b0acac7a41e3020"
 
       - name: Resolve exact ggen producer
