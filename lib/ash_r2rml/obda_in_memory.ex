@@ -18,6 +18,13 @@ defmodule AshR2RML.OBDA.InMemory do
   algebra) against that graph. No hand-rolled query language, no partial BGP
   matcher standing in for SPARQL.
 
+  Before any read result reaches graph construction, each mapping is passed through
+  `AshR2RML.Security.sanitize_in_memory_mapping/2`. That is an admission boundary, not
+  post-hoc redaction: a mapped field that no longer resolves to a real Ash attribute
+  (for example an `ash_cloak` encrypted attribute replaced by a decrypting calculation)
+  is structurally absent from the materialization mapping. A calculation becoming loaded
+  by default therefore does not manufacture RDF-publication authority for its plaintext.
+
   Because there is no data-layer check anywhere in this module, it works against any
   real Ash data layer a resource happens to use -- confirmed for real (not just by
   absence-of-a-check) against `Ash.DataLayer.Ets`, `AshCsv.DataLayer`, and
@@ -55,6 +62,7 @@ defmodule AshR2RML.OBDA.InMemory do
 
   alias AshR2RML.Mapping.{JoinCondition, PredicateObjectMap, ReferenceObjectMap, Resource, SubjectMap}
   alias AshR2RML.Refusal
+  alias AshR2RML.Security
   alias AshR2RML.SPARQL.{Local, Observation}
 
   @type spec :: {ash_resource :: module(), mapping_resource :: Resource.t()}
@@ -64,8 +72,8 @@ defmodule AshR2RML.OBDA.InMemory do
   into an `RDF.Graph` shaped by `mapping_resource`.
 
   `read_opts` is passed through to `Ash.read!/2` verbatim (e.g. `domain:`,
-  `actor:`) so this always executes a real Ash action against the real ETS
-  table -- never a fabricated row set.
+  `actor:`) so this always executes a real Ash action against the real data layer --
+  never a fabricated row set.
   """
   @spec materialize(module(), Resource.t(), keyword()) :: {:ok, RDF.Graph.t()} | {:error, Refusal.t()}
   def materialize(ash_resource, %Resource{} = mapping_resource, read_opts \\ []) when is_atom(ash_resource) do
@@ -83,9 +91,15 @@ defmodule AshR2RML.OBDA.InMemory do
   """
   @spec materialize_many([spec()], keyword()) :: {:ok, RDF.Graph.t()} | {:error, Refusal.t()}
   def materialize_many(specs, read_opts \\ []) when is_list(specs) do
-    mapping_index = Map.new(specs, fn {ash_resource, mapping_resource} -> {ash_resource, mapping_resource} end)
+    admitted_specs =
+      Enum.map(specs, fn {ash_resource, mapping_resource} ->
+        {ash_resource, Security.sanitize_in_memory_mapping(ash_resource, mapping_resource)}
+      end)
 
-    Enum.reduce_while(specs, {:ok, RDF.Graph.new()}, fn {ash_resource, mapping_resource}, {:ok, graph_acc} ->
+    mapping_index =
+      Map.new(admitted_specs, fn {ash_resource, mapping_resource} -> {ash_resource, mapping_resource} end)
+
+    Enum.reduce_while(admitted_specs, {:ok, RDF.Graph.new()}, fn {ash_resource, mapping_resource}, {:ok, graph_acc} ->
       with {:ok, rows} <- rows_for(ash_resource, mapping_resource, read_opts),
            {:ok, graph} <- add_rows(rows, graph_acc, mapping_resource, mapping_index) do
         {:cont, {:ok, graph}}
@@ -141,7 +155,7 @@ defmodule AshR2RML.OBDA.InMemory do
              Refusal.new(
                :REFUSED_UNSUPPORTED_SPARQL_FEATURE,
                mapping_resource.ash_resource,
-               "could not read the real ETS-backed resource for materialization",
+               "could not read the real Ash resource for materialization",
                %{exception: Exception.message(exception)}
              )}
         end
