@@ -26,3 +26,21 @@ path = "priv/ocel/**"
 precedence = "closest"
 SPDX-FileCopyrightText = "2026 ash_r2rml contributors <https://github.com/seanchatmangpt/ash_r2rml/graphs/contributors>"
 SPDX-License-Identifier = "MIT"
+
+[[annotations]]
+path = "CLAUDE.md"
+precedence = "closest"
+SPDX-FileCopyrightText = "2026 ash_r2rml contributors <https://github.com/seanchatmangpt/ash_r2rml/graphs/contributors>"
+SPDX-License-Identifier = "MIT"
+
+[[annotations]]
+path = "ash_r2rml-0.1.0.tar"
+precedence = "closest"
+SPDX-FileCopyrightText = "2026 ash_r2rml contributors <https://github.com/seanchatmangpt/ash_r2rml/graphs/contributors>"
+SPDX-License-Identifier = "MIT"
+
+[[annotations]]
+path = "test/type_override_contract_test.exs"
+precedence = "closest"
+SPDX-FileCopyrightText = "2026 ash_r2rml contributors <https://github.com/seanchatmangpt/ash_r2rml/graphs/contributors>"
+SPDX-License-Identifier = "MIT"
