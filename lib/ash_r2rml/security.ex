@@ -4,73 +4,116 @@
 
 defmodule AshR2RML.Security do
   @moduledoc """
-  Closes a specific, demonstrated gap structurally rather than only documenting it: Ash field
-  policies are enforced only on Ash-mediated reads (`AshR2RML.OBDA.InMemory` calling
-  `Ash.read!/2`). Ontop connects to a relational data layer directly over JDBC and has no
-  concept of an Ash actor at all, so a `field_policy`-protected attribute mapped into R2RML
-  would be returned in full to any SPARQL caller once deployed -- confirmed against a live
-  Postgres + Ontop stack, not assumed.
+  Structural security transforms for semantic publication surfaces.
 
-  `sanitize_mapping/2` is wired into `AshR2RML.Compiler.compile_resources/1` (the Ash-first
-  compilation path over real, compiled Ash resource modules): on an `AshPostgres.DataLayer`-
-  backed resource, any R2RML-mapped attribute that also carries an explicit `field_policy` is
-  removed from the mapping *before* it can ever be rendered to R2RML or handed to Ontop -- the
-  attribute is structurally absent from that path rather than merely refused-and-explained.
-  The exclusion is recorded in `mapping.metadata[:field_policy_excluded_attributes]` so it
-  stays auditable instead of silently invisible. `Ash.DataLayer.Ets`-backed resources are
-  untouched, because `AshR2RML.OBDA.InMemory` already enforces field policies for real there.
+  Two independently observed authority gaps are closed here instead of being left to callers:
 
-  This does not attempt to distinguish an unconditionally-granting field policy
-  (`authorize_if always()`) from a genuinely conditional one -- doing so would require
-  inspecting Ash's internal check AST, which is fragile across Ash versions. Any explicit
-  `field_policy` declared on an R2RML-mapped attribute is excluded, full stop: an over-broad
-  exclusion costs the resource author one metadata entry to review; an under-broad one
-  silently ships the exact vulnerability this module exists to close.
+  * Ash field policies are enforceable on Ash-mediated reads but not by Ontop's direct JDBC
+    path. `sanitize_mapping/2` therefore removes field-policy-protected predicate maps from
+    AshPostgres-backed mappings before R2RML rendering.
+  * Ash extensions may replace an admitted attribute with a calculation under the same public
+    name. `ash_cloak` does exactly this: the plaintext field becomes a decryption calculation
+    while ciphertext lives in `encrypted_<name>`, and `decrypt_by_default` can load that
+    calculation during an ordinary `Ash.read!/2`. `sanitize_in_memory_mapping/2` therefore
+    removes any predicate map whose `attribute` no longer resolves to a real Ash attribute at
+    execution time before `AshR2RML.OBDA.InMemory` can materialize the row.
+
+  The second rule is intentionally extension-agnostic. A mapping property is admitted as an
+  Ash *attribute* projection; a calculation, aggregate, or extension-manufactured derived
+  field does not gain RDF-publication authority merely because it occupies the same struct
+  key after a read. The removal is recorded in
+  `mapping.metadata[:in_memory_non_attribute_excluded_attributes]` for auditability.
   """
 
   alias AshR2RML.Mapping.Resource
 
   @doc """
   Returns `mapping` unchanged unless `ash_resource` is `AshPostgres.DataLayer`-backed with
-  R2RML-mapped attributes that also carry an explicit `field_policy` -- those attributes'
-  `predicate_object_maps` are removed and the exclusion recorded in
-  `mapping.metadata[:field_policy_excluded_attributes]`.
+  R2RML-mapped attributes that also carry an explicit `field_policy`. Such attributes are
+  removed and recorded in `mapping.metadata[:field_policy_excluded_attributes]` because
+  Ontop/JDBC has no Ash actor with which to enforce the policy.
   """
   @spec sanitize_mapping(module(), Resource.t()) :: Resource.t()
   def sanitize_mapping(ash_resource, %Resource{} = mapping) when is_atom(ash_resource) do
     if AshR2RML.DataLayer.backend(ash_resource) == :postgres do
-      ash_resource |> unenforceable_attributes(mapping) |> then(&remove_attributes(mapping, &1))
+      ash_resource
+      |> unenforceable_attributes(mapping)
+      |> then(&remove_attributes(mapping, &1, :field_policy_excluded_attributes))
     else
       mapping
     end
   end
 
   @doc """
-  Pure transform: removes `attributes`' `predicate_object_maps` from `mapping` and records the
-  removal in `mapping.metadata[:field_policy_excluded_attributes]`. `[]` is a no-op returning
-  `mapping` unchanged. Decoupled from the `AshPostgres.DataLayer` backend gate in
-  `sanitize_mapping/2` so the exclusion behavior itself is directly testable without requiring
-  an `AshPostgres.DataLayer`-backed fixture.
+  Fail-closed admission transform for `AshR2RML.OBDA.InMemory`.
+
+  Every scalar predicate map whose declared `attribute` is no longer a real Ash attribute on
+  the compiled resource is removed before graph construction. This closes the demonstrated
+  `ash_cloak` `decrypt_by_default` plaintext leak without depending on `ash_cloak` at runtime
+  or guessing extension-specific names. The same law applies to any future extension that
+  replaces an attribute with a calculation or other derived field.
+  """
+  @spec sanitize_in_memory_mapping(module(), Resource.t()) :: Resource.t()
+  def sanitize_in_memory_mapping(ash_resource, %Resource{} = mapping) when is_atom(ash_resource) do
+    ash_resource
+    |> non_attribute_mapped_fields(mapping)
+    |> then(&remove_attributes(mapping, &1, :in_memory_non_attribute_excluded_attributes))
+  end
+
+  @doc """
+  Returns mapped scalar field names that do not resolve to real Ash attributes on the compiled
+  resource. A returned name may still resolve to a calculation or aggregate; that is exactly
+  why it is not implicitly admitted for RDF publication.
+  """
+  @spec non_attribute_mapped_fields(module(), Resource.t()) :: [atom()]
+  def non_attribute_mapped_fields(ash_resource, %Resource{predicate_object_maps: predicate_object_maps}) do
+    predicate_object_maps
+    |> Enum.map(& &1.attribute)
+    |> Enum.reject(&is_nil/1)
+    |> Enum.uniq()
+    |> Enum.filter(fn attribute ->
+      is_nil(Ash.Resource.Info.attribute(ash_resource, attribute))
+    end)
+  rescue
+    _ ->
+      predicate_object_maps
+      |> Enum.map(& &1.attribute)
+      |> Enum.reject(&is_nil/1)
+      |> Enum.uniq()
+  end
+
+  @doc """
+  Pure transform using the field-policy audit key. Kept for compatibility with the v26.8.25
+  security API.
   """
   @spec remove_attributes(Resource.t(), [atom()]) :: Resource.t()
-  def remove_attributes(%Resource{} = mapping, []), do: mapping
+  def remove_attributes(%Resource{} = mapping, attributes) when is_list(attributes) do
+    remove_attributes(mapping, attributes, :field_policy_excluded_attributes)
+  end
 
-  def remove_attributes(%Resource{predicate_object_maps: predicate_object_maps} = mapping, attributes)
-      when is_list(attributes) do
+  @doc """
+  Pure transform: removes `attributes`' predicate maps and records the exclusion under the
+  supplied metadata key. An empty list is a byte-for-byte semantic no-op.
+  """
+  @spec remove_attributes(Resource.t(), [atom()], atom()) :: Resource.t()
+  def remove_attributes(%Resource{} = mapping, [], _metadata_key), do: mapping
+
+  def remove_attributes(%Resource{predicate_object_maps: predicate_object_maps} = mapping, attributes, metadata_key)
+      when is_list(attributes) and is_atom(metadata_key) do
+    attributes = Enum.uniq(attributes)
     kept = Enum.reject(predicate_object_maps, &(&1.attribute in attributes))
 
     %{
       mapping
       | predicate_object_maps: kept,
-        metadata: Map.put(mapping.metadata, :field_policy_excluded_attributes, attributes)
+        metadata: Map.put(mapping.metadata, metadata_key, attributes)
     }
   end
 
   @doc """
   Returns the R2RML-mapped attributes on `ash_resource` that also carry an explicit Ash
-  `field_policy`, independent of data layer -- `sanitize_mapping/2` gates the actual exclusion
-  on `AshPostgres.DataLayer`. Exposed publicly so it can be verified directly against a
-  resource's real field policies without needing an `AshPostgres.DataLayer`-backed fixture.
+  `field_policy`, independent of data layer. `sanitize_mapping/2` gates the actual exclusion
+  on `AshPostgres.DataLayer`.
   """
   @spec unenforceable_attributes(module(), Resource.t()) :: [atom()]
   def unenforceable_attributes(ash_resource, %Resource{predicate_object_maps: predicate_object_maps}) do
