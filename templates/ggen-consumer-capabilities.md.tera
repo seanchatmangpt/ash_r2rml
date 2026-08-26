@@ -1,0 +1,15 @@
+# AshR2RML GGEN Consumer Capabilities
+
+This reference is generated from `ontology/ggen-consumer-capabilities.ttl`.
+
+{% for row in rows %}
+## {{ row.label }}
+
+- **Entrypoint:** `{{ row.entrypoint }}`
+- **Standing:** `{{ row.standing }}`
+- **Authority:** `{{ row.authority }}`
+- **Meaning:** {{ row.description }}
+
+{% endfor %}
+
+Generated output is a projection. Edit the ontology or this template, never the generated reference.
