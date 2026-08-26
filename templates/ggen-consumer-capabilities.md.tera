@@ -2,7 +2,7 @@
 
 This reference is generated from `ontology/ggen-consumer-capabilities.ttl`.
 
-{% for row in rows %}
+{% for row in results %}
 ## {{ row.label }}
 
 - **Entrypoint:** `{{ row.entrypoint }}`
