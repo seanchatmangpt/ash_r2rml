@@ -12,8 +12,9 @@ concurrency:
 
 # Four gates:
 # - `types` is database-free: compile warnings-as-errors + Dialyzer.
-# - `release-security` is the AshR2RML package/release gate: formatting, compile,
-#   database-free suite (including the real AshCloak R2RML-109 regression), and Hex build.
+# - `release-security` is the AshR2RML package/release gate: deterministic dependency lock,
+#   formatting, compile, database-free suite (including the real AshCloak R2RML-109
+#   regression), and Hex build.
 # - `test` preserves the full inherited Neo4j control suite.
 # - `obda` executes the bounded ontology-first crown against real PostgreSQL,
 #   official Ontop, and the Neo4j control graph. Technical parity still does
@@ -67,6 +68,9 @@ jobs:
 
       - name: Install dependencies
         run: mix deps.get
+
+      - name: Verify dependency lock is deterministic
+        run: git diff --exit-code -- mix.lock
 
       - name: Check formatting
         run: mix format --check-formatted
