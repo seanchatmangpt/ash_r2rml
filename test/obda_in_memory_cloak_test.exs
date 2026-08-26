@@ -119,8 +119,6 @@ defmodule AshR2RML.OBDA.InMemoryCloakTest do
 
   test "real AshCloak decrypt_by_default makes plaintext observable to an ordinary Ash read" do
     {record, secret} = create_secret!()
-
-    [read_record | _] = Ash.read!(SecretRecord, domain: Domain)
     read_record = Enum.find(Ash.read!(SecretRecord, domain: Domain), &(&1.id == record.id))
 
     assert read_record.secret == secret
