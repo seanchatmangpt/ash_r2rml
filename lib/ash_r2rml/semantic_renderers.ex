@@ -7,7 +7,29 @@ defmodule AshR2RML.Semantic.Ash do
 
   alias AshR2RML.SemanticIR.{Relationship, Resource}
 
-  def render(%AshR2RML.SemanticIR{resources: resources}) do
+  @doc """
+  Renders Ash resource source from `ir`.
+
+  `opts` is additive and defaults to producing byte-identical output to before
+  it existed: `graphql: true` and/or `json_api: true` add `AshGraphql.Resource`/
+  `AshJsonApi.Resource` to every resource's `extensions:` list and a minimal,
+  real `graphql do type ... end` / `json_api do type ... end` block per
+  resource, with the type name auto-derived from the same mapping IR that
+  already drives `r2rml`'s `class_iri`/`attribute_mappings` -- no hand-written
+  GraphQL/JSON:API wiring, no new runtime dependency on `ash_graphql`/
+  `ash_json_api` for AshR2RML itself (they are `:test`-only, used here solely
+  to verify the emitted source actually compiles as a real Ash resource).
+
+  This does not "add support" for GraphQL/JSON:API -- any consumer resource
+  can already add those extensions directly, independent of AshR2RML, because
+  Ash extensions compose. This only auto-derives the minimal starting block
+  from the mapping so a resource author doesn't have to invent the type name
+  by hand.
+  """
+  @spec render(AshR2RML.SemanticIR.t(), keyword()) :: {:ok, String.t()}
+  def render(ir, opts \\ [])
+
+  def render(%AshR2RML.SemanticIR{resources: resources}, opts) do
     resources = Enum.sort_by(resources, &module_name(&1.module))
 
     association_modules =
@@ -23,11 +45,11 @@ defmodule AshR2RML.Semantic.Ash do
       end)
 
     {:ok,
-     Enum.map_join(resources, "\n\n", &render_resource(&1, resources)) <>
+     Enum.map_join(resources, "\n\n", &render_resource(&1, resources, opts)) <>
        join_generated(association_modules)}
   end
 
-  defp render_resource(resource, resources) do
+  defp render_resource(resource, resources, opts) do
     attributes = Enum.map_join(resource.attributes, "\n", &render_attribute(resource, &1))
 
     relationships =
@@ -52,14 +74,18 @@ defmodule AshR2RML.Semantic.Ash do
         ""
       end
 
+    extensions = ["AshR2RML"] ++ api_extension_names(opts)
+    api_blocks = render_api_blocks(resource, opts)
+
     """
     defmodule #{module_name(resource.module)} do
       use Ash.Resource,
         domain: nil,
         data_layer: #{data_layer},
-        extensions: [AshR2RML]
+        extensions: [#{Enum.join(extensions, ", ")}]
 
     #{postgres_block}
+    #{api_blocks}
 
       r2rml do
         class_iri #{inspect(resource.class_iri)}
@@ -178,6 +204,60 @@ defmodule AshR2RML.Semantic.Ash do
     end
     """
     |> String.trim()
+  end
+
+  # Derives a minimal, real, compilable `graphql do ... end` / `json_api do ... end` block per
+  # opted-in API kind. The type name is auto-derived from the resource's own module name (the
+  # same identity `class_iri`/`table` already come from) rather than invented separately --
+  # deliberately minimal (just `type`, which both extensions accept as sufficient to expose
+  # every public attribute) rather than an exhaustive field-by-field mirror of `attribute_mappings`,
+  # since the real DSL surface for field-level GraphQL/JSON:API customization is broader than
+  # this mapping IR models and is left for the resource author to extend by hand from here.
+  defp api_extension_names(opts) do
+    [
+      if(Keyword.get(opts, :graphql, false), do: "AshGraphql.Resource"),
+      if(Keyword.get(opts, :json_api, false), do: "AshJsonApi.Resource")
+    ]
+    |> Enum.reject(&is_nil/1)
+  end
+
+  defp render_api_blocks(resource, opts) do
+    type_name = api_type_name(resource)
+
+    graphql_block =
+      if Keyword.get(opts, :graphql, false) do
+        """
+          graphql do
+            type #{inspect(type_name)}
+          end
+
+        """
+      else
+        ""
+      end
+
+    json_api_block =
+      if Keyword.get(opts, :json_api, false) do
+        """
+          json_api do
+            type #{inspect(to_string(type_name))}
+          end
+
+        """
+      else
+        ""
+      end
+
+    graphql_block <> json_api_block
+  end
+
+  defp api_type_name(resource) do
+    resource.module
+    |> module_name()
+    |> String.split(".")
+    |> List.last()
+    |> Macro.underscore()
+    |> String.to_atom()
   end
 
   defp primary_key?(resource, attribute_name) do

@@ -4,17 +4,25 @@
 
 defmodule AshR2RML.OBDA.InMemory do
   @moduledoc """
-  ETS-side OBDA counterpart to `AshR2RML.OBDA.Ontop`.
+  In-process OBDA counterpart to `AshR2RML.OBDA.Ontop`, for any Ash data layer Ontop
+  cannot reach.
 
   Ontop rewrites SPARQL to SQL against a JDBC-connected relational database; that
-  has no analogue for `Ash.DataLayer.Ets`, which exposes no SQL surface at all.
-  Instead of faking Ontop over ETS, this module takes the opposite, honest path:
-  it **materializes** the real rows of one or more ETS-backed Ash resources into a
+  has no analogue for `Ash.DataLayer.Ets` (no SQL surface at all) or, in fact, any
+  non-JDBC-reachable Ash data layer. Instead of faking Ontop, this module takes the
+  opposite, honest path: it **materializes** the real rows of one or more Ash
+  resources -- via a real `Ash.read!/2`, with no data-layer gate of its own -- into a
   real `RDF.Graph` using the canonical mapping IR (`AshR2RML.Mapping.Resource`, the
   same IR the R2RML renderer consumes), then executes the query with the
   already-existing `AshR2RML.SPARQL.Local` engine (`SPARQL.ex`, full SPARQL
   algebra) against that graph. No hand-rolled query language, no partial BGP
   matcher standing in for SPARQL.
+
+  Because there is no data-layer check anywhere in this module, it works against any
+  real Ash data layer a resource happens to use -- confirmed for real (not just by
+  absence-of-a-check) against `Ash.DataLayer.Ets`, `AshCsv.DataLayer`, and
+  `AshCubDB.DataLayer` in `test/obda_in_memory_other_data_layers_test.exs`. The
+  "ETS-side" framing in earlier revisions of this moduledoc undersold that generality.
 
   `query/4` / `materialize/3` handle one resource. `query_many/2` / `materialize_many/2`
   merge several resources' triples into a single graph -- including real `rr:RefObjectMap`

@@ -114,6 +114,10 @@ defmodule AshR2RML.MixProject do
     [
       {:ash, "~> 3.0 and >= 3.28.0"},
       {:ash_postgres, "~> 2.0", only: [:test]},
+      {:ash_graphql, "~> 1.10", only: [:test]},
+      {:ash_json_api, "~> 1.7", only: [:test]},
+      {:ash_csv, "~> 0.9.8", only: [:test]},
+      {:ash_cubdb, "~> 0.6.2", only: [:test]},
       {:spark, ">= 2.7.0"},
       {:rdf, "~> 3.0"},
       {:sparql, "~> 0.3.12"},

@@ -23,7 +23,7 @@ defmodule AshR2RML.Ggen do
   ggen still owns DO.
   """
 
-  alias AshR2RML.Compilation
+  alias AshR2RML.{Compilation, Refusal}
 
   @spec compile_bundle(map()) :: {:ok, map()} | {:error, Compilation.t() | term()}
   def compile_bundle(profile) do
@@ -86,6 +86,29 @@ defmodule AshR2RML.Ggen do
   @spec compile_jsonld_bundle(String.t() | map() | list(), keyword()) :: {:ok, map()} | {:error, term()}
   def compile_jsonld_bundle(jsonld, opts \\ []) do
     with {:ok, profile} <- AshR2RML.JSONLD.ingest(jsonld, opts), do: compile_bundle(profile)
+  end
+
+  @doc """
+  Manufacture a deterministic ggen bundle containing only Ash resource source with
+  auto-derived `graphql do ... end`/`json_api do ... end` blocks, from the same admitted
+  mapping IR `compile_bundle/1` uses -- additive, does not change `compile_bundle/1`'s output.
+
+  This does not add a GraphQL/JSON:API runtime dependency to `AshR2RML` itself: any consumer
+  resource can already add `AshGraphql.Resource`/`AshJsonApi.Resource` directly, independent of
+  AshR2RML, because Ash extensions compose. `opts` is `graphql: true` and/or `json_api: true`
+  (both default `false`); see `AshR2RML.Semantic.Ash.render/2` for exactly what's derived.
+  """
+  @spec compile_api_bundle(map(), keyword()) :: {:ok, map()} | {:error, [Refusal.t()]}
+  def compile_api_bundle(profile, opts \\ []) when is_map(profile) do
+    with {:ok, ir} <- AshR2RML.Admission.admit(profile),
+         {:ok, ash_source} <- AshR2RML.Semantic.Ash.render(ir, opts) do
+      {:ok,
+       %{
+         status: :PARTIAL_ALIVE,
+         standing: :construct_only,
+         files: %{"generated/ash/api_resources.ex" => ash_source}
+       }}
+    end
   end
 
   defp encode_json(value), do: value |> json_term() |> Jason.encode(pretty: true)
