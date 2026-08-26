@@ -37,9 +37,12 @@ jobs:
           git -C "$RUNNER_TEMP/ggen" checkout --detach ddfa602bfbab57b7ed5150f61b0acac7a41e3020
           test "$(git -C "$RUNNER_TEMP/ggen" rev-parse HEAD)" = "ddfa602bfbab57b7ed5150f61b0acac7a41e3020"
 
+      - name: Admit canonical GGEN Rust toolchain
+        run: rustup toolchain install nightly --profile minimal
+
       - name: Manufacture through canonical GGEN
         run: |
-          cargo run --manifest-path "$RUNNER_TEMP/ggen/Cargo.toml" -p ggen-cli-lib --bin ggen -- sync run
+          cargo +nightly run --manifest-path "$RUNNER_TEMP/ggen/Cargo.toml" -p ggen-cli-lib --bin ggen -- sync run
 
       - name: Qualify generated consequence
         run: |
