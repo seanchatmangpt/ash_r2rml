@@ -1,6 +1,9 @@
 name: R88 GGEN Consumer Contract
 
 on:
+  push:
+    branches:
+      - "fanout/r88-ggen-consumer-contract"
   pull_request:
     paths:
       - "ggen.toml"
