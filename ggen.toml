@@ -1,0 +1,65 @@
+[project]
+name = "ash-r2rml"
+version = "26.8.26"
+description = "GGEN manufacturing contract for AshR2RML semantic compilation capabilities"
+
+[ontology]
+source = "ontology/ggen-consumer-capabilities.ttl"
+base_iri = "https://ash-r2rml.dev/ontology/ggen-consumer#"
+
+[ontology.prefixes]
+ar = "https://ash-r2rml.dev/ontology/ggen-consumer#"
+skos = "http://www.w3.org/2004/02/skos/core#"
+dcterms = "http://purl.org/dc/terms/"
+prov = "http://www.w3.org/ns/prov#"
+
+[inference]
+
+[[inference.rules]]
+name = "consumer-capability-projection"
+construct = """
+PREFIX ar: <https://ash-r2rml.dev/ontology/ggen-consumer#>
+PREFIX dcterms: <http://purl.org/dc/terms/>
+PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+CONSTRUCT {
+  ?cap a skos:Concept ;
+       skos:prefLabel ?label ;
+       dcterms:description ?description ;
+       ar:entrypoint ?entrypoint ;
+       ar:standing ?standing ;
+       ar:authority ?authority .
+}
+WHERE {
+  ?cap a skos:Concept ;
+       skos:prefLabel ?label ;
+       dcterms:description ?description ;
+       ar:entrypoint ?entrypoint ;
+       ar:standing ?standing ;
+       ar:authority ?authority .
+}
+ORDER BY ?entrypoint
+"""
+
+[generation]
+output_dir = "."
+
+[[generation.rules]]
+name = "ggen-consumer-capabilities-reference"
+query = { inline = """
+PREFIX ar: <https://ash-r2rml.dev/ontology/ggen-consumer#>
+PREFIX dcterms: <http://purl.org/dc/terms/>
+PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+SELECT ?label ?description ?entrypoint ?standing ?authority
+WHERE {
+  ?cap a skos:Concept ;
+       skos:prefLabel ?label ;
+       dcterms:description ?description ;
+       ar:entrypoint ?entrypoint ;
+       ar:standing ?standing ;
+       ar:authority ?authority .
+}
+ORDER BY ?entrypoint
+""" }
+template = { file = "templates/ggen-consumer-capabilities.md.tera" }
+output_file = "documentation/reference/ggen-consumer-capabilities.md"
+mode = "Overwrite"
