@@ -1,0 +1,5 @@
+PREFIX ar: <https://seanchatman.github.io/ash-r2rml/paas#>
+SELECT ?resource WHERE {
+  ?resource a ar:AshResourceContract .
+  FILTER NOT EXISTS { ?resource ar:sparkDslVersion ?version }
+}

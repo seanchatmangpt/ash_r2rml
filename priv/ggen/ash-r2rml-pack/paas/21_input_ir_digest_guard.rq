@@ -1,0 +1,5 @@
+PREFIX ar: <https://seanchatman.github.io/ash-r2rml/paas#>
+SELECT ?step WHERE {
+  ?step a ar:ConsequentialReactorStep .
+  FILTER NOT EXISTS { ?step ar:inputIrDigest ?digest }
+}

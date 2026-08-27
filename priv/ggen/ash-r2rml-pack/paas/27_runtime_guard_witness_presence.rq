@@ -1,0 +1,11 @@
+PREFIX ar: <https://seanchatman.github.io/ash-r2rml/paas#>
+SELECT ?witness ?class WHERE {
+  VALUES (?witness ?class) {
+    (ar:ReactorGuardWitness ar:ConsequentialReactorStep)
+    (ar:ResourceGuardWitness ar:AshResourceContract)
+  }
+  FILTER NOT EXISTS {
+    ?witness a ?class, ar:QualificationWitness ;
+      ar:qualificationOnly true .
+  }
+}
