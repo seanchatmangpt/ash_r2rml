@@ -1,0 +1,7 @@
+@prefix ar: <https://seanchatman.github.io/ash-r2rml/paas#> .
+
+ar:ReactorContract a ar:PaaSContract ;
+  ar:orchestrationOwner "Ash.Reactor" ;
+  ar:requiresDependencyOrder true ;
+  ar:requiresRollbackSemantics true ;
+  ar:requiresReceiptedConsequentialExecution true .

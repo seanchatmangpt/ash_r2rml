@@ -1,0 +1,7 @@
+@prefix ar: <https://seanchatman.github.io/ash-r2rml/paas#> .
+
+ar:IgniterInstallContract a ar:PaaSContract ;
+  ar:installationOwner "Igniter" ;
+  ar:requiresIdempotentInstall true ;
+  ar:requiresExactDependencyIntent true ;
+  ar:generatedProjectionOnly true .
