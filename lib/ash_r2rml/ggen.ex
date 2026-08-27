@@ -20,6 +20,8 @@ defmodule AshR2RML.Ggen do
 
   Semantic types use the same boundary: `compile_semantic_types_bundle/2`
   admits a content-addressed plan and returns deterministic generated artifacts.
+  Runtime integration uses `compile_runtime_contract/1` to manufacture the exact-subject,
+  authority-bound input consumed by the marketplace runtime integration pack.
   ggen still owns DO.
   """
 
@@ -75,6 +77,10 @@ defmodule AshR2RML.Ggen do
   @doc "Manufacture cloud-ggen TTL inputs directly from one or more Ash resources."
   @spec compile_ash_ttl_bundle(module() | [module()] | AshR2RML.Mapping.Bundle.t()) :: {:ok, map()} | {:error, term()}
   defdelegate compile_ash_ttl_bundle(resources_or_bundle), to: AshR2RML.Ggen.TTL, as: :emit
+
+  @doc "Manufacture an exact-subject runtime integration contract for the GGen marketplace pack."
+  @spec compile_runtime_contract(map()) :: {:ok, map()} | {:error, atom()}
+  defdelegate compile_runtime_contract(input), to: AshR2RML.GgenRuntime, as: :contract
 
   @doc "Parse an RDF/SHACL Turtle profile, then manufacture the same deterministic ggen bundle."
   @spec compile_turtle_bundle(String.t(), keyword()) :: {:ok, map()} | {:error, term()}

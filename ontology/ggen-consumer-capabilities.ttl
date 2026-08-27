@@ -33,6 +33,14 @@ ar:api-ggen a skos:Concept ;
   ar:standing "construct_only" ;
   ar:authority "SELECT_CONSTRUCT_ONLY" .
 
+ar:runtime-integration-ggen a skos:Concept ;
+  skos:prefLabel "Ash runtime integration GGEN contract" ;
+  dcterms:description "Exact-subject, authority-bound runtime integration input for the ash-runtime-integration-contract-pack; constructs deterministic GGen input without runtime actuation." ;
+  ar:entrypoint "AshR2RML.GgenRuntime.contract/1" ;
+  ar:standing "construct_only" ;
+  ar:authority "SELECT_CONSTRUCT_ONLY" ;
+  dcterms:relation <https://github.com/seanchatmangpt/ggen-marketplace/tree/main/packs/ash-runtime-integration-contract-pack> .
+
 ar:entrypoint a <http://www.w3.org/1999/02/22-rdf-syntax-ns#Property> .
 ar:standing a <http://www.w3.org/1999/02/22-rdf-syntax-ns#Property> .
 ar:authority a <http://www.w3.org/1999/02/22-rdf-syntax-ns#Property> .
