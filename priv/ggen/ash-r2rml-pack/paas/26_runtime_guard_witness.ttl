@@ -1,0 +1,24 @@
+@prefix ar: <https://seanchatman.github.io/ash-r2rml/paas#> .
+
+# Qualification-only specimen. This is not an executed Reactor step or actuation record.
+ar:ReactorGuardWitness a ar:ConsequentialReactorStep, ar:QualificationWitness ;
+  ar:qualificationOnly true ;
+  ar:transactionIdentity "qualification-only" ;
+  ar:compensationIdentity "qualification-only" ;
+  ar:retryPolicy "qualification-only" ;
+  ar:timeoutBudget "qualification-only" ;
+  ar:idempotencyIdentity "qualification-only" ;
+  ar:ashActionIdentity "qualification-only" ;
+  ar:ashDomainIdentity "qualification-only" ;
+  ar:tenantIdentity "qualification-only" ;
+  ar:authorizationWitness "qualification-only" ;
+  ar:errorMappingIdentity "qualification-only" ;
+  ar:inputIrDigest "qualification-only" ;
+  ar:outputIrDigest "qualification-only" ;
+  ar:replayIdentity "qualification-only" .
+
+# Qualification-only specimen. This is not a runtime Ash resource observation.
+ar:ResourceGuardWitness a ar:AshResourceContract, ar:QualificationWitness ;
+  ar:qualificationOnly true ;
+  ar:sparkDslVersion "qualification-only" ;
+  ar:igniterVersion "qualification-only" .
