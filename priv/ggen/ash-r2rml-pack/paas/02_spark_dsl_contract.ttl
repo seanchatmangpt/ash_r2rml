@@ -1,0 +1,7 @@
+@prefix ar: <https://seanchatman.github.io/ash-r2rml/paas#> .
+
+ar:SparkDslContract a ar:PaaSContract ;
+  ar:declaresSemanticMetadataThrough "Spark DSL" ;
+  ar:requiresCompileTimeValidation true ;
+  ar:directR2RMLFromScatteredInspection false ;
+  ar:normalizesThroughIR true .
