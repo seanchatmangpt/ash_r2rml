@@ -1,0 +1,5 @@
+PREFIX ar: <https://seanchatman.github.io/ash-r2rml/paas#>
+SELECT ?mapping WHERE {
+  ?mapping a ar:PaaSMapping .
+  FILTER NOT EXISTS { ?mapping ar:normalizedThroughIR true }
+}
