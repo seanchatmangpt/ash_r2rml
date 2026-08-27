@@ -1,0 +1,32 @@
+name: WS4 Runtime Contract Unit Crown
+
+on:
+  pull_request:
+    paths:
+      - 'lib/ash_r2rml/ggen_runtime.ex'
+      - 'lib/ash_r2rml/ggen_runtime/**'
+      - 'lib/ash_r2rml/ggen.ex'
+      - 'test/unit/ggen_runtime*_test.exs'
+      - '.github/workflows/ws4-runtime-contract-unit.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  runtime-contract-unit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact subject
+        uses: actions/checkout@v4
+      - name: Set up exact BEAM toolchain
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: '1.18.4'
+          otp-version: '27.2.4'
+      - name: Install dependencies
+        run: mix deps.get
+      - name: Compile exact candidate
+        run: mix compile --warnings-as-errors
+      - name: Execute runtime contract unit and refusal boundary
+        run: mix test test/unit/ggen_runtime*_test.exs
