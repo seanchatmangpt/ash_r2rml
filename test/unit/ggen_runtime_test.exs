@@ -23,6 +23,18 @@ defmodule AshR2RML.GgenRuntimeTest do
     assert byte_size(first.replay_key) == 64
   end
 
+  test "preserves an explicit replay identity" do
+    assert {:ok, contract} =
+             GgenRuntime.contract(%{
+               subject: %{repo: "seanchatmangpt/ash_r2rml", base: "main", head: "067954ad"},
+               authority: %{policy: "project2", action: "construct"},
+               runtime: %{resource: "Example.Resource", action: "read"},
+               replay_key: "receipt-42"
+             })
+
+    assert contract.replay_key == "receipt-42"
+  end
+
   test "refuses a non-exact subject" do
     assert {:error, :REFUSED_RUNTIME_SUBJECT_NOT_EXACT} =
              GgenRuntime.contract(%{
