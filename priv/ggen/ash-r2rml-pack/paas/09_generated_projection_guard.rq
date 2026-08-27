@@ -1,0 +1,4 @@
+PREFIX ar: <https://seanchatman.github.io/ash-r2rml/paas#>
+SELECT ?artifact WHERE {
+  ?artifact a ar:GeneratedProjection ; ar:editedDirectly true .
+}
