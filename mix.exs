@@ -6,7 +6,7 @@ defmodule AshR2RML.MixProject do
   @moduledoc false
   use Mix.Project
 
-  @version "26.8.25"
+  @version "26.8.26"
   @name "AshR2RML"
   @description "W3C R2RML and RDF semantic mapping compiler for Ash Framework"
   @github_url "https://github.com/seanchatmangpt/ash_r2rml"
@@ -118,6 +118,7 @@ defmodule AshR2RML.MixProject do
       {:ash_json_api, "~> 1.7", only: [:test]},
       {:ash_csv, "~> 0.9.8", only: [:test]},
       {:ash_cubdb, "~> 0.6.2", only: [:test]},
+      {:ash_cloak, "~> 0.3.1", only: [:test]},
       {:spark, ">= 2.7.0"},
       {:rdf, "~> 3.0"},
       {:sparql, "~> 0.3.12"},

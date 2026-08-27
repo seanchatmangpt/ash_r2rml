@@ -10,8 +10,11 @@ concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
-# Three gates:
+# Four gates:
 # - `types` is database-free: compile warnings-as-errors + Dialyzer.
+# - `release-security` is the AshR2RML package/release gate: deterministic dependency lock,
+#   formatting, compile, database-free suite (including the real AshCloak R2RML-109
+#   regression), and Hex build.
 # - `test` preserves the full inherited Neo4j control suite.
 # - `obda` executes the bounded ontology-first crown against real PostgreSQL,
 #   official Ontop, and the Neo4j control graph. Technical parity still does
@@ -46,6 +49,40 @@ jobs:
 
       - name: Dialyzer
         run: mix dialyzer
+
+  release-security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Elixir / Erlang (from .tool-versions)
+        uses: jdx/mise-action@v2
+
+      - name: Cache exact-toolchain deps and build
+        uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+          key: ${{ runner.os }}-mix-${{ hashFiles('.tool-versions') }}-${{ hashFiles('**/mix.lock') }}
+
+      - name: Install dependencies
+        run: mix deps.get
+
+      - name: Verify dependency lock is deterministic
+        run: git diff --exit-code -- mix.lock
+
+      - name: Check formatting
+        run: mix format --check-formatted
+
+      - name: Compile candidate with warnings as errors
+        run: mix compile --force --warnings-as-errors
+
+      - name: Execute database-free release suite
+        run: mix test --exclude external
+
+      - name: Build Hex package
+        run: mix hex.build
 
   test:
     runs-on: ubuntu-latest
