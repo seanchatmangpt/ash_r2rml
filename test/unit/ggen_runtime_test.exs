@@ -23,6 +23,16 @@ defmodule AshR2RML.GgenRuntimeTest do
     assert byte_size(first.replay_key) == 64
   end
 
+  test "canonical Ggen API delegates runtime contract manufacture" do
+    input = %{
+      subject: %{repo: "seanchatmangpt/ash_r2rml", base: "main", head: "067954ad406fd637"},
+      authority: %{policy: "project2", action: "construct"},
+      runtime: %{resource: "Example.Resource", action: "read"}
+    }
+
+    assert AshR2RML.Ggen.compile_runtime_contract(input) == GgenRuntime.contract(input)
+  end
+
   test "preserves an explicit replay identity" do
     assert {:ok, contract} =
              GgenRuntime.contract(%{
