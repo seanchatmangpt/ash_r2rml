@@ -3,6 +3,6 @@ defmodule AshR2RML.WS5.TestSupportCompilePathTest do
 
   test "test environment compiles support modules" do
     source = File.read!("mix.exs")
-    assert source =~ ~s(defp elixirc_paths(:test), do: ["lib", "test/support"])
+    assert source =~ ~s|defp elixirc_paths(:test), do: ["lib", "test/support"]|
   end
 end
