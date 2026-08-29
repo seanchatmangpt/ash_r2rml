@@ -590,7 +590,8 @@ defmodule AshR2RML.Telemetry.OCEL2 do
           Enum.reduce(all_event_objs, obj_acc, fn obj_id, inner_acc ->
             type = extract_object_type(obj_id)
 
-            existing =
+            %Object{} =
+              existing =
               Map.get(inner_acc, obj_id, %Object{
                 id: obj_id,
                 type: type,

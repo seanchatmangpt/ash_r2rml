@@ -40,6 +40,8 @@ defmodule AshR2RML.GrandExample.Domain do
     resource AshR2RML.GrandExample.Organization
     resource AshR2RML.GrandExample.Person
     resource AshR2RML.GrandExample.SemanticManifest
+    resource AshR2RML.GrandExample.Warehouse
+    resource AshR2RML.GrandExample.Shipment
   end
 end
 
@@ -90,6 +92,10 @@ defmodule AshR2RML.GrandExample.Person do
     attribute_mappings([
       {:name, "https://schema.org/name"},
       {:email, "https://schema.org/email"}
+    ])
+
+    relationship_mappings([
+      {:organization, "https://schema.org/memberOf"}
     ])
   end
 
@@ -161,5 +167,90 @@ defmodule AshR2RML.GrandExample.SemanticManifest do
       accept [:status]
       change set_attribute(:status, :draft)
     end
+  end
+end
+
+defmodule AshR2RML.GrandExample.Warehouse do
+  @moduledoc """
+  Composite natural-key parent resource (`{region, code}`) for R2RML-107's real
+  multi-column `rr:joinCondition` test fixture -- `Shipment` below joins to this
+  resource on two columns at once, exercising `AshR2RML.OBDA.InMemory`'s composite-key
+  resolution rather than the single-column foreign-key case every other fixture here
+  already covers.
+
+  Deliberately does **not** use the `AshR2RML` extension/`r2rml` DSL: `VerifyMapping`
+  enforces a real, project-wide invariant that a resource's `subject_template` must
+  contain its physical primary-key placeholder (`{id}`), which is correct for every
+  other fixture here but is exactly the case this composite-key semantic identity
+  (`{region, code}`, not `{id}`) needs to *not* hold -- that is the whole point of a
+  composite natural key. Rather than weakening that invariant (out of this ticket's
+  scope) or fabricating a fake `{id}` placeholder into the template (which would leave
+  an unsubstituted, invalid IRI fragment once the composite join only substitutes
+  `region`/`code`), the test builds this resource's `AshR2RML.Mapping.Resource` by
+  hand -- the same pattern `test/obda_in_memory_test.exs`'s "refuses unsupported
+  subject-map strategies" test already uses -- while every row still comes from a
+  real `Ash.create!`/`Ash.read!` call against this real `Ash.DataLayer.Ets` resource.
+  """
+  use Ash.Resource,
+    domain: AshR2RML.GrandExample.Domain,
+    data_layer: Ash.DataLayer.Ets
+
+  actions do
+    defaults [:read, :update, :destroy]
+
+    create :create do
+      primary? true
+      accept [:region, :code, :name]
+    end
+  end
+
+  attributes do
+    uuid_primary_key :id
+    attribute :region, :string, allow_nil?: false, public?: true
+    attribute :code, :string, allow_nil?: false, public?: true
+    attribute :name, :string, allow_nil?: false, public?: true
+  end
+end
+
+defmodule AshR2RML.GrandExample.Shipment do
+  @moduledoc """
+  Child resource carrying both halves (`:region`, `:warehouse_code`) of a composite
+  foreign key into `Warehouse`'s `{region, code}` natural key. The R2RML DSL's
+  `relationship_mappings` only introspects single-column Ash `belongs_to`
+  `source_attribute`/`destination_attribute` pairs, so this composite relationship
+  is not declared through that macro -- the test constructs the composite
+  `ReferenceObjectMap` by hand against this resource's *real* mapping the same way
+  `test/obda_in_memory_test.exs`'s existing hand-built-mapping tests already do,
+  while every row still comes from a real `Ash.create!`/`Ash.read!` call.
+  """
+  use Ash.Resource,
+    domain: AshR2RML.GrandExample.Domain,
+    data_layer: Ash.DataLayer.Ets,
+    extensions: [AshR2RML]
+
+  r2rml do
+    class_iri("https://schema.org/Shipment")
+    subject_template("https://schema.org/Shipment/{id}")
+    table_name("schema_shipments")
+
+    attribute_mappings([
+      {:tracking_number, "https://schema.org/identifier"}
+    ])
+  end
+
+  actions do
+    defaults [:read, :update, :destroy]
+
+    create :create do
+      primary? true
+      accept [:tracking_number, :region, :warehouse_code]
+    end
+  end
+
+  attributes do
+    uuid_primary_key :id
+    attribute :tracking_number, :string, allow_nil?: false, public?: true
+    attribute :region, :string, allow_nil?: false, public?: true
+    attribute :warehouse_code, :string, allow_nil?: false, public?: true
   end
 end

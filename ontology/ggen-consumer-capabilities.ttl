@@ -1,0 +1,46 @@
+@prefix ar: <https://ash-r2rml.dev/ontology/ggen-consumer#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix prov: <http://www.w3.org/ns/prov#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+ar:ash-r2rml-ggen a skos:Concept ;
+  skos:prefLabel "AshR2RML GGEN consumer" ;
+  dcterms:description "Deterministic semantic compilation boundary that emits a path/content graph for GGEN-owned rendering and actuation." ;
+  ar:entrypoint "AshR2RML.Ggen.compile_bundle/1" ;
+  ar:standing "construct_only" ;
+  ar:authority "SELECT_CONSTRUCT_ONLY" ;
+  prov:wasDerivedFrom <https://github.com/seanchatmangpt/ash_r2rml/blob/263aa768bbc5a933124409ee68f2b9efb9d09a3a/lib/ash_r2rml/ggen.ex> .
+
+ar:semantic-types-ggen a skos:Concept ;
+  skos:prefLabel "Semantic type GGEN bundle" ;
+  dcterms:description "Content-addressed semantic-type plan projected as deterministic generated artifacts." ;
+  ar:entrypoint "AshR2RML.Ggen.compile_semantic_types_bundle/2" ;
+  ar:standing "construct_only" ;
+  ar:authority "SELECT_CONSTRUCT_ONLY" .
+
+ar:ash-first-ggen a skos:Concept ;
+  skos:prefLabel "Ash-first TTL GGEN bundle" ;
+  dcterms:description "Ash resource graph projected to ontology, operational SHACL and R2RML inputs for GGEN." ;
+  ar:entrypoint "AshR2RML.Ggen.compile_ash_ttl_bundle/1" ;
+  ar:standing "construct_only" ;
+  ar:authority "SELECT_CONSTRUCT_ONLY" .
+
+ar:api-ggen a skos:Concept ;
+  skos:prefLabel "Ash API GGEN bundle" ;
+  dcterms:description "Normalized mapping IR projected to verified Ash GraphQL/JSON:API resource source." ;
+  ar:entrypoint "AshR2RML.Ggen.compile_api_bundle/2" ;
+  ar:standing "construct_only" ;
+  ar:authority "SELECT_CONSTRUCT_ONLY" .
+
+ar:runtime-integration-ggen a skos:Concept ;
+  skos:prefLabel "Ash runtime integration GGEN contract" ;
+  dcterms:description "Exact-subject, authority-bound runtime integration input for the ash-runtime-integration-contract-pack; constructs deterministic GGen input without runtime actuation." ;
+  ar:entrypoint "AshR2RML.GgenRuntime.contract/1" ;
+  ar:standing "construct_only" ;
+  ar:authority "SELECT_CONSTRUCT_ONLY" ;
+  dcterms:relation <https://github.com/seanchatmangpt/ggen-marketplace/tree/main/packs/ash-runtime-integration-contract-pack> .
+
+ar:entrypoint a <http://www.w3.org/1999/02/22-rdf-syntax-ns#Property> .
+ar:standing a <http://www.w3.org/1999/02/22-rdf-syntax-ns#Property> .
+ar:authority a <http://www.w3.org/1999/02/22-rdf-syntax-ns#Property> .

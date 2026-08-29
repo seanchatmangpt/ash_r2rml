@@ -29,6 +29,7 @@ defmodule AshR2RML.Refusal do
           | :REFUSED_OCEL2_CONFORMANCE_VIOLATION
           | :UNSUPPORTED_TERM_TYPE
           | :UNSUPPORTED_ASH_TYPE
+          | :REFUSED_UNSUPPORTED_SPARQL_FEATURE
 
   @type t :: %__MODULE__{
           code: code(),

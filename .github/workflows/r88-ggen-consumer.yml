@@ -1,0 +1,60 @@
+name: R88 GGEN Consumer Contract
+
+on:
+  push:
+    branches:
+      - "fanout/r88-ggen-consumer-contract"
+  pull_request:
+    paths:
+      - "ggen.toml"
+      - "ontology/ggen-consumer-capabilities.ttl"
+      - "templates/ggen-consumer-capabilities.md.tera"
+      - ".github/workflows/r88-ggen-consumer.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  manufacture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SUBJECT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Checkout exact consumer subject
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SUBJECT_SHA }}
+          persist-credentials: false
+
+      - name: Record exact consumer subject
+        run: |
+          test "$(git rev-parse HEAD)" = "${SUBJECT_SHA}"
+          printf 'consumer=%s\n' "${SUBJECT_SHA}"
+          printf 'producer=%s\n' "ddfa602bfbab57b7ed5150f61b0acac7a41e3020"
+
+      - name: Resolve exact ggen producer
+        run: |
+          git clone --filter=blob:none https://github.com/seanchatmangpt/ggen.git "$RUNNER_TEMP/ggen"
+          git -C "$RUNNER_TEMP/ggen" checkout --detach ddfa602bfbab57b7ed5150f61b0acac7a41e3020
+          test "$(git -C "$RUNNER_TEMP/ggen" rev-parse HEAD)" = "ddfa602bfbab57b7ed5150f61b0acac7a41e3020"
+
+      - name: Admit canonical GGEN Rust toolchain
+        run: rustup toolchain install nightly --profile minimal
+
+      - name: Manufacture through canonical GGEN
+        run: |
+          cargo +nightly run --manifest-path "$RUNNER_TEMP/ggen/Cargo.toml" -p ggen-cli-lib --bin ggen -- sync run
+
+      - name: Qualify generated consequence
+        run: |
+          test -s documentation/reference/ggen-consumer-capabilities.md
+          grep -q 'Ash-first TTL GGEN bundle' documentation/reference/ggen-consumer-capabilities.md
+          grep -q 'AshR2RML.Ggen.compile_bundle/1' documentation/reference/ggen-consumer-capabilities.md
+          test -s .ggen-v2/receipt.json
+
+      - name: Preserve authority boundary
+        run: |
+          grep -q 'SELECT_CONSTRUCT_ONLY' ontology/ggen-consumer-capabilities.ttl
+          ! grep -R --line-number -E '(deploy|release|publish|kubectl|terraform apply)' ggen.toml ontology/ggen-consumer-capabilities.ttl templates/ggen-consumer-capabilities.md.tera

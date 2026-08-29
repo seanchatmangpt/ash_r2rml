@@ -10,7 +10,7 @@ This subtree is governed by the root `AGENTS.md` plus the following migration ru
 
 ## Purpose
 
-`AshR2RML` is an additive W3C R2RML/SHACL semantic compiler for Ash. It is not a replacement data layer. Existing `AshNeo4j.DataLayer`, future `AshPostgres.DataLayer`, and any other storage implementation retain persistence and transaction authority.
+`AshR2RML` is a W3C R2RML/SHACL semantic compiler for Ash. It is not a replacement data layer. Existing `AshPostgres.DataLayer`, in-memory ETS layers, and any other storage implementation retain persistence and transaction authority.
 
 The mature source of truth is **not** hand-written Ash and is **not** the `r2rml do ... end` block. The canonical object is an admitted closed operational ontology/application profile represented as `AshR2RML.SemanticIR`.
 

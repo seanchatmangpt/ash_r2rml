@@ -1,0 +1,7 @@
+@prefix ar: <https://seanchatman.github.io/ash-r2rml/paas#> .
+
+ar:CorrespondenceContract a ar:PaaSContract ;
+  ar:preserves "Ash,relational,IR,R2RML,SHACL,OBDA" ;
+  ar:requiresExplicitDatatype true ;
+  ar:requiresStableJoinIdentity true ;
+  ar:requiresSemanticRoundTrip true .

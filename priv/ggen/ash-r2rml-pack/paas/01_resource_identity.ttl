@@ -1,0 +1,7 @@
+@prefix ar: <https://seanchatman.github.io/ash-r2rml/paas#> .
+
+ar:ResourceIdentityContract a ar:PaaSContract ;
+  ar:requiresAshResourceIdentity true ;
+  ar:requiresSemanticClassIdentity true ;
+  ar:requiresStableSubjectIdentity true ;
+  ar:normalizesThroughIR true .

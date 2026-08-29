@@ -544,10 +544,6 @@ defmodule AshR2RML.Resource.Info do
     match?({:ok, _}, mapping_result(resource))
   end
 
-  def neo4j_control_present?(resource) do
-    mapped?(resource)
-  end
-
   @spec sparql_queries(module()) :: [AshR2RML.Dsl.SparqlQuery.t()]
   def sparql_queries(resource) do
     Spark.Dsl.Extension.get_entities(resource, [:sparql])

@@ -121,16 +121,20 @@ defmodule AshR2RML.Compiler do
   @spec explore(map()) :: {:ok, SemanticIR.t()} | {:error, [Refusal.t()]}
   def explore(profile), do: Admission.admit(profile)
 
-  @spec compile(map() | module() | [module()]) ::
+  @spec compile(map() | module() | [module()], keyword()) ::
           {:ok, Compilation.t() | AshR2RML.Mapping.Bundle.t()} | {:error, Compilation.t() | Refusal.t()}
-  def compile(resources) when is_atom(resources) or is_list(resources) do
+  def compile(resources, opts \\ [])
+
+  def compile(resources, _opts) when is_atom(resources) or is_list(resources) do
     case compile_resources(resources) do
       {:ok, bundle} -> {:ok, bundle}
       {:error, refusal} -> {:error, refusal}
     end
   end
 
-  def compile(profile) when is_map(profile) do
+  def compile(profile, opts) when is_map(profile) do
+    storage_backend = Keyword.get(opts, :storage_backend, :postgres)
+
     case Admission.admit(profile) do
       {:error, refusals} ->
         {:error,
@@ -144,7 +148,7 @@ defmodule AshR2RML.Compiler do
       {:ok, ir} ->
         case projection_refusals(ir) do
           [] ->
-            render_all(ir)
+            render_all(ir, storage_backend)
 
           refusals ->
             {:error,
@@ -232,16 +236,16 @@ defmodule AshR2RML.Compiler do
     end
   end
 
-  defp render_all(ir) do
+  defp render_all(ir, storage_backend) do
     with {:ok, mapping_bundle} <- AshR2RML.SemanticAdapter.to_mapping(ir),
          :ok <- AshR2RML.Mapping.validate(mapping_bundle),
          {:ok, ash_source} <- AshR2RML.Semantic.Ash.render(ir),
          {:ok, ecto_migration} <- AshR2RML.Semantic.Ecto.render(ir),
-         {:ok, postgres_ddl} <- AshR2RML.Semantic.SQL.render(ir),
+         {:ok, postgres_ddl} <- render_storage_ddl(ir, storage_backend),
          {:ok, r2rml} <- AshR2RML.R2RML.render(mapping_bundle),
          {:ok, shacl} <- AshR2RML.Semantic.SHACL.render(ir) do
       compilation_receipt =
-        receipt(ir, mapping_bundle, ash_source, ecto_migration, postgres_ddl, r2rml, shacl)
+        receipt(ir, mapping_bundle, ash_source, ecto_migration, postgres_ddl, r2rml, shacl, storage_backend)
 
       {:ok,
        %Compilation{
@@ -331,7 +335,15 @@ defmodule AshR2RML.Compiler do
     end)
   end
 
-  defp receipt(ir, mapping_bundle, ash_source, ecto_migration, postgres_ddl, r2rml, shacl) do
+  # `:postgres` renders a real W3C-standard-adjacent SQL DDL projection via
+  # `AshR2RML.Semantic.SQL.render/1`. `:ets` needs no DDL at all -- Ash + `Ash.DataLayer.Ets`
+  # own storage automatically -- so this deliberately returns `{:ok, nil}` rather than a
+  # BLOCKED/refused outcome; `postgres_ddl: nil` on the resulting `Compilation`/receipt is
+  # expected, not a failure, when compiling for the ETS backend.
+  defp render_storage_ddl(_ir, :ets), do: {:ok, nil}
+  defp render_storage_ddl(ir, :postgres), do: AshR2RML.Semantic.SQL.render(ir)
+
+  defp receipt(ir, mapping_bundle, ash_source, ecto_migration, postgres_ddl, r2rml, shacl, storage_backend) do
     resources = ir.resources
 
     %CompilationReceipt{
@@ -357,16 +369,19 @@ defmodule AshR2RML.Compiler do
       policies_admitted: Enum.sum(Enum.map(resources, &length(&1.policies))),
       storage_candidates: storage_map(resources, & &1.storage_candidates),
       selected_storage: storage_map(resources, & &1.storage_strategy),
-      executed: [
-        :admission,
-        :semantic_ir,
-        :canonical_mapping_ir,
-        :ash_render,
-        :ecto_render,
-        :postgres_render,
-        :r2rml_render,
-        :shacl_render
-      ],
+      executed:
+        [
+          :admission,
+          :semantic_ir,
+          :canonical_mapping_ir,
+          :ash_render,
+          :ecto_render
+        ] ++
+          storage_render_step(storage_backend) ++
+          [
+            :r2rml_render,
+            :shacl_render
+          ],
       verified: [:canonical_mapping_ir_projection, :deterministic_render_identity],
       blocked: [
         :sparql_sql_behavioral_parity,
@@ -396,6 +411,9 @@ defmodule AshR2RML.Compiler do
       refusals: refusals
     }
   end
+
+  defp storage_render_step(:postgres), do: [:postgres_render]
+  defp storage_render_step(:ets), do: [:postgres_ddl_skipped_ets_backend]
 
   defp storage_map(resources, value_fun) do
     Map.new(
@@ -441,6 +459,7 @@ defmodule AshR2RML.Compiler do
     else
       case AshR2RML.Resource.Info.mapping_result(resource) do
         {:ok, mapping} ->
+          mapping = AshR2RML.Security.sanitize_mapping(resource, mapping)
           destinations = Enum.map(mapping.reference_object_maps, & &1.parent_resource) |> Enum.reject(&is_nil/1)
 
           do_closure(

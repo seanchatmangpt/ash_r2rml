@@ -1,13 +1,6 @@
-# SPDX-FileCopyrightText: 2025 ash_neo4j contributors <https://github.com/diffo-dev/ash_neo4j/graphs.contributors>
+# SPDX-FileCopyrightText: 2026 ash_r2rml contributors <https://github.com/seanchatmangpt/ash_r2rml/graphs/contributors>
 #
 # SPDX-License-Identifier: MIT
-
-spark_locals_without_parens = [
-  guard: 1,
-  label: 1,
-  relate: 1,
-  skip: 1
-]
 
 [
   import_deps: [:ash],
@@ -17,10 +10,6 @@ spark_locals_without_parens = [
   trailing_comma: true,
   local_pipe_with_parens: true,
   single_clause_on_do: true,
-  locals_without_parens: spark_locals_without_parens,
-  export: [
-    locals_without_parens: spark_locals_without_parens
-  ],
   spark: [
     extensions: [AshR2RML.Resource]
   ]

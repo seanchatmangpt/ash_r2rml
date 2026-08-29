@@ -11,9 +11,40 @@ defmodule AshR2RML.DataLayer do
   to prevent redundant DSL annotations.
   """
 
-  @doc "Extracts physical relational table name from resource data layer metadata."
+  @doc "Identifies which Ash data layer backs a resource: `:postgres`, `:ets`, or `:unknown`."
+  @spec backend(module()) :: :postgres | :ets | :unknown
+  def backend(resource) when is_atom(resource) do
+    cond do
+      not Code.ensure_loaded?(Ash.Resource.Info) ->
+        :unknown
+
+      not function_exported?(Ash.Resource.Info, :data_layer, 1) ->
+        :unknown
+
+      true ->
+        case Ash.Resource.Info.data_layer(resource) do
+          AshPostgres.DataLayer -> :postgres
+          Ash.DataLayer.Ets -> :ets
+          _other -> :unknown
+        end
+    end
+  rescue
+    _ -> :unknown
+  end
+
+  @doc "Extracts physical table name from resource data layer metadata."
   @spec table_name(module()) :: String.t()
   def table_name(resource) when is_atom(resource) do
+    case backend(resource) do
+      :postgres -> postgres_table_name(resource)
+      :ets -> ets_table_name(resource)
+      :unknown -> generic_table_name(resource)
+    end
+  rescue
+    _ -> default_table_name(resource)
+  end
+
+  defp postgres_table_name(resource) do
     cond do
       function_exported?(resource, :ash_postgres_table, 0) ->
         to_string(resource.ash_postgres_table())
@@ -21,14 +52,32 @@ defmodule AshR2RML.DataLayer do
       Code.ensure_loaded?(AshPostgres.DataLayer) and function_exported?(AshPostgres.DataLayer, :table, 1) ->
         to_string(apply(AshPostgres.DataLayer, :table, [resource]))
 
+      true ->
+        generic_table_name(resource)
+    end
+  end
+
+  defp ets_table_name(resource) do
+    cond do
+      Code.ensure_loaded?(Ash.DataLayer.Ets) and function_exported?(Ash.DataLayer.Ets, :table, 1) ->
+        to_string(apply(Ash.DataLayer.Ets, :table, [resource]))
+
       function_exported?(resource, :table, 0) ->
         to_string(resource.table())
 
       true ->
         default_table_name(resource)
     end
-  rescue
-    _ -> default_table_name(resource)
+  end
+
+  defp generic_table_name(resource) do
+    cond do
+      function_exported?(resource, :table, 0) ->
+        to_string(resource.table())
+
+      true ->
+        default_table_name(resource)
+    end
   end
 
   @doc "Extracts database schema name if configured on data layer."

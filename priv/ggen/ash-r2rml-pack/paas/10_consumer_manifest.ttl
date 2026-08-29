@@ -1,0 +1,8 @@
+@prefix ar: <https://seanchatman.github.io/ash-r2rml/paas#> .
+
+ar:ConsumerManifest a ar:PaaSConsumerManifest ;
+  ar:projectNumber 2 ;
+  ar:repo "seanchatmangpt/ash_r2rml" ;
+  ar:ggenPrimitive "governed-paas-consumer" ;
+  ar:ashSurface "Resource,Spark,Igniter,Reactor" ;
+  ar:normalizesThroughIR true .
