@@ -11,6 +11,17 @@ See [Conventional Commits](Https://conventionalcommits.org) for commit guideline
 
 <!-- changelog -->
 
+## [v26.8.29](https://github.com/seanchatmangpt/ash_r2rml/releases/tag/v26.8.29) (2026-08-28)
+
+### Dependency Updates:
+* `mix deps.update --all`: `ash` 3.29.3 -> 3.32.1, `igniter` 0.8.2 -> 0.8.3, `reactor` 1.0.2 -> 1.0.6, `spark` 2.7.2, `ex_ast` 0.13.1, plus transitive `ecto`/`req`/`mint`/etc bumps. Unlocks `Ash.Type.Range`/`Ash.Type.Duration` (deferred as a candidate in v26.8.28 pending this upgrade).
+
+### Features:
+* **`:duration` datatype mapping**: `AshR2RML.Datatype.Registry` now maps `:duration` / `Ash.Type.Duration` (Ash's builtin ISO-8601-style duration type, added upstream in 3.23) to `xsd:duration`, so resources with duration attributes get a real R2RML/RDF mapping instead of `UNSUPPORTED_ASH_TYPE`.
+
+### Deferred:
+* `Ash.Type.Range` was evaluated but not mapped this release: unlike every other registry entry, it is a parameterized type (`inner_type`/`inner_constraints`/bound-inclusivity constraints, not a fixed atom shorthand), so a lawful mapping needs a real constraint-aware R2RML rendering path (e.g. `xsd:date`/`xsd:dateTime` interval literals or decomposition into `owl-time`-style bound properties), not just a registry table entry. Left `UNSUPPORTED_ASH_TYPE` rather than a lossy placeholder mapping.
+
 ## [v26.8.28](https://github.com/seanchatmangpt/ash_r2rml/releases/tag/v26.8.28) (2026-08-28)
 
 ### Features & Architectural Highlights:
