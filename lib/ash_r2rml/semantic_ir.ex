@@ -178,65 +178,9 @@ defmodule AshR2RML.SemanticIR.Resource do
         }
 end
 
-defmodule AshR2RML.DfCM do
-  @moduledoc "Degree-of-Freedom Calculus for Relationship Storage Topology Selection."
-
-  alias AshR2RML.Refusal
-  alias AshR2RML.SemanticIR.Relationship
-
-  @spec storage_candidates(Relationship.t()) :: [Relationship.storage_strategy()]
-  def storage_candidates(%Relationship{cardinality: :one}) do
-    [:foreign_key, :join_table, :association_resource]
-  end
-
-  def storage_candidates(%Relationship{cardinality: :many}) do
-    [:foreign_key, :join_table, :association_resource, :array, :jsonb, :computed_projection]
-  end
-
-  def storage_candidates(_), do: [:foreign_key, :join_table, :association_resource]
-
-  @spec select(Relationship.t()) :: {:ok, Relationship.t()} | {:error, Refusal.t()}
-  def select(%Relationship{} = relationship) do
-    candidates = storage_candidates(relationship)
-    relationship = %{relationship | storage_candidates: candidates}
-
-    case relationship.storage_strategy do
-      nil ->
-        {:ok, relationship}
-
-      strategy when strategy in [:array, :jsonb, :computed_projection] ->
-        {:error,
-         Refusal.new(
-           :REFUSED_PROJECTION_NOT_IMPLEMENTED,
-           relationship.name,
-           "storage strategy #{inspect(strategy)} is not implemented by current compiler",
-           %{strategy: strategy, candidates: candidates}
-         )}
-
-      strategy when is_atom(strategy) ->
-        if strategy in candidates do
-          {:ok, relationship}
-        else
-          {:error,
-           Refusal.new(
-             :REFUSED_AMBIGUOUS_RELATIONSHIP,
-             relationship.name,
-             "invalid storage strategy specified for relationship",
-             %{strategy: strategy, candidates: candidates}
-           )}
-        end
-
-      other ->
-        {:error,
-         Refusal.new(
-           :REFUSED_AMBIGUOUS_RELATIONSHIP,
-           relationship.name,
-           "unsupported storage strategy value",
-           %{strategy: other}
-         )}
-    end
-  end
-end
+# NOTE: relationship-storage-topology selection (storage_candidates/1, select/1) lives on
+# AshR2RML.DfCM in lib/ash_r2rml/dfcm.ex, alongside the generic DfCM calculus — Elixir does not
+# support reopening a module across files, so both concerns share one defmodule block there.
 
 defmodule AshR2RML.SemanticIR do
   @moduledoc """
