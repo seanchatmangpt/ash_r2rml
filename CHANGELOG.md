@@ -11,6 +11,24 @@ See [Conventional Commits](Https://conventionalcommits.org) for commit guideline
 
 <!-- changelog -->
 
+## [v26.8.27](https://github.com/seanchatmangpt/ash_r2rml/releases/tag/v26.8.27) (2026-08-27)
+
+### Features & Architectural Highlights:
+* **`AshR2RML.Mapping.Changeset` / `AshR2RML.RDF.GraphAlgebra`**: a structured `add`/`update`/`replace`/`remove` diff algebra between two `RDF.Graph` snapshots (e.g. two successive R2RML Turtle renders, or two `AshR2RML.OBDA.InMemory.materialize/3` snapshots), with mutual-exclusion validation and inversion. Ported from the Gno RDF library's `Gno.Changeset` action algebra, stripped of the live-triple-store-diff half AshR2RML has no store to run (Ontop is virtual OBDA, never a materialized graph).
+* **`AshR2RML.OBDA.Adapter`**: a behaviour + typed configs (`OntopConfig`, `InMemoryConfig`) unifying dispatch to AshR2RML's two independently-evolved OBDA engines, modeled on Gno's `Gno.Store.Adapter` struct-type dispatch pattern, without the SPARQL-protocol-endpoint machinery AshR2RML has no use for.
+* **`mix ash_r2rml.install --target`**: the Igniter installer now optionally patches a named `Ash.Resource` module directly — adding `AshR2RML.Resource` to its `extensions:` list via `Spark.Igniter.add_extension/6` and inserting a starter `r2rml do end` block — instead of only ever printing manual instructions.
+
+### Bug Fixes:
+* fixed `mix ash_r2rml.install --target` crashing with a `SyntaxError`/`CaseClauseError` on any target module (the extension patch attempted to splice a bare `extensions: [...]` keyword fragment as standalone source, and the starter-block patch didn't wrap its zipper result in the `{:ok, _}` shape `Igniter.Project.Module.find_and_update_module!/3` requires); caught by a new real `Igniter.Test.test_project/1`-based test suite (`test/mix/tasks/ash_r2rml_install_test.exs`), not by inspection.
+* corrected the `ash-r2rml-pack` ggen pack's `[pack] name` (`ash-r2ml-pack` → `ash-r2rml-pack`).
+
+## [v26.8.26](https://github.com/seanchatmangpt/ash_r2rml/releases/tag/v26.8.26) (2026-08-25)
+
+### Features & Architectural Highlights:
+* **Confirmed `AshR2RML.OBDA.InMemory` data-layer agnosticism**: `materialize/3` has no data-layer gate at all (`rows_for/3` just calls `Ash.read!/2`) — proven for real against `AshCsv.DataLayer` (a real CSV file on disk) and `AshCubDB.DataLayer` (a real CubDB store), zero code changes needed for either. Corrected the module's moduledoc, which previously undersold this generality by calling itself "ETS-side".
+* **`AshR2RML.Ggen.compile_api_bundle/2`**: auto-derives minimal, verified-compilable `graphql do ... end` / `json_api do ... end` blocks from the same mapping IR that already drives `r2rml`'s `class_iri`/`table_name`, confirmed by actually `Code.eval_string/1`-ing the generated source and checking `AshGraphql.Resource.Info.type/1` / `AshJsonApi.Resource.Info.type/1` against it.
+* Five sourced research investigations into other Ash extensions, most notably a HIGH-severity gap: `ash_cloak`'s `decrypt_by_default` option can cause `AshR2RML.OBDA.InMemory` to silently materialize decrypted plaintext into the RDF graph via a plain `Ash.read!/2` — ticketed as `R2RML-109`, not yet fixed as of this release.
+
 ## [v26.8.25](https://github.com/seanchatmangpt/ash_r2rml/releases/tag/v26.8.25) (2026-08-25)
 
 ### Features & Architectural Highlights:
