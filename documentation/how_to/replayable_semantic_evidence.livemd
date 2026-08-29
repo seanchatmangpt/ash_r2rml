@@ -1,0 +1,115 @@
+<!--
+SPDX-FileCopyrightText: 2026 ash_r2rml contributors
+
+SPDX-License-Identifier: MIT
+-->
+
+# Replayable semantic evidence
+
+AshR2RML already has distinct owners for compilation, Reactor orchestration,
+SPARQL/OBDA execution, parity, and OCEL telemetry. The useful invariant is not a
+new global "session" object. It is that the existing artifacts can be joined by
+stable content identity while each subsystem keeps its authority boundary.
+
+This notebook is executable in CI with `mix ash_r2rml.test_livebooks`.
+Only cells explicitly marked `ash_r2rml:test` participate in headless testing.
+
+## One query, stable observed identity
+
+<!-- ash_r2rml:test -->
+```elixir
+import ExUnit.Assertions
+
+knows = RDF.iri("https://example.org/knows")
+alice = RDF.iri("https://example.org/alice")
+bob = RDF.iri("https://example.org/bob")
+
+graph = RDF.Graph.new([{alice, knows, bob}])
+
+query = """
+PREFIX ex: <https://example.org/>
+SELECT ?person WHERE { ex:alice ex:knows ?person . }
+"""
+
+{:ok, first} = AshR2RML.SPARQL.Local.query(graph, query)
+{:ok, replay} = AshR2RML.SPARQL.Local.query(graph, query)
+
+assert first.query_sha256 == replay.query_sha256
+assert first.result_sha256 == replay.result_sha256
+assert AshR2RML.Evidence.id(first) == AshR2RML.Evidence.id(replay)
+assert first.rows == [%{"person" => "https://example.org/bob"}]
+```
+
+## OCEL run identity selects a trace; semantic identity survives a new run
+
+OCEL event UUIDs, timestamps, durations, scheduler order, and the Reactor run UUID
+are observations of transport. They select and describe an execution, but they
+must not make two semantically identical executions look different.
+
+<!-- ash_r2rml:test -->
+```elixir
+first_execution = "run-first"
+replay_execution = "run-replay"
+
+compile = %{
+  "ocel:eid" => "event-a",
+  "ocel:activity" => "ash_r2rml.reactor.compile_resources",
+  "ocel:timestamp" => "2026-08-21T20:00:00Z",
+  "ocel:lifecycle" => "stop",
+  "ocel:omap" => ["reactor-run:run-first", "Example.Person"],
+  "ocel:e2o" => [
+    %{"ocel:oid" => "reactor-run:run-first", "ocel:qualifier" => "context"},
+    %{"ocel:oid" => "Example.Person", "ocel:qualifier" => "target"}
+  ],
+  "ocel:vmap" => %{
+    "execution_id" => first_execution,
+    "result_evidence_id" => "mapping-abc",
+    "duration_ms" => 12
+  }
+}
+
+render = %{
+  "ocel:eid" => "event-b",
+  "ocel:activity" => "ash_r2rml.reactor.render_r2rml_turtle",
+  "ocel:timestamp" => "2026-08-21T20:00:01Z",
+  "ocel:lifecycle" => "stop",
+  "ocel:omap" => ["reactor-run:run-first", "W3CR2RMLRenderer"],
+  "ocel:e2o" => [
+    %{"ocel:oid" => "reactor-run:run-first", "ocel:qualifier" => "context"},
+    %{"ocel:oid" => "W3CR2RMLRenderer", "ocel:qualifier" => "target"}
+  ],
+  "ocel:vmap" => %{
+    "execution_id" => first_execution,
+    "result_evidence_id" => "r2rml-def",
+    "duration_ms" => 7
+  }
+}
+
+{:ok, first_trace} = AshR2RML.Evidence.ocel_trace_id([compile, render], first_execution)
+
+noisy_replay =
+  [render, compile]
+  |> Enum.map(fn event ->
+    event
+    |> Map.put("ocel:eid", "replay-#{event["ocel:eid"]}")
+    |> Map.put("ocel:timestamp", "2026-08-22T01:00:00Z")
+    |> update_in(["ocel:omap"], &Enum.map(&1, fn
+      "reactor-run:" <> _ -> "reactor-run:run-replay"
+      oid -> oid
+    end))
+    |> update_in(["ocel:e2o"], &Enum.map(&1, fn relation ->
+      case relation["ocel:oid"] do
+        "reactor-run:" <> _ -> Map.put(relation, "ocel:oid", "reactor-run:run-replay")
+        _ -> relation
+      end
+    end))
+    |> put_in(["ocel:vmap", "execution_id"], replay_execution)
+    |> put_in(["ocel:vmap", "duration_ms"], 900)
+  end)
+
+{:ok, replay_trace} = AshR2RML.Evidence.ocel_trace_id(noisy_replay, replay_execution)
+assert first_trace == replay_trace
+```
+
+A passing notebook proves only these public deterministic contracts. It does not
+manufacture PostgreSQL, remote SPARQL, Ontop, or cutover evidence.

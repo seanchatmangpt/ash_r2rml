@@ -1,0 +1,133 @@
+# SPDX-FileCopyrightText: 2026 ash_r2rml contributors
+# SPDX-License-Identifier: MIT
+
+name: ChatGPT Cloud Qualification
+
+on:
+  pull_request:
+  push:
+    branches: [main, "feat/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: ubuntu-latest
+    env:
+      MIX_ENV: test
+      SUBJECT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SUBJECT_SHA }}
+
+      - name: Verify exact subject identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          observed="$(git rev-parse HEAD)"
+          printf 'admitted=%s\nobserved=%s\n' "$SUBJECT_SHA" "$observed"
+          test "$observed" = "$SUBJECT_SHA"
+
+      - name: Set up declared Elixir / Erlang
+        uses: jdx/mise-action@v2
+
+      - name: Resolve exact locked dependency graph
+        shell: bash
+        run: |
+          set -euo pipefail
+          before="$(sha256sum mix.lock | awk '{print $1}')"
+          mix deps.get
+          after="$(sha256sum mix.lock | awk '{print $1}')"
+          test "$before" = "$after"
+
+      - name: Compile with warnings as errors
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p tmp/chatgpt-cloud
+          MIX_ENV=test mix compile --force --warnings-as-errors 2>&1 | tee tmp/chatgpt-cloud/compile.log
+
+      - name: Execute Fortune5 in-memory crown
+        shell: bash
+        run: |
+          set -euo pipefail
+          MIX_ENV=test mix test test/fortune5/ 2>&1 | tee tmp/chatgpt-cloud/fortune5.log
+          grep -Eq '51 tests, 0 failures' tmp/chatgpt-cloud/fortune5.log
+
+      - name: Manufacture exact-head qualification receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          export SUBJECT_TREE_SHA="$(git rev-parse 'HEAD^{tree}')"
+          export LOCK_SHA256="$(sha256sum mix.lock | awk '{print $1}')"
+          export COMPILE_LOG_SHA256="$(sha256sum tmp/chatgpt-cloud/compile.log | awk '{print $1}')"
+          export FORTUNE5_LOG_SHA256="$(sha256sum tmp/chatgpt-cloud/fortune5.log | awk '{print $1}')"
+          export OBSERVED_ELIXIR="$(elixir -e 'IO.write(System.version())')"
+          export OBSERVED_OTP="$(erl -noshell -eval 'io:format("~s", [erlang:system_info(otp_release)]), halt().')"
+          python3 - <<'PY'
+          import json, os, tomllib
+
+          with open('.chatgpt-cloud-elixir.toml', 'rb') as f:
+              contract = tomllib.load(f)
+
+          receipt = {
+              'schema_version': 1,
+              'subject': contract['subject'],
+              'subject_sha': os.environ['SUBJECT_SHA'],
+              'subject_tree_sha': os.environ['SUBJECT_TREE_SHA'],
+              'runtime': {
+                  'expected_otp': contract['runtime']['otp'],
+                  'observed_otp': os.environ['OBSERVED_OTP'],
+                  'expected_elixir': contract['runtime']['elixir'],
+                  'observed_elixir': os.environ['OBSERVED_ELIXIR'],
+              },
+              'lock_sha256': os.environ['LOCK_SHA256'],
+              'commands': contract['offline']['commands'],
+              'exit_codes': {'compile': 0, 'fortune5': 0},
+              'log_sha256': {
+                  'compile': os.environ['COMPILE_LOG_SHA256'],
+                  'fortune5': os.environ['FORTUNE5_LOG_SHA256'],
+              },
+              'fortune5_tests': {'executed': 51, 'failures': 0},
+              'excluded_external_crowns': contract['external_crowns']['excluded'],
+              'standing_scope': contract['standing_scope'],
+              'standing': 'ALIVE',
+          }
+
+          with open('tmp/chatgpt-cloud/qualification-receipt.json', 'w') as f:
+              json.dump(receipt, f, indent=2, sort_keys=True)
+              f.write('\n')
+          PY
+
+      - name: Observe qualification through OCEL relay
+        env:
+          OCEL_INGEST_URL: ${{ secrets.OCEL_INGEST_URL }}
+          OCEL_INGEST_TOKEN: ${{ secrets.OCEL_INGEST_TOKEN }}
+          OCEL_SPOOL_DIR: tmp/chatgpt-cloud/ocel-spool
+        run: |
+          python3 scripts/emit-ocel.py \
+            --activity ash_r2rml.qualification.completed \
+            --standing ALIVE \
+            --authority-domain OBSERVE \
+            --agent-id "github-actions:${GITHUB_REPOSITORY}" \
+            --run-id "$GITHUB_RUN_ID" \
+            --sequence "$GITHUB_RUN_ATTEMPT" \
+            --repo "$GITHUB_REPOSITORY" \
+            --sha "$SUBJECT_SHA" \
+            --receipt tmp/chatgpt-cloud/qualification-receipt.json
+
+      - name: Upload qualification receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ash-r2rml-chatgpt-cloud-${{ env.SUBJECT_SHA }}
+          path: |
+            tmp/chatgpt-cloud/qualification-receipt.json
+            tmp/chatgpt-cloud/compile.log
+            tmp/chatgpt-cloud/fortune5.log
+            tmp/chatgpt-cloud/ocel-spool/
+          if-no-files-found: error
+          retention-days: 14

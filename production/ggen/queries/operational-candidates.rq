@@ -1,0 +1,20 @@
+# SPDX-FileCopyrightText: 2026 ash_r2rml contributors <https://github.com/seanchatmangpt/ash_r2rml/graphs/contributors>
+# SPDX-License-Identifier: MIT
+PREFIX p: <https://w3id.org/ash-r2rml/production#>
+SELECT ?candidate ?sha ?topology ?execution ?control_plane ?tenancy ?residency
+       ?release ?secret_delivery ?observability ?recovery ?runtime_isolation
+WHERE {
+  ?candidate a p:DesignCandidate ;
+    p:candidateSha256 ?sha ;
+    p:dim_deployment_topology ?topology ;
+    p:dim_execution_mode ?execution ;
+    p:dim_control_plane ?control_plane ;
+    p:dim_tenancy_model ?tenancy ;
+    p:dim_data_residency ?residency ;
+    p:dim_release_strategy ?release ;
+    p:dim_secret_delivery ?secret_delivery ;
+    p:dim_observability ?observability ;
+    p:dim_recovery_strategy ?recovery ;
+    p:dim_runtime_isolation ?runtime_isolation .
+}
+ORDER BY ?sha

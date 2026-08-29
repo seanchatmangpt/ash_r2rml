@@ -1,0 +1,75 @@
+<!--
+SPDX-FileCopyrightText: 2026 ash_r2rml contributors
+
+SPDX-License-Identifier: MIT
+-->
+
+# Semantic execution integrity
+
+This Livebook is both documentation and an executable specification. The cell
+marked `ash_r2rml_test` is executed by the normal ExUnit suite and CI. The
+notebook demonstrates the DfCM contract without granting filesystem, database,
+or cutover authority.
+
+```elixir ash_r2rml_test
+import ExUnit.Assertions
+
+xsd_string = "http://www.w3.org/2001/XMLSchema#string"
+
+profile = %{
+  ontology_hash: "ontology:livebook",
+  profile_hash: "profile:livebook",
+  shacl_hash: "shacl:livebook",
+  resources: [
+    %{
+      iri: "https://example.org/resource/Person",
+      class_iri: "https://schema.org/Person",
+      shape_iri: "https://example.org/shapes/PersonShape",
+      module: "Livebook.Person",
+      repo_module: "Livebook.Repo",
+      table: "people",
+      subject_template: "https://example.org/people/{id}",
+      identities: [%{name: :primary, keys: [:id], primary?: true}],
+      attributes: [
+        %{
+          name: :id,
+          column: "id",
+          predicate_iri: "https://example.org/ontology/id",
+          datatype_iri: xsd_string,
+          ash_type: :uuid,
+          postgres_type: "UUID",
+          min_count: 1,
+          max_count: 1,
+          nullable: false,
+          identity?: true
+        }
+      ]
+    }
+  ]
+}
+
+{:ok, first} = AshR2RML.DfCM.Compiler.compile(profile)
+{:ok, replay} = AshR2RML.DfCM.Compiler.compile(profile)
+
+assert first.session_identity.sha256 == replay.session_identity.sha256
+assert AshR2RML.DfCM.Compiler.receipt_reusable?(first, replay)
+assert first.integrity_receipt.standing == :projections_deterministic
+refute AshR2RML.DfCM.Compiler.cutover_ready?(first)
+
+plan =
+  AshR2RML.Manufacturing.plan(
+    %{"generated/example.txt" => "stable"},
+    first.session_identity
+  )
+
+assert {:ok, verification} = AshR2RML.Manufacturing.verify_staged(plan, plan.file_hashes)
+assert verification.verified?
+assert AshR2RML.SemanticValue.kind(AshR2RML.SemanticValue.null()) == :null
+assert AshR2RML.SemanticValue.kind(AshR2RML.SemanticValue.unbound()) == :unbound
+
+:all_green
+```
+
+A passing notebook establishes only the construction contracts it actually
+executes. It does not establish PostgreSQL, external OBDA, subject parity, or
+cutover standing; those require their own observed receipts.

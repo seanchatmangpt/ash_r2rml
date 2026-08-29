@@ -1,0 +1,10 @@
+# SPDX-FileCopyrightText: 2026 ash_r2rml contributors <https://github.com/seanchatmangpt/ash_r2rml/graphs/contributors>
+# SPDX-License-Identifier: MIT
+PREFIX p: <https://w3id.org/ash-r2rml/production#>
+SELECT ?capability ?status
+WHERE {
+  ?standing a p:CapabilityStanding ;
+    p:capabilityId ?capability ;
+    p:status ?status .
+}
+ORDER BY ?capability

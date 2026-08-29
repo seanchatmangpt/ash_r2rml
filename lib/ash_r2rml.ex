@@ -87,6 +87,27 @@ defmodule AshR2RML do
   @doc "Render SHACL shapes graph from a bundle or Ash resource set."
   defdelegate render_shacl(resources_or_bundle), to: AshR2RML.SHACL, as: :render
 
+  @doc "Return the default evidence-bounded production quality profile."
+  defdelegate production_profile(), to: AshR2RML.Production, as: :default_profile
+
+  @doc "Return the reversible production design space without selecting a candidate."
+  defdelegate production_design_space(), to: AshR2RML.Production, as: :design_space
+
+  @doc "Lazily enumerate bounded production candidates."
+  def production_candidates(opts \\ []) do
+    AshR2RML.DfCM.enumerate(AshR2RML.Production.design_space(), opts)
+  end
+
+  @doc "Admit technical production evidence for an exact semantic subject."
+  def production_admit(subject_sha256, evidence \\ [], profile \\ AshR2RML.Production.default_profile()) do
+    AshR2RML.Production.admit(profile, subject_sha256, evidence)
+  end
+
+  @doc "Construct the dynamic production graph consumed by the repo-level ggen workspace."
+  def compile_production(resources_or_bundle, opts \\ []) do
+    AshR2RML.Ggen.Production.compile(resources_or_bundle, opts)
+  end
+
   @doc "Validate and return compilation receipt for resources or profile."
   def validate(resources_or_profile) do
     case AshR2RML.Compiler.compile(resources_or_profile) do

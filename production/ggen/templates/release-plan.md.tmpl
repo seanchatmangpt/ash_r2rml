@@ -1,0 +1,41 @@
+<!--
+SPDX-FileCopyrightText: 2026 ash_r2rml contributors <https://github.com/seanchatmangpt/ash_r2rml/graphs/contributors>
+SPDX-License-Identifier: MIT
+-->
+
+# Release plan — candidate {{ sha }}
+
+**CONSTRUCT only.** This plan carries no deployment or cutover authority.
+
+- Deployment topology: `{{ topology }}`
+- Control plane: `{{ control_plane }}`
+- Release strategy: `{{ release }}`
+- Recovery strategy: `{{ recovery }}`
+- Residency: `{{ residency }}`
+- Execution mode: `{{ execution }}`
+
+## Mandatory preconditions
+
+1. Exact-head compile/test receipt.
+2. Dependency audit with zero admitted high/critical vulnerabilities.
+3. SBOM, immutable digest, signature, and provenance attestation.
+4. Migration dry-run and semantic-drift classification.
+5. OBDA behavioral parity on the exact semantic subject.
+6. Load/error-budget evidence for the admitted workload class.
+7. Multi-zone failover and DR replay receipts.
+8. Separately receipted rollback plan.
+9. Explicit release authority outside this generated artifact.
+
+## Strategy
+
+{% if release == "canary" %}
+1% → 10% → 50% → 100%, with an evidence checkpoint at every transition.
+{% elif release == "blue_green" %}
+Green shadow → exact-subject parity → explicit cutover receipt → green active.
+{% elif release == "cell_progressive" %}
+First cell → one region → half of admitted cells → all cells, preserving blast-radius bounds.
+{% else %}
+Rolling replacement with zero-unavailable intent and evidence-driven abort conditions.
+{% endif %}
+
+Abort on error-budget burn, semantic parity mismatch, receipt mismatch, tenant-isolation failure, or recovery-bound failure.

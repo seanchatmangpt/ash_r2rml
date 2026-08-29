@@ -1,0 +1,8 @@
+# SPDX-FileCopyrightText: 2026 ash_r2rml contributors <https://github.com/seanchatmangpt/ash_r2rml/graphs/contributors>
+# SPDX-License-Identifier: MIT
+# MESSAGE: every reversible design candidate must carry deterministic identity
+PREFIX p: <https://w3id.org/ash-r2rml/production#>
+ASK {
+  ?candidate a p:DesignCandidate .
+  FILTER NOT EXISTS { ?candidate p:candidateSha256 ?sha . }
+}
