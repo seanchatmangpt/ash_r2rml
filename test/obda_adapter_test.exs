@@ -44,6 +44,6 @@ defmodule AshR2RML.OBDA.AdapterTest do
     assert {:error, %AshR2RML.OBDA.Observation{refusal: refusal}} =
              Adapter.dispatch(config, "SELECT * WHERE { ?s ?p ?o }", query_path: "/tmp/query.sparql")
 
-    assert refusal.code == :REFUSED_MISSING_MAPPING
+    assert refusal.code == :REFUSED_OBDA_EXECUTION
   end
 end
