@@ -11,6 +11,15 @@ See [Conventional Commits](Https://conventionalcommits.org) for commit guideline
 
 <!-- changelog -->
 
+## [v26.8.28](https://github.com/seanchatmangpt/ash_r2rml/releases/tag/v26.8.28) (2026-08-28)
+
+### Features & Architectural Highlights:
+* **`AshR2RML.Introspection.Manifest`**: a real, additive wrapper around `Ash.Info.manifest/1` (Ash >= 3.25's built-in codegen-oriented introspection API), producing a whole-application `resource_lookup` map (module -> fields/relationships/identities) for tooling and ggen-pack scaffolding use cases, without touching `AshR2RML.Compiler`'s existing per-resource `Ash.Resource.Info` mapping-IR pipeline. Refuses with a typed `:REFUSED_MANIFEST_GENERATION` `AshR2RML.Refusal` rather than propagating `Ash.Info.Manifest.generate/1`'s raw `{:error, term()}` shape.
+* **`mix ash_r2rml.install --target` is now idempotent**: uses Igniter 0.8's `Igniter.Code.Pattern.move_to/2` (ExAST pattern matching) to search the target module for an existing `r2rml do ... end` block before inserting a starter one, so re-running the installer against an already-patched module no longer duplicates the block.
+
+### Research:
+* Ran a deep-research pass over the current Ash/Reactor/Igniter ecosystem (Ash 3.29.3, Igniter 0.8.2 as locked in this repo) to identify capabilities worth adopting. Landed the two above; explicitly deferred `Ash.Type.Range`/`Duration` (Ash 3.32, not yet in this repo's locked Ash version) as a candidate for a future release once upgraded, for `xsd:duration`/interval R2RML literal mapping.
+
 ## [v26.8.27](https://github.com/seanchatmangpt/ash_r2rml/releases/tag/v26.8.27) (2026-08-27)
 
 ### Features & Architectural Highlights:

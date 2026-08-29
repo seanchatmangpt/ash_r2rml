@@ -78,22 +78,31 @@ if Code.ensure_loaded?(Igniter) do
     # Adds a minimal, real starter `r2rml do ... end` block right after the target
     # module's `use Ash.Resource, ...` call, so it compiles immediately after install
     # rather than needing hand-authored DSL content.
+    #
+    # Idempotent: uses `Igniter.Code.Pattern.move_to/2` (ExAST) to search the
+    # module body for an existing `r2rml do ... end` block first, so
+    # re-running `mix ash_r2rml.install --target` against an already-patched
+    # module does not insert a second, duplicate block.
     defp add_starter_dsl_block(igniter, target_module) do
       Igniter.Project.Module.find_and_update_module!(igniter, target_module, fn zipper ->
-        case Igniter.Code.Module.move_to_use(zipper, Ash.Resource) do
-          {:ok, use_zipper} ->
-            {:ok,
-             Igniter.Code.Common.add_code(
-               use_zipper,
-               """
-               r2rml do
-               end
-               """,
-               placement: :after
-             )}
+        if match?({:ok, _}, Igniter.Code.Pattern.move_to(zipper, "r2rml do ... end")) do
+          {:ok, zipper}
+        else
+          case Igniter.Code.Module.move_to_use(zipper, Ash.Resource) do
+            {:ok, use_zipper} ->
+              {:ok,
+               Igniter.Code.Common.add_code(
+                 use_zipper,
+                 """
+                 r2rml do
+                 end
+                 """,
+                 placement: :after
+               )}
 
-          :error ->
-            {:ok, zipper}
+            :error ->
+              {:ok, zipper}
+          end
         end
       end)
     end

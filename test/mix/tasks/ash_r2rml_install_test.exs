@@ -42,4 +42,29 @@ defmodule Mix.Tasks.AshR2rml.InstallTest do
     assert content =~ "AshR2RML.Resource"
     assert content =~ "r2rml do"
   end
+
+  test "with --target, re-running against an already-patched module does not duplicate the r2rml block" do
+    igniter =
+      test_project(
+        files: %{
+          "lib/my_app/post.ex" => """
+          defmodule MyApp.Post do
+            use Ash.Resource,
+              domain: MyApp.Domain,
+              data_layer: AshPostgres.DataLayer,
+              extensions: [AshR2RML.Resource]
+
+            r2rml do
+            end
+          end
+          """
+        }
+      )
+      |> Igniter.compose_task("ash_r2rml.install", ["--target", "MyApp.Post"])
+
+    source = Rewrite.source!(igniter.rewrite, "lib/my_app/post.ex")
+    content = Rewrite.Source.get(source, :content)
+
+    assert length(String.split(content, "r2rml do")) == 2
+  end
 end
