@@ -30,6 +30,7 @@ defmodule AshR2RML.Refusal do
           | :UNSUPPORTED_TERM_TYPE
           | :UNSUPPORTED_ASH_TYPE
           | :REFUSED_UNSUPPORTED_SPARQL_FEATURE
+          | :REFUSED_SENSITIVE_ATTRIBUTE_MATERIALIZATION
 
   @type t :: %__MODULE__{
           code: code(),

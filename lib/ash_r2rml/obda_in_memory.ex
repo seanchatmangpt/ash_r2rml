@@ -39,6 +39,19 @@ defmodule AshR2RML.OBDA.InMemory do
   parent's own subject template in turn, producing an IRI only when every column pair
   resolves and the resulting candidate is a valid IRI (see `resolve_composite_object_iri/3`).
 
+  An attribute marked `sensitive?: true` on the Ash resource (Ash core's own
+  redaction flag, independent of any specific encryption library) is refused by
+  default rather than materialized: `Ash.read!/2` returns the real plaintext value
+  for a `sensitive?: true` attribute exactly like any other (unlike a field-policy
+  denial, which comes back as a real `%Ash.ForbiddenField{}` sentinel Ash itself
+  produces -- see `add_predicate_triples/5` below), so without an explicit check
+  here that plaintext would flow straight into the materialized RDF graph. This
+  mirrors the `:join_table` precedent immediately below: a typed
+  `:REFUSED_SENSITIVE_ATTRIBUTE_MATERIALIZATION` refusal, not a silent per-triple
+  skip, so the caller is told exactly which resource/attribute was withheld and
+  why. Pass `allow_sensitive: true` to `materialize/3`/`materialize_many/2` to
+  opt in explicitly when a caller genuinely wants sensitive values in the graph.
+
   The one relationship shape this module does **not** resolve for real is the
   `:join_table` many-to-many shape (`joins: []`, `metadata.kind == :many_to_many`, per
   `AshR2RML.SemanticAdapter.convert_references/2`): the actual FK pairs for that shape
@@ -63,13 +76,15 @@ defmodule AshR2RML.OBDA.InMemory do
   Materializes real rows read from `ash_resource` (via a real Ash read action)
   into an `RDF.Graph` shaped by `mapping_resource`.
 
-  `read_opts` is passed through to `Ash.read!/2` verbatim (e.g. `domain:`,
-  `actor:`) so this always executes a real Ash action against the real ETS
-  table -- never a fabricated row set.
+  `opts` is passed through to `Ash.read!/2` verbatim (e.g. `domain:`, `actor:`) --
+  minus `:allow_sensitive`, this module's own option (see moduledoc) -- so this
+  always executes a real Ash action against the real ETS table -- never a
+  fabricated row set. `allow_sensitive: true` opts into materializing attributes
+  marked `sensitive?: true`; the default (`false`) refuses instead.
   """
   @spec materialize(module(), Resource.t(), keyword()) :: {:ok, RDF.Graph.t()} | {:error, Refusal.t()}
-  def materialize(ash_resource, %Resource{} = mapping_resource, read_opts \\ []) when is_atom(ash_resource) do
-    materialize_many([{ash_resource, mapping_resource}], read_opts)
+  def materialize(ash_resource, %Resource{} = mapping_resource, opts \\ []) when is_atom(ash_resource) do
+    materialize_many([{ash_resource, mapping_resource}], opts)
   end
 
   @doc """
@@ -77,17 +92,20 @@ defmodule AshR2RML.OBDA.InMemory do
   triples for any `reference_object_maps` whose `parent_resource` is also present in
   `specs` -- this is what lets one SPARQL query join across resources.
 
-  `read_opts` applies uniformly to every resource's `Ash.read!/2` call (e.g. a shared
-  `domain:`/`actor:`); pass distinct options per resource by reading each resource's
-  rows yourself and preferring `query/4`'s single-resource form instead if that's needed.
+  `opts` applies uniformly to every resource's `Ash.read!/2` call (e.g. a shared
+  `domain:`/`actor:`), minus `:allow_sensitive` (see `materialize/3`); pass distinct
+  options per resource by reading each resource's rows yourself and preferring
+  `query/4`'s single-resource form instead if that's needed.
   """
   @spec materialize_many([spec()], keyword()) :: {:ok, RDF.Graph.t()} | {:error, Refusal.t()}
-  def materialize_many(specs, read_opts \\ []) when is_list(specs) do
+  def materialize_many(specs, opts \\ []) when is_list(specs) do
     mapping_index = Map.new(specs, fn {ash_resource, mapping_resource} -> {ash_resource, mapping_resource} end)
+    allow_sensitive? = Keyword.get(opts, :allow_sensitive, false)
+    read_opts = Keyword.delete(opts, :allow_sensitive)
 
     Enum.reduce_while(specs, {:ok, RDF.Graph.new()}, fn {ash_resource, mapping_resource}, {:ok, graph_acc} ->
       with {:ok, rows} <- rows_for(ash_resource, mapping_resource, read_opts),
-           {:ok, graph} <- add_rows(rows, graph_acc, mapping_resource, mapping_index) do
+           {:ok, graph} <- add_rows(rows, graph_acc, mapping_resource, mapping_index, allow_sensitive?) do
         {:cont, {:ok, graph}}
       else
         {:error, refusal} -> {:halt, {:error, refusal}}
@@ -152,25 +170,34 @@ defmodule AshR2RML.OBDA.InMemory do
   # (see `add_reference_triples/4`) surfaces as a real refusal now, so every caller between
   # here and `materialize_many/2` must be able to propagate it rather than only ever
   # returning a bare graph.
-  defp add_rows(rows, graph_acc, mapping_resource, mapping_index) do
+  defp add_rows(rows, graph_acc, mapping_resource, mapping_index, allow_sensitive?) do
     Enum.reduce_while(rows, {:ok, graph_acc}, fn row, {:ok, acc} ->
-      case add_row(acc, row, mapping_resource, mapping_index) do
+      case add_row(acc, row, mapping_resource, mapping_index, allow_sensitive?) do
         {:ok, graph} -> {:cont, {:ok, graph}}
         {:error, refusal} -> {:halt, {:error, refusal}}
       end
     end)
   end
 
-  defp add_row(graph, row, %Resource{} = mapping_resource, mapping_index) do
+  defp add_row(graph, row, %Resource{} = mapping_resource, mapping_index, allow_sensitive?) do
     case subject_iri(mapping_resource.subject_map, row) do
       nil ->
         {:ok, graph}
 
       subject ->
-        graph
-        |> add_class_triples(subject, mapping_resource.class_iris)
-        |> add_predicate_triples(subject, row, mapping_resource.predicate_object_maps)
-        |> add_reference_triples(subject, row, mapping_resource.reference_object_maps, mapping_index)
+        graph = add_class_triples(graph, subject, mapping_resource.class_iris)
+
+        with {:ok, graph} <-
+               add_predicate_triples(
+                 graph,
+                 subject,
+                 row,
+                 mapping_resource.predicate_object_maps,
+                 mapping_resource.ash_resource,
+                 allow_sensitive?
+               ) do
+          add_reference_triples(graph, subject, row, mapping_resource.reference_object_maps, mapping_index)
+        end
     end
   end
 
@@ -271,17 +298,38 @@ defmodule AshR2RML.OBDA.InMemory do
   # :admin can read :secret_key") carry through into the RDF projection without extra code
   # at each call site -- security is enforced once, by Ash, and respected here rather than
   # bypassed.
-  defp add_predicate_triples(graph, subject, row, predicate_object_maps) do
-    Enum.reduce(predicate_object_maps, graph, fn
-      %PredicateObjectMap{attribute: nil}, acc ->
-        acc
+  defp add_predicate_triples(graph, subject, row, predicate_object_maps, ash_resource, allow_sensitive?) do
+    Enum.reduce_while(predicate_object_maps, {:ok, graph}, fn
+      %PredicateObjectMap{attribute: nil}, {:ok, acc} ->
+        {:cont, {:ok, acc}}
 
-      %PredicateObjectMap{attribute: attribute, predicate_iri: predicate_iri}, acc ->
+      %PredicateObjectMap{attribute: attribute, predicate_iri: predicate_iri}, {:ok, acc} ->
         case readable(Map.get(row, attribute)) do
-          nil -> acc
-          value -> RDF.Graph.add(acc, {RDF.iri(subject), RDF.iri(predicate_iri), rdf_literal(value)})
+          nil ->
+            {:cont, {:ok, acc}}
+
+          value ->
+            if not allow_sensitive? and sensitive_attribute?(ash_resource, attribute) do
+              {:halt,
+               {:error,
+                Refusal.new(
+                  :REFUSED_SENSITIVE_ATTRIBUTE_MATERIALIZATION,
+                  ash_resource,
+                  "attribute #{inspect(attribute)} is marked sensitive?: true on the Ash resource and cannot be materialized into the RDF graph without allow_sensitive: true",
+                  %{attribute: attribute}
+                )}}
+            else
+              {:cont, {:ok, RDF.Graph.add(acc, {RDF.iri(subject), RDF.iri(predicate_iri), rdf_literal(value)})}}
+            end
         end
     end)
+  end
+
+  defp sensitive_attribute?(ash_resource, attribute) do
+    case Ash.Resource.Info.attribute(ash_resource, attribute) do
+      %{sensitive?: true} -> true
+      _ -> false
+    end
   end
 
   # A single-column join and a genuine composite-key join (2+ `JoinCondition` entries) are

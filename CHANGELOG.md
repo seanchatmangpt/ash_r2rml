@@ -11,6 +11,14 @@ See [Conventional Commits](Https://conventionalcommits.org) for commit guideline
 
 <!-- changelog -->
 
+## [v26.8.26](https://github.com/seanchatmangpt/ash_r2rml/releases/tag/v26.8.26) (2026-08-31)
+
+### Security:
+* **Sensitive-attribute plaintext leak into `AshR2RML.OBDA.InMemory` closed (R2RML-109)**: an attribute marked `sensitive?: true` on the Ash resource (Ash core's own redaction flag) previously materialized its real plaintext value into the RDF graph exactly like any other attribute — `Ash.read!/2` returns the real value for a `sensitive?: true` field, unlike a field-policy denial, which Ash itself replaces with a `%Ash.ForbiddenField{}` sentinel that materialization already omits. `AshR2RML.OBDA.InMemory.materialize/3`/`materialize_many/2` now check every predicate-object-mapped attribute against `Ash.Resource.Info.attribute/2`'s `sensitive?` flag and refuse (new typed `:REFUSED_SENSITIVE_ATTRIBUTE_MATERIALIZATION` code) rather than materialize by default; pass `allow_sensitive: true` to opt in explicitly.
+
+### Deferred:
+* **`Ash.Type.Range` → constraint-aware R2RML mapping (part of this trial's original scope, blocked at execution time)**: `Ash.Type.Range` does not exist in this repo's currently locked Ash version (3.29.3; confirmed absent — `deps/ash/lib/ash/type/range.ex` does not exist in this dependency tree). Upgrading Ash to unlock it was out of scope for this trial (no dependency-version-bump approval sought). Left for a future release alongside an Ash upgrade.
+
 ## [v26.8.25](https://github.com/seanchatmangpt/ash_r2rml/releases/tag/v26.8.25) (2026-08-25)
 
 ### Features & Architectural Highlights:

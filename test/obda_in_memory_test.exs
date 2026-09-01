@@ -14,6 +14,53 @@ defmodule AshR2RML.OBDA.InMemoryTest do
   alias AshR2RML.GrandExample.{Domain, Organization, Person}
   alias AshR2RML.OBDA.InMemory
 
+  defmodule SensitiveDomain do
+    use Ash.Domain, validate_config_inclusion?: false
+
+    resources do
+      resource AshR2RML.OBDA.InMemoryTest.SensitiveEntity
+    end
+  end
+
+  # A real Ash resource with a `sensitive?: true` attribute (Ash core's own redaction
+  # flag, independent of any specific encryption library like ash_cloak) that is also
+  # R2RML-mapped -- the real shape of the leak this fixture exercises: `Ash.read!/2`
+  # returns the real plaintext `:api_token` value exactly like `:label`, so only
+  # `InMemory`'s own `sensitive?` check (not Ash's read pipeline) stands between that
+  # plaintext and the materialized RDF graph.
+  defmodule SensitiveEntity do
+    use Ash.Resource,
+      domain: AshR2RML.OBDA.InMemoryTest.SensitiveDomain,
+      data_layer: Ash.DataLayer.Ets,
+      extensions: [AshR2RML]
+
+    r2rml do
+      class_iri("https://example.org/ontology/SensitiveEntity")
+      subject_template("https://example.org/sensitive/{id}")
+      table_name("sensitive_entities")
+
+      attribute_mappings([
+        {:label, "https://schema.org/name"},
+        {:api_token, "https://example.org/ontology/apiToken"}
+      ])
+    end
+
+    actions do
+      defaults [:read, :update, :destroy]
+
+      create :create do
+        primary? true
+        accept [:label, :api_token]
+      end
+    end
+
+    attributes do
+      uuid_primary_key :id
+      attribute :label, :string, allow_nil?: false, public?: true
+      attribute :api_token, :string, allow_nil?: false, public?: true, sensitive?: true
+    end
+  end
+
   setup do
     {:ok, org_mapping} = AshR2RML.Resource.Info.mapping_result(Organization)
     {:ok, person_mapping} = AshR2RML.Resource.Info.mapping_result(Person)
@@ -400,5 +447,40 @@ defmodule AshR2RML.OBDA.InMemoryTest do
 
     assert {:error, refusal} = InMemory.materialize(Organization, unsupported_mapping, domain: Domain)
     assert refusal.code == :REFUSED_UNSUPPORTED_SPARQL_FEATURE
+  end
+
+  test "refuses to materialize a sensitive?: true attribute by default, with a typed refusal" do
+    {:ok, mapping} = AshR2RML.Resource.Info.mapping_result(SensitiveEntity)
+
+    SensitiveEntity
+    |> Ash.Changeset.for_create(:create, %{label: "Widget", api_token: "sk_live_TOPSECRET"}, domain: SensitiveDomain)
+    |> Ash.create!(domain: SensitiveDomain)
+
+    assert {:error, refusal} = InMemory.materialize(SensitiveEntity, mapping, domain: SensitiveDomain)
+
+    assert refusal.code == :REFUSED_SENSITIVE_ATTRIBUTE_MATERIALIZATION
+    assert refusal.evidence.attribute == :api_token
+    assert refusal.subject == SensitiveEntity
+  end
+
+  test "materializes a sensitive?: true attribute's real value only with explicit allow_sensitive: true" do
+    {:ok, mapping} = AshR2RML.Resource.Info.mapping_result(SensitiveEntity)
+
+    entity =
+      SensitiveEntity
+      |> Ash.Changeset.for_create(:create, %{label: "Gadget", api_token: "sk_live_OPTEDIN"}, domain: SensitiveDomain)
+      |> Ash.create!(domain: SensitiveDomain)
+
+    assert {:ok, graph} =
+             InMemory.materialize(SensitiveEntity, mapping, domain: SensitiveDomain, allow_sensitive: true)
+
+    subject = RDF.iri("https://example.org/sensitive/#{entity.id}")
+
+    assert RDF.Graph.include?(graph, {subject, RDF.iri("https://schema.org/name"), RDF.literal("Gadget")})
+
+    assert RDF.Graph.include?(
+             graph,
+             {subject, RDF.iri("https://example.org/ontology/apiToken"), RDF.literal("sk_live_OPTEDIN")}
+           )
   end
 end
