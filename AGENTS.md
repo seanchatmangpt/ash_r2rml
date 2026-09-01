@@ -9,7 +9,7 @@ This contract governs the repository unless a deeper `AGENTS.md` narrows a subtr
 
 ## Product invariant
 
-AshR2RML is the W3C R2RML/RDF semantic-mapping and DfCM type-compiler layer for Ash Framework. It is **not** an `Ash.DataLayer`, graph database, triplestore, proprietary query engine, or replacement persistence layer.
+AshR2RML is the W3C R2RML/RDF semantic-mapping and DfCM type-compiler layer for Ash Framework. It is not an `Ash.DataLayer`, graph database, triplestore, proprietary query engine, or replacement persistence layer.
 
 Ash resource metadata, explicit semantic annotations, and ontology-first profiles must normalize into one deterministic mapping IR before verification/rendering. Ash-first and ontology-first workflows must converge on the same admitted semantic subject.
 
@@ -126,8 +126,7 @@ end
   `RDF.Graph` via real `Ash.read!/2`, then runs full SPARQL (`SELECT`/`ASK`/`CONSTRUCT`/
   `DESCRIBE`) through `AshR2RML.SPARQL.Local`/`SPARQL.ex`. Supports `materialize_many/2`/
   `query_many/3` for cross-resource joins via `reference_object_maps`, including
-  composite-key (multi-column) `rr:joinCondition`s; a `:join_table` many-to-many shape is an
-  explicit typed refusal, not a silent omission.
+  composite-key (multi-column) `rr:joinCondition`s. `:join_table` many-to-many shape is an explicit typed refusal, not a silent omission.
 - **`AshR2RML.OBDA.Ontop`** executes the rendered R2RML mapping against `AshPostgres.DataLayer`
   via the Ontop CLI over JDBC. See "Query backend security" above for the security asymmetry
   between these two surfaces.

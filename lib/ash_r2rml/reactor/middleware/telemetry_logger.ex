@@ -89,7 +89,7 @@ defmodule AshR2RML.Reactor.Middleware.TelemetryLogger do
         result: result,
         context: context,
         execution_id: Evidence.execution_id(context),
-        result_evidence_id: Evidence.id(result)
+        result_evidence_id: Evidence.id(evidence_result(result))
       }
     )
 
@@ -97,6 +97,15 @@ defmodule AshR2RML.Reactor.Middleware.TelemetryLogger do
   end
 
   def event(_event, _step, _context), do: :ok
+
+  # A composed sub-Reactor's `run_complete` result wraps the sub-reactor's own
+  # semantic return value inside `%{result: ..., reactor: %Reactor{}}` —
+  # the `%Reactor{}` carries internal scheduler/PID/ref state that differs
+  # between otherwise-identical runs. Only the sub-reactor's own returned
+  # value is semantic evidence; unwrap it before hashing so two independent
+  # runs with identical composed-step outcomes get identical evidence ids.
+  defp evidence_result(%{result: inner, reactor: %Reactor{}}), do: inner
+  defp evidence_result(result), do: result
 
   defp elapsed(context, key) do
     case Map.get(context, key) do

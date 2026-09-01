@@ -107,6 +107,13 @@ defmodule AshR2RML.GrandExample.ZachPostAgiReactor do
   # 8. Step with inline Argument Transformations and wait_for list
   step :attach_provenance, AshR2RML.Reactor.Steps.AttachProvenance do
     argument :bundle, result(:compile_bundle)
+
+    argument :provenance,
+      value(%{
+        generated_at: :updated_at,
+        derived_from: "https://ash-r2rml.dev/manifest/{id}"
+      })
+
     wait_for [:concurrent_inspectors, :preflight_cluster]
   end
 

@@ -75,6 +75,7 @@ defmodule AshR2RML.GrandExample.Organization do
     uuid_primary_key :id
     attribute :name, :string, allow_nil?: false, public?: true
     attribute :version, AshR2RML.GrandExample.Types.SemVer, allow_nil?: false, public?: true
+    timestamps()
   end
 end
 
@@ -113,6 +114,7 @@ defmodule AshR2RML.GrandExample.Person do
     attribute :name, :string, allow_nil?: false, public?: true
     attribute :email, :string, allow_nil?: false, public?: true
     attribute :organization_id, :uuid, allow_nil?: true, public?: true
+    timestamps()
   end
 
   relationships do

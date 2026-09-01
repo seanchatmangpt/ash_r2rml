@@ -48,6 +48,8 @@ must not make two semantically identical executions look different.
 
 <!-- ash_r2rml:test -->
 ```elixir
+import ExUnit.Assertions
+
 first_execution = "run-first"
 replay_execution = "run-replay"
 
