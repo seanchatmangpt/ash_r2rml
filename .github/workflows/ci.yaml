@@ -56,6 +56,10 @@ jobs:
     runs-on: ubuntu-latest
     env:
       MIX_ENV: test
+      # config/test.exs keeps the inherited Bolt clients disabled by default so
+      # pure compiler tests stay database-free. This job explicitly owns the
+      # real Neo4j control topology, so it must opt those clients in.
+      NEO4J_ENABLED: "true"
     steps:
       - uses: actions/checkout@v4
         with:
