@@ -143,12 +143,10 @@ end
 
 - **`AshR2RML.OBDA.InMemory`** materializes resources from any real Ash data layer reachable by
   `Ash.read!/2` into a real `RDF.Graph`, after `sanitize_in_memory_mapping/2` closes derived-field
-  disclosure, then runs full SPARQL (`SELECT`/`ASK`/`CONSTRUCT`/`DESCRIBE`) through
-  `AshR2RML.SPARQL.Local`/`SPARQL.ex`. Supports `materialize_many/2`/`query_many/3` for
-  cross-resource joins via `reference_object_maps`, including composite-key (multi-column)
-  `rr:joinCondition`s; a `:join_table` many-to-many shape is an explicit typed refusal, not a
-  silent omission. `allow_sensitive: true` opts into materializing `sensitive?: true` attributes;
-  the default refuses instead.
+  disclosure, then runs full SPARQL (`SELECT`/`ASK`/`CONSTRUCT`/`DESCRIBE`) through `AshR2RML.SPARQL.Local`/`SPARQL.ex`.
+  Supports `materialize_many/2`/`query_many/3` for cross-resource joins via `reference_object_maps`,
+  including composite-key (multi-column) `rr:joinCondition`s; a `:join_table` many-to-many shape is an explicit typed refusal, not a silent omission.
+  `allow_sensitive: true` opts into materializing `sensitive?: true` attributes; the default refuses instead.
 - **`AshR2RML.OBDA.Ontop`** executes the rendered R2RML mapping against `AshPostgres.DataLayer`
   via the Ontop CLI over JDBC. See "Query backend security" above for the security asymmetry
   between these two surfaces.
