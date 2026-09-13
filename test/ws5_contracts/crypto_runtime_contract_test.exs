@@ -1,4 +1,4 @@
-defmodule AshR2RML.WS5.CryptoRuntimeContractTest do
+defmodule AshR2RML.WS5.CryptoRuntimeContractRegexTest do
   use ExUnit.Case, async: true
 
   test "crypto remains an explicit runtime application" do
