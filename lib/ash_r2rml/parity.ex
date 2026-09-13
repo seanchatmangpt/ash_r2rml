@@ -132,8 +132,21 @@ defmodule AshR2RML.Parity do
   defp canonical(%Date{} = date), do: Date.to_iso8601(date)
   defp canonical(%_{} = struct), do: struct |> Map.from_struct() |> canonical()
 
+  # A SPARQL binding row can express "this variable has no value here" two
+  # observably different ways depending on the execution surface: the local
+  # in-process engine (`AshR2RML.SPARQL.Local`) simply omits the key from the
+  # solution map, while an external CSV-emitting OBDA engine (Ontop) must
+  # still print every header column and renders an unbound variable as an
+  # empty cell (`""`) — the SPARQL 1.1 CSV results format itself cannot
+  # distinguish "unbound" from "bound to the empty string" (that ambiguity is
+  # inherent to the format, not a bug in either engine). Comparing the two
+  # raw shapes byte-for-bit produced spurious parity mismatches on any
+  # `OPTIONAL` pattern whose variable went unbound for some row. Drop
+  # empty-string-valued keys before hashing so both representations collapse
+  # to the same canonical shape.
   defp canonical(map) when is_map(map) do
     map
+    |> Enum.reject(fn {_key, value} -> value == "" end)
     |> Enum.map(fn {key, value} -> {to_string(key), canonical(value)} end)
     |> Enum.sort_by(&elem(&1, 0))
   end

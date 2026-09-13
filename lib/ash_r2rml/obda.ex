@@ -113,6 +113,7 @@ defmodule AshR2RML.OBDA.Ontop do
     records =
       output
       |> String.replace_prefix("\uFEFF", "")
+      |> strip_ontop_log_noise()
       |> String.to_charlist()
       |> parse_csv_chars([], [], [], false)
       |> Enum.reverse()
@@ -122,6 +123,28 @@ defmodule AshR2RML.OBDA.Ontop do
       [] -> []
       [headers | rows] -> Enum.map(rows, fn row -> Map.new(Enum.zip(headers, row)) end)
     end
+  end
+
+  # Ontop's bundled logback config writes its own INFO/DEBUG diagnostics (join
+  # planning, engine startup) to the *same* stdout stream the `query` CLI uses
+  # for CSV results \u2014 there is no `-q`/quiet flag on the CLI to separate them.
+  # Every real logback line here is timestamp-prefixed (`HH:MM:SS.mmm |-`), and
+  # the only two continuation lines Ontop's `R2RMLToSQLPPTriplesMapConverter`
+  # emits without that prefix are the "target atoms:" / "source query:" bodies
+  # of the immediately preceding "Join \"triples map\" introduced" line. Drop
+  # both shapes so the CSV parser only ever sees the real header + data rows;
+  # left unstripped, this log noise was previously parsed as spurious CSV
+  # fields/rows (observed: a 4-row real result inflated to 12 parsed "rows").
+  @ontop_log_line_regex ~r/^\d{2}:\d{2}:\d{2}\.\d{3}\s+\|-/
+  defp strip_ontop_log_noise(output) do
+    output
+    |> String.split("\n")
+    |> Enum.reject(fn line ->
+      Regex.match?(@ontop_log_line_regex, line) or
+        String.starts_with?(line, "target atoms:") or
+        String.starts_with?(line, "source query:")
+    end)
+    |> Enum.join("\n")
   end
 
   defp execute(opts, runner, evidence_kind) do

@@ -203,7 +203,31 @@ defmodule AshR2RML.SPARQL.Result do
 
   defp normalize_term(nil), do: nil
 
-  defp normalize_term(value) do
+  # xsd:decimal (and other arbitrary-precision numeric datatypes) have an XSD
+  # *value space* that ignores trailing zeros ("45.50" == "45.5"), so
+  # `RDF.Term.value/1` legitimately collapses "45.50" to `Decimal.new("45.5")`.
+  # An external OBDA engine (Ontop) emits the database's raw lexical numeric
+  # string over CSV with no datatype tag and no value-space reduction — a
+  # `NUMERIC(6,2)` column round-trips as the literal text "45.50". Comparing
+  # the local engine's value-space-reduced Decimal against Ontop's untouched
+  # lexical string byte-for-bit was producing spurious parity mismatches
+  # (`receipt.verified? == false`) for any decimal literal with a lexical
+  # scale not preserved by its numeric value (observed: xsd:decimal "45.50",
+  # "30.00", "50000.00" all reduced to "45.5"/"30"/"50000" locally while Ontop
+  # kept the ".50"/".00" trailing zeros). Preserve the original lexical form
+  # for decimal literals so both engines are compared on the same text this
+  # relational/RDF round-trip actually produces.
+  defp normalize_term(%RDF.Literal{} = literal) do
+    if RDF.Literal.datatype_id(literal) == RDF.NS.XSD.decimal() do
+      RDF.Literal.lexical(literal)
+    else
+      normalize_rdf_value(literal)
+    end
+  end
+
+  defp normalize_term(value), do: normalize_rdf_value(value)
+
+  defp normalize_rdf_value(value) do
     if RDF.Term.term?(value), do: RDF.Term.value(value), else: value
   rescue
     _ -> value
