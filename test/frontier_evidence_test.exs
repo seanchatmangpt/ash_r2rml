@@ -162,7 +162,7 @@ defmodule AshR2RML.FrontierEvidenceTest do
                producer_head: @producer_head
              )
 
-    assert detail =~ "detached"
+    assert detail =~ "does not match its receipt"
   end
 
   test "refuses malformed producer identity, unsupported options, and self-promotion to ALIVE" do
