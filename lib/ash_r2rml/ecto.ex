@@ -165,21 +165,31 @@ defmodule AshR2RML.Semantic.Ecto do
 
   defp ecto_type(_), do: nil
 
-  # Match AshPostgres' native migration selection boundary: after explicit
-  # migration overrides, it derives a migration type from the Ash type's own
-  # storage contract. This keeps custom/narrowed Ash types composable without
-  # adding package-specific cases here. Invalid or unavailable types remain
-  # unadmitted and fall through to the existing typed refusal above.
+  # Match AshPostgres' migration selection boundary without coupling this
+  # renderer to individual extension packages. Current Ash types expose
+  # storage_type/1; AshGeo's public type contract exposes storage_type/0.
+  # Prefer the current callback, admit the legacy callback when actually
+  # exported, and otherwise fail closed through verify_types/1.
   defp ash_storage_type(type) do
-    type
-    |> Ash.Type.storage_type([])
-    |> migration_type_from_storage_type()
+    with {:module, _} <- Code.ensure_loaded(type) do
+      storage_type =
+        cond do
+          function_exported?(type, :storage_type, 1) -> apply(type, :storage_type, [[]])
+          function_exported?(type, :storage_type, 0) -> apply(type, :storage_type, [])
+          true -> nil
+        end
+
+      migration_type_from_storage_type(storage_type)
+    else
+      _ -> nil
+    end
   rescue
     _ -> nil
   catch
     _, _ -> nil
   end
 
+  defp migration_type_from_storage_type(nil), do: nil
   defp migration_type_from_storage_type(:string), do: :text
   defp migration_type_from_storage_type(:ci_string), do: :citext
   defp migration_type_from_storage_type(storage_type), do: storage_type
