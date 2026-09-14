@@ -420,6 +420,7 @@ defmodule AshR2RML.OBDA.Ontop do
        rows: []
      }}
   end
+
   defp execution_failure(
          opts,
          evidence_kind,

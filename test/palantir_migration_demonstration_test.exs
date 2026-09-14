@@ -24,11 +24,11 @@ defmodule AshR2RML.PalantirMigrationDemonstrationTest do
   alias AshR2RML.PalantirMigrationFixture.Asset
 
   @incumbent_fixture_path Path.join([
-                             __DIR__,
-                             "support",
-                             "palantir_migration_fixture",
-                             "incumbent_ontology_object.json"
-                           ])
+                            __DIR__,
+                            "support",
+                            "palantir_migration_fixture",
+                            "incumbent_ontology_object.json"
+                          ])
 
   setup_all do
     incumbent =

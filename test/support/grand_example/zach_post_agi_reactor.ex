@@ -109,10 +109,10 @@ defmodule AshR2RML.GrandExample.ZachPostAgiReactor do
     argument :bundle, result(:compile_bundle)
 
     argument :provenance,
-      value(%{
-        generated_at: :updated_at,
-        derived_from: "https://ash-r2rml.dev/manifest/{id}"
-      })
+             value(%{
+               generated_at: :updated_at,
+               derived_from: "https://ash-r2rml.dev/manifest/{id}"
+             })
 
     wait_for [:concurrent_inspectors, :preflight_cluster]
   end
