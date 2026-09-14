@@ -159,8 +159,30 @@ defmodule AshR2RML.Semantic.Ecto do
     end
   end
 
-  defp ecto_type(type) when is_atom(type), do: Map.get(@types, type)
+  defp ecto_type(type) when is_atom(type) do
+    Map.get(@types, type) || ash_storage_type(type)
+  end
+
   defp ecto_type(_), do: nil
+
+  # Match AshPostgres' native migration selection boundary: after explicit
+  # migration overrides, it derives a migration type from the Ash type's own
+  # storage contract. This keeps custom/narrowed Ash types composable without
+  # adding package-specific cases here. Invalid or unavailable types remain
+  # unadmitted and fall through to the existing typed refusal above.
+  defp ash_storage_type(type) do
+    type
+    |> Ash.Type.storage_type([])
+    |> migration_type_from_storage_type()
+  rescue
+    _ -> nil
+  catch
+    _, _ -> nil
+  end
+
+  defp migration_type_from_storage_type(:string), do: :text
+  defp migration_type_from_storage_type(:ci_string), do: :citext
+  defp migration_type_from_storage_type(storage_type), do: storage_type
 
   defp atom_literal(value), do: ":" <> inspect(to_string(value))
 

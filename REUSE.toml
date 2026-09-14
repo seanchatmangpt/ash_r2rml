@@ -40,6 +40,21 @@ SPDX-FileCopyrightText = "2026 ash_r2rml contributors <https://github.com/seanch
 SPDX-License-Identifier = "MIT"
 
 [[annotations]]
+path = "test/workstation2_contract/**"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 ash_r2rml contributors <https://github.com/seanchatmangpt/ash_r2rml/graphs/contributors>"
+SPDX-License-Identifier = "MIT"
+
+[[annotations]]
+path = [
+  "test/support/graphql_projection/schema_sha.txt",
+  "test/support/palantir_migration_fixture/incumbent_ontology_object.json"
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 ash_r2rml contributors <https://github.com/seanchatmangpt/ash_r2rml/graphs/contributors>"
+SPDX-License-Identifier = "MIT"
+
+[[annotations]]
 path = [
   ".github/workflows/r88-ggen-consumer.yml",
   ".github/workflows/ws4-runtime-contract-unit.yml",
