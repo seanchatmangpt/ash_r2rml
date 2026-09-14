@@ -1,0 +1,46 @@
+name: One-shot formatter repair
+
+on:
+  push:
+    branches:
+      - epoch/v26.9.15-semantic-subject
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout writable PR branch
+        uses: actions/checkout@v4
+        with:
+          ref: epoch/v26.9.15-semantic-subject
+          fetch-depth: 1
+
+      - name: Set up exact Elixir / Erlang toolchain
+        uses: jdx/mise-action@v2
+
+      - name: Resolve formatter dependencies
+        run: mix deps.get
+
+      - name: Apply repository-native formatter
+        run: mix format
+
+      - name: Verify formatter is idempotent
+        run: mix format --check-formatted
+
+      - name: Commit deterministic formatter projection
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet; then
+            echo "No formatter delta remains."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -u
+          git commit -m "chore(format): normalize repository with mix format"
+          git push origin HEAD:epoch/v26.9.15-semantic-subject
