@@ -102,7 +102,7 @@ defmodule AshR2RML.OntopComplianceCrown do
           sh:path geo:asWKT ;
           r2ml:ashName "geometry" ;
           r2ml:ashType "AshGeo.Geometry" ;
-          r2ml:postgresType "TEXT" ;
+          r2ml:postgresType "GEOMETRY" ;
           sh:datatype geo:wktLiteral ;
           sh:minCount 1 ;
           sh:maxCount 1

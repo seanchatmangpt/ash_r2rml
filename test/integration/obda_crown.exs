@@ -109,7 +109,6 @@ defmodule AshR2RML.ObdaCrown do
   ORDER BY account
   """
 
-
   def run! do
     jdbc_evidence = verify_pgjdbc!()
 
@@ -294,7 +293,6 @@ defmodule AshR2RML.ObdaCrown do
 
     unless technical_receipt.query_parity == :VERIFIED,
       do: raise("SPARQL/SQL witness was not admitted")
-
 
     if AshR2RML.Compiler.cutover_ready?(technical_receipt),
       do: raise("technical parity must not manufacture cutover authority")
@@ -491,7 +489,7 @@ defmodule AshR2RML.ObdaCrown do
   defp json_term(%_{} = struct), do: struct |> Map.from_struct() |> json_term()
 
   defp json_term(map) when is_map(map) do
-    Map.new(map, fn {key, value} -> {to_string(key), json_term(value)} end)
+    Map.new(map, fn {key, value} -> {json_key(key), json_term(value)} end)
   end
 
   defp json_term(list) when is_list(list), do: Enum.map(list, &json_term/1)
@@ -499,6 +497,19 @@ defmodule AshR2RML.ObdaCrown do
   defp json_term(value) when value in [true, false, nil], do: value
   defp json_term(value) when is_atom(value), do: Atom.to_string(value)
   defp json_term(value), do: value
+
+  # CompilationReceipt.storage_candidates/.selected_storage (see
+  # AshR2RML.Compiler.storage_map/2) are keyed by {class_iri, relationship_name}
+  # tuples, not plain atoms/strings, so json_term/1's map clause needs a real
+  # JSON-object-key encoding for that shape instead of Kernel.to_string/1 (which
+  # has no String.Chars implementation for a tuple). This mirrors the
+  # already-shipped convention in AshR2RML.Ggen's private json_key/1.
+  defp json_key({class_iri, relationship}) when is_binary(class_iri),
+    do: class_iri <> "#" <> to_string(relationship)
+
+  defp json_key(key) when is_binary(key), do: key
+  defp json_key(key) when is_atom(key), do: Atom.to_string(key)
+  defp json_key(key), do: inspect(key)
 
   defp sha256(value), do: :crypto.hash(:sha256, value) |> Base.encode16(case: :lower)
 end
