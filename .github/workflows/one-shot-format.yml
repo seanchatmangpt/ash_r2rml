@@ -1,0 +1,67 @@
+# SPDX-License-Identifier: MIT
+name: One-shot repository formatter
+
+on:
+  push:
+    branches:
+      - epoch/v26.9.15-semantic-subject
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    if: github.actor == 'seanchatmangpt'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact pushed subject
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Assert exact pushed subject identity
+        run: test "$(git rev-parse HEAD)" = "${{ github.sha }}"
+
+      - name: Set up repository toolchain
+        uses: jdx/mise-action@v4
+        with:
+          minimum_release_age: 7d
+
+      - name: Resolve formatter dependencies
+        env:
+          MIX_ENV: dev
+        run: mix deps.get
+
+      - name: Apply repository-native formatter
+        env:
+          MIX_ENV: dev
+        run: mix format
+
+      - name: Refuse formatter scope expansion
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t changed < <(git diff --name-only)
+          test "${#changed[@]}" -gt 0
+          printf '%s\n' "${changed[@]}"
+          for path in "${changed[@]}"; do
+            case "$path" in
+              lib/*.ex|lib/**/*.ex|test/*.ex|test/**/*.ex|test/*.exs|test/**/*.exs) ;;
+              *)
+                echo "::error title=REFUSED:FORMAT_SCOPE_EXPANSION::$path"
+                exit 2
+                ;;
+            esac
+          done
+
+      - name: Commit deterministic formatter projection
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add lib test
+          git commit -m "style: apply repository-native formatter"
+          git push origin HEAD:epoch/v26.9.15-semantic-subject
