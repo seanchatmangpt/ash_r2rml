@@ -1,0 +1,99 @@
+# SPDX-FileCopyrightText: 2026 ash_r2rml contributors <https://github.com/seanchatmangpt/ash_r2rml/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
+name: Exact-head release court
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ash-r2rml-release-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  SUBJECT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+jobs:
+  release-security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact subject
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SUBJECT_SHA }}
+          persist-credentials: false
+
+      - name: Assert exact subject identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          printf 'admitted=%s\nobserved=%s\n' "$SUBJECT_SHA" "$actual"
+          if [[ "$actual" != "$SUBJECT_SHA" ]]; then
+            echo "::error title=REFUSED:EXACT_HEAD_MISMATCH::actual=$actual expected=$SUBJECT_SHA"
+            exit 2
+          fi
+
+      - name: Set up Elixir / Erlang from repository toolchain
+        uses: jdx/mise-action@v2
+
+      - name: Resolve dependencies from clean state
+        run: |
+          set -euo pipefail
+          rm -rf deps _build
+          mix deps.get
+
+      - name: Verify dependency lock is deterministic
+        run: git diff --exit-code -- mix.lock
+
+      - name: Check formatting
+        run: mix format --check-formatted
+
+      - name: Compile candidate with warnings as errors
+        run: mix compile --force --warnings-as-errors
+
+      - name: Execute database-free release suite
+        run: mix test --exclude external
+
+      - name: Construct exact candidate Hex package without publication
+        run: mix hex.build
+
+      - name: Manufacture bounded release receipt
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p receipt
+          actual="$(git rev-parse HEAD)"
+          package="$(find . -maxdepth 1 -type f -name '*.tar' -printf '%f\n' | sort | head -n1 || true)"
+          cat > receipt/release-court.json <<JSON
+          {
+            "subject_sha": "$actual",
+            "court": "lock+format+compile+database_free_tests+hex_build",
+            "package": "$package",
+            "publication": "not_attempted",
+            "merge": "not_attempted",
+            "runtime_execution": "not_claimed",
+            "standing": "candidate_evidence_only"
+          }
+          JSON
+          python3 -m json.tool receipt/release-court.json
+
+      - name: Preserve bounded release receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ash-r2rml-release-${{ env.SUBJECT_SHA }}
+          path: |
+            receipt/release-court.json
+            *.tar
+          if-no-files-found: warn
+          retention-days: 14
