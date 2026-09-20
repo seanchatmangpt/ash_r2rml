@@ -139,4 +139,37 @@ defmodule AshR2RML.Gall.RuntimeFeedbackTest do
              )
   end
 
+  test "GALL-008 observed receipt remains provenance until GALL-009 admission" do
+    artifact_digest = "sha256:" <> String.duplicate("d", 64)
+    receipt_digest = "sha256:" <> String.duplicate("e", 64)
+
+    gall008 = %{
+      "schema" => "autofde.gall.semantic-telemetry-receipt/1",
+      "checkpoint" => "GALL-008",
+      "standing" => "OBSERVED",
+      "authority" => "NONE",
+      "artifact_digest" => artifact_digest,
+      "receipt_digest" => receipt_digest
+    }
+
+    assert {:ok, candidate} =
+             RuntimeFeedback.candidate_from_gall008(
+               %{"latency_ms" => 125},
+               gall008,
+               subject_iri: "https://example.org/run#gall008",
+               mapping: [%{source_key: "latency_ms", predicate: @public <> "latencyMs"}]
+             )
+
+    assert candidate.standing == :candidate
+    assert candidate.source_evidence_digest == artifact_digest
+
+    assert {:error, {:invalid_gall008_receipt, :wrong_observation_contract}} =
+             RuntimeFeedback.candidate_from_gall008(
+               %{"latency_ms" => 125},
+               %{gall008 | "authority" => "DO"},
+               subject_iri: "https://example.org/run#gall008",
+               mapping: mapping()
+             )
+  end
+
 end
