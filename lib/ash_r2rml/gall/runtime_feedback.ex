@@ -134,6 +134,51 @@ defmodule AshR2RML.Gall.RuntimeFeedback do
     end
   end
 
+  @doc """
+  Projects an admitted delta into a content-addressed GALL-009 evidence receipt.
+
+  The producer SHA is caller-bound exact-head identity; this function does not
+  read git state, write the canonical graph, or promote repository standing.
+  """
+  def receipt(%AdmittedDelta{} = admitted, producer_sha, opts \\ []) do
+    with :ok <- git_sha(producer_sha) do
+      payload = %{
+        "schema" => "gall.runtime-feedback-receipt/1",
+        "checkpoint" => "GALL-009",
+        "producer_sha" => producer_sha,
+        "subject_iri" => admitted.subject_iri,
+        "source_evidence_digest" => admitted.source_evidence_digest,
+        "mapping_digest" => admitted.mapping_digest,
+        "candidate_digest" => admitted.candidate_digest,
+        "predecessor_graph_digest" => admitted.predecessor_graph_digest,
+        "new_graph_digest" => admitted.new_graph_digest,
+        "admission_receipt_digest" => admitted.admission_receipt_digest,
+        "court" => Keyword.get(opts, :court, "runtime-feedback-admission"),
+        "falsifiers" => [
+          "source-evidence-bound",
+          "mapping-identity-bound",
+          "public-vocabulary-only",
+          "admission-gates-pass"
+        ],
+        "result" => "ADMITTED_DELTA",
+        "authority" => "NONE",
+        "evidence_ceiling" => "semantic admission/construct only; no canonical write or DO"
+      }
+
+      {:ok, Map.put(payload, "receipt_digest", hash(payload))}
+    end
+  end
+
+  defp git_sha(value) when is_binary(value) do
+    if byte_size(value) == 40 and value =~ ~r/^[0-9a-f]+$/ do
+      :ok
+    else
+      {:error, {:producer_sha, :invalid_git_sha}}
+    end
+  end
+
+  defp git_sha(_), do: {:error, {:producer_sha, :invalid_git_sha}}
+
   defp map_rules(observation, subject_iri, mapping) when is_list(mapping) do
     mapping
     |> Enum.reduce_while({:ok, []}, fn rule, {:ok, acc} ->
@@ -235,9 +280,9 @@ defmodule AshR2RML.Gall.RuntimeFeedback do
 
   defp absolute_iri(_value, field), do: {:error, {field, :not_iri}}
 
-  defp digest("sha256:" <> hex, _field)
-       when byte_size(hex) == 64,
-       do: :ok
+  defp digest("sha256:" <> hex, _field) when byte_size(hex) == 64 do
+    if hex =~ ~r/^[0-9a-f]+$/, do: :ok, else: {:error, :invalid_sha256_hex}
+  end
 
   defp digest(_value, field), do: {:error, {field, :invalid_digest}}
 
