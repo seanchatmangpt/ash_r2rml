@@ -280,8 +280,8 @@ defmodule AshR2RML.Gall.RuntimeFeedback do
 
   defp absolute_iri(_value, field), do: {:error, {field, :not_iri}}
 
-  defp digest("sha256:" <> hex, _field) when byte_size(hex) == 64 do
-    if hex =~ ~r/^[0-9a-f]+$/, do: :ok, else: {:error, :invalid_sha256_hex}
+  defp digest("sha256:" <> hex, field) when byte_size(hex) == 64 do
+    if hex =~ ~r/^[0-9a-f]+$/, do: :ok, else: {:error, {field, :invalid_digest}}
   end
 
   defp digest(_value, field), do: {:error, {field, :invalid_digest}}
