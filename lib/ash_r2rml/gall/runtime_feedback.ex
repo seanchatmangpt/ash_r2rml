@@ -88,6 +88,40 @@ defmodule AshR2RML.Gall.RuntimeFeedback do
   end
 
   @doc """
+  Build a GALL-009 candidate from the powerless GALL-008 telemetry receipt.
+
+  The receipt is transport/provenance only. Its OBSERVED standing does not
+  become ADMITTED; this module still performs mapping and admission separately.
+  """
+  def candidate_from_gall008(observation, receipt, opts)
+      when is_map(observation) and is_map(receipt) and is_list(opts) do
+    with :ok <- gall008_receipt(receipt) do
+      candidate(
+        observation,
+        Keyword.put(opts, :source_evidence_digest, receipt["artifact_digest"])
+      )
+    else
+      {:error, reason} -> {:error, {:invalid_gall008_receipt, reason}}
+    end
+  end
+
+  defp gall008_receipt(%{
+         "schema" => "autofde.gall.semantic-telemetry-receipt/1",
+         "checkpoint" => "GALL-008",
+         "standing" => "OBSERVED",
+         "authority" => "NONE",
+         "artifact_digest" => artifact_digest,
+         "receipt_digest" => receipt_digest
+       }) do
+    with :ok <- digest(artifact_digest, :artifact_digest),
+         :ok <- digest(receipt_digest, :receipt_digest) do
+      :ok
+    end
+  end
+
+  defp gall008_receipt(_), do: {:error, :wrong_observation_contract}
+
+  @doc """
   Admit a candidate against a predecessor graph identity.
 
   public_namespaces is an explicit allow-list. gates are pure functions
