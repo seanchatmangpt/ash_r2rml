@@ -97,4 +97,42 @@ defmodule AshR2RML.Gall.RuntimeFeedbackTest do
     refute first.mapping_digest == second.mapping_digest
     refute first.candidate_digest == second.candidate_digest
   end
+  test "admitted delta emits exact-head machine-readable receipt without authority" do
+    {:ok, candidate} =
+      RuntimeFeedback.candidate(%{"latency_ms" => 125},
+        source_evidence_digest: @evidence,
+        subject_iri: "https://example.org/run#receipt",
+        mapping: [%{source_key: "latency_ms", predicate: @public <> "latencyMs"}]
+      )
+
+    {:ok, admitted} =
+      RuntimeFeedback.admit(candidate, @graph,
+        public_namespaces: [@public],
+        gates: [fn _ -> :ok end]
+      )
+
+    producer_sha = String.duplicate("c", 40)
+    assert {:ok, receipt} = RuntimeFeedback.receipt(admitted, producer_sha)
+
+    assert receipt["schema"] == "gall.runtime-feedback-receipt/1"
+    assert receipt["producer_sha"] == producer_sha
+    assert receipt["source_evidence_digest"] == @evidence
+    assert receipt["new_graph_digest"] == admitted.new_graph_digest
+    assert receipt["result"] == "ADMITTED_DELTA"
+    assert receipt["authority"] == "NONE"
+    assert String.starts_with?(receipt["receipt_digest"], "sha256:")
+
+    assert {:error, {:producer_sha, :invalid_git_sha}} =
+             RuntimeFeedback.receipt(admitted, "main")
+  end
+
+  test "malformed sha256 evidence is typed-refused" do
+    assert {:error, {:source_evidence_digest, :invalid_digest}} =
+             RuntimeFeedback.candidate(%{"latency_ms" => 125},
+               source_evidence_digest: "sha256:" <> String.duplicate("z", 64),
+               subject_iri: "https://example.org/run#bad-digest",
+               mapping: mapping()
+             )
+  end
+
 end
