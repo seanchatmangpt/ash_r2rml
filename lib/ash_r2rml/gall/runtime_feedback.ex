@@ -8,9 +8,12 @@ defmodule AshR2RML.Gall.RuntimeFeedback do
   and caller-supplied law/shape gates have passed.
   """
 
-  @enforce_keys [:source_evidence_digest, :mapping_digest, :subject_iri, :triples, :candidate_digest]
+  @enforce_keys [:work_order_iri, :source_receipt_iri, :source_evidence_digest, :source_graph_digest, :mapping_digest, :subject_iri, :triples, :candidate_digest]
   defstruct [
+    :work_order_iri,
+    :source_receipt_iri,
     :source_evidence_digest,
+    :source_graph_digest,
     :mapping_digest,
     :subject_iri,
     :triples,
@@ -21,7 +24,10 @@ defmodule AshR2RML.Gall.RuntimeFeedback do
   defmodule AdmittedDelta do
     @moduledoc "A candidate delta that passed all GALL-009 admission gates."
     @enforce_keys [
+      :work_order_iri,
+      :source_receipt_iri,
       :source_evidence_digest,
+      :source_graph_digest,
       :mapping_digest,
       :subject_iri,
       :triples,
@@ -31,7 +37,10 @@ defmodule AshR2RML.Gall.RuntimeFeedback do
       :admission_receipt_digest
     ]
     defstruct [
+      :work_order_iri,
+      :source_receipt_iri,
       :source_evidence_digest,
+      :source_graph_digest,
       :mapping_digest,
       :subject_iri,
       :triples,
@@ -57,16 +66,25 @@ defmodule AshR2RML.Gall.RuntimeFeedback do
   """
   def candidate(observation, opts)
       when is_map(observation) and is_list(opts) do
+    work_order_iri = Keyword.fetch!(opts, :work_order_iri)
+    source_receipt_iri = Keyword.fetch!(opts, :source_receipt_iri)
     source_evidence_digest = Keyword.fetch!(opts, :source_evidence_digest)
+    source_graph_digest = Keyword.fetch!(opts, :source_graph_digest)
     subject_iri = Keyword.fetch!(opts, :subject_iri)
     mapping = Keyword.fetch!(opts, :mapping)
 
-    with :ok <- digest(source_evidence_digest, :source_evidence_digest),
+    with :ok <- absolute_iri(work_order_iri, :work_order_iri),
+         :ok <- absolute_iri(source_receipt_iri, :source_receipt_iri),
+         :ok <- digest(source_evidence_digest, :source_evidence_digest),
+         :ok <- digest(source_graph_digest, :source_graph_digest),
          :ok <- absolute_iri(subject_iri, :subject_iri),
          {:ok, triples} <- map_rules(observation, subject_iri, mapping) do
       mapping_digest = hash(mapping)
       payload = %{
+        work_order_iri: work_order_iri,
+        source_receipt_iri: source_receipt_iri,
         source_evidence_digest: source_evidence_digest,
+        source_graph_digest: source_graph_digest,
         mapping_digest: mapping_digest,
         subject_iri: subject_iri,
         triples: triples
@@ -74,7 +92,10 @@ defmodule AshR2RML.Gall.RuntimeFeedback do
 
       {:ok,
        %__MODULE__{
+         work_order_iri: work_order_iri,
+         source_receipt_iri: source_receipt_iri,
          source_evidence_digest: source_evidence_digest,
+         source_graph_digest: source_graph_digest,
          mapping_digest: mapping_digest,
          subject_iri: subject_iri,
          triples: triples,
@@ -97,6 +118,7 @@ defmodule AshR2RML.Gall.RuntimeFeedback do
     gates = Keyword.get(opts, :gates, [])
 
     with :ok <- digest(predecessor_graph_digest, :predecessor_graph_digest),
+         :ok <- equal_graph(candidate.source_graph_digest, predecessor_graph_digest),
          :ok <- public_vocabulary(candidate, public_namespaces),
          :ok <- run_gates(candidate, gates) do
       new_graph_digest =
@@ -108,7 +130,10 @@ defmodule AshR2RML.Gall.RuntimeFeedback do
 
       receipt =
         hash(%{
+          work_order_iri: candidate.work_order_iri,
+          source_receipt_iri: candidate.source_receipt_iri,
           source_evidence_digest: candidate.source_evidence_digest,
+          source_graph_digest: candidate.source_graph_digest,
           mapping_digest: candidate.mapping_digest,
           candidate_digest: candidate.candidate_digest,
           predecessor_graph_digest: predecessor_graph_digest,
@@ -120,7 +145,10 @@ defmodule AshR2RML.Gall.RuntimeFeedback do
 
       {:ok,
        %AdmittedDelta{
+         work_order_iri: candidate.work_order_iri,
+         source_receipt_iri: candidate.source_receipt_iri,
          source_evidence_digest: candidate.source_evidence_digest,
+         source_graph_digest: candidate.source_graph_digest,
          mapping_digest: candidate.mapping_digest,
          subject_iri: candidate.subject_iri,
          triples: candidate.triples,
@@ -132,6 +160,12 @@ defmodule AshR2RML.Gall.RuntimeFeedback do
     else
       {:error, reason} -> {:error, {:refused_runtime_feedback, reason}}
     end
+  end
+
+  defp equal_graph(observed, predecessor) do
+    if observed == predecessor,
+      do: :ok,
+      else: {:error, {:source_graph_mismatch, observed, predecessor}}
   end
 
   defp map_rules(observation, subject_iri, mapping) when is_list(mapping) do
