@@ -97,7 +97,6 @@ defmodule AshR2RML.ParityAndGgenTest do
     sparql_sql =
       AshR2RML.Parity.compare(:sparql_sql, :organization, [%{id: "1"}], [%{"id" => "1"}])
 
-
     receipt =
       compilation.receipt
       |> AshR2RML.Compiler.attach_parity_witness(:sparql_sql, Map.from_struct(sparql_sql))

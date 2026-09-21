@@ -131,6 +131,20 @@ defmodule AshR2RML.Production.Release do
 
   defp stages(:rolling), do: [%{name: :rolling, percent: 100}]
   defp stages(:blue_green), do: [%{name: :green_shadow, percent: 0}, %{name: :green_cutover, percent: 100}]
-  defp stages(:canary), do: [%{name: :canary, percent: 1}, %{name: :expand, percent: 10}, %{name: :majority, percent: 50}, %{name: :complete, percent: 100}]
-  defp stages(:cell_progressive), do: [%{name: :first_cell, percent: 1}, %{name: :one_region, percent: 10}, %{name: :half_cells, percent: 50}, %{name: :all_cells, percent: 100}]
+
+  defp stages(:canary),
+    do: [
+      %{name: :canary, percent: 1},
+      %{name: :expand, percent: 10},
+      %{name: :majority, percent: 50},
+      %{name: :complete, percent: 100}
+    ]
+
+  defp stages(:cell_progressive),
+    do: [
+      %{name: :first_cell, percent: 1},
+      %{name: :one_region, percent: 10},
+      %{name: :half_cells, percent: 50},
+      %{name: :all_cells, percent: 100}
+    ]
 end

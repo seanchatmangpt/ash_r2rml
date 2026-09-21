@@ -91,7 +91,8 @@ defmodule AshR2RML.DfCM.CandidateSet do
     values
     |> Enum.reduce_while({:ok, []}, fn value, {:ok, acc} ->
       case normalize_candidate(value) do
-        {:ok, candidate} -> {:cont, {:ok, [candidate | acc]}}
+        {:ok, candidate} ->
+          {:cont, {:ok, [candidate | acc]}}
 
         :error ->
           {:halt,

@@ -109,7 +109,6 @@ defmodule AshR2RML.ObdaCrown do
   ORDER BY account
   """
 
-
   def run! do
     jdbc_evidence = verify_pgjdbc!()
 
@@ -294,7 +293,6 @@ defmodule AshR2RML.ObdaCrown do
 
     unless technical_receipt.query_parity == :VERIFIED,
       do: raise("SPARQL/SQL witness was not admitted")
-
 
     if AshR2RML.Compiler.cutover_ready?(technical_receipt),
       do: raise("technical parity must not manufacture cutover authority")

@@ -84,8 +84,7 @@ defmodule AshR2RML.SemanticSessionIdentity do
       shacl_hash: get(attrs, :shacl_hash),
       ir_sha256: get(attrs, :ir_sha256),
       mapping_sha256: get(attrs, :mapping_sha256),
-      compiler_module_sha256:
-        get(attrs, :compiler_module_sha256) || module_sha256(AshR2RML.Compiler),
+      compiler_module_sha256: get(attrs, :compiler_module_sha256) || module_sha256(AshR2RML.Compiler),
       compiler_version: get(attrs, :compiler_version) || app_version(),
       elixir_version: get(attrs, :elixir_version) || System.version(),
       otp_release: get(attrs, :otp_release) || System.otp_release(),
@@ -1062,7 +1061,13 @@ defmodule AshR2RML.DfCM.Compiler do
 
     proofs =
       envelope.proof_classes --
-        [:relational_observed, :obda_query_observed, :subject_identity_verified, :result_parity_verified, :ontology_roundtrip_verified]
+        [
+          :relational_observed,
+          :obda_query_observed,
+          :subject_identity_verified,
+          :result_parity_verified,
+          :ontology_roundtrip_verified
+        ]
 
     receipt = envelope.compilation.receipt
 

@@ -33,9 +33,7 @@ defmodule AshR2RML.Test.DockerInfraCheck do
   running (a real `docker inspect` call, not a cached assumption).
   """
   def container_running? do
-    case System.cmd("docker", ["inspect", "-f", "{{.State.Running}}", @container],
-           stderr_to_stdout: true
-         ) do
+    case System.cmd("docker", ["inspect", "-f", "{{.State.Running}}", @container], stderr_to_stdout: true) do
       {"true\n", 0} -> true
       _ -> false
     end

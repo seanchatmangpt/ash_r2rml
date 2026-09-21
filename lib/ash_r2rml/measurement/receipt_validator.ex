@@ -72,8 +72,7 @@ defmodule AshR2RML.Measurement.ReceiptValidator do
     claims_zero = Regex.match?(~r/Total Skipped\/Excluded\*\*:\s*0\b/, receipt)
 
     if claims_zero and excluded_tags != [] do
-      {:error, :receipt_contradictory_exclusions,
-       %{claimed_excluded: 0, observed_excluded_tags: excluded_tags}}
+      {:error, :receipt_contradictory_exclusions, %{claimed_excluded: 0, observed_excluded_tags: excluded_tags}}
     else
       :ok
     end
