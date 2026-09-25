@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Sean Chatman
+# SPDX-License-Identifier: MIT
+
 name: v26.9.24 Hex release
 on:
   push:
