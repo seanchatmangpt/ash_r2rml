@@ -181,9 +181,16 @@ defmodule AshR2RML.OBDA.Ontop.Compliance do
     "obdaf:week-from-dateTime",
     "obdaf:quarter-from-dateTime",
     "obdaf:decade-from-dateTime",
-    "obdaf:century-from-dateTime",
-    "obdaf:millenium-from-dateTime"
+    "obdaf:century-from-dateTime"
   ]
+
+  # Published by Ontop's 5.5.0 compliance page as supported, but refused by the
+  # pinned engine when observed live: the ontop_compliance_crown probe
+  # (CI run 36111554866, PostgreSQL/PostGIS) returned HTTP 500
+  # OntopUnsupportedKGQueryException "The expression FunctionCall
+  # (obdaf:millenium-from-dateTime) Var(dt) is not supported yet!".
+  # Observation outranks the published claim; admission fails closed.
+  @time_functions_published_but_refused ["obdaf:millenium-from-dateTime"]
 
   @time_limitations %{
     mixed_date_datetime_ofn: ["Oracle", "Microsoft SQL Server"],
@@ -244,7 +251,11 @@ defmodule AshR2RML.OBDA.Ontop.Compliance do
           "language-tagged literals are typed as rdf:langString"
         ]
       },
-      time_functions: %{supported: @time_functions, limitations: @time_limitations},
+      time_functions: %{
+        supported: @time_functions,
+        published_but_refused: @time_functions_published_but_refused,
+        limitations: @time_limitations
+      },
       other_functions: %{supported: @other_functions}
     }
   end
@@ -260,7 +271,13 @@ defmodule AshR2RML.OBDA.Ontop.Compliance do
   @spec feature_status(atom(), String.t()) :: feature_status()
   def feature_status(:sparql_1_1, feature), do: section_feature_status(@sparql, feature)
   def feature_status(:geosparql_1_0, feature), do: section_feature_status(@geosparql, feature)
-  def feature_status(:time_functions, feature), do: member_status(@time_functions, feature)
+
+  def feature_status(:time_functions, feature) do
+    if feature in @time_functions_published_but_refused,
+      do: :unsupported,
+      else: member_status(@time_functions, feature)
+  end
+
   def feature_status(:other_functions, feature), do: member_status(@other_functions, feature)
   def feature_status(:r2rml, feature), do: if(feature in @r2rml_unsupported, do: :unsupported, else: :unknown)
   def feature_status(:rdf_1_1, "RDF 1.1"), do: :supported
@@ -488,7 +505,6 @@ defmodule AshR2RML.OBDA.Ontop.Compliance do
         BIND(obdaf:quarter-from-dateTime(?dt) AS ?quarter)
         BIND(obdaf:decade-from-dateTime(?dt) AS ?decade)
         BIND(obdaf:century-from-dateTime(?dt) AS ?century)
-        BIND(obdaf:millenium-from-dateTime(?dt) AS ?millennium)
       }
       """),
       probe(:other_functions, [:other_functions], """
