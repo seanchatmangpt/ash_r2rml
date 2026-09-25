@@ -14,14 +14,15 @@ defmodule AshR2RML.KnowledgeHook.AshTest do
   @id "0199a000-0000-7000-8000-000000000001"
 
   test "Ash notifications become deterministic state-change observations and explicit trigger receipts" do
-    plan = notification_plan(%{
-      source: :ash_notification,
-      resource: Organization,
-      action: :update,
-      action_type: :update,
-      changed: [:name],
-      transition: %{attribute: :name, from: "before", to: "after"}
-    })
+    plan =
+      notification_plan(%{
+        source: :ash_notification,
+        resource: Organization,
+        action: :update,
+        action_type: :update,
+        changed: [:name],
+        transition: %{attribute: :name, from: "before", to: "after"}
+      })
 
     notification = update_notification()
 
@@ -48,8 +49,10 @@ defmodule AshR2RML.KnowledgeHook.AshTest do
     assert evaluation.intent.authority == :UNAUTHORIZED
     assert evaluation.intent.standing == :constructed_not_actuated
     assert evaluation.receipt.authority == :UNAUTHORIZED
+
     assert evaluation.receipt.external_trigger_receipt_sha256 ==
              hd(second.evaluations).receipt.external_trigger_receipt_sha256
+
     assert byte_size(evaluation.receipt.external_trigger_receipt_sha256) == 64
     assert evaluation.receipt.blocked == [:actuation_authority]
   end
@@ -125,12 +128,13 @@ defmodule AshR2RML.KnowledgeHook.AshTest do
   end
 
   test "ggen emits a deterministic inert Ash observer projection without registering callbacks" do
-    plan = notification_plan(%{
-      source: :ash_notification,
-      resource: Organization,
-      action_type: :update,
-      changed: [:name]
-    })
+    plan =
+      notification_plan(%{
+        source: :ash_notification,
+        resource: Organization,
+        action_type: :update,
+        changed: [:name]
+      })
 
     assert {:ok, first} = GgenKnowledgeHooks.compile(plan)
     assert {:ok, second} = GgenKnowledgeHooks.compile(plan)
@@ -143,6 +147,7 @@ defmodule AshR2RML.KnowledgeHook.AshTest do
     assert projection["authority"] == "UNAUTHORIZED"
     assert projection["authority_ceiling"] == "CONSTRUCT"
     assert projection["standing"] == "construct_only"
+
     assert projection["blocked"] == [
              "callbacks",
              "timers",
