@@ -135,12 +135,28 @@ defmodule AshR2RML.OntopComplianceCrown do
     reset_fixture!(compilation.postgres_ddl)
     start_endpoint!(jdbc_directory)
 
-    observations =
+    results =
       try do
-        Enum.map(Compliance.protocol_probes(), &execute_probe!/1)
+        Enum.map(Compliance.protocol_probes(), &execute_probe/1)
       after
         stop_endpoint!()
       end
+
+    # Every probe runs before the crown decides, so one run observes the whole
+    # failing set instead of stopping at the first refused probe.
+    failures = for {:error, failure} <- results, do: failure
+
+    if failures != [] do
+      File.write!(
+        Path.join(@workspace, "compliance-failures.json"),
+        Jason.encode!(json_term(failures), pretty: true)
+      )
+
+      raise "Ontop compliance crown: #{length(failures)}/#{length(results)} live protocol probes failed:\n" <>
+              Enum.map_join(failures, "\n", &"  - #{&1.id}: #{&1.reason}")
+    end
+
+    observations = for {:ok, observation} <- results, do: observation
 
     receipt = %{
       status: :ALIVE,
@@ -163,7 +179,7 @@ defmodule AshR2RML.OntopComplianceCrown do
     IO.puts("ALIVE Ontop 5.5.0 compliance crown: #{length(observations)} live protocol probes")
   end
 
-  defp execute_probe!(probe) do
+  defp execute_probe(probe) do
     case AshR2RML.SPARQL.Protocol.query(
            @endpoint,
            probe.query,
@@ -171,23 +187,33 @@ defmodule AshR2RML.OntopComplianceCrown do
            protocol_version: "1.1"
          ) do
       {:ok, observation} ->
-        unless observation.evidence_kind == :sparql_protocol do
-          raise "probe #{probe.id} did not produce a real SPARQL Protocol observation"
+        if observation.evidence_kind == :sparql_protocol do
+          {:ok,
+           %{
+             id: probe.id,
+             sections: probe.sections,
+             query_sha256: observation.query_sha256,
+             result_kind: observation.result_kind,
+             result_sha256: observation.result_sha256,
+             row_count: length(observation.rows)
+           }}
+        else
+          {:error, %{id: probe.id, sections: probe.sections, reason: "not a real SPARQL Protocol observation"}}
         end
 
-        %{
-          id: probe.id,
-          sections: probe.sections,
-          query_sha256: observation.query_sha256,
-          result_kind: observation.result_kind,
-          result_sha256: observation.result_sha256,
-          row_count: length(observation.rows)
-        }
-
       {:error, reason} ->
-        raise "Ontop compliance probe #{probe.id} failed: #{inspect(reason)}"
+        {:error, %{id: probe.id, sections: probe.sections, reason: probe_failure_reason(reason)}}
     end
   end
+
+  defp probe_failure_reason(%{request: %{http_status: _, http_response_body: _} = request}),
+    do: probe_failure_reason(request)
+
+  defp probe_failure_reason(%{http_status: status, http_response_body: body}) when is_binary(body) do
+    "HTTP #{status}: " <> (body |> String.split("\n") |> Enum.take(3) |> Enum.join(" | ") |> String.slice(0, 400))
+  end
+
+  defp probe_failure_reason(reason), do: reason |> inspect() |> String.slice(0, 400)
 
   defp reset_fixture!(ddl) do
     psql!("""

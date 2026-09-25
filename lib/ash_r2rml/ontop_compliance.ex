@@ -389,12 +389,13 @@ defmodule AshR2RML.OBDA.Ontop.Compliance do
       probe(:rdf_term_functions, ["17.4.2. Functions on RDF Terms"], """
       PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
       SELECT * WHERE {
+        VALUES ?tagged { "hello"@en }
         BIND(isIRI(<https://example.com/x>) AS ?a)
         BIND(isBlank(BNODE()) AS ?b)
         BIND(isLiteral("x") AS ?c)
         BIND(isNumeric(1) AS ?d)
         BIND(str(<https://example.com/x>) AS ?e)
-        BIND(lang("hello"@en) AS ?f)
+        BIND(lang(?tagged) AS ?f)
         BIND(datatype("x"^^xsd:string) AS ?g)
         BIND(IRI("https://example.com/y") AS ?h)
         BIND(BNODE() AS ?i)
