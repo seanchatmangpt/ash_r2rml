@@ -124,6 +124,7 @@ defmodule AshR2RML.DfCM do
       :truncated,
       :receipt_sha256
     ]
+
     @type t :: %__MODULE__{}
   end
 
@@ -314,8 +315,7 @@ defmodule AshR2RML.DfCM do
         {:error, refusal(:REFUSED_DFCM_DUPLICATE_DIMENSION, :dimensions, "dimension ids must be unique")}
 
       Enum.any?(space.dimensions, &(&1.default != nil and &1.default not in &1.options)) ->
-        {:error,
-         refusal(:REFUSED_DFCM_INVALID_DEFAULT, :dimensions, "dimension defaults must be admitted options")}
+        {:error, refusal(:REFUSED_DFCM_INVALID_DEFAULT, :dimensions, "dimension defaults must be admitted options")}
 
       Enum.any?(space.constraints, &(not is_atom(&1.id) or &1.severity not in [:hard, :advisory])) ->
         {:error,

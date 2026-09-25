@@ -9,7 +9,8 @@ defmodule AshR2RML.KnowledgeHookPromotionTest do
   alias AshR2RML.KnowledgeHook.Promotion.{Candidate, Evidence}
 
   defp candidate(overrides \\ %{}) do
-    struct!(Candidate,
+    struct!(
+      Candidate,
       Map.merge(
         %{
           hook_spec_sha256: String.duplicate("1", 64),
@@ -25,7 +26,8 @@ defmodule AshR2RML.KnowledgeHookPromotionTest do
   end
 
   defp evidence(receipt, overrides) do
-    struct!(Evidence,
+    struct!(
+      Evidence,
       Map.merge(
         %{
           receipt_sha256: receipt,
@@ -85,7 +87,10 @@ defmodule AshR2RML.KnowledgeHookPromotionTest do
     assert refusal.code == :REFUSED_UNPROVEN_EQUIVALENCE
 
     assert {:ok, result} =
-             Promotion.evaluate(candidate(%{class: :reflex, compensation: %{target: "cognition://fallback"}}), observations)
+             Promotion.evaluate(
+               candidate(%{class: :reflex, compensation: %{target: "cognition://fallback"}}),
+               observations
+             )
 
     assert result.authority == :UNAUTHORIZED
   end
