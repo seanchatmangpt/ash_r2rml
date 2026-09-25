@@ -1,0 +1,73 @@
+# SPDX-FileCopyrightText: 2026 Sean Chatman
+# SPDX-License-Identifier: MIT
+
+name: v26.9.24 Hex release
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - mix.exs
+      - .github/workflows/release-v26.9.24.yml
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+      - uses: erlef/setup-beam@v1
+        with:
+          elixir-version: "1.18.4"
+          otp-version: "27.3.4"
+      - name: Build exact package subject
+        run: |
+          set -euo pipefail
+          grep -Eq '(@version[[:space:]]+|version:[[:space:]]*)"26\.9\.24"' mix.exs
+          mix local.hex --force
+          mix local.rebar --force
+          mix deps.get
+          mix compile --warnings-as-errors
+          mix hex.build
+      - name: Observe Hex registry
+        id: registry
+        run: |
+          if curl -fsS "https://hex.pm/api/packages/ash_r2rml" | jq -e '.releases[]? | select(.version == "26.9.24")' >/dev/null; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Publish Hex package
+        if: steps.registry.outputs.exists != 'true'
+        env:
+          HEX_API_KEY: ${{ secrets.HEX_API_KEY }}
+        run: |
+          test -n "$HEX_API_KEY" || { echo "BLOCKED(authority:HEX_API_KEY)" >&2; exit 2; }
+          mix hex.publish --yes
+      - name: Verify registry and exact lightweight tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            if curl -fsS "https://hex.pm/api/packages/ash_r2rml" | jq -e '.releases[]? | select(.version == "26.9.24")' >/dev/null; then break; fi
+            test "$i" != 10
+            sleep 3
+          done
+          subject="$(git rev-parse HEAD)"
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v26.9.24" >/dev/null 2>&1; then
+            test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v26.9.24" --jq .object.sha)" = "$subject"
+          else
+            gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/v26.9.24" -f sha="$subject" >/dev/null
+          fi
+          if ! gh release view v26.9.24 >/dev/null 2>&1; then
+            gh release create v26.9.24 --target "$subject" --title "v26.9.24" --generate-notes
+          fi
+          test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v26.9.24" --jq .object.sha)" = "$subject"
