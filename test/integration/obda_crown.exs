@@ -109,7 +109,6 @@ defmodule AshR2RML.ObdaCrown do
   ORDER BY account
   """
 
-
   def run! do
     jdbc_evidence = verify_pgjdbc!()
 
@@ -294,7 +293,6 @@ defmodule AshR2RML.ObdaCrown do
 
     unless technical_receipt.query_parity == :VERIFIED,
       do: raise("SPARQL/SQL witness was not admitted")
-
 
     if AshR2RML.Compiler.cutover_ready?(technical_receipt),
       do: raise("technical parity must not manufacture cutover authority")
@@ -491,8 +489,18 @@ defmodule AshR2RML.ObdaCrown do
   defp json_term(%_{} = struct), do: struct |> Map.from_struct() |> json_term()
 
   defp json_term(map) when is_map(map) do
-    Map.new(map, fn {key, value} -> {to_string(key), json_term(value)} end)
+    Map.new(map, fn {key, value} -> {json_key(key), json_term(value)} end)
   end
+
+  # JSON object keys must be strings; map keys here may be atoms, strings, or
+  # composite tuples such as {class_iri, :field}. Tuples render deterministically
+  # as their string-coerced elements joined by "#".
+  defp json_key(key) when is_tuple(key),
+    do: key |> Tuple.to_list() |> Enum.map_join("#", &json_key/1)
+
+  defp json_key(key) when is_binary(key), do: key
+  defp json_key(key) when is_atom(key), do: Atom.to_string(key)
+  defp json_key(key), do: inspect(key)
 
   defp json_term(list) when is_list(list), do: Enum.map(list, &json_term/1)
   defp json_term(tuple) when is_tuple(tuple), do: tuple |> Tuple.to_list() |> Enum.map(&json_term/1)

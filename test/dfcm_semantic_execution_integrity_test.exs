@@ -207,6 +207,7 @@ defmodule AshR2RML.DfCMSemanticExecutionIntegrityTest do
     plan = AshR2RML.Manufacturing.plan(%{"a.txt" => "alpha", "b.txt" => "beta"}, identity)
 
     assert plan.session_sha256 == identity.sha256
+
     assert plan.protocol == [
              :write_isolated_stage,
              :sync_stage_or_equivalent,

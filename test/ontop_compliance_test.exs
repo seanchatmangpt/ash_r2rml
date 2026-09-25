@@ -73,7 +73,10 @@ defmodule AshR2RML.OntopComplianceTest do
     assert length(rdf.semantics) == 2
 
     {:ok, time} = Compliance.standard(:time_functions)
-    assert length(time.supported) == 20
+    assert length(time.supported) == 19
+    assert time.published_but_refused == ["obdaf:millenium-from-dateTime"]
+    assert Compliance.feature_status(:time_functions, "obdaf:millenium-from-dateTime") == :unsupported
+    assert Compliance.feature_status(:time_functions, "obdaf:century-from-dateTime") == :supported
     assert time.limitations.postgres_granularity_aliases["millisecond"] == "milliseconds"
     assert "Oracle" in time.limitations.mixed_date_datetime_ofn
 
