@@ -27,6 +27,22 @@ defmodule AshR2RML.Semantic.Ecto do
     uuid: :uuid
   }
 
+  # Explicit PostgreSQL storage declarations (`r2ml:postgresType`) that have a
+  # lossless Ecto migration column type. Used only when the Ash type itself is
+  # not a builtin (e.g. `AshGeo.Geometry` stored as WKT `TEXT`): admission
+  # already requires both the Ash type and the PostgreSQL type to be declared
+  # explicitly for such attributes, so the declared storage is the admitted
+  # projection. Unknown declarations still fail closed.
+  @postgres_types %{
+    "TEXT" => :text,
+    "BOOLEAN" => :boolean,
+    "BIGINT" => :bigint,
+    "DOUBLE PRECISION" => :float,
+    "NUMERIC" => :decimal,
+    "DATE" => :date,
+    "UUID" => :uuid
+  }
+
   @spec render(SemanticIR.t()) :: {:ok, String.t()} | {:error, Refusal.t()}
   def render(%SemanticIR{resources: resources}) do
     resources = Enum.sort_by(resources, & &1.table)
@@ -61,7 +77,7 @@ defmodule AshR2RML.Semantic.Ecto do
   defp verify_types(resources) do
     case Enum.find_value(resources, fn resource ->
            Enum.find_value(resource.attributes, fn attribute ->
-             if ecto_type(attribute.ash_type), do: nil, else: {resource, attribute}
+             if ecto_type(attribute), do: nil, else: {resource, attribute}
            end)
          end) do
       nil ->
@@ -84,7 +100,7 @@ defmodule AshR2RML.Semantic.Ecto do
         primary? = primary_key?(resource, attribute.name)
         null? = if primary?, do: false, else: attribute.nullable
 
-        "add #{atom_literal(attribute.column)}, #{inspect(ecto_type(attribute.ash_type))}, " <>
+        "add #{atom_literal(attribute.column)}, #{inspect(ecto_type(attribute))}, " <>
           "null: #{inspect(null?)}, primary_key: #{inspect(primary?)}"
       end)
 
@@ -105,8 +121,8 @@ defmodule AshR2RML.Semantic.Ecto do
       """
       alter table(#{atom_literal(resource.table)}) do
         modify #{atom_literal(source_attribute.column)},
-          references(#{atom_literal(destination.table)}, column: #{atom_literal(destination_attribute.column)}, type: #{inspect(ecto_type(destination_attribute.ash_type))}, on_delete: :nothing),
-          from: #{inspect(ecto_type(source_attribute.ash_type))},
+          references(#{atom_literal(destination.table)}, column: #{atom_literal(destination_attribute.column)}, type: #{inspect(ecto_type(destination_attribute))}, on_delete: :nothing),
+          from: #{inspect(ecto_type(source_attribute))},
           null: #{inspect(source_attribute.nullable)}
       end
       """
@@ -123,12 +139,12 @@ defmodule AshR2RML.Semantic.Ecto do
       """
       create table(#{atom_literal(relationship.join_table)}, primary_key: false) do
         add #{atom_literal(relationship.source_join_column)},
-          references(#{atom_literal(resource.table)}, column: #{atom_literal(source_attribute.column)}, type: #{inspect(ecto_type(source_attribute.ash_type))}, on_delete: :nothing),
+          references(#{atom_literal(resource.table)}, column: #{atom_literal(source_attribute.column)}, type: #{inspect(ecto_type(source_attribute))}, on_delete: :nothing),
           null: false,
           primary_key: true
 
         add #{atom_literal(relationship.destination_join_column)},
-          references(#{atom_literal(destination.table)}, column: #{atom_literal(destination_attribute.column)}, type: #{inspect(ecto_type(destination_attribute.ash_type))}, on_delete: :nothing),
+          references(#{atom_literal(destination.table)}, column: #{atom_literal(destination_attribute.column)}, type: #{inspect(ecto_type(destination_attribute))}, on_delete: :nothing),
           null: false,
           primary_key: true
       end
@@ -159,8 +175,17 @@ defmodule AshR2RML.Semantic.Ecto do
     end
   end
 
-  defp ecto_type(type) when is_atom(type), do: Map.get(@types, type)
-  defp ecto_type(_), do: nil
+  defp ecto_type(%{ash_type: ash_type, postgres_type: postgres_type}) do
+    builtin_ecto_type(ash_type) || declared_ecto_type(postgres_type)
+  end
+
+  defp builtin_ecto_type(type) when is_atom(type), do: Map.get(@types, type)
+  defp builtin_ecto_type(_), do: nil
+
+  defp declared_ecto_type(postgres_type) when is_binary(postgres_type),
+    do: Map.get(@postgres_types, postgres_type |> String.trim() |> String.upcase())
+
+  defp declared_ecto_type(_), do: nil
 
   defp atom_literal(value), do: ":" <> inspect(to_string(value))
 
