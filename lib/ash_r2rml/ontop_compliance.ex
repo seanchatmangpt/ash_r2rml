@@ -405,6 +405,7 @@ defmodule AshR2RML.OBDA.Ontop.Compliance do
       """),
       probe(:string_functions, ["17.4.3. Functions on Strings"], """
       SELECT * WHERE {
+        VALUES ?tagged { "hello"@en-US }
         BIND(STRLEN("abcdef") AS ?strlen)
         BIND(SUBSTR("abcdef", 2, 3) AS ?substr)
         BIND(UCASE("ab") AS ?ucase)
@@ -416,7 +417,7 @@ defmodule AshR2RML.OBDA.Ontop.Compliance do
         BIND(STRAFTER("abcdef", "cd") AS ?after)
         BIND(ENCODE_FOR_URI("a b") AS ?encoded)
         BIND(CONCAT("a", "b") AS ?concat)
-        BIND(langMatches("en-US", "en") AS ?langmatch)
+        BIND(langMatches(lang(?tagged), "en") AS ?langmatch)
         BIND(REGEX("abcdef", "^abc") AS ?regex)
         BIND(REPLACE("abcdef", "abc", "xyz") AS ?replace)
       }
@@ -460,8 +461,9 @@ defmodule AshR2RML.OBDA.Ontop.Compliance do
       PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
       PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
       SELECT * WHERE {
-        BIND(datatype("simple") = xsd:string AS ?simple_is_string)
-        BIND(datatype("hello"@en) = rdf:langString AS ?lang_is_langstring)
+        VALUES (?simple ?tagged) { ("simple" "hello"@en) }
+        BIND(datatype(?simple) = xsd:string AS ?simple_is_string)
+        BIND(datatype(?tagged) = rdf:langString AS ?lang_is_langstring)
       }
       """),
       probe(:time_functions, [:time_functions], """
@@ -469,18 +471,24 @@ defmodule AshR2RML.OBDA.Ontop.Compliance do
       PREFIX ofn: <http://www.ontotext.com/sparql/functions/>
       PREFIX obdaf: <https://w3id.org/obda/functions#>
       SELECT * WHERE {
-        BIND(ofn:weeksBetween("2026-08-01"^^xsd:date, "2026-08-15"^^xsd:date) AS ?weeks)
-        BIND(ofn:daysBetween("2026-08-01T00:00:00Z"^^xsd:dateTime, "2026-08-02T00:00:00Z"^^xsd:dateTime) AS ?days)
-        BIND(ofn:hoursBetween("2026-08-01T00:00:00Z"^^xsd:dateTime, "2026-08-01T01:00:00Z"^^xsd:dateTime) AS ?hours)
-        BIND(ofn:minutesBetween("2026-08-01T00:00:00Z"^^xsd:dateTime, "2026-08-01T00:01:00Z"^^xsd:dateTime) AS ?minutes)
-        BIND(ofn:secondsBetween("2026-08-01T00:00:00Z"^^xsd:dateTime, "2026-08-01T00:00:01Z"^^xsd:dateTime) AS ?seconds)
-        BIND(ofn:millisBetween("2026-08-01T00:00:00Z"^^xsd:dateTime, "2026-08-01T00:00:01Z"^^xsd:dateTime) AS ?millis)
-        BIND(obdaf:dateTrunc("2026-08-21T12:34:56Z"^^xsd:dateTime, "month"^^xsd:string) AS ?truncated)
-        BIND(obdaf:week-from-dateTime("2026-08-21T12:34:56Z"^^xsd:dateTime) AS ?week)
-        BIND(obdaf:quarter-from-dateTime("2026-08-21T12:34:56Z"^^xsd:dateTime) AS ?quarter)
-        BIND(obdaf:decade-from-dateTime("2026-08-21T12:34:56Z"^^xsd:dateTime) AS ?decade)
-        BIND(obdaf:century-from-dateTime("2026-08-21T12:34:56Z"^^xsd:dateTime) AS ?century)
-        BIND(obdaf:millenium-from-dateTime("2026-08-21T12:34:56Z"^^xsd:dateTime) AS ?millennium)
+        VALUES (?d0 ?d1 ?t0 ?t_day ?t_hour ?t_min ?t_sec ?dt) {
+          ("2026-08-01"^^xsd:date "2026-08-15"^^xsd:date
+           "2026-08-01T00:00:00Z"^^xsd:dateTime "2026-08-02T00:00:00Z"^^xsd:dateTime
+           "2026-08-01T01:00:00Z"^^xsd:dateTime "2026-08-01T00:01:00Z"^^xsd:dateTime
+           "2026-08-01T00:00:01Z"^^xsd:dateTime "2026-08-21T12:34:56Z"^^xsd:dateTime)
+        }
+        BIND(ofn:weeksBetween(?d0, ?d1) AS ?weeks)
+        BIND(ofn:daysBetween(?t0, ?t_day) AS ?days)
+        BIND(ofn:hoursBetween(?t0, ?t_hour) AS ?hours)
+        BIND(ofn:minutesBetween(?t0, ?t_min) AS ?minutes)
+        BIND(ofn:secondsBetween(?t0, ?t_sec) AS ?seconds)
+        BIND(ofn:millisBetween(?t0, ?t_sec) AS ?millis)
+        BIND(obdaf:dateTrunc(?dt, "month"^^xsd:string) AS ?truncated)
+        BIND(obdaf:week-from-dateTime(?dt) AS ?week)
+        BIND(obdaf:quarter-from-dateTime(?dt) AS ?quarter)
+        BIND(obdaf:decade-from-dateTime(?dt) AS ?decade)
+        BIND(obdaf:century-from-dateTime(?dt) AS ?century)
+        BIND(obdaf:millenium-from-dateTime(?dt) AS ?millennium)
       }
       """),
       probe(:other_functions, [:other_functions], """

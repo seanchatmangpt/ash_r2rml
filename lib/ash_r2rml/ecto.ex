@@ -40,7 +40,8 @@ defmodule AshR2RML.Semantic.Ecto do
     "DOUBLE PRECISION" => :float,
     "NUMERIC" => :decimal,
     "DATE" => :date,
-    "UUID" => :uuid
+    "UUID" => :uuid,
+    "GEOMETRY" => :geometry
   }
 
   @spec render(SemanticIR.t()) :: {:ok, String.t()} | {:error, Refusal.t()}

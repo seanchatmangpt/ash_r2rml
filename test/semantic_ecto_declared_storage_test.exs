@@ -57,6 +57,11 @@ defmodule AshR2RML.Semantic.EctoDeclaredStorageTest do
     assert source =~ ~s(add :"id", :text, null: false, primary_key: true)
   end
 
+  test "explicitly declared PostGIS geometry storage projects to an Ecto :geometry column" do
+    assert {:ok, source} = AshR2RML.Semantic.Ecto.render(ir(AshGeo.Geometry, "geometry"))
+    assert source =~ ~s(add :"geometry", :geometry, null: false, primary_key: false)
+  end
+
   test "undeclared or unknown storage for a non-builtin Ash type still fails closed" do
     for postgres_type <- [nil, "GEOMETRY(POINT, 4326)"] do
       assert {:error, refusal} = AshR2RML.Semantic.Ecto.render(ir(AshGeo.Geometry, postgres_type))

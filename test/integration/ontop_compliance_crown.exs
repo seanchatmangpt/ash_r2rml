@@ -102,7 +102,7 @@ defmodule AshR2RML.OntopComplianceCrown do
           sh:path geo:asWKT ;
           r2ml:ashName "geometry" ;
           r2ml:ashType "AshGeo.Geometry" ;
-          r2ml:postgresType "TEXT" ;
+          r2ml:postgresType "geometry" ;
           sh:datatype geo:wktLiteral ;
           sh:minCount 1 ;
           sh:maxCount 1
@@ -218,6 +218,7 @@ defmodule AshR2RML.OntopComplianceCrown do
   defp reset_fixture!(ddl) do
     psql!("""
     CREATE EXTENSION IF NOT EXISTS postgis;
+    CREATE EXTENSION IF NOT EXISTS pgcrypto;
     DROP TABLE IF EXISTS compliance_accounts CASCADE;
     DROP TABLE IF EXISTS compliance_organizations CASCADE;
     DROP TABLE IF EXISTS compliance_places CASCADE;
