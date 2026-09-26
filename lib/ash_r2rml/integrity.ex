@@ -1099,14 +1099,30 @@ defmodule AshR2RML.DfCM.Compiler do
     })
   end
 
+  @doc """
+  True only when both envelopes carry the same semantic-session identity and both still
+  re-derive that identity from their own bytes (`verify_projection_identity/1`).
+  """
   @spec receipt_reusable?(Compilation.t(), Compilation.t()) :: boolean()
   def receipt_reusable?(%Compilation{} = left, %Compilation{} = right) do
-    SemanticSessionIdentity.matches?(left.session_identity, right.session_identity)
+    projection_identity_verified?(left) and projection_identity_verified?(right) and
+      SemanticSessionIdentity.matches?(left.session_identity, right.session_identity)
   end
 
+  @doc """
+  Admit reuse of `expected`'s receipts for `observed`.
+
+  Both envelopes must first pass `verify_projection_identity/1` (a drifted envelope is
+  refused with `:REFUSED_PROJECTION_DRIFT`); then the observed identity must equal the
+  retained admitted identity (`:REFUSED_SESSION_IDENTITY_MISMATCH` otherwise). The second
+  check is what refuses a fully re-sealed forgery, which is locally self-consistent.
+  """
   @spec admit_receipt_reuse(Compilation.t(), Compilation.t()) :: {:ok, :identical} | {:error, Refusal.t()}
   def admit_receipt_reuse(%Compilation{} = expected, %Compilation{} = observed) do
-    SemanticSessionIdentity.admit_reuse(expected.session_identity, observed.session_identity)
+    with {:ok, _} <- verify_projection_identity(expected),
+         {:ok, _} <- verify_projection_identity(observed) do
+      SemanticSessionIdentity.admit_reuse(expected.session_identity, observed.session_identity)
+    end
   end
 
   @spec drift(Compilation.t(), Compilation.t()) :: SemanticDrift.t()
@@ -1114,8 +1130,43 @@ defmodule AshR2RML.DfCM.Compiler do
     SemanticDrift.compare(old.compilation.ir, new.compilation.ir)
   end
 
+  @doc """
+  Content-addressed reuse plan from an admitted envelope to a candidate.
+
+  The candidate (for example a compile-back of machine-experience feedback) only ever yields
+  a plan; it never replaces the admitted state. If either envelope fails
+  `verify_projection_identity/1`, its IR is untrusted: nothing is reusable, every resource
+  class is marked changed, drift is `:ambiguous`, and the plan is blocked on
+  `:projection_identity_drift`.
+  """
   @spec incremental_plan(Compilation.t(), Compilation.t()) :: AshR2RML.DfCM.IncrementalPlan.t()
   def incremental_plan(%Compilation{} = old, %Compilation{} = new) do
+    if projection_identity_verified?(old) and projection_identity_verified?(new) do
+      verified_incremental_plan(old, new)
+    else
+      untrusted_incremental_plan(old, new)
+    end
+  end
+
+  defp untrusted_incremental_plan(old, new) do
+    classes =
+      (Enum.map(old.compilation.ir.resources, & &1.class_iri) ++
+         Enum.map(new.compilation.ir.resources, & &1.class_iri))
+      |> Enum.uniq()
+      |> Enum.sort()
+
+    %AshR2RML.DfCM.IncrementalPlan{
+      mode: :recompile,
+      old_session_sha256: old.session_identity.sha256,
+      new_session_sha256: new.session_identity.sha256,
+      drift_classification: :ambiguous,
+      reusable_resource_classes: [],
+      changed_resource_classes: classes,
+      blocked: [:projection_identity_drift, :fresh_projection_receipt, :fresh_external_parity]
+    }
+  end
+
+  defp verified_incremental_plan(old, new) do
     drift = SemanticDrift.compare(old.compilation.ir, new.compilation.ir)
     old_resources = Map.new(old.compilation.ir.resources, &{&1.class_iri, Canonical.sha256(&1)})
     new_resources = Map.new(new.compilation.ir.resources, &{&1.class_iri, Canonical.sha256(&1)})
@@ -1156,15 +1207,31 @@ defmodule AshR2RML.DfCM.Compiler do
     shacl: {:shacl, :shacl_sha256}
   ]
 
-  @doc """
-  Re-derive every generated projection's identity from its bytes and fail closed on drift.
+  # Receipted terms (not text projections): hashed with the compiler's canonical ordering,
+  # bound into the receipt and into the session identity's top-level digest fields.
+  @term_fields [
+    ir: {:ir, :ir_sha256},
+    mapping_bundle: {:mapping_bundle, :mapping_sha256}
+  ]
 
-  A projection (Ash source, Ecto migration, PostgreSQL DDL, R2RML, SHACL) carries standing
-  only while its bytes still hash to the digest bound into the compiler receipt and the
+  @doc """
+  Re-derive every receipted artifact's identity from its content and fail closed on
+  local drift.
+
+  A projection (Ash source, Ecto migration, PostgreSQL DDL, R2RML, SHACL) and the receipted
+  terms it was manufactured from (the SemanticIR and the mapping bundle) carry standing only
+  while their content still hashes to the digest bound into the compiler receipt and the
   semantic-session identity, and while that session identity still re-derives from the
-  receipt. A projection edited in place while its claimed identity is preserved, a receipt
+  receipt. An artifact edited in place while its claimed identity is preserved, a receipt
   edited without re-deriving the session identity, or a session identity whose recorded
-  projection hashes disagree with the receipt is refused with `:REFUSED_PROJECTION_DRIFT`.
+  hashes disagree with the receipt is refused with `:REFUSED_PROJECTION_DRIFT`.
+
+  Scope: this is a local self-consistency check. It does not recompile the admitted source,
+  so a complete re-seal (artifact, receipt digest and session identity all rewritten
+  consistently) passes it. Binding to the admitted source requires comparing against the
+  retained admitted identity with `admit_receipt_reuse/2`. `cutover_ready?/1`,
+  `receipt_reusable?/2`, `admit_receipt_reuse/2` and `incremental_plan/2` all call this
+  check, so a locally drifted envelope cannot reach standing through them.
 
   This is a SELECT-only check: it never repairs, re-renders, or grants authority.
   """
@@ -1188,6 +1255,23 @@ defmodule AshR2RML.DfCM.Compiler do
           true -> []
         end
       end)
+
+    drifted =
+      drifted ++
+        Enum.flat_map(@term_fields, fn {name, {field, digest_field}} ->
+          observed = AshR2RML.Compiler.canonical_sha256(Map.get(compilation, field))
+
+          cond do
+            observed != Map.get(receipt, digest_field) ->
+              [{name, :term_does_not_match_receipt}]
+
+            observed != Map.get(envelope.session_identity, digest_field) ->
+              [{name, :term_does_not_match_session_identity}]
+
+            true ->
+              []
+          end
+        end)
 
     # Re-derive from the receipt under the manufacturer/environment the identity recorded.
     # Reading the compiler's object code again would cost ~10ms of disk I/O per call and
@@ -1218,6 +1302,8 @@ defmodule AshR2RML.DfCM.Compiler do
          )}
     end
   end
+
+  defp projection_identity_verified?(envelope), do: match?({:ok, _}, verify_projection_identity(envelope))
 
   defp projection_digest(value) when is_binary(value), do: AshR2RML.Compiler.sha256(value)
   defp projection_digest(_value), do: nil
@@ -1275,10 +1361,17 @@ defmodule AshR2RML.DfCM.Compiler do
     refresh(%{envelope | compilation: %{envelope.compilation | receipt: compiler_receipt}})
   end
 
+  @doc """
+  Cutover standing: verified parity plus explicit authority on the receipt, the
+  `:subject_parity_alive` proof class, and a projection identity that still re-derives
+  from the envelope's own content (`verify_projection_identity/1`). A drifted envelope is
+  never cutover-ready, whatever witnesses or authority it carries.
+  """
   @spec cutover_ready?(Compilation.t()) :: boolean()
   def cutover_ready?(%Compilation{} = envelope) do
     AshR2RML.Compiler.cutover_ready?(envelope.compilation.receipt) and
-      Proof.achieved?(envelope.proof_classes, :subject_parity_alive)
+      Proof.achieved?(envelope.proof_classes, :subject_parity_alive) and
+      projection_identity_verified?(envelope)
   end
 
   defp session_identity(compilation), do: SemanticSessionIdentity.new(receipt_identity_attrs(compilation))

@@ -7,7 +7,7 @@
 # Measures the fail-closed drift check `AshR2RML.DfCM.Compiler.verify_projection_identity/1`
 # against the DfCM compile it guards, plus the exact-stage manufacturing verification.
 # Correctness is verified per tier before timing (untouched envelope admitted, one-byte
-# R2RML drift refused). No external engine is exercised.
+# R2RML drift and an in-place IR edit refused). No external engine is exercised.
 #
 #   MIX_ENV=test mix run bench/projection_identity.exs
 #   BENCH_TIERS=10,100 BENCH_TIME=2 MIX_ENV=test mix run bench/projection_identity.exs
@@ -30,10 +30,18 @@ envelopes =
 
     drifted = %{envelope | compilation: %{envelope.compilation | r2rml: envelope.compilation.r2rml <> " "}}
     {:error, %{code: :REFUSED_PROJECTION_DRIFT}} = DfCM.verify_projection_identity(drifted)
+
+    ir = envelope.compilation.ir
+    [resource | rest] = ir.resources
+    ir_drifted = %{envelope | compilation: %{envelope.compilation | ir: %{ir | resources: [%{resource | table: "drift"} | rest]}}}
+    {:error, %{code: :REFUSED_PROJECTION_DRIFT}} = DfCM.verify_projection_identity(ir_drifted)
     {n, envelope}
   end)
 
-IO.puts("== Correctness verified for tiers #{inspect(tiers)} (admit untouched, refuse 1-byte drift) ==")
+IO.puts(
+  "== Correctness verified for tiers #{inspect(tiers, charlists: :as_lists)} " <>
+    "(admit untouched, refuse 1-byte R2RML drift, refuse IR drift) =="
+)
 IO.puts("elixir=#{System.version()} otp=#{System.otp_release()}")
 
 jobs =
