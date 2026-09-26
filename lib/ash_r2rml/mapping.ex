@@ -36,6 +36,7 @@ defmodule AshR2RML.Refusal do
           | :REFUSED_INVALID_FEDERATION_ENVIRONMENT
           | :REFUSED_MISSING_EVALUATION_TIME
           | :REFUSED_INVALID_DATALOG_RULE
+          | :REFUSED_PROJECTION_DRIFT
 
   @type t :: %__MODULE__{
           code: code(),
