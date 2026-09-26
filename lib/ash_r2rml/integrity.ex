@@ -84,8 +84,7 @@ defmodule AshR2RML.SemanticSessionIdentity do
       shacl_hash: get(attrs, :shacl_hash),
       ir_sha256: get(attrs, :ir_sha256),
       mapping_sha256: get(attrs, :mapping_sha256),
-      compiler_module_sha256:
-        get(attrs, :compiler_module_sha256) || module_sha256(AshR2RML.Compiler),
+      compiler_module_sha256: get(attrs, :compiler_module_sha256) || module_sha256(AshR2RML.Compiler),
       compiler_version: get(attrs, :compiler_version) || app_version(),
       elixir_version: get(attrs, :elixir_version) || System.version(),
       otp_release: get(attrs, :otp_release) || System.otp_release(),
@@ -1062,7 +1061,13 @@ defmodule AshR2RML.DfCM.Compiler do
 
     proofs =
       envelope.proof_classes --
-        [:relational_observed, :obda_query_observed, :subject_identity_verified, :result_parity_verified, :ontology_roundtrip_verified]
+        [
+          :relational_observed,
+          :obda_query_observed,
+          :subject_identity_verified,
+          :result_parity_verified,
+          :ontology_roundtrip_verified
+        ]
 
     receipt = envelope.compilation.receipt
 
@@ -1143,6 +1148,80 @@ defmodule AshR2RML.DfCM.Compiler do
     }
   end
 
+  @projection_fields [
+    ash: {:ash_source, :ash_sha256},
+    ecto: {:ecto_migration, :ecto_sha256},
+    postgres: {:postgres_ddl, :postgres_sha256},
+    r2rml: {:r2rml, :r2rml_sha256},
+    shacl: {:shacl, :shacl_sha256}
+  ]
+
+  @doc """
+  Re-derive every generated projection's identity from its bytes and fail closed on drift.
+
+  A projection (Ash source, Ecto migration, PostgreSQL DDL, R2RML, SHACL) carries standing
+  only while its bytes still hash to the digest bound into the compiler receipt and the
+  semantic-session identity, and while that session identity still re-derives from the
+  receipt. A projection edited in place while its claimed identity is preserved, a receipt
+  edited without re-deriving the session identity, or a session identity whose recorded
+  projection hashes disagree with the receipt is refused with `:REFUSED_PROJECTION_DRIFT`.
+
+  This is a SELECT-only check: it never repairs, re-renders, or grants authority.
+  """
+  @spec verify_projection_identity(Compilation.t()) :: {:ok, String.t()} | {:error, Refusal.t()}
+  def verify_projection_identity(%Compilation{} = envelope) do
+    compilation = envelope.compilation
+    receipt = compilation.receipt
+    recorded = get(envelope.session_identity.metadata, :projection_hashes, %{})
+
+    drifted =
+      @projection_fields
+      |> Enum.flat_map(fn {name, {field, receipt_field}} ->
+        observed = projection_digest(Map.get(compilation, field))
+        receipt_digest = Map.get(receipt, receipt_field)
+        identity_digest = get(recorded, name)
+
+        cond do
+          is_nil(observed) -> [{name, :missing_projection}]
+          observed != receipt_digest -> [{name, :bytes_do_not_match_receipt}]
+          observed != identity_digest -> [{name, :bytes_do_not_match_session_identity}]
+          true -> []
+        end
+      end)
+
+    # Re-derive from the receipt under the manufacturer/environment the identity recorded.
+    # Reading the compiler's object code again would cost ~10ms of disk I/O per call and
+    # would conflate "projection drifted" with "the running compiler changed"; the latter is
+    # already bound into the identity digest and refused by admit_receipt_reuse/2.
+    rederived = session_identity(compilation, envelope.session_identity)
+
+    drifted =
+      if rederived.sha256 == envelope.session_identity.sha256,
+        do: drifted,
+        else: drifted ++ [{:session_identity, :does_not_rederive_from_receipt}]
+
+    case drifted do
+      [] ->
+        {:ok, envelope.session_identity.sha256}
+
+      _ ->
+        {:error,
+         Refusal.new(
+           :REFUSED_PROJECTION_DRIFT,
+           :projection,
+           "generated projection identity does not re-derive from the admitted semantic source",
+           %{
+             session_sha256: envelope.session_identity.sha256,
+             rederived_session_sha256: rederived.sha256,
+             drifted: drifted
+           }
+         )}
+    end
+  end
+
+  defp projection_digest(value) when is_binary(value), do: AshR2RML.Compiler.sha256(value)
+  defp projection_digest(_value), do: nil
+
   @spec attach_parity_witness(Compilation.t(), :sparql_sql | :neo4j_postgres, map()) :: Compilation.t()
   def attach_parity_witness(%Compilation{} = envelope, kind, witness)
       when kind in [:sparql_sql, :neo4j_postgres] and is_map(witness) do
@@ -1202,10 +1281,22 @@ defmodule AshR2RML.DfCM.Compiler do
       Proof.achieved?(envelope.proof_classes, :subject_parity_alive)
   end
 
-  defp session_identity(compilation) do
+  defp session_identity(compilation), do: SemanticSessionIdentity.new(receipt_identity_attrs(compilation))
+
+  defp session_identity(compilation, %SemanticSessionIdentity{} = recorded) do
+    attrs = receipt_identity_attrs(compilation)
+
+    recorded
+    |> Map.take([:compiler_module_sha256, :compiler_version, :elixir_version, :otp_release, :postgres, :obda])
+    |> Map.merge(attrs)
+    |> Map.put(:metadata, Map.merge(recorded.metadata, attrs.metadata))
+    |> SemanticSessionIdentity.new()
+  end
+
+  defp receipt_identity_attrs(compilation) do
     receipt = compilation.receipt
 
-    SemanticSessionIdentity.new(%{
+    %{
       ontology_hash: receipt.ontology_hash,
       profile_hash: receipt.profile_hash,
       shacl_hash: receipt.shacl_input_hash,
@@ -1220,7 +1311,7 @@ defmodule AshR2RML.DfCM.Compiler do
           shacl: receipt.shacl_sha256
         }
       }
-    })
+    }
   end
 
   defp envelope(compilation, identity, proofs) do
