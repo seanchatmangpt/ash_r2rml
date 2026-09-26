@@ -1,0 +1,19 @@
+@prefix ce: <https://chatman.dev/equilibrium#> .
+@prefix kh: <https://ash-r2rml.dev/knowledge-hook#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+ce:Planner a rdf:Class . ce:Policy a rdf:Class . ce:Role a rdf:Class .
+ce:Agent a rdf:Class . ce:Authority a rdf:Class . ce:Standing a rdf:Class .
+ce:Selection a rdf:Class . ce:Construct a rdf:Class . ce:DO a rdf:Class .
+ce:Receipt a rdf:Class . ce:Provider a rdf:Class . ce:WorkOrder a rdf:Class .
+kh:HDDL a ce:Planner . kh:FOND a ce:Planner . kh:POWL a ce:Planner .
+kh:ConstructOnlyAuthority a ce:Authority ; ce:permits ce:Observe, ce:Select, ce:Construct ; ce:forbids ce:DO .
+kh:BRCE a ce:Provider ; ce:provides ce:DO .
+kh:KnowledgeHookControl a ce:Policy ; ce:authorityCeiling kh:ConstructOnlyAuthority ;
+  ce:planner kh:HDDL, kh:FOND, kh:POWL ; ce:requiresExactSubject true ;
+  ce:requiresFiniteBound true ; ce:requiresReceipt true ; ce:forbids ce:DO .
+ce:planner a rdf:Property . ce:authorityCeiling a rdf:Property .
+ce:requiresExactSubject a rdf:Property . ce:requiresFiniteBound a rdf:Property .
+ce:requiresReceipt a rdf:Property . ce:permits a rdf:Property . ce:forbids a rdf:Property .
+ce:provides a rdf:Property .
+kh:CandidateNotTruth a ce:Standing . kh:SelectedNotActuated a ce:Standing .
+kh:ConstructedNotActuated a ce:Standing . kh:ReceiptNotAuthority a ce:Standing .
