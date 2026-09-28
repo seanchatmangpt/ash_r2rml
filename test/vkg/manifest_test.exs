@@ -5,7 +5,9 @@ defmodule AshR2RML.VKG.ManifestTest do
   test "loads all canonical source manifests and binds artifact bytes" do
     assert {:ok, contracts} = Manifest.load_all()
     assert length(contracts) == 10
-    assert Enum.map(contracts, & &1.id) == ~w(asset customer document event invoice order organization product project service)
+
+    assert Enum.map(contracts, & &1.id) ==
+             ~w(asset customer document event invoice order organization product project service)
 
     for contract <- contracts do
       assert File.regular?(contract.mapping_path)
@@ -18,7 +20,9 @@ defmodule AshR2RML.VKG.ManifestTest do
   end
 
   test "manifest snapshot contains provenance identities but no authority" do
-    assert {:ok, contract} = Manifest.load(Path.join(Manifest.default_root(), "sources/customer.json"))
+    assert {:ok, contract} =
+             Manifest.load(Path.join(Manifest.default_root(), "sources/customer.json"))
+
     snapshot = Manifest.snapshot(contract)
     assert snapshot.id == "customer"
     assert snapshot.source == "urn:source:customer"
