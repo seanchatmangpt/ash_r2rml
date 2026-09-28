@@ -1,13 +1,24 @@
 defmodule AshR2RML.VKG.ContractTest do
   use ExUnit.Case, async: true
+  import AshR2RML.VKGCase
   alias AshR2RML.VKG.Contract
-  @digest String.duplicate("a",64)
-  test "admits exact source and mapping identity" do
-    c=%Contract{id: "customer",source:"urn:source:customer",graph:"urn:graph:customer",source_sha256:@digest,mapping_sha256:@digest,subject_template:"https://example.org/customer/{id}"}
-    assert {:ok,^c}=Contract.admit(c)
+
+  test "admits exact source, mapping and query identity" do
+    contract=contract("customer")
+    assert {:ok,^contract}=Contract.admit(contract)
+    assert Contract.exact_subject?(contract,"customer")
+    refute Contract.exact_subject?(contract,"order")
+    assert byte_size(Contract.digest(contract))==64
   end
-  test "refuses source drift" do
-    c=%Contract{id:"customer",source:"urn:source:customer",graph:"urn:graph:customer",source_sha256:"drift",mapping_sha256:@digest,subject_template:"x"}
-    assert {:error,:REFUSED_VKG_CONTRACT_IDENTITY}=Contract.admit(c)
+
+  test "refuses source descriptor drift" do
+    contract=contract("customer")
+    drifted=%{contract|source_sha256:String.duplicate("0",64)}
+    assert {:error,%AshR2RML.Refusal{code: :REFUSED_VKG_SOURCE_DRIFT}}=Contract.admit(drifted)
+  end
+
+  test "refuses authority escalation" do
+    contract=%{contract("customer")|authority: :write}
+    assert {:error,%AshR2RML.Refusal{code: :REFUSED_VKG_AUTHORITY_ESCALATION}}=Contract.admit(contract)
   end
 end
