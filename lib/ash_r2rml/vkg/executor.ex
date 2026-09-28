@@ -5,6 +5,10 @@ defmodule AshR2RML.VKG.Executor do
   Any refused stage refuses the whole exact-subject query result. Successful
   stages are never silently returned as though they represented the requested
   federation.
+
+  Engine transport order is not semantic identity. Successful observations are
+  rebound to a canonical digest over the exact stage identity plus normalized
+  row set. Raw engine-byte identity remains available as output_sha256.
   """
 
   alias AshR2RML.Refusal
@@ -33,6 +37,8 @@ defmodule AshR2RML.VKG.Executor do
 
       case engine.execute(stage, stage_opts) do
         {:ok, observation} ->
+          observation = canonicalize_observation(observation, stage)
+
           observed_rows =
             observation.rows
             |> Enum.map(&Provenance.attach(&1, stage, Map.from_struct(observation)))
@@ -61,6 +67,40 @@ defmodule AshR2RML.VKG.Executor do
       end
     end)
   end
+
+  defp canonicalize_observation(observation, stage) do
+    rows =
+      observation.rows
+      |> Enum.map(&canonical_term/1)
+      |> Enum.sort_by(&:erlang.term_to_binary(&1, [:deterministic]))
+
+    identity = {
+      stage.contract_id,
+      stage.source_sha256,
+      stage.mapping_sha256,
+      stage.query_sha256,
+      rows
+    }
+
+    semantic_sha256 =
+      identity
+      |> :erlang.term_to_binary([:deterministic])
+      |> then(&:crypto.hash(:sha256, &1))
+      |> Base.encode16(case: :lower)
+
+    %{observation | observation_sha256: semantic_sha256}
+  end
+
+  defp canonical_term(map) when is_map(map) do
+    map
+    |> Enum.map(fn {key, value} -> {to_string(key), canonical_term(value)} end)
+    |> Enum.sort_by(&elem(&1, 0))
+    |> Map.new()
+  end
+
+  defp canonical_term(list) when is_list(list), do: Enum.map(list, &canonical_term/1)
+  defp canonical_term(tuple) when is_tuple(tuple), do: tuple |> Tuple.to_list() |> canonical_term()
+  defp canonical_term(value), do: value
 
   defp enforce_result_bound(rows, max_rows) do
     if length(rows) <= max_rows do
