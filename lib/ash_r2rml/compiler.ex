@@ -369,8 +369,8 @@ defmodule AshR2RML.Compiler do
       ontology_hash: ir.ontology_hash,
       profile_hash: ir.profile_hash,
       shacl_input_hash: ir.shacl_hash,
-      ir_sha256: sha256(canonical_ir(ir)),
-      mapping_sha256: sha256(canonical_term(mapping_bundle)),
+      ir_sha256: canonical_sha256(ir),
+      mapping_sha256: canonical_sha256(mapping_bundle),
       ash_sha256: sha256(ash_source),
       ecto_sha256: sha256(ecto_migration),
       postgres_sha256: sha256(postgres_ddl),
@@ -437,18 +437,75 @@ defmodule AshR2RML.Compiler do
     )
   end
 
-  defp canonical_ir(ir), do: canonical_term(ir)
-
-  defp canonical_term(%_{} = struct), do: struct |> Map.from_struct() |> canonical_term()
-
-  defp canonical_term(map) when is_map(map) do
-    map
-    |> Enum.map(fn {key, value} -> {key, canonical_term(value)} end)
-    |> Enum.sort_by(fn {key, _value} -> inspect(key) end)
+  # Canonical form: structs become maps, map entries are sorted by `inspect(key)`, lists keep
+  # their order. Two memos keep one call cheap without changing the canonical term (and so
+  # every `ir_sha256`/`mapping_sha256`): the `inspect/1` sort key per distinct key, and the
+  # sorted field order per struct module. A struct instance whose key set differs from its
+  # module's recorded order (a smuggled or dropped field) takes the generic sorting path, so
+  # the memo can never hide a key. Without them the IR digest cost ~50 ms at 100 resources.
+  defp canonical_term(term) do
+    {canonical, _memo} = canonical_term(term, %{})
+    canonical
   end
 
-  defp canonical_term(list) when is_list(list), do: Enum.map(list, &canonical_term/1)
-  defp canonical_term(other), do: other
+  defp canonical_term(%module{} = struct, memo) do
+    map = Map.from_struct(struct)
+
+    case struct_order(module, map, memo) do
+      {:ok, order, memo} -> canonical_ordered(order, map, memo)
+      :generic -> canonical_map(map, memo)
+    end
+  end
+
+  defp canonical_term(map, memo) when is_map(map), do: canonical_map(map, memo)
+  defp canonical_term(list, memo) when is_list(list), do: Enum.map_reduce(list, memo, &canonical_term/2)
+  defp canonical_term(other, memo), do: {other, memo}
+
+  defp struct_order(module, map, memo) do
+    case memo do
+      %{{:struct_order, ^module} => order} ->
+        if length(order) == map_size(map) and Enum.all?(order, &:erlang.is_map_key(&1, map)),
+          do: {:ok, order, memo},
+          else: :generic
+
+      _ ->
+        {sorted, memo} = sorted_keys(Map.keys(map), memo)
+        {:ok, sorted, Map.put(memo, {:struct_order, module}, sorted)}
+    end
+  end
+
+  defp canonical_ordered(order, map, memo) do
+    Enum.map_reduce(order, memo, fn key, memo ->
+      {value, memo} = canonical_term(:erlang.map_get(key, map), memo)
+      {{key, value}, memo}
+    end)
+  end
+
+  defp canonical_map(map, memo) do
+    {sorted, memo} = sorted_keys(Map.keys(map), memo)
+    canonical_ordered(sorted, map, memo)
+  end
+
+  defp sorted_keys(keys, memo) do
+    {entries, memo} =
+      Enum.map_reduce(keys, memo, fn key, memo ->
+        {sort_key, memo} = inspected_key(key, memo)
+        {{sort_key, key}, memo}
+      end)
+
+    {entries |> Enum.sort_by(&elem(&1, 0)) |> Enum.map(&elem(&1, 1)), memo}
+  end
+
+  defp inspected_key(key, memo) do
+    case memo do
+      %{{:inspect, ^key} => sort_key} ->
+        {sort_key, memo}
+
+      _ ->
+        sort_key = inspect(key)
+        {sort_key, Map.put(memo, {:inspect, key}, sort_key)}
+    end
+  end
 
   def compile_resources(resources) do
     resources = List.wrap(resources)
@@ -486,6 +543,16 @@ defmodule AshR2RML.Compiler do
       end
     end
   end
+
+  @doc """
+  Digest of a term under the compiler's canonical key ordering.
+
+  This is the single definition behind the receipt's `ir_sha256` and `mapping_sha256`, so a
+  verifier re-deriving those digests from the envelope's IR and mapping bundle uses exactly
+  the function that sealed them.
+  """
+  @spec canonical_sha256(term()) :: String.t()
+  def canonical_sha256(term), do: term |> canonical_term() |> sha256()
 
   def sha256(value) when is_binary(value), do: :crypto.hash(:sha256, value) |> Base.encode16(case: :lower)
   def sha256(value), do: value |> :erlang.term_to_binary([:deterministic]) |> sha256()
