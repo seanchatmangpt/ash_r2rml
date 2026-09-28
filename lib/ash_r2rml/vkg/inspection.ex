@@ -42,8 +42,7 @@ defmodule AshR2RML.VKG.Inspection do
             mapping_sha256: stage.mapping_sha256,
             query_sha256: stage.query_sha256,
             observed?: not is_nil(observation),
-            observation_sha256:
-              observation && Map.get(observation, :observation_sha256),
+            observation_sha256: observation && Map.get(observation, :observation_sha256),
             row_count: observation && Map.get(observation, :row_count)
           }
         end),
