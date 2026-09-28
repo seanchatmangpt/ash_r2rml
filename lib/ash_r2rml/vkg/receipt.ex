@@ -42,8 +42,8 @@ defmodule AshR2RML.VKG.Receipt do
       |> Map.new()
 
     payload =
-      {plan.sha256, plan.catalog_sha256, plan.contract_ids, observation_sha256_by_contract,
-       result.sha256, result.row_count, previous}
+      {plan.sha256, plan.catalog_sha256, plan.contract_ids, observation_sha256_by_contract, result.sha256,
+       result.row_count, previous}
 
     sha256 = hash(payload)
 
@@ -65,19 +65,33 @@ defmodule AshR2RML.VKG.Receipt do
   def verify(%__MODULE__{} = receipt, %QueryPlan{} = plan, %Result{} = result) do
     cond do
       receipt.authority != :NONE ->
-        refusal(:authority, "VKG receipt cannot acquire actuation authority", %{authority: receipt.authority})
+        refusal(:authority, "VKG receipt cannot acquire actuation authority", %{
+          authority: receipt.authority
+        })
 
       receipt.plan_sha256 != plan.sha256 ->
-        refusal(:plan, "VKG receipt references a different plan", %{receipt: receipt.plan_sha256, plan: plan.sha256})
+        refusal(:plan, "VKG receipt references a different plan", %{
+          receipt: receipt.plan_sha256,
+          plan: plan.sha256
+        })
 
       receipt.catalog_sha256 != plan.catalog_sha256 ->
-        refusal(:catalog, "VKG receipt references a different catalog", %{receipt: receipt.catalog_sha256, plan: plan.catalog_sha256})
+        refusal(:catalog, "VKG receipt references a different catalog", %{
+          receipt: receipt.catalog_sha256,
+          plan: plan.catalog_sha256
+        })
 
       receipt.result_sha256 != result.sha256 ->
-        refusal(:result, "VKG result digest does not replay", %{receipt: receipt.result_sha256, result: result.sha256})
+        refusal(:result, "VKG result digest does not replay", %{
+          receipt: receipt.result_sha256,
+          result: result.sha256
+        })
 
       receipt.row_count != result.row_count ->
-        refusal(:row_count, "VKG result row count does not replay", %{receipt: receipt.row_count, result: result.row_count})
+        refusal(:row_count, "VKG result row count does not replay", %{
+          receipt: receipt.row_count,
+          result: result.row_count
+        })
 
       true ->
         :ok
