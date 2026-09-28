@@ -5,6 +5,7 @@ defmodule AshR2RML.VKG do
   Preserves source manifest -> admitted catalog -> deterministic plan -> bounded
   execution -> provenance-bearing result -> receipt -> replay verification.
   """
+
   alias AshR2RML.VKG.{Catalog, Executor, Planner, Receipt, Session}
 
   @spec query([String.t()], keyword()) :: {:ok, Session.t()} | {:error, term()}
@@ -23,11 +24,14 @@ defmodule AshR2RML.VKG do
   @spec query_all(keyword()) :: {:ok, Session.t()} | {:error, term()}
   def query_all(opts \\ []) do
     root = Keyword.get(opts, :root, AshR2RML.VKG.Manifest.default_root())
+
     with {:ok, catalog} <- Catalog.load(root) do
       query(Catalog.ids(catalog), Keyword.put(opts, :root, root))
     end
   end
 
   @spec catalog(keyword()) :: {:ok, Catalog.t()} | {:error, term()}
-  def catalog(opts \\ []), do: Catalog.load(Keyword.get(opts, :root, AshR2RML.VKG.Manifest.default_root()))
+  def catalog(opts \\ []) do
+    Catalog.load(Keyword.get(opts, :root, AshR2RML.VKG.Manifest.default_root()))
+  end
 end
