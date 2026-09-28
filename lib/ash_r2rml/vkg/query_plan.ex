@@ -101,9 +101,11 @@ defmodule AshR2RML.VKG.QueryPlan do
   defp digest?(value, field),
     do: refusal(field, "expected lowercase sha256", %{value: inspect(value)})
 
-  defp non_empty_ids?(ids)
-       when is_list(ids) and ids != [] and length(ids) == length(Enum.uniq(ids)),
-       do: :ok
+  defp non_empty_ids?(ids) when is_list(ids) and ids != [] do
+    if length(ids) == length(Enum.uniq(ids)),
+      do: :ok,
+      else: refusal(:contract_ids, "query plan requires unique contract ids", %{ids: inspect(ids)})
+  end
 
   defp non_empty_ids?(ids),
     do: refusal(:contract_ids, "query plan requires unique contract ids", %{ids: inspect(ids)})
