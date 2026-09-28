@@ -31,6 +31,9 @@ defmodule AshR2RML.VKG.SourceIdentity do
     version = fetch(attrs, :version)
 
     cond do
+      not (is_nil(version) or non_empty?(version)) ->
+        refusal(:version, "source identity version must be nil or a non-empty string", attrs)
+
       not non_empty?(id) ->
         refusal(:id, "source identity requires a non-empty id", attrs)
 
@@ -90,7 +93,7 @@ defmodule AshR2RML.VKG.SourceIdentity do
   defp non_empty?(value), do: is_binary(value) and String.trim(value) != ""
 
   defp absolute_identity?(value) when is_binary(value) do
-    String.starts_with?(value, "urn:") or String.match?(value, ~r/^https?:\/\//)
+    String.match?(value, ~r/\A(urn:[A-Za-z0-9][A-Za-z0-9-]*:\S+|https?:\/\/[^\s\/?#]+\S*)\z/)
   end
 
   defp absolute_identity?(_), do: false

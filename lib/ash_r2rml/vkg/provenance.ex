@@ -43,11 +43,11 @@ defmodule AshR2RML.VKG.Provenance do
   end
 
   defp row_hash(contract_id, subject, row) do
-    payload = {contract_id, subject, Map.delete(row, "_vkg")}
-
-    payload
-    |> :erlang.term_to_binary([:deterministic])
-    |> then(&:crypto.hash(:sha256, &1))
-    |> Base.encode16(case: :lower)
+    AshR2RML.VKG.Serializer.digest(%{
+      "kind" => "vkg.row",
+      "contract_id" => contract_id,
+      "subject" => subject,
+      "row" => row |> Map.delete("_vkg") |> Map.delete(:_vkg)
+    })
   end
 end

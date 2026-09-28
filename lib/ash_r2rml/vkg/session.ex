@@ -30,8 +30,16 @@ defmodule AshR2RML.VKG.Session do
 
   @spec verify(t()) :: :ok | {:error, Refusal.t()}
   def verify(%__MODULE__{} = session) do
+    with :ok <- check_catalog(session),
+         :ok <-
+           Replay.verify(session.receipt, session.plan, session.result, session.observations) do
+      check_reconstruction(session)
+    end
+  end
+
+  defp check_catalog(session) do
     if session.catalog_sha256 == session.plan.catalog_sha256 do
-      Replay.verify(session.receipt, session.plan, session.result)
+      :ok
     else
       {:error,
        Refusal.new(
@@ -40,6 +48,30 @@ defmodule AshR2RML.VKG.Session do
          "session catalog differs from plan catalog",
          %{session: session.catalog_sha256, plan: session.plan.catalog_sha256}
        )}
+    end
+  end
+
+  # The recorded observations must reproduce the sealed result through the executor.
+  defp check_reconstruction(session) do
+    with {:ok, rebuilt} <- Replay.reconstruct(session.plan, session.observations),
+         :ok <- compare_rebuilt(session.receipt, rebuilt) do
+      :ok
+    end
+  end
+
+  defp compare_rebuilt(receipt, rebuilt) do
+    case Replay.compare(receipt, rebuilt) do
+      {:ok, _} ->
+        :ok
+
+      {:error, %Refusal{} = cause} ->
+        {:error,
+         Refusal.new(
+           :REFUSED_VKG_REPLAY,
+           :reconstruct,
+           "recorded observations do not reproduce the sealed result",
+           %{cause: cause}
+         )}
     end
   end
 

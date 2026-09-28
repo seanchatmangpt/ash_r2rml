@@ -86,6 +86,7 @@ defmodule AshR2RML.MixProject do
           AshR2RML.Graphql.Info,
           AshR2RML.Graphql.Schema
         ],
+        "Virtual Knowledge Graph": ~r/AshR2RML\.VKG/,
         Reactor: ~r/AshR2RML\.Reactor/,
         Telemetry: ~r/AshR2RML\.Telemetry/,
         Internals: ~r/.*/
@@ -99,7 +100,8 @@ defmodule AshR2RML.MixProject do
         "AshR2RML contributors"
       ],
       licenses: ["MIT"],
-      files: ~w(lib .formatter.exs mix.exs README* LICENSE* CHANGELOG* ash_r2rml.livemd priv),
+      files:
+        ~w(lib .formatter.exs mix.exs AGENTS.md usage-rules.md usage-rules README* LICENSE* CHANGELOG* ash_r2rml.livemd priv),
       links: %{
         "GitHub" => @github_url,
         "Changelog" => "#{@github_url}/blob/main/CHANGELOG.md"

@@ -40,6 +40,26 @@ defmodule AshR2RML.VKG.Registry do
     end
   end
 
+  def fetch(registry, id) when is_map(registry) do
+    {:error,
+     Refusal.new(
+       :REFUSED_VKG_QUERY_SCOPE,
+       :contracts,
+       "VKG contract id must be a string",
+       %{id: inspect(id)}
+     )}
+  end
+
+  def fetch(registry, _id) do
+    {:error,
+     Refusal.new(
+       :REFUSED_VKG_QUERY_SCOPE,
+       :registry,
+       "VKG registry must be a map of admitted contracts",
+       %{registry: inspect(registry)}
+     )}
+  end
+
   @spec digest(t()) :: String.t()
   def digest(registry) when is_map(registry) do
     registry

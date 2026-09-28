@@ -11,7 +11,47 @@ See [Conventional Commits](Https://conventionalcommits.org) for commit guideline
 
 <!-- changelog -->
 
-## [Unreleased — targeting 26.9.12]
+## [v26.9.28](https://github.com/seanchatmangpt/ash_r2rml/releases/tag/v26.9.28) (2026-09-28)
+
+### Features:
+* **Observe-only Virtual Knowledge Graph federation (`AshR2RML.VKG`)** (`d61c0db`): exact-source
+  federation of Ontop-backed views: manifest -> admitted catalog -> deterministic plan -> bounded
+  execution -> provenance-bearing result -> receipt -> replay verification. Data under `priv/vkg`
+  (10 source descriptors, mappings, contracts, queries, SHACL contract shape, ontology); code under
+  `lib/ash_r2rml/vkg/**`; tests under `test/vkg/**`. Authority ceiling is `:NONE` (observe-only, no
+  DO, no source writes). It is not network federation and is distinct from `AshR2RML.Federation`.
+  Consumers: `VKG.Consumer.Graphql`, `VKG.Consumer.Engineering`; `VKG.Batch` bounds request size.
+
+### Integrity closure (post-release-subject work, stream-based):
+* Typed refusal vocabulary closed: `AshR2RML.Refusal.code()` and the `AGENTS.md` vocabulary now
+  include all 13 `REFUSED_VKG_*` codes plus `REFUSED_OBDA_EXECUTION` and `REFUSED_RESOURCE_BOUND`.
+  A closure test (`test/vkg/v26_9_28_docs_test.exs`) greps `lib/ash_r2rml/vkg` so new codes cannot drift.
+* Docs: `usage-rules/vkg.md`, README and AGENTS.md sections stating the observe-only authority
+  ceiling; `docs/jira/v26.9.28` PRD/ARD; docs group "Virtual Knowledge Graph"; `AGENTS.md`,
+  `usage-rules.md` and `usage-rules/` now ship in the Hex package files list.
+* Other streams' hardening of the VKG lib is recorded in their own tests
+  (`test/vkg/v26_9_28_*_test.exs`).
+* Honesty note: the release workflow subject is frozen at `40d181f`; these changes land after that
+  subject and need a re-pin or the next release to be part of a published package.
+
+* **Breaking receipt format change**: receipts now seal result standing, observation evidence
+  (`evidence_sha256_by_contract`), and a strict integer `row_count`; `Receipt.standing` derives
+  from the result. Receipts sealed before this change do not verify. Live standing is stamped only
+  for the trusted Ontop engine path; other engines yield `:test_double_only`. Receipts are still
+  unsigned (a party that re-seals receipt, result and observations together can forge a
+  self-consistent chain).
+
+### Summary of 26.9.13 - 26.9.25 (no separate entries were written at the time; from git history):
+* 26.9.24: GALL-009 runtime-feedback-admission PRD/ARD closed as FINAL_SPEC (`07d3ac1`); missing
+  `:neo4j_postgres` `attach_parity_witness` compiler clause added (`241342a`); merges of the
+  knowledge-hooks, ws5-learning and release/v26.8.26 lines into main; AGENTS.md line-wrap repair;
+  release workflow tag/license fixes.
+* 26.9.25: Ontop compliance probes and crown fixes (`bb66c20`, `e794a33`, `2257f2c`), including
+  `lang()` over VALUES and refusing millennium-from-dateTime as published-but-refused by Ontop 5.5.0
+  (`2e82d00`); OBDA tuple-key JSON fix and format/REUSE fixes (`4e8f14e`).
+* 26.9.26 - 26.9.27: no release commits found in git history.
+
+## [Earlier unreleased block — was targeting 26.9.12, superseded by the 26.9.28 entry above]
 
 ### Features:
 * **Knowledge-hook predicate closure — 8 predicate types (`AshR2RML.KnowledgeHooks`)**: added

@@ -163,6 +163,39 @@ end
 `REFUSED_SEMANTIC_TYPE_ASH_MISMATCH`, `REFUSED_SEMANTIC_TYPE_REQUIRES_RESOURCE_PROJECTION`,
 `REFUSED_SEMANTIC_ROUND_TRIP`, `REFUSED_UNSUPPORTED_SPARQL_FEATURE`.
 
+Execution and resource-bound codes: `REFUSED_OBDA_EXECUTION` (the Ontop/OBDA engine failed or
+returned an unusable result), `REFUSED_RESOURCE_BOUND` (a request, row or size bound was exceeded;
+fail closed, never truncate silently).
+
+VKG codes (`lib/ash_r2rml/vkg/**`, all observe-only; see `usage-rules/vkg.md`):
+`REFUSED_VKG_MANIFEST` (source descriptor/manifest malformed or unreadable),
+`REFUSED_VKG_CONTRACT_SHAPE` (contract fails the federation-contract shape),
+`REFUSED_VKG_CONTRACT_IDENTITY` (contract identity, digest or exact-source binding mismatch),
+`REFUSED_VKG_SOURCE_IDENTITY` (source identity tuple malformed or not admitted),
+`REFUSED_VKG_SOURCE_DRIFT` (observed source no longer matches the admitted digest),
+`REFUSED_VKG_REGISTRY_AMBIGUOUS` (subject/source lookup is not unique),
+`REFUSED_VKG_QUERY_SCOPE` (unknown/malformed contract ids or request),
+`REFUSED_VKG_QUERY_PLAN` (plan or plan options malformed, or plan digest mismatch),
+`REFUSED_VKG_CAPABILITY` (requested capability is not declared by the contract/manifest),
+`REFUSED_VKG_COMPATIBILITY` (engine/contract compatibility not established),
+`REFUSED_VKG_EXECUTION` (bounded execution failed or engine returned a malformed shape),
+`REFUSED_VKG_REPLAY` (receipt/result/replay verification failed),
+`REFUSED_VKG_AUTHORITY_ESCALATION` (anything above `:NONE` authority, i.e. any attempt at DO).
+
+The closure test `test/vkg/v26_9_28_docs_test.exs` greps `lib/ash_r2rml/vkg` for `REFUSED_*` atoms
+and fails if one is missing from `AshR2RML.Refusal.code()` or from this section.
+
+### Virtual Knowledge Graph (VKG) — observe-only
+
+`AshR2RML.VKG` (`lib/ash_r2rml/vkg.ex`, `lib/ash_r2rml/vkg/**`, data in `priv/vkg/**`, tests in
+`test/vkg/**`) is observe-only exact-source federation of Ontop-backed views:
+manifest → admitted catalog → deterministic plan → bounded execution → provenance-bearing result →
+receipt → replay verification. Normalize to the contract/plan IR first; verify (source identity,
+digests, shapes) second; execute third. Authority ceiling is `:NONE`: no DO, no source writes.
+It is **not** network federation and **not** `AshR2RML.Federation` (the in-process determinism
+substrate above). Failures are typed `REFUSED_VKG_*`. Engine execution uses the existing Ontop
+adapter; tests use `test/support/vkg_case.ex` fake engines only for engine-shape probes.
+
 ### Benchmarks and explanatory docs
 
 Real, reproducible benchmark numbers (compilation scaling, `AshR2RML.OBDA.InMemory` vs
