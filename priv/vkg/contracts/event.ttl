@@ -1,0 +1,9 @@
+@prefix vkg: <https://ash-r2rml.dev/vkg#> .
+<urn:vkg:event> a vkg:FederationContract, vkg:StableView ;
+  vkg:source <urn:source:event> ;
+  vkg:graph <urn:graph:event> ;
+  vkg:sourceSha256 "eaeaaeaeaaeaeaaeaeaaeaeaaeaeaaeaeaaeaeaaeaeaaeaeaaeaeaaeaeaaeaea" ;
+  vkg:mappingSha256 "ebebbebebbebebbebebbebebbebebbebebbebebbebebbebebbebebbebebbebeb" ;
+  vkg:subjectTemplate "https://example.org/event/{id}" ;
+  vkg:authority "NONE" ;
+  vkg:standing "constructed_not_actuated" .

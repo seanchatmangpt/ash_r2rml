@@ -1,0 +1,15 @@
+{
+  "id": "service",
+  "source": "urn:source:service",
+  "graph": "urn:graph:service",
+  "subject_template": "https://example.org/service/{id}",
+  "version": "1",
+  "mapping": "mappings/service.r2rml.ttl",
+  "query": "queries/service.rq",
+  "ontology": "ontology/vkg.ttl",
+  "capabilities": [
+    "select",
+    "filter",
+    "join"
+  ]
+}

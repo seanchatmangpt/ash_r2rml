@@ -1,0 +1,7 @@
+# stable VKG view: Service
+SELECT ?subject ?id WHERE {
+  GRAPH <urn:graph:service> {
+    ?subject <https://schema.org/identifier> ?id .
+  }
+}
+ORDER BY ?subject
