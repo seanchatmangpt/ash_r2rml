@@ -121,9 +121,20 @@ defmodule AshR2RML.VKG.Manifest do
 
   defp decode(bytes, path) do
     case Jason.decode(bytes) do
-      {:ok, attrs} when is_map(attrs) -> {:ok, attrs}
-      {:ok, other} -> refusal(:source_manifest, "VKG manifest must decode to an object", %{path: path, value: inspect(other)})
-      {:error, error} -> refusal(:source_manifest, "VKG manifest JSON is invalid", %{path: path, error: Exception.message(error)})
+      {:ok, attrs} when is_map(attrs) ->
+        {:ok, attrs}
+
+      {:ok, other} ->
+        refusal(:source_manifest, "VKG manifest must decode to an object", %{
+          path: path,
+          value: inspect(other)
+        })
+
+      {:error, error} ->
+        refusal(:source_manifest, "VKG manifest JSON is invalid", %{
+          path: path,
+          error: Exception.message(error)
+        })
     end
   end
 
