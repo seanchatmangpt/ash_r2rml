@@ -54,10 +54,10 @@ defmodule AshR2RML.VKG.Consumer.GraphQL do
   defp cursor(row) do
     digest =
       get_in(row, ["_vkg", "row_sha256"]) ||
-        (row
-         |> :erlang.term_to_binary([:deterministic])
-         |> then(&:crypto.hash(:sha256, &1))
-         |> Base.encode16(case: :lower))
+        row
+        |> :erlang.term_to_binary([:deterministic])
+        |> then(&:crypto.hash(:sha256, &1))
+        |> Base.encode16(case: :lower)
 
     Base.url_encode64(digest, padding: false)
   end
