@@ -23,13 +23,20 @@ defmodule AshR2RML.VKG.Registry do
   end
 
   def admit([]), do: refusal(:contracts, "VKG registry requires at least one contract", %{})
-  def admit(other), do: refusal(:contracts, "VKG registry input must be a list", %{value: inspect(other)})
+
+  def admit(other),
+    do: refusal(:contracts, "VKG registry input must be a list", %{value: inspect(other)})
 
   @spec fetch(t(), String.t()) :: {:ok, Contract.t()} | {:error, Refusal.t()}
   def fetch(registry, id) when is_map(registry) and is_binary(id) do
     case Map.fetch(registry, id) do
-      {:ok, contract} -> {:ok, contract}
-      :error -> refusal(id, "VKG contract is not admitted in this registry", %{available: registry |> Map.keys() |> Enum.sort()})
+      {:ok, contract} ->
+        {:ok, contract}
+
+      :error ->
+        refusal(id, "VKG contract is not admitted in this registry", %{
+          available: registry |> Map.keys() |> Enum.sort()
+        })
     end
   end
 
@@ -64,27 +71,43 @@ defmodule AshR2RML.VKG.Registry do
       |> Enum.filter(fn {_id, members} -> length(members) > 1 end)
       |> Enum.map(&elem(&1, 0))
 
-    if duplicates == [], do: :ok, else: refusal(:ids, "duplicate VKG contract ids are ambiguous", %{duplicates: duplicates})
+    if duplicates == [],
+      do: :ok,
+      else: refusal(:ids, "duplicate VKG contract ids are ambiguous", %{duplicates: duplicates})
   end
 
   defp consistent_sources(contracts) do
     conflicts =
       contracts
       |> Enum.group_by(& &1.source)
-      |> Enum.filter(fn {_source, members} -> members |> Enum.map(& &1.source_sha256) |> Enum.uniq() |> length() > 1 end)
+      |> Enum.filter(fn {_source, members} ->
+        members |> Enum.map(& &1.source_sha256) |> Enum.uniq() |> length() > 1
+      end)
       |> Enum.map(&elem(&1, 0))
 
-    if conflicts == [], do: :ok, else: refusal(:sources, "one source URI resolves to multiple admitted descriptor identities", %{conflicts: conflicts})
+    if conflicts == [],
+      do: :ok,
+      else:
+        refusal(:sources, "one source URI resolves to multiple admitted descriptor identities", %{
+          conflicts: conflicts
+        })
   end
 
   defp consistent_graphs(contracts) do
     conflicts =
       contracts
       |> Enum.group_by(& &1.graph)
-      |> Enum.filter(fn {_graph, members} -> members |> Enum.map(&Contract.digest/1) |> Enum.uniq() |> length() > 1 end)
+      |> Enum.filter(fn {_graph, members} ->
+        members |> Enum.map(&Contract.digest/1) |> Enum.uniq() |> length() > 1
+      end)
       |> Enum.map(&elem(&1, 0))
 
-    if conflicts == [], do: :ok, else: refusal(:graphs, "one graph URI resolves to multiple incompatible contracts", %{conflicts: conflicts})
+    if conflicts == [],
+      do: :ok,
+      else:
+        refusal(:graphs, "one graph URI resolves to multiple incompatible contracts", %{
+          conflicts: conflicts
+        })
   end
 
   defp refusal(subject, detail, evidence) do
