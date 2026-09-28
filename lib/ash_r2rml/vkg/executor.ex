@@ -90,7 +90,7 @@ defmodule AshR2RML.VKG.Executor do
 
   defp row_identity(row) do
     get_in(row, ["_vkg", "row_sha256"]) ||
-      (:erlang.term_to_binary(row, [:deterministic]) |> then(&:crypto.hash(:sha256, &1)))
+      :erlang.term_to_binary(row, [:deterministic]) |> then(&:crypto.hash(:sha256, &1))
   end
 
   defp merge_subject(rows) do
