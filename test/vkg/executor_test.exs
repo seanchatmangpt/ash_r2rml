@@ -2,7 +2,7 @@ defmodule AshR2RML.VKG.ExecutorTest do
   use ExUnit.Case, async: true
 
   import AshR2RML.VKGCase
-  alias AshR2RML.VKG.{Executor, Provenance}
+  alias AshR2RML.VKG.{Executor, Planner, Provenance}
 
   test "federated execution preserves per-row exact source provenance" do
     {_catalog, plan} = plan(["customer", "order"])
@@ -40,9 +40,9 @@ defmodule AshR2RML.VKG.ExecutorTest do
              Executor.execute(plan, engine: AshR2RML.VKGCase.RefusingEngine)
   end
 
-  test "global result bound is enforced after federation" do
-    {_catalog, plan0} = plan(["customer", "order"])
-    plan = %{plan0 | max_rows: 1}
+  test "global result bound is enforced by an admitted bounded plan" do
+    catalog = catalog(["customer", "order"])
+    assert {:ok, plan} = Planner.plan(catalog, ["customer", "order"], max_rows: 1)
 
     rows = %{
       "customer" => [%{"subject" => "urn:c:1"}],
