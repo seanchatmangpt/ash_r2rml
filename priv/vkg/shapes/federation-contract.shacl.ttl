@@ -1,0 +1,9 @@
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix vkg: <https://ash-r2rml.dev/vkg#> .
+vkg:FederationContractShape a sh:NodeShape ;
+  sh:targetClass vkg:FederationContract ;
+  sh:property [ sh:path vkg:source ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path vkg:graph ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path vkg:sourceSha256 ; sh:minCount 1 ; sh:maxCount 1 ; sh:pattern "^[0-9a-f]{64}$" ] ;
+  sh:property [ sh:path vkg:mappingSha256 ; sh:minCount 1 ; sh:maxCount 1 ; sh:pattern "^[0-9a-f]{64}$" ] ;
+  sh:property [ sh:path vkg:authority ; sh:minCount 1 ; sh:maxCount 1 ; sh:in ("NONE") ] .

@@ -1,0 +1,7 @@
+# stable VKG view: Organization
+SELECT ?subject ?id WHERE {
+  GRAPH <urn:graph:organization> {
+    ?subject <https://schema.org/identifier> ?id .
+  }
+}
+ORDER BY ?subject

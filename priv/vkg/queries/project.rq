@@ -1,0 +1,7 @@
+# stable VKG view: Project
+SELECT ?subject ?id WHERE {
+  GRAPH <urn:graph:project> {
+    ?subject <https://schema.org/identifier> ?id .
+  }
+}
+ORDER BY ?subject
