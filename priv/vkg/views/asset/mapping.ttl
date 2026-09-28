@@ -1,0 +1,3 @@
+@prefix rr: <http://www.w3.org/ns/r2rml#> .
+@prefix ex: <https://ash-r2rml.dev/vkg/asset#> .
+ex:AssetMap a rr:TriplesMap ; rr:logicalTable [ rr:tableName "assets" ] ; rr:subjectMap [ rr:template "https://ash-r2rml.dev/resource/asset/{id}" ; rr:class ex:Asset ] ; rr:predicateObjectMap [ rr:predicate ex:sourceId ; rr:objectMap [ rr:column "id" ] ] .

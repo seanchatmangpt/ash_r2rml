@@ -1,0 +1,4 @@
+@prefix vkg: <https://ash-r2rml.dev/vkg#> .
+@prefix ex: <https://ash-r2rml.dev/vkg/organization#> .
+# Negative witness: mutable source identity and malformed digest MUST be refused.
+ex:drifted a vkg:FederationContract ; vkg:sourceIdentity "source:organization:mutable" ; vkg:sourceSha256 "MUTABLE" ; vkg:mappingSha256 "1111111111111111111111111111111111111111111111111111111111111111" ; vkg:authority "NONE" ; vkg:subjectTemplate "https://ash-r2rml.dev/resource/organization/{id}" .

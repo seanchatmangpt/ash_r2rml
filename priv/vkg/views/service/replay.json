@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "view": "service",
+  "source_identity": "source:service:v1",
+  "subject_template": "https://ash-r2rml.dev/resource/service/{id}",
+  "authority": "NONE",
+  "ordering": [
+    "subject"
+  ],
+  "replay_policy": "exact-source-and-mapping-digest",
+  "on_drift": "REFUSED_SOURCE_DRIFT"
+}

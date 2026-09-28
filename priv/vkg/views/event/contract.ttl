@@ -1,0 +1,3 @@
+@prefix vkg: <https://ash-r2rml.dev/vkg#> .
+@prefix ex: <https://ash-r2rml.dev/vkg/event#> .
+ex:contract a vkg:FederationContract ; vkg:sourceIdentity "source:event:v1" ; vkg:sourceSha256 "0000000000000000000000000000000000000000000000000000000000000000" ; vkg:mappingSha256 "1111111111111111111111111111111111111111111111111111111111111111" ; vkg:authority "NONE" ; vkg:standing "CANDIDATE" ; vkg:subjectTemplate "https://ash-r2rml.dev/resource/event/{id}" .

@@ -1,0 +1,3 @@
+PREFIX ex: <https://ash-r2rml.dev/vkg/organization#>
+SELECT ?subject ?sourceId WHERE { ?subject a ex:Organization ; ex:sourceId ?sourceId . }
+ORDER BY ?subject

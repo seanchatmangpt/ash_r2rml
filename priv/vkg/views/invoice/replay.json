@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "view": "invoice",
+  "source_identity": "source:invoice:v1",
+  "subject_template": "https://ash-r2rml.dev/resource/invoice/{id}",
+  "authority": "NONE",
+  "ordering": [
+    "subject"
+  ],
+  "replay_policy": "exact-source-and-mapping-digest",
+  "on_drift": "REFUSED_SOURCE_DRIFT"
+}

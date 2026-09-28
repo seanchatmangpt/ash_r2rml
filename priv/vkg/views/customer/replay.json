@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "view": "customer",
+  "source_identity": "source:customer:v1",
+  "subject_template": "https://ash-r2rml.dev/resource/customer/{id}",
+  "authority": "NONE",
+  "ordering": [
+    "subject"
+  ],
+  "replay_policy": "exact-source-and-mapping-digest",
+  "on_drift": "REFUSED_SOURCE_DRIFT"
+}

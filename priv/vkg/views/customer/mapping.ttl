@@ -1,0 +1,3 @@
+@prefix rr: <http://www.w3.org/ns/r2rml#> .
+@prefix ex: <https://ash-r2rml.dev/vkg/customer#> .
+ex:CustomerMap a rr:TriplesMap ; rr:logicalTable [ rr:tableName "customers" ] ; rr:subjectMap [ rr:template "https://ash-r2rml.dev/resource/customer/{id}" ; rr:class ex:Customer ] ; rr:predicateObjectMap [ rr:predicate ex:sourceId ; rr:objectMap [ rr:column "id" ] ] .
