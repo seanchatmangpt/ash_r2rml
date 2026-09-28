@@ -24,6 +24,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: 40d181fffdefbb65ee4a83486eae86534690c4d5
           fetch-depth: 0
           submodules: recursive
       - uses: erlef/setup-beam@v1
@@ -67,6 +68,7 @@ jobs:
             sleep 3
           done
           subject="$(git rev-parse HEAD)"
+          test "$subject" = "40d181fffdefbb65ee4a83486eae86534690c4d5"
           if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v26.9.28" >/dev/null 2>&1; then
             test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v26.9.28" --jq .object.sha)" = "$subject"
           else
