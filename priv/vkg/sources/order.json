@@ -1,0 +1,16 @@
+{
+  "id": "order",
+  "source": "urn:source:order",
+  "graph": "urn:graph:order",
+  "subject_template": "https://example.org/order/{id}",
+  "version": "1",
+  "mapping": "mappings/order.r2rml.ttl",
+  "query": "queries/order.rq",
+  "ontology": "ontology/vkg.ttl",
+  "capabilities": [
+    "select",
+    "filter",
+    "join",
+    "aggregate"
+  ]
+}
