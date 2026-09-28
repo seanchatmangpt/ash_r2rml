@@ -10,6 +10,8 @@ on:
     paths:
       - mix.exs
       - .github/workflows/release-v26.9.28.yml
+  schedule:
+    - cron: "7 * * * *"
   workflow_dispatch:
 
 permissions:
