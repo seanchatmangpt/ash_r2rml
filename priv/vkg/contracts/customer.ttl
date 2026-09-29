@@ -1,0 +1,9 @@
+@prefix vkg: <https://ash-r2rml.dev/vkg#> .
+<urn:vkg:customer> a vkg:FederationContract, vkg:StableView ;
+  vkg:source <urn:source:customer> ;
+  vkg:graph <urn:graph:customer> ;
+  vkg:sourceSha256 "caaaaaeacaaaaaeacaaaaaeacaaaaaeacaaaaaeacaaaaaeacaaaaaeacaaaaaea" ;
+  vkg:mappingSha256 "cbbbbbebcbbbbbebcbbbbbebcbbbbbebcbbbbbebcbbbbbebcbbbbbebcbbbbbeb" ;
+  vkg:subjectTemplate "https://example.org/customer/{id}" ;
+  vkg:authority "NONE" ;
+  vkg:standing "constructed_not_actuated" .

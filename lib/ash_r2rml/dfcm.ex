@@ -36,7 +36,7 @@ defmodule AshR2RML.DfCM do
 
   def storage_candidates(_), do: [:foreign_key, :join_table, :association_resource]
 
-  @spec select(Relationship.t()) :: {:ok, Relationship.t()} | {:error, Refusal.t()}
+  @spec select(Relationship.t()) :: {:ok, Relationship.t()} | {:error, TopLevelRefusal.t()}
   def select(%Relationship{} = relationship) do
     candidates = storage_candidates(relationship)
     relationship = %{relationship | storage_candidates: candidates}
@@ -54,7 +54,10 @@ defmodule AshR2RML.DfCM do
            %{strategy: strategy, candidates: candidates}
          )}
 
-      strategy when is_atom(strategy) ->
+      # Relationship.storage_strategy is a closed atom union, so any value that
+      # is not an admitted candidate (including a non-atom smuggled into the
+      # struct at runtime) is refused here.
+      strategy ->
         if strategy in candidates do
           {:ok, relationship}
         else
@@ -66,15 +69,6 @@ defmodule AshR2RML.DfCM do
              %{strategy: strategy, candidates: candidates}
            )}
         end
-
-      other ->
-        {:error,
-         TopLevelRefusal.new(
-           :REFUSED_AMBIGUOUS_RELATIONSHIP,
-           relationship.name,
-           "unsupported storage strategy value",
-           %{strategy: other}
-         )}
     end
   end
 

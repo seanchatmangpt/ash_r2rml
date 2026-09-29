@@ -181,9 +181,16 @@ defmodule AshR2RML.OBDA.Ontop.Compliance do
     "obdaf:week-from-dateTime",
     "obdaf:quarter-from-dateTime",
     "obdaf:decade-from-dateTime",
-    "obdaf:century-from-dateTime",
-    "obdaf:millenium-from-dateTime"
+    "obdaf:century-from-dateTime"
   ]
+
+  # Published by Ontop's 5.5.0 compliance page as supported, but refused by the
+  # pinned engine when observed live: the ontop_compliance_crown probe
+  # (CI run 36111554866, PostgreSQL/PostGIS) returned HTTP 500
+  # OntopUnsupportedKGQueryException "The expression FunctionCall
+  # (obdaf:millenium-from-dateTime) Var(dt) is not supported yet!".
+  # Observation outranks the published claim; admission fails closed.
+  @time_functions_published_but_refused ["obdaf:millenium-from-dateTime"]
 
   @time_limitations %{
     mixed_date_datetime_ofn: ["Oracle", "Microsoft SQL Server"],
@@ -244,7 +251,11 @@ defmodule AshR2RML.OBDA.Ontop.Compliance do
           "language-tagged literals are typed as rdf:langString"
         ]
       },
-      time_functions: %{supported: @time_functions, limitations: @time_limitations},
+      time_functions: %{
+        supported: @time_functions,
+        published_but_refused: @time_functions_published_but_refused,
+        limitations: @time_limitations
+      },
       other_functions: %{supported: @other_functions}
     }
   end
@@ -260,7 +271,13 @@ defmodule AshR2RML.OBDA.Ontop.Compliance do
   @spec feature_status(atom(), String.t()) :: feature_status()
   def feature_status(:sparql_1_1, feature), do: section_feature_status(@sparql, feature)
   def feature_status(:geosparql_1_0, feature), do: section_feature_status(@geosparql, feature)
-  def feature_status(:time_functions, feature), do: member_status(@time_functions, feature)
+
+  def feature_status(:time_functions, feature) do
+    if feature in @time_functions_published_but_refused,
+      do: :unsupported,
+      else: member_status(@time_functions, feature)
+  end
+
   def feature_status(:other_functions, feature), do: member_status(@other_functions, feature)
   def feature_status(:r2rml, feature), do: if(feature in @r2rml_unsupported, do: :unsupported, else: :unknown)
   def feature_status(:rdf_1_1, "RDF 1.1"), do: :supported
@@ -389,12 +406,13 @@ defmodule AshR2RML.OBDA.Ontop.Compliance do
       probe(:rdf_term_functions, ["17.4.2. Functions on RDF Terms"], """
       PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
       SELECT * WHERE {
+        VALUES ?tagged { "hello"@en }
         BIND(isIRI(<https://example.com/x>) AS ?a)
         BIND(isBlank(BNODE()) AS ?b)
         BIND(isLiteral("x") AS ?c)
         BIND(isNumeric(1) AS ?d)
         BIND(str(<https://example.com/x>) AS ?e)
-        BIND(lang("hello"@en) AS ?f)
+        BIND(lang(?tagged) AS ?f)
         BIND(datatype("x"^^xsd:string) AS ?g)
         BIND(IRI("https://example.com/y") AS ?h)
         BIND(BNODE() AS ?i)
@@ -404,6 +422,7 @@ defmodule AshR2RML.OBDA.Ontop.Compliance do
       """),
       probe(:string_functions, ["17.4.3. Functions on Strings"], """
       SELECT * WHERE {
+        VALUES ?tagged { "hello"@en-US }
         BIND(STRLEN("abcdef") AS ?strlen)
         BIND(SUBSTR("abcdef", 2, 3) AS ?substr)
         BIND(UCASE("ab") AS ?ucase)
@@ -415,7 +434,7 @@ defmodule AshR2RML.OBDA.Ontop.Compliance do
         BIND(STRAFTER("abcdef", "cd") AS ?after)
         BIND(ENCODE_FOR_URI("a b") AS ?encoded)
         BIND(CONCAT("a", "b") AS ?concat)
-        BIND(langMatches("en-US", "en") AS ?langmatch)
+        BIND(langMatches(lang(?tagged), "en") AS ?langmatch)
         BIND(REGEX("abcdef", "^abc") AS ?regex)
         BIND(REPLACE("abcdef", "abc", "xyz") AS ?replace)
       }
@@ -459,8 +478,9 @@ defmodule AshR2RML.OBDA.Ontop.Compliance do
       PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
       PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
       SELECT * WHERE {
-        BIND(datatype("simple") = xsd:string AS ?simple_is_string)
-        BIND(datatype("hello"@en) = rdf:langString AS ?lang_is_langstring)
+        VALUES (?simple ?tagged) { ("simple" "hello"@en) }
+        BIND(datatype(?simple) = xsd:string AS ?simple_is_string)
+        BIND(datatype(?tagged) = rdf:langString AS ?lang_is_langstring)
       }
       """),
       probe(:time_functions, [:time_functions], """
@@ -468,18 +488,23 @@ defmodule AshR2RML.OBDA.Ontop.Compliance do
       PREFIX ofn: <http://www.ontotext.com/sparql/functions/>
       PREFIX obdaf: <https://w3id.org/obda/functions#>
       SELECT * WHERE {
-        BIND(ofn:weeksBetween("2026-08-01"^^xsd:date, "2026-08-15"^^xsd:date) AS ?weeks)
-        BIND(ofn:daysBetween("2026-08-01T00:00:00Z"^^xsd:dateTime, "2026-08-02T00:00:00Z"^^xsd:dateTime) AS ?days)
-        BIND(ofn:hoursBetween("2026-08-01T00:00:00Z"^^xsd:dateTime, "2026-08-01T01:00:00Z"^^xsd:dateTime) AS ?hours)
-        BIND(ofn:minutesBetween("2026-08-01T00:00:00Z"^^xsd:dateTime, "2026-08-01T00:01:00Z"^^xsd:dateTime) AS ?minutes)
-        BIND(ofn:secondsBetween("2026-08-01T00:00:00Z"^^xsd:dateTime, "2026-08-01T00:00:01Z"^^xsd:dateTime) AS ?seconds)
-        BIND(ofn:millisBetween("2026-08-01T00:00:00Z"^^xsd:dateTime, "2026-08-01T00:00:01Z"^^xsd:dateTime) AS ?millis)
-        BIND(obdaf:dateTrunc("2026-08-21T12:34:56Z"^^xsd:dateTime, "month"^^xsd:string) AS ?truncated)
-        BIND(obdaf:week-from-dateTime("2026-08-21T12:34:56Z"^^xsd:dateTime) AS ?week)
-        BIND(obdaf:quarter-from-dateTime("2026-08-21T12:34:56Z"^^xsd:dateTime) AS ?quarter)
-        BIND(obdaf:decade-from-dateTime("2026-08-21T12:34:56Z"^^xsd:dateTime) AS ?decade)
-        BIND(obdaf:century-from-dateTime("2026-08-21T12:34:56Z"^^xsd:dateTime) AS ?century)
-        BIND(obdaf:millenium-from-dateTime("2026-08-21T12:34:56Z"^^xsd:dateTime) AS ?millennium)
+        VALUES (?d0 ?d1 ?t0 ?t_day ?t_hour ?t_min ?t_sec ?dt) {
+          ("2026-08-01"^^xsd:date "2026-08-15"^^xsd:date
+           "2026-08-01T00:00:00Z"^^xsd:dateTime "2026-08-02T00:00:00Z"^^xsd:dateTime
+           "2026-08-01T01:00:00Z"^^xsd:dateTime "2026-08-01T00:01:00Z"^^xsd:dateTime
+           "2026-08-01T00:00:01Z"^^xsd:dateTime "2026-08-21T12:34:56Z"^^xsd:dateTime)
+        }
+        BIND(ofn:weeksBetween(?d0, ?d1) AS ?weeks)
+        BIND(ofn:daysBetween(?t0, ?t_day) AS ?days)
+        BIND(ofn:hoursBetween(?t0, ?t_hour) AS ?hours)
+        BIND(ofn:minutesBetween(?t0, ?t_min) AS ?minutes)
+        BIND(ofn:secondsBetween(?t0, ?t_sec) AS ?seconds)
+        BIND(ofn:millisBetween(?t0, ?t_sec) AS ?millis)
+        BIND(obdaf:dateTrunc(?dt, "month"^^xsd:string) AS ?truncated)
+        BIND(obdaf:week-from-dateTime(?dt) AS ?week)
+        BIND(obdaf:quarter-from-dateTime(?dt) AS ?quarter)
+        BIND(obdaf:decade-from-dateTime(?dt) AS ?decade)
+        BIND(obdaf:century-from-dateTime(?dt) AS ?century)
       }
       """),
       probe(:other_functions, [:other_functions], """

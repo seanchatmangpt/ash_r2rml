@@ -1,0 +1,7 @@
+# stable VKG view: Document
+SELECT ?subject ?id WHERE {
+  GRAPH <urn:graph:document> {
+    ?subject <https://schema.org/identifier> ?id .
+  }
+}
+ORDER BY ?subject

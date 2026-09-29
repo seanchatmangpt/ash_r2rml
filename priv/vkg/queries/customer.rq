@@ -1,0 +1,7 @@
+# stable VKG view: Customer
+SELECT ?subject ?id WHERE {
+  GRAPH <urn:graph:customer> {
+    ?subject <https://schema.org/identifier> ?id .
+  }
+}
+ORDER BY ?subject

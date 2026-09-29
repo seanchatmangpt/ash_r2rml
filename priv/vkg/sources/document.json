@@ -1,0 +1,15 @@
+{
+  "id": "document",
+  "source": "urn:source:document",
+  "graph": "urn:graph:document",
+  "subject_template": "https://example.org/document/{id}",
+  "version": "1",
+  "mapping": "mappings/document.r2rml.ttl",
+  "query": "queries/document.rq",
+  "ontology": "ontology/vkg.ttl",
+  "capabilities": [
+    "select",
+    "filter",
+    "join"
+  ]
+}

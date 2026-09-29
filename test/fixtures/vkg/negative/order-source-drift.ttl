@@ -1,0 +1,8 @@
+@prefix vkg: <https://ash-r2rml.dev/vkg#> .
+# Negative control: exact source identity drift must refuse admission.
+<urn:vkg:order:drift> a vkg:FederationContract ;
+ vkg:source <urn:source:order> ;
+ vkg:graph <urn:graph:order> ;
+ vkg:sourceSha256 "DRIFT-aadeaaadeaaadeaa" ;
+ vkg:mappingSha256 "bbdebbbdebbbdebbbdebbbdebbbdebbbdebbbdebbbdebbbdebbbdebbbdebbbde" ;
+ vkg:authority "NONE" .
