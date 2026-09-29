@@ -1,0 +1,8 @@
+{
+  "id": "organization",
+  "uri": "urn:source:organization",
+  "graph": "urn:graph:organization",
+  "subject_template": "",
+  "version": "1",
+  "expect": "REFUSED_VKG_SOURCE_IDENTITY"
+}

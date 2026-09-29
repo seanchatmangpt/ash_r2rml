@@ -1,0 +1,8 @@
+{
+  "id": "service",
+  "uri": "db/service",
+  "graph": "urn:graph:service",
+  "subject_template": "https://example.org/service/{id}",
+  "version": "1",
+  "expect": "REFUSED_VKG_SOURCE_IDENTITY"
+}

@@ -1,0 +1,8 @@
+{
+  "id": "event",
+  "uri": "db/event",
+  "graph": "urn:graph:event",
+  "subject_template": "https://example.org/event/{id}",
+  "version": "1",
+  "expect": "REFUSED_VKG_SOURCE_IDENTITY"
+}
