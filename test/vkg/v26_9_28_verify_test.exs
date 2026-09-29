@@ -69,7 +69,7 @@ defmodule AshR2RML.VKG.V26928VerifyTest do
         )
       )
 
-      replay_refusal(:sha256, Replay.verify(%{receipt | standing: :live}, plan, result))
+      replay_refusal(:standing, Replay.verify(%{receipt | standing: :live}, plan, result))
       replay_refusal(:authority, Replay.verify(%{receipt | authority: :write}, plan, result))
       replay_refusal(:row_count, Replay.verify(%{receipt | row_count: 99}, plan, result))
     end
@@ -126,7 +126,12 @@ defmodule AshR2RML.VKG.V26928VerifyTest do
     test "recorded observation rows mutated with digest untouched fail reconstruction" do
       {_plan, _result, observations, _receipt, session} = sealed()
       tampered = put_in(observations, ["customer", Access.key(:rows)], [%{"subject" => "urn:x", "name" => "Evil"}])
-      replay_refusal(:reconstruct, Session.verify(%{session | observations: tampered}))
+      # the executor re-derives each recorded observation digest from its rows, so the
+      # forgery is refused at the stage before result reconstruction is even compared
+      assert {:error, %Refusal{code: :REFUSED_VKG_REPLAY, detail: detail}} =
+               Session.verify(%{session | observations: tampered})
+
+      assert detail =~ "recorded observation digest does not derive"
     end
 
     test "metrics and inspection report tamper" do
@@ -255,8 +260,11 @@ defmodule AshR2RML.VKG.V26928VerifyTest do
                "d" => 1,
                "e" => 1.5,
                "f" => "nil",
-               "g" => "sym"
+               "g" => %{"$atom" => "sym"}
              }
+
+      # an atom, a string and nil-like atoms never share an encoding
+      refute Serializer.canonical_json(:sym) == Serializer.canonical_json("sym")
     end
 
     test "boolean and nil row values survive session encoding without colliding with strings" do
@@ -285,7 +293,7 @@ defmodule AshR2RML.VKG.V26928VerifyTest do
       decoded = Jason.decode!(json)
       assert decoded["t"] == %{"$tuple" => [1, 2]}
       assert decoded["l"] == [1, 2]
-      assert decoded["d"] == "2026-09-28 00:00:00Z"
+      assert decoded["d"] == %{"$datetime" => "2026-09-28T00:00:00Z"}
       assert Map.has_key?(decoded["bin"], "$binary")
       refute Serializer.digest({1, 2}) == Serializer.digest([1, 2])
     end

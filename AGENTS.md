@@ -175,11 +175,11 @@ VKG codes (`lib/ash_r2rml/vkg/**`, all observe-only; see `usage-rules/vkg.md`):
 `REFUSED_VKG_SOURCE_DRIFT` (observed source no longer matches the admitted digest),
 `REFUSED_VKG_REGISTRY_AMBIGUOUS` (subject/source lookup is not unique),
 `REFUSED_VKG_QUERY_SCOPE` (unknown/malformed contract ids or request),
-`REFUSED_VKG_QUERY_PLAN` (plan or plan options malformed, or plan digest mismatch),
+`REFUSED_VKG_QUERY_PLAN` (plan or plan options malformed, plan digest mismatch, or plan not bound to the admitted catalog),
 `REFUSED_VKG_CAPABILITY` (requested capability is not declared by the contract/manifest),
 `REFUSED_VKG_COMPATIBILITY` (engine/contract compatibility not established),
 `REFUSED_VKG_EXECUTION` (bounded execution failed or engine returned a malformed shape),
-`REFUSED_VKG_REPLAY` (receipt/result/replay verification failed),
+`REFUSED_VKG_REPLAY` (receipt/result/replay verification or receipt signature check failed),
 `REFUSED_VKG_AUTHORITY_ESCALATION` (anything above `:NONE` authority, i.e. any attempt at DO).
 
 The closure test `test/vkg/v26_9_28_docs_test.exs` greps `lib/ash_r2rml/vkg` for `REFUSED_*` atoms

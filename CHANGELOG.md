@@ -34,14 +34,48 @@ See [Conventional Commits](Https://conventionalcommits.org) for commit guideline
 * Honesty note: the release workflow subject is frozen at `40d181f`; these changes land after that
   subject and need a re-pin or the next release to be part of a published package.
 
+### Residual-risk closure (v26.9.28 post-subject, `test/vkg/v26_9_28_residual_test.exs`):
+* TOCTOU: `Executor` reads mapping/query/ontology bytes once, hashes the bytes, compares them with
+  the admitted stage digests, writes them to a private temp directory and runs the engine on the
+  snapshot paths only; the directory is removed afterwards.
+* Hand-built plans: `Executor.execute/2` binds a plan to a catalog (`plan.catalog` set by the
+  planner, or the `:catalog` option) and re-resolves every stage; arbitrary paths/digests are refused
+  with `REFUSED_VKG_QUERY_PLAN` / `REFUSED_VKG_SOURCE_DRIFT`, and plans with no binding are refused.
+  `VKG.query/2` is unchanged. `Planner.stage_for/1` is public.
+* The requested capability is forwarded to `Engine.Ontop` as `required_capabilities`
+  (`OBDA.Capabilities` now knows the query capabilities select/filter/join/aggregate); every stage
+  must carry `ontology_sha256` or none may, and the plan's ontology digest must derive from its stages.
+* Plan and executor observation digests use the injective canonical JSON encoding instead of
+  `term_to_binary` (plan/observation digests change); the encoding tags atoms, dates, times,
+  decimals, tuples and escapes user maps with `"$"`-prefixed keys or colliding keys, and
+  `Serializer.decode_value/1` reverses the tags. Docs no longer describe the encoding as lossy.
+* `Serializer.decode_receipt/1` and the receipt integrity check derive the accepted standings from
+  `Result.standings/0`, the single source of truth.
+* Optional receipt signing: `Receipt.sign/2` (HMAC-SHA256 shared-key MAC, not a public-key
+  signature) and `key:` / `require_signature:` on `Receipt.verify`, `Replay.verify`,
+  `Session.verify`, `VKG.verify`, `Receipt.chain_valid?` and `Serializer.verify_receipt_json`;
+  the receipt JSON carries the signature. Unsigned receipts stay valid unless required.
+* `Executor.replay/3` is a documented public function that verifies recorded evidence against the
+  plan (recomputed observation digests, live standing only for `:ontop` system processes).
+* `Inspection.snapshot/1` and `Inspection.catalog/1` surface `ontology_sha256`; `VKG.Batch` refuses
+  malformed input with typed refusals; `Consumer.Engineering` tolerates non-map rows.
+* Docs closure test reads the `Refusal.code()` type through `Code.Typespec`, not the source text.
+* CHANGELOG correction: the "26.9.13 - 26.9.25" summary below now states which versions have
+  release commits (verified with `git log`).
+
 * **Breaking receipt format change**: receipts now seal result standing, observation evidence
   (`evidence_sha256_by_contract`), and a strict integer `row_count`; `Receipt.standing` derives
   from the result. Receipts sealed before this change do not verify. Live standing is stamped only
-  for the trusted Ontop engine path; other engines yield `:test_double_only`. Receipts are still
-  unsigned (a party that re-seals receipt, result and observations together can forge a
-  self-consistent chain).
+  for the trusted Ontop engine path; other engines yield `:test_double_only`. Receipts are unsigned
+  by default; optional shared-key signing is described in the residual-risk closure above. Without
+  a key, a party that re-seals receipt, result and observations together can forge a
+  self-consistent chain.
 
-### Summary of 26.9.13 - 26.9.25 (no separate entries were written at the time; from git history):
+### Summary of 26.9.13 - 26.9.27 (no separate entries were written at the time; from git history):
+* Release commits ("bump: release ...") exist only for 26.9.12 (`f2dae0c`), 26.9.24 (`616644d`) and
+  26.9.28 (`40d181f`). 26.9.13 - 26.9.23 and 26.9.26 - 26.9.27 have no release commits, and 26.9.25
+  has fix commits but no release commit. The repository has no git tags in this checkout, so tag
+  presence cannot be confirmed from it.
 * 26.9.24: GALL-009 runtime-feedback-admission PRD/ARD closed as FINAL_SPEC (`07d3ac1`); missing
   `:neo4j_postgres` `attach_parity_witness` compiler clause added (`241342a`); merges of the
   knowledge-hooks, ws5-learning and release/v26.8.26 lines into main; AGENTS.md line-wrap repair;
@@ -49,7 +83,7 @@ See [Conventional Commits](Https://conventionalcommits.org) for commit guideline
 * 26.9.25: Ontop compliance probes and crown fixes (`bb66c20`, `e794a33`, `2257f2c`), including
   `lang()` over VALUES and refusing millennium-from-dateTime as published-but-refused by Ontop 5.5.0
   (`2e82d00`); OBDA tuple-key JSON fix and format/REUSE fixes (`4e8f14e`).
-* 26.9.26 - 26.9.27: no release commits found in git history.
+* 26.9.26 - 26.9.27: no commits of any kind found in git history.
 
 ## [Earlier unreleased block — was targeting 26.9.12, superseded by the 26.9.28 entry above]
 

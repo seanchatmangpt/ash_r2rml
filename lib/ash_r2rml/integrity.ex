@@ -763,6 +763,11 @@ defmodule AshR2RML.OBDA.Capabilities do
     :datatype_map
   ]
 
+  # Query-level capabilities requested by callers such as the VKG executor. They
+  # are a separate vocabulary from the R2RML mapping features above; Ontop answers
+  # SPARQL select/filter/join/aggregate at every supported version.
+  @query_capabilities [:select, :filter, :join, :aggregate]
+
   @ontop_conservative [
     :table_name,
     :subject_template,
@@ -788,8 +793,8 @@ defmodule AshR2RML.OBDA.Capabilities do
   @spec admit(atom() | String.t(), String.t() | nil, [atom()]) ::
           {:ok, CapabilityReceipt.t()} | {:error, Refusal.t()}
   def admit(engine, version, required) when is_list(required) do
-    supported = supported(engine, version)
-    unknown_standard = required -- @w3c
+    supported = supported(engine, version) ++ query_supported(engine)
+    unknown_standard = required -- (@w3c ++ @query_capabilities)
     missing = required -- supported
 
     cond do
@@ -835,6 +840,9 @@ defmodule AshR2RML.OBDA.Capabilities do
         {:ok, seal(receipt)}
     end
   end
+
+  defp query_supported(engine) when engine in [:ontop, "ontop"], do: @query_capabilities
+  defp query_supported(_engine), do: []
 
   def mark_executed(%CapabilityReceipt{} = receipt), do: seal(%{receipt | executed?: true})
 

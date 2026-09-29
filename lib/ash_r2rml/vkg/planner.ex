@@ -16,15 +16,9 @@ defmodule AshR2RML.VKG.Planner do
   def plan(catalog, contract_ids, opts \\ [])
 
   def plan(%Catalog{} = catalog, contract_ids, opts) when is_list(opts) do
-    capability = Keyword.get(opts, :capability, :select)
-
-    with :ok <- valid_capability(capability),
-         {:ok, contracts} <- Catalog.select(catalog, contract_ids),
-         :ok <- Compatibility.check(contracts),
-         :ok <- ensure_capability(contracts, capability),
-         stages <- Enum.map(contracts, &stage/1) do
-      QueryPlan.new(catalog.sha256, contract_ids, stages, opts)
-    end
+    if Keyword.keyword?(opts),
+      do: do_plan(catalog, contract_ids, opts),
+      else: options_refusal(opts)
   end
 
   def plan(%Catalog{}, _contract_ids, opts), do: options_refusal(opts)
@@ -39,6 +33,18 @@ defmodule AshR2RML.VKG.Planner do
      )}
   end
 
+  defp do_plan(catalog, contract_ids, opts) do
+    capability = Keyword.get(opts, :capability, :select)
+
+    with :ok <- valid_capability(capability),
+         {:ok, contracts} <- Catalog.select(catalog, contract_ids),
+         :ok <- Compatibility.check(contracts),
+         :ok <- ensure_capability(contracts, capability),
+         stages <- Enum.map(contracts, &stage_for/1) do
+      QueryPlan.new(catalog.sha256, contract_ids, stages, Keyword.put(opts, :catalog, catalog))
+    end
+  end
+
   @spec plan_all(Catalog.t(), keyword()) :: {:ok, QueryPlan.t()} | {:error, Refusal.t()}
   def plan_all(%Catalog{} = catalog, opts \\ []) do
     plan(catalog, Catalog.ids(catalog), opts)
@@ -51,7 +57,14 @@ defmodule AshR2RML.VKG.Planner do
      })}
   end
 
-  defp stage(%Contract{} = contract) do
+  @doc """
+  The exact plan stage an admitted contract produces (paths, digests, capabilities).
+
+  The executor re-derives this from the bound catalog and requires the plan's stage
+  to be identical, so a stage cannot carry paths or digests the catalog never admitted.
+  """
+  @spec stage_for(Contract.t()) :: QueryPlan.stage()
+  def stage_for(%Contract{} = contract) do
     %{
       contract_id: contract.id,
       contract_digest: Contract.digest(contract),

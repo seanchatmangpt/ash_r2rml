@@ -34,9 +34,10 @@ defmodule AshR2RML.VKG.Replay do
     end
   end
 
-  @spec verify(Receipt.t(), QueryPlan.t(), Result.t(), map() | nil) :: :ok | {:error, Refusal.t()}
-  def verify(%Receipt{} = receipt, %QueryPlan{} = plan, %Result{} = result, observations \\ nil) do
-    Receipt.verify(receipt, plan, result, observations)
+  @doc "See `AshR2RML.VKG.Receipt.verify/5` (including the `:key` / `:require_signature` options)."
+  @spec verify(Receipt.t(), QueryPlan.t(), Result.t(), map() | nil, keyword()) :: :ok | {:error, Refusal.t()}
+  def verify(%Receipt{} = receipt, %QueryPlan{} = plan, %Result{} = result, observations \\ nil, opts \\ []) do
+    Receipt.verify(receipt, plan, result, observations, opts)
   end
 
   @doc """

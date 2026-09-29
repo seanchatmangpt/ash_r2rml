@@ -89,15 +89,16 @@ defmodule AshR2RML.VKG do
   With `catalog: %Catalog{}` (or `root: path`) the session is additionally
   bound to that catalog digest, so a session sealed against a since-changed
   manifest is refused with `REFUSED_VKG_REPLAY`.
+
+  With `key: secret` a receipt signature (`AshR2RML.VKG.Receipt.sign/2`) is
+  verified, and `require_signature: true` additionally refuses unsigned
+  receipts. The signature is a shared-key MAC, see `AshR2RML.VKG.Receipt`.
   """
   @spec verify(Session.t(), keyword()) :: :ok | {:error, Refusal.t()}
   def verify(session, opts \\ [])
 
   def verify(%Session{} = session, opts) when is_list(opts) do
-    with :ok <- Session.verify(session),
-         {:ok, expected} <- expected_catalog(opts) do
-      check_expected(session, expected)
-    end
+    if Keyword.keyword?(opts), do: do_verify(session, opts), else: opts_refusal(opts)
   end
 
   def verify(%Session{}, opts), do: opts_refusal(opts)
@@ -107,6 +108,13 @@ defmodule AshR2RML.VKG do
      Refusal.new(:REFUSED_VKG_REPLAY, :session, "verify requires a VKG session", %{
        got: inspect(other)
      })}
+  end
+
+  defp do_verify(session, opts) do
+    with :ok <- Session.verify(session, Keyword.take(opts, [:key, :require_signature])),
+         {:ok, expected} <- expected_catalog(opts) do
+      check_expected(session, expected)
+    end
   end
 
   defp expected_catalog(opts) do
@@ -129,7 +137,7 @@ defmodule AshR2RML.VKG do
   end
 
   defp run(catalog, contract_ids, opts) do
-    query_opts = Keyword.drop(opts, [:root, :previous_receipt])
+    query_opts = Keyword.drop(opts, [:root, :previous_receipt, :catalog])
 
     with {:ok, plan} <- Planner.plan(catalog, contract_ids, query_opts),
          {:ok, result, observations} <- Executor.execute(plan, query_opts) do

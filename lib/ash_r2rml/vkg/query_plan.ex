@@ -1,6 +1,15 @@
 defmodule AshR2RML.VKG.QueryPlan do
   @moduledoc """
   Deterministic, observe-only plan for one federated virtual graph query.
+
+  The plan digest is the canonical JSON digest (`AshR2RML.VKG.Serializer.digest/1`)
+  over the plan core, never the BEAM external term format. Filesystem paths and the
+  `:catalog` binding are execution inputs, not identity.
+
+  A plan produced by `AshR2RML.VKG.Planner` carries the admitted catalog it was
+  built from in `:catalog`; `AshR2RML.VKG.Executor.execute/2` re-resolves every
+  stage against it (or a supplied `:catalog` option) before touching any file. A
+  hand-built plan without that binding is refused.
   """
 
   alias AshR2RML.Refusal
@@ -13,6 +22,7 @@ defmodule AshR2RML.VKG.QueryPlan do
     :stages,
     :sha256,
     :ontology_sha256,
+    :catalog,
     max_rows: 50_000,
     timeout_ms: 30_000,
     merge: :union,
@@ -58,6 +68,7 @@ defmodule AshR2RML.VKG.QueryPlan do
          :ok <- non_empty_ids?(contract_ids),
          :ok <- stages_match?(contract_ids, stages),
          :ok <- stage_capabilities?(stages),
+         :ok <- ontology_consistent?(stages),
          :ok <- positive_integer?(max_rows, :max_rows),
          :ok <- positive_integer?(timeout_ms, :timeout_ms),
          :ok <- merge_mode?(merge),
@@ -69,6 +80,7 @@ defmodule AshR2RML.VKG.QueryPlan do
         stages: stages,
         sha256: "",
         ontology_sha256: ontology_binding(stages),
+        catalog: Keyword.get(opts, :catalog),
         max_rows: max_rows,
         timeout_ms: timeout_ms,
         merge: merge,
@@ -92,6 +104,8 @@ defmodule AshR2RML.VKG.QueryPlan do
          :ok <- non_empty_ids?(plan.contract_ids),
          :ok <- stages_match?(plan.contract_ids, plan.stages),
          :ok <- stage_capabilities?(plan.stages),
+         :ok <- ontology_consistent?(plan.stages),
+         :ok <- ontology_binding_matches?(plan),
          :ok <- positive_integer?(plan.max_rows, :max_rows),
          :ok <- positive_integer?(plan.timeout_ms, :timeout_ms),
          :ok <- merge_mode?(plan.merge),
@@ -121,21 +135,57 @@ defmodule AshR2RML.VKG.QueryPlan do
   defp plan_id(sha256), do: "vkg-plan-" <> binary_part(sha256, 0, 16)
 
   defp core(plan) do
-    {plan.catalog_sha256, plan.contract_ids, canonical_stages(plan.stages), plan.max_rows, plan.timeout_ms, plan.merge,
-     plan.capability, plan.capabilities, plan.ontology_sha256}
+    %{
+      "kind" => "vkg.plan",
+      "catalog_sha256" => plan.catalog_sha256,
+      "contract_ids" => plan.contract_ids,
+      "stages" => canonical_stages(plan.stages),
+      "max_rows" => plan.max_rows,
+      "timeout_ms" => plan.timeout_ms,
+      "merge" => plan.merge,
+      "capability" => plan.capability,
+      "capabilities" => plan.capabilities,
+      "ontology_sha256" => plan.ontology_sha256
+    }
   end
 
-  defp canonical_stages(stages) do
-    Enum.map(stages, fn stage ->
-      stage
-      |> Map.drop(@path_keys)
-      |> Enum.sort_by(fn {key, _} -> to_string(key) end)
-    end)
-  end
+  defp canonical_stages(stages), do: Enum.map(stages, &Map.drop(&1, @path_keys))
 
   defp ontology_binding(stages) do
     digests = Enum.map(stages, &Map.get(&1, :ontology_sha256))
     if Enum.all?(digests, &is_nil/1), do: nil, else: hash(digests)
+  end
+
+  # Ontology identity is all-or-none: a stage with an ontology path must carry its
+  # digest, and a plan cannot mix bound and unbound ontologies.
+  defp ontology_consistent?(stages) do
+    stages = Enum.filter(stages, &is_map/1)
+
+    unbound =
+      for stage <- stages,
+          not is_nil(Map.get(stage, :ontology_path)) and is_nil(Map.get(stage, :ontology_sha256)),
+          do: Map.get(stage, :contract_id)
+
+    present = Enum.map(stages, &(not is_nil(Map.get(&1, :ontology_sha256))))
+
+    cond do
+      unbound != [] ->
+        refusal(:ontology_sha256, "every stage with an ontology must carry ontology_sha256", %{stages: unbound})
+
+      Enum.uniq(present) |> length() > 1 ->
+        refusal(:ontology_sha256, "stages must all carry ontology_sha256 or none", %{
+          missing: for(stage <- stages, is_nil(Map.get(stage, :ontology_sha256)), do: Map.get(stage, :contract_id))
+        })
+
+      true ->
+        :ok
+    end
+  end
+
+  defp ontology_binding_matches?(plan) do
+    if plan.ontology_sha256 == ontology_binding(plan.stages),
+      do: :ok,
+      else: refusal(:ontology_sha256, "plan ontology digest does not derive from its stages", %{})
   end
 
   defp common_capabilities(stages) do
@@ -229,12 +279,7 @@ defmodule AshR2RML.VKG.QueryPlan do
   defp merge_mode?(mode) when mode in [:union, :by_subject], do: :ok
   defp merge_mode?(mode), do: refusal(:merge, "unsupported VKG merge mode", %{merge: mode})
 
-  defp hash(term) do
-    term
-    |> :erlang.term_to_binary([:deterministic])
-    |> then(&:crypto.hash(:sha256, &1))
-    |> Base.encode16(case: :lower)
-  end
+  defp hash(term), do: AshR2RML.VKG.Serializer.digest(term)
 
   defp refusal(subject, detail, evidence) do
     {:error, Refusal.new(:REFUSED_VKG_QUERY_PLAN, subject, detail, evidence)}

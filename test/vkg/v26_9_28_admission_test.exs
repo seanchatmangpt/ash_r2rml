@@ -185,8 +185,7 @@ defmodule AshR2RML.VKG.V26928AdmissionTest do
     end
   end
 
-  defp hash_of(term),
-    do: :crypto.hash(:sha256, :erlang.term_to_binary(term, [:deterministic])) |> Base.encode16(case: :lower)
+  defp hash_of(term), do: AshR2RML.VKG.Serializer.digest(term)
 
   describe "plan digest is host independent and bound to contracts" do
     test "differing absolute paths give identical plan digest and id" do

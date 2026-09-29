@@ -17,12 +17,9 @@ defmodule AshR2RML.VKG.V26928DocsTest do
     |> Enum.sort()
   end
 
-  defp refusal_codes do
-    src = read("lib/ash_r2rml/mapping.ex")
-    [type] = Regex.run(~r/@type code ::(.*?)\n\n/s, src, capture: :all_but_first)
-
-    ~r/:([A-Z][A-Z0-9_]+)/ |> Regex.scan(type, capture: :all_but_first) |> List.flatten()
-  end
+  # Read through Code.Typespec, so the closure does not depend on how the type is
+  # laid out in mapping.ex.
+  defp refusal_codes, do: AshR2RML.VKGCase.refusal_codes()
 
   test "vkg source actually contains REFUSED atoms (guard against a vacuous grep)" do
     files = Path.wildcard(Path.join(@root, "lib/ash_r2rml/vkg/**/*.ex"))

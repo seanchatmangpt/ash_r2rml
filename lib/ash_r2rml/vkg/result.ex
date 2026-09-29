@@ -4,7 +4,12 @@ defmodule AshR2RML.VKG.Result do
 
   Rows retain their source contract identity in the reserved "_vkg" field.
   Normalization sorts map keys and row order before hashing so receipts remain
-  stable across equivalent engine ordering.
+  stable across equivalent engine ordering. Values are projected to JSON-native
+  form so sealed results survive a JSON round trip; the projection is not what
+  protects the digest (the canonical encoding is injective, see
+  `AshR2RML.VKG.Serializer`), and per-stage observation digests are computed over
+  the unprojected rows, so the type distinctions the projection erases stay bound
+  in the receipt.
   """
 
   @enforce_keys [:plan_sha256, :rows, :row_count, :sha256]
@@ -16,6 +21,14 @@ defmodule AshR2RML.VKG.Result do
   alias AshR2RML.VKG.Serializer
 
   @standings [:observed_not_actuated, :test_double_only]
+
+  @doc """
+  Single source of truth for every standing a VKG result (and therefore a receipt,
+  which derives its standing from the result) can carry. The serializer, the
+  receipt integrity check and the executor all read this list.
+  """
+  @spec standings() :: [atom()]
+  def standings, do: @standings
 
   @doc """
   Seals normalized rows. Values are normalized to JSON-native form (atoms,

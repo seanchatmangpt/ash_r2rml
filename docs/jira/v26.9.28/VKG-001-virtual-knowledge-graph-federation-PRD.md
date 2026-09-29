@@ -57,12 +57,36 @@ Source presence or prose is not standing.
 
 ## Closed vs residual
 
-Closed in this integrity pass: refusal vocabulary in `Refusal.code()`/`AGENTS.md` with a closure test;
-usage-rules, README, AGENTS, PRD/ARD docs; docs module group; package files. Residual: live Ontop
-execution needs Ontop and Postgres and is not exercised by the docs test; dialyzer/credo were not
-re-run by the docs stream; other streams' lib changes are documented in their own tests.
-**The release workflow subject is frozen at `40d181f`; these changes are post-subject and need a
-re-pin or the next release to ship.**
+Closed in the integrity pass: refusal vocabulary in `Refusal.code()`/`AGENTS.md` with a closure test
+(read through `Code.Typespec`, independent of the type's source layout); usage-rules, README, AGENTS,
+PRD/ARD docs; docs module group; package files.
+
+Closed in the residual-risk pass (`test/vkg/v26_9_28_residual_test.exs`):
+
+- TOCTOU: the executor snapshots mapping/query/ontology bytes once, hashes the bytes, and runs the
+  engine on private snapshot paths, so a file swapped after hashing never reaches the engine.
+- Hand-built plans: execution re-resolves every stage against the bound catalog (the plan's own or a
+  supplied `:catalog`); arbitrary paths/digests are refused (`REFUSED_VKG_QUERY_PLAN` /
+  `REFUSED_VKG_SOURCE_DRIFT`), and plans with no binding are refused.
+- Requested capability is forwarded to Ontop as `required_capabilities`; stage ontology digests are
+  all-or-none.
+- Plan and observation digests use the injective canonical JSON encoding, not `term_to_binary`.
+- `decode_receipt` accepts every standing the code can emit (single source: `Result.standings/0`).
+- Optional receipt signing: `Receipt.sign/2` (shared-key HMAC-SHA256 MAC) with `key:` /
+  `require_signature:` verification. It proves key-holder endorsement of an exact receipt, not
+  public-key authenticity, non-repudiation, freshness, or that the engine ran.
+- `Executor.replay/3` is public and verifies recorded evidence instead of trusting it.
+- `Inspection.snapshot` surfaces `ontology_sha256`; `Batch` and `Consumer.Engineering.snapshot`
+  refuse or tolerate malformed input instead of raising.
+
+Residual (not closable in this repository): live Ontop execution needs Ontop and Postgres and is not
+exercised by these tests; with no key, or with a key the attacker also holds, a fully re-sealed
+session is self-consistent by construction (a shared-key MAC is not a public-key signature); the
+bound catalog is trusted as the admission root, so callers should supply their own `:catalog` for
+plans they did not build; the snapshot protects the engine input, not the database the engine
+queries; a hostile local user who can write inside the private temp directory as the same OS user is
+out of scope. **The release workflow subject is frozen at `40d181f`; these changes are post-subject
+and need a re-pin or the next release to ship.**
 
 ## Definition of done
 

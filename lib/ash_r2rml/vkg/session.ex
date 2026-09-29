@@ -28,11 +28,12 @@ defmodule AshR2RML.VKG.Session do
     }
   end
 
-  @spec verify(t()) :: :ok | {:error, Refusal.t()}
-  def verify(%__MODULE__{} = session) do
+  @doc "Verifies the session; `opts` are the receipt signature options (`:key`, `:require_signature`)."
+  @spec verify(t(), keyword()) :: :ok | {:error, Refusal.t()}
+  def verify(%__MODULE__{} = session, opts \\ []) do
     with :ok <- check_catalog(session),
          :ok <-
-           Replay.verify(session.receipt, session.plan, session.result, session.observations) do
+           Replay.verify(session.receipt, session.plan, session.result, session.observations, opts) do
       check_reconstruction(session)
     end
   end
