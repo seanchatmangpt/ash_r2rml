@@ -144,15 +144,20 @@ defmodule AshR2RML.VKG.SA2AEvidence do
   defp receipt_digest(value) when is_binary(value), do: digest(value, :receipt)
   defp receipt_digest(other), do: refusal(:receipt, "receipt must be a VKG receipt or digest", %{got: inspect(other)})
 
-  defp digest("sha256:" <> hex = digest, _subject) do
-    if Regex.match?(~r/\Asha256:[0-9a-f]{64}\z/, digest), do: {:ok, digest}, else: :invalid
+  defp digest("sha256:" <> _hex = digest, subject) do
+    if Regex.match?(~r/\Asha256:[0-9a-f]{64}\z/, digest),
+      do: {:ok, digest},
+      else: refusal(subject, "digest must be sha256:<64 lowercase hex>", %{observed: digest})
   end
 
-  defp digest(hex, _subject) when is_binary(hex) do
-    if Regex.match?(~r/\A[0-9a-f]{64}\z/, hex), do: {:ok, "sha256:" <> hex}, else: :invalid
+  defp digest(hex, subject) when is_binary(hex) do
+    if Regex.match?(~r/\A[0-9a-f]{64}\z/, hex),
+      do: {:ok, "sha256:" <> hex},
+      else: refusal(subject, "digest must be 64 lowercase hex characters", %{observed: hex})
   end
 
-  defp digest(_value, subject), do: refusal(subject, "digest must be 64 lowercase hex characters", %{})
+  defp digest(value, subject),
+    do: refusal(subject, "digest must be a string", %{observed: inspect(value)})
 
   defp valid_source?(%{
          "id" => id,
