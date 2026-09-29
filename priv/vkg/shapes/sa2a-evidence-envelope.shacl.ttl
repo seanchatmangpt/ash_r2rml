@@ -1,0 +1,11 @@
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix sa2a: <https://graphlaw.dev/sa2a#> .
+
+sa2a:SemanticEvidenceEnvelopeShape a sh:NodeShape ;
+  sh:targetClass sa2a:SemanticEvidence ;
+  sh:property [ sh:path sa2a:authority ; sh:hasValue "NONE" ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path sa2a:consequence ; sh:hasValue "EVIDENCE_ONLY" ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path sa2a:canonicalization ; sh:hasValue "RDFC-1.0" ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path sa2a:requiresExactSubject ; sh:hasValue true ] ;
+  sh:property [ sh:path sa2a:requiresSourceDigest ; sh:hasValue true ] ;
+  sh:property [ sh:path sa2a:requiresReplayIdentity ; sh:hasValue true ] .

@@ -1,0 +1,11 @@
+PREFIX sa2a: <https://graphlaw.dev/sa2a#>
+SELECT ?evidence ?subject ?sourceDigest ?replayIdentity
+WHERE {
+  ?evidence a sa2a:SemanticEvidence ;
+            sa2a:authority "NONE" ;
+            sa2a:consequence "EVIDENCE_ONLY" ;
+            sa2a:subject ?subject ;
+            sa2a:sourceDigest ?sourceDigest ;
+            sa2a:replayIdentity ?replayIdentity .
+}
+ORDER BY ?subject ?sourceDigest
