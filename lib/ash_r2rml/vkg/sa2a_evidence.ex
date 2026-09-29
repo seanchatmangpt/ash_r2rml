@@ -20,7 +20,9 @@ defmodule AshR2RML.VKG.SA2AEvidence do
   @required ~w(schema contractVersion canonicalization authority consequence subject source graphDigest replayIdentity provenance envelopeDigest)
 
   @spec from_source(SourceIdentity.t(), map()) :: {:ok, map()} | {:error, Refusal.t()}
-  def from_source(%SourceIdentity{} = source, attrs \\ %{}) when is_map(attrs) do
+  def from_source(source, attrs \\ %{})
+
+  def from_source(%SourceIdentity{} = source, attrs) when is_map(attrs) do
     subject = fetch(attrs, :subject) || source.id
 
     with :ok <- non_empty(subject, :subject),
