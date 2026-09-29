@@ -92,3 +92,12 @@ path = [
 precedence = "aggregate"
 SPDX-FileCopyrightText = "2026 ash_r2rml contributors <https://github.com/seanchatmangpt/ash_r2rml/graphs/contributors>"
 SPDX-License-Identifier = "MIT"
+
+[[annotations]]
+path = [
+  ".sjira/**",
+  "priv/sa2a/evidence/**"
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 ash_r2rml contributors <https://github.com/seanchatmangpt/ash_r2rml/graphs/contributors>"
+SPDX-License-Identifier = "MIT"
