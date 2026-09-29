@@ -1,0 +1,8 @@
+{
+  "type": "SA2AEvidenceVector",
+  "case": "query_digest",
+  "authority": "NONE",
+  "consequence": "EVIDENCE_ONLY",
+  "canonicalization": "RDFC-1.0",
+  "expected": "ADMIT"
+}
