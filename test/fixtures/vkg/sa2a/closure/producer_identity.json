@@ -1,0 +1,9 @@
+{
+  "contract": "sa2a/semantic-evidence/v1",
+  "case": "producer_identity",
+  "subject": "urn:sa2a:subject:fixture",
+  "authority": "NONE",
+  "consequence": "EVIDENCE_ONLY",
+  "canonicalization": "RDFC-1.0",
+  "expected": "ADMIT"
+}
