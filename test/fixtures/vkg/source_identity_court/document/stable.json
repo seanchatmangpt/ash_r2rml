@@ -1,0 +1,8 @@
+{
+  "id": "document",
+  "uri": "urn:source:document",
+  "graph": "urn:graph:document",
+  "subject_template": "https://example.org/document/{id}",
+  "version": "1",
+  "expect": "ok"
+}

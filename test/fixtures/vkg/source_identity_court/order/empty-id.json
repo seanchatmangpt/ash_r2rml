@@ -1,0 +1,8 @@
+{
+  "id": "",
+  "uri": "urn:source:order",
+  "graph": "urn:graph:order",
+  "subject_template": "https://example.org/order/{id}",
+  "version": "1",
+  "expect": "REFUSED_VKG_SOURCE_IDENTITY"
+}

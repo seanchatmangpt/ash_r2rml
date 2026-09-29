@@ -1,0 +1,8 @@
+{
+  "id": "product",
+  "uri": "urn:source:product",
+  "graph": "urn:graph:product",
+  "subject_template": "",
+  "version": "1",
+  "expect": "REFUSED_VKG_SOURCE_IDENTITY"
+}

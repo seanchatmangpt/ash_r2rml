@@ -1,0 +1,8 @@
+{
+  "id": "organization",
+  "uri": "urn:source:organization",
+  "graph": "urn:graph:organization",
+  "subject_template": "https://example.org/organization/{id}",
+  "version": "1",
+  "expect": "ok"
+}

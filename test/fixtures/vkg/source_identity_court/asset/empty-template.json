@@ -1,0 +1,8 @@
+{
+  "id": "asset",
+  "uri": "urn:source:asset",
+  "graph": "urn:graph:asset",
+  "subject_template": "",
+  "version": "1",
+  "expect": "REFUSED_VKG_SOURCE_IDENTITY"
+}
