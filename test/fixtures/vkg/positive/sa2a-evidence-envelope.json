@@ -17,5 +17,5 @@
   "replayIdentity": "replay:customer:42",
   "receiptDigest": null,
   "provenance": {"producer": "ash_r2rml"},
-  "envelopeDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  "envelopeDigest": "sha256:92985c2699a5fdaa0dcd6dbc3181e36985b511ceb00ad0a38c62c14db43b9d78"
 }
