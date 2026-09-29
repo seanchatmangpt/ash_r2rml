@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ash-r2rml.dev/schema/sa2a-semantic-evidence-envelope-v1.json",
+  "type": "object",
+  "required": ["schema", "contractVersion", "canonicalization", "authority", "consequence", "subject", "source", "graphDigest", "replayIdentity", "provenance", "envelopeDigest"],
+  "properties": {
+    "schema": {"const": "sa2a.semantic-evidence-envelope.v1"},
+    "contractVersion": {"const": "v26.9.29"},
+    "canonicalization": {"const": "RDFC-1.0"},
+    "authority": {"const": "NONE"},
+    "consequence": {"const": "EVIDENCE_ONLY"},
+    "subject": {"type": "string", "minLength": 1},
+    "source": {
+      "type": "object",
+      "required": ["id", "uri", "graph", "subjectTemplate", "digest"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "uri": {"type": "string", "minLength": 1},
+        "graph": {"type": "string", "minLength": 1},
+        "subjectTemplate": {"type": "string", "minLength": 1},
+        "version": {"type": ["string", "null"]},
+        "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+      },
+      "additionalProperties": false
+    },
+    "graphDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "replayIdentity": {"type": "string", "minLength": 1},
+    "receiptDigest": {"type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$"},
+    "provenance": {"type": "object"},
+    "envelopeDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+  },
+  "additionalProperties": false
+}
