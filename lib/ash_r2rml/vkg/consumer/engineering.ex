@@ -1,16 +1,21 @@
 defmodule AshR2RML.VKG.Consumer.Engineering do
   @moduledoc """
   Engineering read model over provenance-bearing VKG results.
+
+  Read-only and deterministic: entities are grouped by subject in sealed row
+  order; rows without a subject get a stable synthetic `urn:vkg:row:` subject.
+  Authority is always `"NONE"`.
   """
 
-  alias AshR2RML.VKG.Session
+  alias AshR2RML.VKG.{Serializer, Session}
 
+  @doc "Groups the session result rows into entities keyed by subject."
   @spec snapshot(Session.t()) :: map()
   def snapshot(%Session{} = session) do
     entities =
       session.result.rows
       |> Enum.reduce(%{}, fn row, acc ->
-        subject = get_in(row, ["_vkg", "subject"]) || synthetic_subject(row)
+        subject = subject_of(row) || synthetic_subject(row)
         Map.update(acc, subject, [row], &[row | &1])
       end)
       |> Map.new(fn {subject, rows} ->
@@ -30,6 +35,7 @@ defmodule AshR2RML.VKG.Consumer.Engineering do
     }
   end
 
+  @doc "Sorted list of entity subjects in the session result."
   @spec subjects(Session.t()) :: [String.t()]
   def subjects(%Session{} = session) do
     session
@@ -39,21 +45,24 @@ defmodule AshR2RML.VKG.Consumer.Engineering do
     |> Enum.sort()
   end
 
+  @doc "Provenance entries for `subject`; `[]` for an unknown or non-binary subject."
   @spec source_trace(Session.t(), String.t()) :: [map()]
-  def source_trace(%Session{} = session, subject) do
+  def source_trace(%Session{} = session, subject) when is_binary(subject) do
     session.result.rows
-    |> Enum.filter(&(get_in(&1, ["_vkg", "subject"]) == subject))
+    |> Enum.filter(&(subject_of(&1) == subject))
     |> Enum.map(&Map.fetch!(&1, "_vkg"))
   end
 
-  defp synthetic_subject(row) do
-    digest =
-      row
-      |> Map.delete("_vkg")
-      |> :erlang.term_to_binary([:deterministic])
-      |> then(&:crypto.hash(:sha256, &1))
-      |> Base.encode16(case: :lower)
+  def source_trace(%Session{}, _subject), do: []
 
-    "urn:vkg:row:" <> binary_part(digest, 0, 24)
+  # Rows are normally maps, but a snapshot must never raise on an odd row
+  # (forged or hand-built sessions): non-map rows and malformed "_vkg" metadata
+  # simply have no subject and get a synthetic one.
+  defp subject_of(%{"_vkg" => %{"subject" => subject}}) when is_binary(subject), do: subject
+  defp subject_of(_row), do: nil
+
+  defp synthetic_subject(row) do
+    payload = if is_map(row) and not is_struct(row), do: Map.delete(row, "_vkg"), else: row
+    "urn:vkg:row:" <> binary_part(Serializer.digest(payload), 0, 24)
   end
 end

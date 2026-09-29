@@ -32,9 +32,30 @@ defmodule AshR2RML.VKG.Engine.Ontop do
       |> maybe_put(:binary, Keyword.get(opts, :binary))
       |> maybe_put(:prefix_args, Keyword.get(opts, :prefix_args))
 
-    case Keyword.get(opts, :runner) do
-      runner when is_function(runner, 3) -> Ontop.query(query_opts, runner)
-      _ -> Ontop.query(query_opts)
+    case Keyword.fetch(opts, :runner) do
+      {:ok, runner} when is_function(runner, 3) ->
+        Ontop.query(query_opts, runner)
+
+      {:ok, other} ->
+        refusal =
+          AshR2RML.Refusal.new(
+            :REFUSED_VKG_EXECUTION,
+            stage.contract_id,
+            "VKG :runner must be a 3-arity function",
+            %{runner: inspect(other)}
+          )
+
+        {:error,
+         %AshR2RML.OBDA.Observation{
+           status: :REFUSED,
+           standing: :test_double_only,
+           evidence_kind: :injected_runner,
+           refusal: refusal,
+           rows: []
+         }}
+
+      :error ->
+        Ontop.query(query_opts)
     end
   end
 

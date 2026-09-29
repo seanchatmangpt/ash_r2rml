@@ -21,11 +21,20 @@ defmodule AshR2RML.VKG.Inspection do
             source_sha256: contract.source_sha256,
             mapping_sha256: contract.mapping_sha256,
             query_sha256: contract.query_sha256,
+            ontology_sha256: contract.ontology_sha256,
             capabilities: contract.capabilities
           }
         end)
     }
   end
+
+  @doc """
+  Identity snapshot of a catalog or session, including every contract/stage
+  `ontology_sha256` (nil when a contract binds no ontology).
+  """
+  @spec snapshot(Catalog.t() | Session.t()) :: map()
+  def snapshot(%Catalog{} = catalog), do: catalog(catalog)
+  def snapshot(%Session{} = session), do: session(session)
 
   @spec session(Session.t()) :: map()
   def session(%Session{} = session) do
@@ -41,6 +50,7 @@ defmodule AshR2RML.VKG.Inspection do
             graph: stage.graph,
             mapping_sha256: stage.mapping_sha256,
             query_sha256: stage.query_sha256,
+            ontology_sha256: Map.get(stage, :ontology_sha256),
             observed?: not is_nil(observation),
             observation_sha256: observation && Map.get(observation, :observation_sha256),
             row_count: observation && Map.get(observation, :row_count)

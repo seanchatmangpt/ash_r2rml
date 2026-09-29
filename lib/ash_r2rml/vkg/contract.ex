@@ -33,13 +33,20 @@ defmodule AshR2RML.VKG.Contract do
     :mapping_path,
     :query_path,
     :ontology_path,
+    :ontology_sha256,
     version: "1",
     capabilities: [:select],
     authority: :NONE,
     standing: :constructed_not_actuated
   ]
 
+  @capability_allowlist [:aggregate, :filter, :join, :select]
+
   @type t :: %__MODULE__{}
+
+  @doc "Closed observe-only capability allowlist."
+  @spec capability_allowlist() :: [atom()]
+  def capability_allowlist, do: @capability_allowlist
 
   @spec admit(t()) :: {:ok, t()} | {:error, Refusal.t()}
   def admit(%__MODULE__{} = contract) do
@@ -53,6 +60,10 @@ defmodule AshR2RML.VKG.Contract do
          :ok <- validate_path(contract.mapping_path, :mapping_path),
          :ok <- validate_path(contract.query_path, :query_path),
          :ok <- validate_authority(contract.authority),
+         :ok <- validate_standing(contract.standing),
+         :ok <- validate_version(contract.version),
+         :ok <- validate_capabilities(contract.capabilities),
+         :ok <- validate_ontology(contract.ontology_path, contract.ontology_sha256),
          {:ok, identity} <-
            SourceIdentity.new(%{
              id: contract.id,
@@ -89,6 +100,7 @@ defmodule AshR2RML.VKG.Contract do
       source_sha256: contract.source_sha256,
       mapping_sha256: contract.mapping_sha256,
       query_sha256: contract.query_sha256,
+      ontology_sha256: contract.ontology_sha256,
       version: contract.version
     }
   end
@@ -98,10 +110,13 @@ defmodule AshR2RML.VKG.Contract do
     contract
     |> identity()
     |> Map.put(:subject_template, contract.subject_template)
+    |> Map.put(:capabilities, Enum.sort(contract.capabilities))
     |> canonical_hash()
   end
 
-  defp validate_text(value, _field) when is_binary(value) and byte_size(value) > 0, do: :ok
+  defp validate_text(value, field) when is_binary(value) do
+    if String.trim(value) == "", do: validate_text(nil, field), else: :ok
+  end
 
   defp validate_text(value, field) do
     {:error,
@@ -153,6 +168,64 @@ defmodule AshR2RML.VKG.Contract do
        %{field: field, value: inspect(path)}
      )}
   end
+
+  defp validate_standing(:constructed_not_actuated), do: :ok
+
+  defp validate_standing(standing) do
+    shape_refusal(:standing, "VKG contract standing must be :constructed_not_actuated", %{
+      standing: inspect(standing)
+    })
+  end
+
+  defp validate_version(v) when is_binary(v) and v != "", do: :ok
+
+  defp validate_version(v),
+    do: shape_refusal(:version, "VKG contract version must be a non-empty string", %{value: inspect(v)})
+
+  defp validate_capabilities(caps) when is_list(caps) and caps != [] do
+    invalid = Enum.reject(caps, &(&1 in @capability_allowlist))
+
+    cond do
+      invalid != [] ->
+        capability_refusal(%{invalid: Enum.map(invalid, &inspect/1)})
+
+      length(caps) != length(Enum.uniq(caps)) ->
+        capability_refusal(%{duplicates: Enum.map(caps, &inspect/1)})
+
+      true ->
+        :ok
+    end
+  end
+
+  defp validate_capabilities(other), do: capability_refusal(%{value: inspect(other)})
+
+  defp capability_refusal(evidence) do
+    {:error,
+     Refusal.new(
+       :REFUSED_VKG_CAPABILITY,
+       :capabilities,
+       "VKG contract capabilities must be a non-empty unique subset of the observe-only allowlist",
+       Map.put(evidence, :allowed, @capability_allowlist)
+     )}
+  end
+
+  defp validate_ontology(nil, nil), do: :ok
+
+  defp validate_ontology(path, digest) when is_binary(path) and path != "" and not is_nil(digest),
+    do: validate_digest(digest, :ontology_sha256)
+
+  defp validate_ontology(path, digest) do
+    {:error,
+     Refusal.new(
+       :REFUSED_VKG_CONTRACT_IDENTITY,
+       :ontology_sha256,
+       "ontology path and ontology digest must be present together",
+       %{path: inspect(path), digest: inspect(digest)}
+     )}
+  end
+
+  defp shape_refusal(subject, detail, evidence),
+    do: {:error, Refusal.new(:REFUSED_VKG_CONTRACT_SHAPE, subject, detail, evidence)}
 
   defp validate_authority(:NONE), do: :ok
 

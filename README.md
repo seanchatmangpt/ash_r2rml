@@ -489,6 +489,16 @@ R2RML
 SPARQL
 ```
 
+## Virtual Knowledge Graph (observe-only)
+
+`AshR2RML.VKG` (`lib/ash_r2rml/vkg/**`, data in `priv/vkg`) federates Ontop-backed views by exact
+source identity: manifest, admitted catalog, deterministic plan, bounded execution, provenance-bearing
+result, receipt, replay verification. Failures are typed `REFUSED_VKG_*` refusals.
+
+**Authority ceiling:** observe-only (`authority: :NONE`). No DO, no source writes. It is not network
+federation and it is not `AshR2RML.Federation` (the in-process determinism substrate below). See
+`usage-rules/vkg.md`.
+
 ## Federation
 
 `AshR2RML.Federation` (`lib/ash_r2rml/federation.ex`) is real, mechanically

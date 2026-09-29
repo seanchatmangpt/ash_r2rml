@@ -7,9 +7,11 @@ defmodule AshR2RML.VKG.Compatibility do
   alias AshR2RML.VKG.Contract
 
   @spec check([Contract.t()]) :: :ok | {:error, Refusal.t()}
-  def check(contracts) when is_list(contracts) and contracts != [] do
-    with :ok <- versions(contracts),
+  def check([_ | _] = contracts) do
+    with :ok <- structs(contracts),
+         :ok <- versions(contracts),
          :ok <- unique_graphs(contracts),
+         :ok <- unique_sources(contracts),
          :ok <- observe_only(contracts) do
       :ok
     end
@@ -24,10 +26,10 @@ defmodule AshR2RML.VKG.Compatibility do
   end
 
   @spec matrix([Contract.t()]) :: [map()]
-  def matrix(contracts) do
+  def matrix(contracts) when is_list(contracts) do
     for left <- contracts,
         right <- contracts,
-        left.id <= right.id do
+        left.id < right.id do
       %{
         left: left.id,
         right: right.id,
@@ -39,6 +41,12 @@ defmodule AshR2RML.VKG.Compatibility do
         compatible?: compatible_pair?(left, right)
       }
     end
+  end
+
+  defp structs(contracts) do
+    if Enum.all?(contracts, &match?(%Contract{}, &1)),
+      do: :ok,
+      else: refusal(:contracts, "compatibility requires VKG contract structs", %{})
   end
 
   defp versions(contracts) do
@@ -78,6 +86,22 @@ defmodule AshR2RML.VKG.Compatibility do
     end
   end
 
+  defp unique_sources(contracts) do
+    collisions =
+      contracts
+      |> Enum.group_by(& &1.source)
+      |> Enum.filter(fn {_source, members} ->
+        members |> Enum.map(& &1.source_sha256) |> Enum.uniq() |> length() > 1
+      end)
+      |> Enum.map(&elem(&1, 0))
+
+    if collisions == [] do
+      :ok
+    else
+      refusal(:source, "VKG source identities collide", %{sources: collisions})
+    end
+  end
+
   defp observe_only(contracts) do
     elevated = Enum.filter(contracts, &(&1.authority != :NONE))
 
@@ -95,6 +119,7 @@ defmodule AshR2RML.VKG.Compatibility do
   defp compatible_pair?(%Contract{} = left, %Contract{} = right) do
     left.version == right.version and
       not (left.graph == right.graph and left.id != right.id) and
+      not (left.source == right.source and left.source_sha256 != right.source_sha256) and
       left.authority == :NONE and
       right.authority == :NONE
   end

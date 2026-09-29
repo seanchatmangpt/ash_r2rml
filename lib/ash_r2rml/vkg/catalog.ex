@@ -35,8 +35,28 @@ defmodule AshR2RML.VKG.Catalog do
 
   @spec select(t(), [String.t()]) :: {:ok, [Contract.t()]} | {:error, Refusal.t()}
   def select(%__MODULE__{} = catalog, ids) when is_list(ids) and ids != [] do
+    with :ok <- valid_ids(ids) do
+      select_valid(catalog, ids)
+    end
+  end
+
+  def select(_catalog, ids), do: scope_refusal("VKG query must select at least one admitted contract", ids)
+
+  defp valid_ids(ids) do
+    cond do
+      not Enum.all?(ids, &(is_binary(&1) and &1 != "")) ->
+        scope_refusal("VKG query contract ids must be non-empty strings", ids)
+
+      length(ids) != length(Enum.uniq(ids)) ->
+        scope_refusal("VKG query contract ids must be unique", ids)
+
+      true ->
+        :ok
+    end
+  end
+
+  defp select_valid(catalog, ids) do
     ids
-    |> Enum.uniq()
     |> Enum.reduce_while({:ok, []}, fn id, {:ok, acc} ->
       case fetch(catalog, id) do
         {:ok, contract} -> {:cont, {:ok, [contract | acc]}}
@@ -49,14 +69,8 @@ defmodule AshR2RML.VKG.Catalog do
     end
   end
 
-  def select(_catalog, ids) do
-    {:error,
-     Refusal.new(
-       :REFUSED_VKG_QUERY_SCOPE,
-       :contracts,
-       "VKG query must select at least one admitted contract",
-       %{ids: inspect(ids)}
-     )}
+  defp scope_refusal(detail, ids) do
+    {:error, Refusal.new(:REFUSED_VKG_QUERY_SCOPE, :contracts, detail, %{ids: inspect(ids)})}
   end
 
   @spec ids(t()) :: [String.t()]

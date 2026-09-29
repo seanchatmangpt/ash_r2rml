@@ -46,6 +46,7 @@ The RDF graph is normally virtual. A compatible OBDA engine rewrites SPARQL into
 | Ash/SQL/SPARQL query boundaries | [query-surfaces.md](usage-rules/query-surfaces.md) |
 | Virtual RDF / OBDA boundary | [obda.md](usage-rules/obda.md) |
 | Ontology-first compilation | [ontology-first.md](usage-rules/ontology-first.md) |
+| Observe-only virtual knowledge graph federation | [vkg.md](usage-rules/vkg.md) |
 | ggen manufacturing | [ggen.md](usage-rules/ggen.md) |
 | Ash actions/mutation boundary | [actions.md](usage-rules/actions.md) |
 | Verification and semantic round trips | [testing.md](usage-rules/testing.md) |

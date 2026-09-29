@@ -36,6 +36,30 @@ defmodule AshR2RML.VKGCase do
     }
   end
 
+  @doc """
+  Every code in the `AshR2RML.Refusal.code()` typespec, read through
+  `Code.Typespec` (independent of how the type is laid out in the source).
+  """
+  def refusal_codes, do: type_atoms(AshR2RML.Refusal, :code)
+
+  @doc "Sorted atom names of the union type `name` in `module` (a module or beam binary), via `Code.Typespec`."
+  def type_atoms(module, name) do
+    {:ok, types} = Code.Typespec.fetch_types(module)
+
+    {:type, {^name, ast, _args}} =
+      Enum.find(types, &match?({:type, {^name, _, _}}, &1))
+
+    ast |> collect_atoms([]) |> Enum.map(&Atom.to_string/1) |> Enum.sort()
+  end
+
+  defp collect_atoms({:atom, _, atom}, acc), do: [atom | acc]
+
+  defp collect_atoms(tuple, acc) when is_tuple(tuple),
+    do: tuple |> Tuple.to_list() |> Enum.reduce(acc, &collect_atoms/2)
+
+  defp collect_atoms(list, acc) when is_list(list), do: Enum.reduce(list, acc, &collect_atoms/2)
+  defp collect_atoms(_other, acc), do: acc
+
   def catalog(ids \\ ["customer"]) do
     {:ok, catalog} =
       ids
