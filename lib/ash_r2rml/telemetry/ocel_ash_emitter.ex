@@ -276,7 +276,8 @@ defmodule AshR2RML.Telemetry.OcelAshEmitter do
 
     %{
       "ocel:eid" => Ash.UUIDv7.generate(),
-      "ocel:activity" => if(outcome == :error, do: "ash_r2rml.reactor.pipeline_failed", else: "ash_r2rml.reactor.pipeline_completed"),
+      "ocel:activity" =>
+        if(outcome == :error, do: "ash_r2rml.reactor.pipeline_failed", else: "ash_r2rml.reactor.pipeline_completed"),
       "ocel:timestamp" => DateTime.utc_now() |> DateTime.to_iso8601(),
       "ocel:lifecycle" => to_string(outcome),
       "ocel:omap" => [run_object],

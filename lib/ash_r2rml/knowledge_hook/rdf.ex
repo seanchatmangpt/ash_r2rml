@@ -207,10 +207,18 @@ defmodule AshR2RML.KnowledgeHook.RDF do
   defp parse_trigger_type(index, node, id) do
     with {:ok, raw} <- required_literal(index, node, @kh <> "triggerType", id) do
       case raw do
-        "rdf_change" -> {:ok, :rdf_change}
-        "sparql_result" -> {:ok, :sparql_result}
-        "interval" -> {:ok, :interval}
-        "event" -> {:ok, :event}
+        "rdf_change" ->
+          {:ok, :rdf_change}
+
+        "sparql_result" ->
+          {:ok, :sparql_result}
+
+        "interval" ->
+          {:ok, :interval}
+
+        "event" ->
+          {:ok, :event}
+
         other ->
           {:error,
            Refusal.new(
@@ -226,9 +234,15 @@ defmodule AshR2RML.KnowledgeHook.RDF do
   defp parse_predicate(index, node, id) do
     with {:ok, type} <- required_literal(index, node, @kh <> "predicateType", id) do
       case type do
-        "ask" -> query_predicate(index, node, id, :ask)
-        "result_delta" -> query_predicate(index, node, id, :result_delta)
-        "external_trigger" -> {:ok, %{type: :external_trigger}}
+        "ask" ->
+          query_predicate(index, node, id, :ask)
+
+        "result_delta" ->
+          query_predicate(index, node, id, :result_delta)
+
+        "external_trigger" ->
+          {:ok, %{type: :external_trigger}}
+
         other ->
           {:error,
            Refusal.new(

@@ -67,6 +67,97 @@ defmodule AshR2RML.ParityAndGgenTest do
     assert catalog =~ "predicate_iri"
   end
 
+  test "ggen bundle receipt JSON encodes {class_iri, relationship_name}-keyed storage maps" do
+    # CompilationReceipt.storage_candidates/.selected_storage (see
+    # AshR2RML.Compiler.storage_map/2) are keyed by {class_iri, relationship_name}
+    # tuples, not plain atoms/strings. This is a real regression guard for the
+    # class of bug reported against test/integration/obda_crown.exs's own
+    # (test-local, now-fixed) json_term/1: a JSON encoder path exercised only by
+    # relationship-less fixtures elsewhere in this file never touches this tuple
+    # key shape, so it must be exercised here with a real relationship present.
+    turtle = """
+    @prefix sh: <http://www.w3.org/ns/shacl#> .
+    @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+    @prefix ex: <https://example.com/ontology/> .
+    @prefix shapes: <https://example.com/shapes/> .
+    @prefix r2ml: <https://seanchatmangpt.github.io/ash_r2rml#> .
+
+    shapes:StorageMapOrganizationShape
+        a sh:NodeShape ;
+        sh:targetClass ex:Organization ;
+        r2ml:ashModule "ParityAndGgenTest.StorageMapOrganization" ;
+        r2ml:tableName "storage_map_test_organizations" ;
+        r2ml:subjectTemplate "https://example.com/id/organization/{id}" ;
+        r2ml:identity [
+            r2ml:identityName "primary" ;
+            r2ml:identityKey "id" ;
+            r2ml:primaryIdentity true
+        ] ;
+        sh:property [
+            sh:path ex:id ;
+            r2ml:ashName "id" ;
+            r2ml:postgresType "TEXT" ;
+            sh:datatype xsd:string ;
+            sh:minCount 1 ;
+            sh:maxCount 1
+        ] .
+
+    shapes:StorageMapAccountShape
+        a sh:NodeShape ;
+        sh:targetClass ex:Account ;
+        r2ml:ashModule "ParityAndGgenTest.StorageMapAccount" ;
+        r2ml:tableName "storage_map_test_accounts" ;
+        r2ml:subjectTemplate "https://example.com/id/account/{id}" ;
+        r2ml:identity [
+            r2ml:identityName "primary" ;
+            r2ml:identityKey "id" ;
+            r2ml:primaryIdentity true
+        ] ;
+        sh:property [
+            sh:path ex:id ;
+            r2ml:ashName "id" ;
+            r2ml:postgresType "TEXT" ;
+            sh:datatype xsd:string ;
+            sh:minCount 1 ;
+            sh:maxCount 1
+        ] ;
+        sh:property [
+            sh:path ex:organizationId ;
+            r2ml:ashName "organization_id" ;
+            r2ml:postgresType "TEXT" ;
+            sh:datatype xsd:string ;
+            sh:minCount 1 ;
+            sh:maxCount 1
+        ] ;
+        sh:property [
+            sh:path ex:memberOf ;
+            r2ml:ashName "organization" ;
+            sh:class ex:Organization ;
+            sh:minCount 1 ;
+            sh:maxCount 1 ;
+            r2ml:storageStrategy "foreign_key" ;
+            r2ml:sourceKey "organization_id" ;
+            r2ml:destinationKey "id"
+        ] .
+    """
+
+    assert {:ok, bundle} =
+             AshR2RML.compile_turtle_bundle(turtle, ontology_hash: "ontology:storage-map-test")
+
+    receipt_json = bundle.files["receipts/semantic-compilation.json"]
+    assert is_binary(receipt_json)
+
+    decoded = Jason.decode!(receipt_json)
+    expected_key = "https://example.com/ontology/Account#organization"
+
+    assert Map.has_key?(decoded["storage_candidates"], expected_key)
+
+    assert decoded["storage_candidates"][expected_key] ==
+             ["foreign_key", "join_table", "association_resource"]
+
+    assert decoded["selected_storage"][expected_key] == "foreign_key"
+  end
+
   test "parity comparison is multiset-based and independent of row/key ordering" do
     left = [
       %{"resource" => "urn:r:2", "account" => "urn:a:1"},
@@ -96,7 +187,6 @@ defmodule AshR2RML.ParityAndGgenTest do
 
     sparql_sql =
       AshR2RML.Parity.compare(:sparql_sql, :organization, [%{id: "1"}], [%{"id" => "1"}])
-
 
     receipt =
       compilation.receipt

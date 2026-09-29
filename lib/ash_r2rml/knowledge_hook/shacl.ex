@@ -247,17 +247,27 @@ defmodule AshR2RML.KnowledgeHook.SHACL do
         end
 
       {:error, _reason} ->
-        [violation(shape, focus, path, :pattern, "shape pattern #{inspect(pattern)} is not a valid regular expression") | acc]
+        [
+          violation(shape, focus, path, :pattern, "shape pattern #{inspect(pattern)} is not a valid regular expression")
+          | acc
+        ]
     end
   end
 
   defp pattern_violations(acc, _property_shape, _shape, _focus, _values), do: acc
 
   defp violation(shape, focus, path, constraint, detail) do
-    %{focus_node: term_string(focus), shape: term_string(shape), path: path && term_string(path), constraint: constraint, detail: detail}
+    %{
+      focus_node: term_string(focus),
+      shape: term_string(shape),
+      path: path && term_string(path),
+      constraint: constraint,
+      detail: detail
+    }
   end
 
   defp literal_datatype_matches?(value, datatype) when is_binary(value), do: datatype == @xsd_string
+
   defp literal_datatype_matches?(value, datatype) when is_integer(value),
     do: datatype in ["http://www.w3.org/2001/XMLSchema#integer", "http://www.w3.org/2001/XMLSchema#int"]
 

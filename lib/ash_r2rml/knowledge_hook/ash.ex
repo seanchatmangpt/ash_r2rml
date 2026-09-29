@@ -358,8 +358,7 @@ defmodule AshR2RML.KnowledgeHook.Ash do
   end
 
   defp validate_transition(hook_id, _source, transition) do
-    {:error,
-     refusal(hook_id, "Ash state-transition predicate must be a map", %{got: inspect_type(transition)})}
+    {:error, refusal(hook_id, "Ash state-transition predicate must be a map", %{got: inspect_type(transition)})}
   end
 
   defp match_receipts(receipts, pattern, hook_id) do
@@ -568,8 +567,11 @@ defmodule AshR2RML.KnowledgeHook.Ash do
 
     Enum.reduce_while(keys, {:ok, %{}}, fn key, {:ok, acc} ->
       case stable_value(Map.get(data, key, :UNKNOWN)) do
-        {:ok, value} -> {:cont, {:ok, Map.put(acc, normalize_name(key), value)}}
-        {:error, reason} -> {:halt, {:error, refusal(resource, "Ash primary key is not replayable", %{key: key, reason: reason})}}
+        {:ok, value} ->
+          {:cont, {:ok, Map.put(acc, normalize_name(key), value)}}
+
+        {:error, reason} ->
+          {:halt, {:error, refusal(resource, "Ash primary key is not replayable", %{key: key, reason: reason})}}
       end
     end)
   rescue

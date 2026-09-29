@@ -1,0 +1,15 @@
+{
+  "id": "customer",
+  "source": "urn:source:customer",
+  "graph": "urn:graph:customer",
+  "subject_template": "https://example.org/customer/{id}",
+  "version": "1",
+  "mapping": "mappings/customer.r2rml.ttl",
+  "query": "queries/customer.rq",
+  "ontology": "ontology/vkg.ttl",
+  "capabilities": [
+    "select",
+    "filter",
+    "join"
+  ]
+}

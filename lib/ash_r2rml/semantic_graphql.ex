@@ -31,7 +31,9 @@ defmodule AshR2RML.Semantic.GraphQL do
 
   @canonical_limit 100
   @custom_scalars ~w(BigInt Date DateTime Decimal JSON)
-  @reserved_types MapSet.new(~w(Query Mutation Subscription String Int Float Boolean ID BigInt Date DateTime Decimal JSON))
+  @reserved_types MapSet.new(
+                    ~w(Query Mutation Subscription String Int Float Boolean ID BigInt Date DateTime Decimal JSON)
+                  )
 
   @type projection :: %{schema: String.t(), manifest: map(), receipt: map()}
 
@@ -314,7 +316,10 @@ defmodule AshR2RML.Semantic.GraphQL do
   defp attribute_graphql_type(%Attribute{ash_type: :integer}), do: "BigInt"
   defp attribute_graphql_type(%Attribute{ash_type: :decimal}), do: "Decimal"
   defp attribute_graphql_type(%Attribute{ash_type: :date}), do: "Date"
-  defp attribute_graphql_type(%Attribute{ash_type: type}) when type in [:utc_datetime, :utc_datetime_usec], do: "DateTime"
+
+  defp attribute_graphql_type(%Attribute{ash_type: type}) when type in [:utc_datetime, :utc_datetime_usec],
+    do: "DateTime"
+
   defp attribute_graphql_type(%Attribute{ash_type: :string}), do: "String"
   defp attribute_graphql_type(_), do: "JSON"
 

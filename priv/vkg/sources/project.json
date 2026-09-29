@@ -1,0 +1,15 @@
+{
+  "id": "project",
+  "source": "urn:source:project",
+  "graph": "urn:graph:project",
+  "subject_template": "https://example.org/project/{id}",
+  "version": "1",
+  "mapping": "mappings/project.r2rml.ttl",
+  "query": "queries/project.rq",
+  "ontology": "ontology/vkg.ttl",
+  "capabilities": [
+    "select",
+    "filter",
+    "join"
+  ]
+}

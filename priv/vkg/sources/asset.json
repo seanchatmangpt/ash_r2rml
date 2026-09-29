@@ -1,0 +1,14 @@
+{
+  "id": "asset",
+  "source": "urn:source:asset",
+  "graph": "urn:graph:asset",
+  "subject_template": "https://example.org/asset/{id}",
+  "version": "1",
+  "mapping": "mappings/asset.r2rml.ttl",
+  "query": "queries/asset.rq",
+  "ontology": "ontology/vkg.ttl",
+  "capabilities": [
+    "select",
+    "filter"
+  ]
+}

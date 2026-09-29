@@ -1,0 +1,7 @@
+# stable VKG view: Product
+SELECT ?subject ?id WHERE {
+  GRAPH <urn:graph:product> {
+    ?subject <https://schema.org/identifier> ?id .
+  }
+}
+ORDER BY ?subject

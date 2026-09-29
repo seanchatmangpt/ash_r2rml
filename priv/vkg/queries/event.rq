@@ -1,0 +1,7 @@
+# stable VKG view: Event
+SELECT ?subject ?id WHERE {
+  GRAPH <urn:graph:event> {
+    ?subject <https://schema.org/identifier> ?id .
+  }
+}
+ORDER BY ?subject

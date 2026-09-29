@@ -174,7 +174,7 @@ defmodule AshR2RML.GgenApiBundleTest do
 
   test "DfCM preserves the complete GraphQL x JSON:API projection lattice" do
     for graphql <- [false, true], json_api <- [false, true] do
-      suffix = "#{if(graphql, do: "Graphql", else: "NoGraphql")}#{if(json_api, do: "JsonApi", else: "NoJsonApi")}" 
+      suffix = "#{if(graphql, do: "Graphql", else: "NoGraphql")}#{if(json_api, do: "JsonApi", else: "NoJsonApi")}"
 
       assert {:ok, bundle} =
                AshR2RML.compile_api_bundle(profile("AshR2RML.ApiBundleTest.Matrix#{suffix}"),
@@ -184,7 +184,7 @@ defmodule AshR2RML.GgenApiBundleTest do
 
       source = bundle.files["generated/ash/api_resources.ex"]
 
-      assert (source =~ "AshJsonApi.Resource") == json_api
+      assert source =~ "AshJsonApi.Resource" == json_api
       refute source =~ "AshGraphql.Resource"
       assert Map.has_key?(bundle.files, "generated/graphql/schema.graphql") == graphql
 

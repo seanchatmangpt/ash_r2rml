@@ -217,7 +217,7 @@ defmodule AshR2RML.Telemetry.FlyClient do
   Dispatches an envelope map to the Fly Control Plane endpoint.
   """
   @spec dispatch_envelope(envelope(), keyword()) ::
-          {:ok, map()} | {:error, {:offline_buffered, any()}} | {:error, any()}
+          {:ok, map()} | {:error, {:offline_buffered, any()}}
   def dispatch_envelope(envelope, opts \\ []) do
     url = Keyword.get(opts, :control_plane_url) || get_control_plane_url()
     api_key = Keyword.get(opts, :api_key) || System.get_env("FLY_API_KEY")
@@ -558,9 +558,6 @@ defmodule AshR2RML.Telemetry.FlyClient do
         }
 
         {{:ok, envelope}, new_state}
-
-      {:error, reason} ->
-        {{:error, reason}, state}
     end
   end
 

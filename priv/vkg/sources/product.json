@@ -1,0 +1,14 @@
+{
+  "id": "product",
+  "source": "urn:source:product",
+  "graph": "urn:graph:product",
+  "subject_template": "https://example.org/product/{id}",
+  "version": "1",
+  "mapping": "mappings/product.r2rml.ttl",
+  "query": "queries/product.rq",
+  "ontology": "ontology/vkg.ttl",
+  "capabilities": [
+    "select",
+    "filter"
+  ]
+}

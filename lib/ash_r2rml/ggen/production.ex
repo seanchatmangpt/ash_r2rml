@@ -33,6 +33,7 @@ defmodule AshR2RML.Ggen.Production do
       :receipt_sha256,
       :candidate_count
     ]
+
     @type t :: %__MODULE__{}
   end
 

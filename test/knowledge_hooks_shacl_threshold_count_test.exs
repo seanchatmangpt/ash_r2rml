@@ -54,8 +54,7 @@ defmodule AshR2RML.KnowledgeHooksSHACLThresholdCountTest do
 
       data =
         RDF.Graph.new([
-          {RDF.iri("https://example.com/alice"), RDF.iri("https://example.com/name"),
-           RDF.literal("Alice")}
+          {RDF.iri("https://example.com/alice"), RDF.iri("https://example.com/name"), RDF.literal("Alice")}
         ])
 
       assert {:ok, [evaluation]} =
@@ -86,8 +85,7 @@ defmodule AshR2RML.KnowledgeHooksSHACLThresholdCountTest do
       # ex:alice has no ex:name triple at all -> minCount 1 violated.
       data =
         RDF.Graph.new([
-          {RDF.iri("https://example.com/alice"), RDF.iri("https://example.com/other"),
-           RDF.literal("irrelevant")}
+          {RDF.iri("https://example.com/alice"), RDF.iri("https://example.com/other"), RDF.literal("irrelevant")}
         ])
 
       assert {:ok, [evaluation]} =
@@ -135,8 +133,7 @@ defmodule AshR2RML.KnowledgeHooksSHACLThresholdCountTest do
 
       data =
         RDF.Graph.new([
-          {RDF.iri("https://example.com/metrics"), RDF.iri("https://example.com/errorCount"),
-           RDF.literal(42)}
+          {RDF.iri("https://example.com/metrics"), RDF.iri("https://example.com/errorCount"), RDF.literal(42)}
         ])
 
       assert {:ok, [evaluation]} =
@@ -166,8 +163,7 @@ defmodule AshR2RML.KnowledgeHooksSHACLThresholdCountTest do
 
       data =
         RDF.Graph.new([
-          {RDF.iri("https://example.com/metrics"), RDF.iri("https://example.com/errorCount"),
-           RDF.literal(3)}
+          {RDF.iri("https://example.com/metrics"), RDF.iri("https://example.com/errorCount"), RDF.literal(3)}
         ])
 
       assert {:ok, [evaluation]} =

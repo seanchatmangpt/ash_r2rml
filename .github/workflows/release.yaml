@@ -18,10 +18,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout exact tag subject
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Assert exact tag subject identity
+        run: test "$(git rev-parse HEAD)" = "${{ github.sha }}"
 
       - name: Set up repository Elixir / Erlang toolchain
-        uses: jdx/mise-action@v2
+        uses: jdx/mise-action@v4
+        with:
+          minimum_release_age: 7d
 
       - name: Refuse tag/version identity mismatch
         shell: bash

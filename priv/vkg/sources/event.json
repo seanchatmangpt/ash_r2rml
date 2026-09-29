@@ -1,0 +1,15 @@
+{
+  "id": "event",
+  "source": "urn:source:event",
+  "graph": "urn:graph:event",
+  "subject_template": "https://example.org/event/{id}",
+  "version": "1",
+  "mapping": "mappings/event.r2rml.ttl",
+  "query": "queries/event.rq",
+  "ontology": "ontology/vkg.ttl",
+  "capabilities": [
+    "select",
+    "filter",
+    "aggregate"
+  ]
+}

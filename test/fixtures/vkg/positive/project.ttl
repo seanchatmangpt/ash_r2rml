@@ -1,0 +1,7 @@
+@prefix vkg: <https://ash-r2rml.dev/vkg#> .
+<urn:vkg:project:fixture> a vkg:FederationContract ;
+ vkg:source <urn:source:project> ;
+ vkg:graph <urn:graph:project> ;
+ vkg:sourceSha256 "aaaaecaaaaaecaaaaaecaaaaaecaaaaaecaaaaaecaaaaaecaaaaaecaaaaaecaa" ;
+ vkg:mappingSha256 "bbbbecbbbbbecbbbbbecbbbbbecbbbbbecbbbbbecbbbbbecbbbbbecbbbbbecbb" ;
+ vkg:authority "NONE" .
