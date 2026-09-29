@@ -9,7 +9,9 @@ defmodule AshR2RML.SemanticEctoStorageTypeTest do
   alias AshR2RML.SemanticIR.{Attribute, Identity, Resource}
 
   defmodule Point26918 do
-    use AshGeo.Geometry, storage_type: :"geometry(Point,26918)"
+    # Hand-written stand-in for AshGeo's narrowed type contract (storage_type/0);
+    # ash_geo is not a dependency of this package.
+    def storage_type, do: :"geometry(Point,26918)"
   end
 
   test "Ecto projection reuses the Ash type storage contract" do
@@ -19,7 +21,7 @@ defmodule AshR2RML.SemanticEctoStorageTypeTest do
 
   test "narrowed custom Ash storage types remain exact instead of being package-special-cased" do
     assert {:ok, source} = AshR2RML.Semantic.Ecto.render(ir(Point26918))
-    assert source =~ ~s(add :"geometry", :"geometry(Point,26918)",)
+    assert source =~ ~s|add :"geometry", :"geometry(Point,26918)",|
   end
 
   defp ir(geometry_type) do

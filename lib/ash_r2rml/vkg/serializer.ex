@@ -215,15 +215,20 @@ defmodule AshR2RML.VKG.Serializer do
   for {tag, module} <- [
         {"$date", Date},
         {"$time", Time},
-        {"$naive_datetime", NaiveDateTime},
-        {"$datetime", DateTime}
+        {"$naive_datetime", NaiveDateTime}
       ] do
     def decode_value(%{unquote(tag) => text} = map) when map_size(map) == 1 and is_binary(text) do
       case unquote(module).from_iso8601(text) do
         {:ok, value} -> value
-        {:ok, value, _offset} -> value
         _ -> map
       end
+    end
+  end
+
+  def decode_value(%{"$datetime" => text} = map) when map_size(map) == 1 and is_binary(text) do
+    case DateTime.from_iso8601(text) do
+      {:ok, value, _offset} -> value
+      _ -> map
     end
   end
 
