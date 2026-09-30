@@ -1,8 +1,8 @@
 {
   "qme_profile": "QME-1/EcosystemReference",
   "version": "26.9.29",
-  "canonical_spec_subject": "seanchatmangpt/chatman-ecosystem@32c47032a9cefd0ab4f0980efc32fa84505031b2",
-  "local_subject": "seanchatmangpt/ash_r2rml@b404e7dfff38a7bb68fa5680f853bfe8cdff4c81",
+  "canonical_spec_subject": "seanchatmangpt/chatman-ecosystem@88b276f71e2c8e606553942cb721bceb6836a87e",
+  "local_subject": "seanchatmangpt/ash_r2rml@7225d99f2a3418fd967b385167c04de39d5f0d14",
   "role": "virtual knowledge graph observation and federation",
   "normative": false,
   "weakens_core": false,
