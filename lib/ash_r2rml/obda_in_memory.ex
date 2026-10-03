@@ -88,7 +88,9 @@ defmodule AshR2RML.OBDA.InMemory do
   minus `:allow_sensitive`, this module's own option (see moduledoc) -- so this
   always executes a real Ash action against the real data layer -- never a
   fabricated row set. `allow_sensitive: true` opts into materializing attributes
-  marked `sensitive?: true`; the default (`false`) refuses instead.
+  marked `sensitive?: true`; the default (`false`) refuses instead. The
+  `previous_graph:` differential option of `materialize_many/2` flows through here
+  unchanged (this function delegates to it).
   """
   @spec materialize(module(), Resource.t(), keyword()) :: {:ok, RDF.Graph.t()} | {:error, Refusal.t()}
   def materialize(ash_resource, %Resource{} = mapping_resource, opts \\ []) when is_atom(ash_resource) do
@@ -104,11 +106,19 @@ defmodule AshR2RML.OBDA.InMemory do
   `domain:`/`actor:`), minus `:allow_sensitive` (see `materialize/3`); pass distinct
   options per resource by reading each resource's rows yourself and preferring
   `query/4`'s single-resource form instead if that's needed.
+
+  Pass `previous_graph: %RDF.Graph{}` to also get the differential projection: the
+  return becomes `{:ok, %{graph: graph, delta: AshR2RML.Delta.t()}}` where `delta`
+  is `AshR2RML.Delta.diff/2` between `previous_graph` (old) and the freshly
+  materialized graph (new) -- including its `root_digest`. Without the option the
+  return is the historical `{:ok, graph}` unchanged.
   """
-  @spec materialize_many([spec()], keyword()) :: {:ok, RDF.Graph.t()} | {:error, Refusal.t()}
+  @spec materialize_many([spec()], keyword()) ::
+          {:ok, RDF.Graph.t()} | {:ok, %{graph: RDF.Graph.t(), delta: AshR2RML.Delta.t()}} | {:error, Refusal.t()}
   def materialize_many(specs, opts \\ []) when is_list(specs) do
     allow_sensitive? = Keyword.get(opts, :allow_sensitive, false)
-    read_opts = Keyword.delete(opts, :allow_sensitive)
+    previous_graph = Keyword.get(opts, :previous_graph)
+    read_opts = opts |> Keyword.delete(:allow_sensitive) |> Keyword.delete(:previous_graph)
 
     admitted_specs =
       Enum.map(specs, fn {ash_resource, mapping_resource} ->
@@ -118,14 +128,21 @@ defmodule AshR2RML.OBDA.InMemory do
     mapping_index =
       Map.new(admitted_specs, fn {ash_resource, mapping_resource} -> {ash_resource, mapping_resource} end)
 
-    Enum.reduce_while(admitted_specs, {:ok, RDF.Graph.new()}, fn {ash_resource, mapping_resource}, {:ok, graph_acc} ->
-      with {:ok, rows} <- rows_for(ash_resource, mapping_resource, read_opts),
-           {:ok, graph} <- add_rows(rows, graph_acc, mapping_resource, mapping_index, allow_sensitive?) do
-        {:cont, {:ok, graph}}
-      else
-        {:error, refusal} -> {:halt, {:error, refusal}}
-      end
-    end)
+    base_result =
+      Enum.reduce_while(admitted_specs, {:ok, RDF.Graph.new()}, fn {ash_resource, mapping_resource}, {:ok, graph_acc} ->
+        with {:ok, rows} <- rows_for(ash_resource, mapping_resource, read_opts),
+             {:ok, graph} <- add_rows(rows, graph_acc, mapping_resource, mapping_index, allow_sensitive?) do
+          {:cont, {:ok, graph}}
+        else
+          {:error, refusal} -> {:halt, {:error, refusal}}
+        end
+      end)
+
+    case {base_result, previous_graph} do
+      {{:ok, graph}, nil} -> {:ok, graph}
+      {{:ok, graph}, %RDF.Graph{} = old_graph} -> {:ok, %{graph: graph, delta: AshR2RML.Delta.diff(old_graph, graph)}}
+      {{:error, refusal}, _} -> {:error, refusal}
+    end
   end
 
   @doc """
