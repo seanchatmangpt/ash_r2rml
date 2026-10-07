@@ -1,0 +1,142 @@
+@prefix airo: <https://w3id.org/airo#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+# AIRo risk description for ash_r2rml — lane W625d (AIRo wiring wave, ash_r2rml leg).
+#
+# Vocabulary: https://w3id.org/airo (airo.ttl @ main, sha256
+# 6274d2d8711e046cf38f1b5b2980188094d4aa87b5af79804005a06468fd8469,
+# vendored at test/fixtures/airo_vocabulary_snapshot.ttl).
+#
+# Every risk and control below cites a real, on-disk gate or hazard in this
+# repository. Qualitative likelihood/severity values are honest engineering
+# judgment, not measurements.
+
+<https://w3id.org/ash_r2rml/airo/r2rml-ash-mapping-engine>
+  rdf:type airo:AISystem ;
+  rdfs:label "ash_r2rml R2RML-to-Ash mapping engine"@en ;
+  dcterms:description
+    "The R2RML-to-Ash mapping engine: admits R2RML-style mapping definitions against an Ash resource profile, derives Ash resources, attributes and relationships, and compiles them into a virtual knowledge graph over SQL sources."@en ;
+  airo:hasComponent <https://w3id.org/ash_r2rml/airo/component-vkg-registry> , <https://w3id.org/ash_r2rml/airo/component-mapping-admission> ;
+  airo:hasRisk
+    <https://w3id.org/ash_r2rml/airo/risk-empty-contract-admission> ,
+    <https://w3id.org/ash_r2rml/airo/risk-mapping-misclassification> ,
+    <https://w3id.org/ash_r2rml/airo/risk-unknown-ash-name-derivation> ;
+  airo:hasRiskControl
+    <https://w3id.org/ash_r2rml/airo/control-registry-non-empty-contract-refusal> ,
+    <https://w3id.org/ash_r2rml/airo/control-unproven-equivalence-refusal> ,
+    <https://w3id.org/ash_r2rml/airo/control-r2rml-test-suite> ,
+    <https://w3id.org/ash_r2rml/airo/control-dual-safe-map-update> .
+
+<https://w3id.org/ash_r2rml/airo/component-vkg-registry>
+  rdf:type airo:AIComponent ;
+  rdfs:label "VKG fail-closed source registry"@en ;
+  dcterms:description
+    "lib/ash_r2rml/vkg/registry.ex — fail-closed registry for exact VKG source identities; refuses duplicates and empty input rather than resolving by last-write-wins."@en .
+
+<https://w3id.org/ash_r2rml/airo/component-mapping-admission>
+  rdf:type airo:AIComponent ;
+  rdfs:label "Mapping admission pipeline"@en ;
+  dcterms:description
+    "lib/ash_r2rml/admission.ex + lib/ash_r2rml/mapping.ex — admits mapping and profile inputs with typed refusals (:REFUSED_UNPROVEN_EQUIVALENCE, :REFUSED_UNKNOWN_ATTRIBUTE, :REFUSED_INVALID_CLASS_IRI and siblings) before any Ash surface is derived."@en .
+
+# ---------------------------------------------------------------- risks
+
+<https://w3id.org/ash_r2rml/airo/risk-empty-contract-admission>
+  rdf:type airo:Risk ;
+  rdfs:label "Empty-contract admission into the VKG registry"@en ;
+  dcterms:description
+    "Hazard: registry clauses that admit rather than refuse malformed input. Documented neighbor: the historical dead clause at lib/ash_r2rml/vkg.ex:52 (a catch-all query/1 clause), an instance of the overly-broad-clause class that can silently swallow refusals. If Registry.admit accepted an empty contract list, the VKG would be admitted with zero source identities and every downstream query would observe an empty catalog without a refusal."@en ;
+  airo:hasConsequence <https://w3id.org/ash_r2rml/airo/consequence-silent-empty-vkg> ;
+  airo:hasLikelihood <https://w3id.org/ash_r2rml/airo/likelihood-low> ;
+  airo:hasSeverity <https://w3id.org/ash_r2rml/airo/severity-medium> .
+
+<https://w3id.org/ash_r2rml/airo/hazard-broad-clause>
+  rdf:type airo:Hazard ;
+  rdfs:label "Overly-broad clause admits malformed input"@en ;
+  rdfs:comment
+    "lib/ash_r2rml/vkg.ex:52 — catch-all clause in query/1; the same clause class is the documented neighbor of the Registry.admit empty-contract refusal."@en ;
+  airo:isRiskSourceFor <https://w3id.org/ash_r2rml/airo/risk-empty-contract-admission> .
+
+<https://w3id.org/ash_r2rml/airo/risk-mapping-misclassification>
+  rdf:type airo:Risk ;
+  rdfs:label "Mapping misclassification via over-broad refusal tag"@en ;
+  dcterms:description
+    "Hazard: the :REFUSED_UNKNOWN_ATTRIBUTE refusal reason is reused for several distinct failure modes in lib/ash_r2rml/admission.ex (verify_attributes, lines 377-392: non-atom attribute names, non-string columns, duplicate names) — a tautology-by-breadth neighbor: a refusal tag that covers everything explains nothing. If the over-broad tag masks the real mode, a misclassified mapping (wrong attribute-to-column binding) is diagnosed against the wrong failure class and repaired into a different misclassification instead of a refusal."@en ;
+  airo:hasConsequence <https://w3id.org/ash_r2rml/airo/consequence-wrong-failure-class> ;
+  airo:hasLikelihood <https://w3id.org/ash_r2rml/airo/likelihood-medium> ;
+  airo:hasSeverity <https://w3id.org/ash_r2rml/airo/severity-medium> .
+
+<https://w3id.org/ash_r2rml/airo/risk-unknown-ash-name-derivation>
+  rdf:type airo:Risk ;
+  rdfs:label "unknownAshName derivation risk"@en ;
+  dcterms:description
+    "Hazard: attribute names derived from mapping terms that resolve to no admitted Ash attribute surface. lib/ash_r2rml/admission.ex verify_attributes refuses non-atom names, non-string columns and duplicates under :REFUSED_UNKNOWN_ATTRIBUTE, but a derived name can pass shape checks yet name no real Ash attribute — the residual derivation risk. Enforced downstream by :REFUSED_UNKNOWN_ATTRIBUTE at lib/ash_r2rml/resource.ex:362,751, lib/ash_r2rml/alignment.ex:39 and lib/ash_r2rml/provenance.ex:113,150,175."@en ;
+  airo:hasConsequence <https://w3id.org/ash_r2rml/airo/consequence-derivation-drift> ;
+  airo:hasLikelihood <https://w3id.org/ash_r2rml/airo/likelihood-low> ;
+  airo:hasSeverity <https://w3id.org/ash_r2rml/airo/severity-medium> .
+
+# ---------------------------------------------------------------- consequences
+
+<https://w3id.org/ash_r2rml/airo/consequence-silent-empty-vkg>
+  rdf:type airo:Consequence ;
+  rdfs:label "Silently admitted empty VKG"@en ;
+  dcterms:description
+    "VKG queries return an empty catalog with no refusal; downstream consumers act on zero sources."@en .
+
+<https://w3id.org/ash_r2rml/airo/consequence-wrong-failure-class>
+  rdf:type airo:Consequence ;
+  rdfs:label "Wrong failure-class diagnosis"@en ;
+  dcterms:description
+    "A mapping defect is diagnosed under the wrong refusal class; the repair addresses the wrong mode and the defect survives."@en .
+
+<https://w3id.org/ash_r2rml/airo/consequence-derivation-drift>
+  rdf:type airo:Consequence ;
+  rdfs:label "Derivation drift against the Ash surface"@en ;
+  dcterms:description
+    "Derived attribute names drift from the admitted Ash surface; queries bind to non-existent columns at execution time rather than failing at admission."@en .
+
+# ---------------------------------------------------------------- controls
+
+<https://w3id.org/ash_r2rml/airo/control-registry-non-empty-contract-refusal>
+  rdf:type airo:RiskControl ;
+  rdfs:label "Registry.admit non-empty-contract refusal"@en ;
+  dcterms:description
+    "lib/ash_r2rml/vkg/registry.ex:16-27 — Registry.admit/1 is head-matched on a non-empty list; the empty-list and non-list cases fall to explicit refusal clauses. Fail-closed: no empty registry can be admitted."@en .
+
+<https://w3id.org/ash_r2rml/airo/control-unproven-equivalence-refusal>
+  rdf:type airo:RiskControl ;
+  rdfs:label "Projection hash / unproven-equivalence refusal"@en ;
+  dcterms:description
+    "lib/ash_r2rml/admission.ex (:REFUSED_UNPROVEN_EQUIVALENCE at lines 51,73,155,207,257,265,467,596,632) and lib/ash_r2rml/compiler.ex:194, backed by sha256 identity hashes in lib/ash_r2rml/integrity.ex — a mapping is admitted only when its equivalence to the ontology surface is proven (shared semantic identity columns, matching identity hashes); unproven equivalence is refused, never defaulted."@en .
+
+<https://w3id.org/ash_r2rml/airo/control-r2rml-test-suite>
+  rdf:type airo:RiskControl ;
+  rdfs:label "R2RML admission/verify test suite"@en ;
+  dcterms:description
+    "test/ — ExUnit court suite covering admission, verification and equivalence: test/vkg/v26_9_28_admission_test.exs, test/vkg/v26_9_28_verify_test.exs, test/mapping_changeset_test.exs, test/adversarial_closure_test.exs, test/equivalence_and_falsifier_test.exs. Chicago-style: real Ash resources, real R2RML documents, asserted final state. Result measured at description time (lane W625d): 1004 tests, 0 failures, 9 skipped."@en .
+
+<https://w3id.org/ash_r2rml/airo/control-dual-safe-map-update>
+  rdf:type airo:RiskControl ;
+  rdfs:label "Dual-safe Map.update aggregation patches (w609-era)"@en ;
+  dcterms:description
+    "lib/ash_r2rml/vkg/consumer/engineering.ex:19, lib/ash_r2rml/knowledge_hooks.ex:1336, lib/ash_r2rml/knowledge_hook/datalog.ex:386, lib/ash_r2rml/knowledge_hook/rdf.ex:303, lib/ash_r2rml/knowledge_hook/shacl.ex:288 — aggregation sites use Map.update/4 (create-or-update in one clause) rather than bare Map.get + Map.put pairs, so a missing key initializes the list instead of raising or emitting nil entries; the w609-era patches made first-write and append share a single safe clause."@en .
+
+# ---------------------------------------------------------------- likelihood / severity individuals
+
+<https://w3id.org/ash_r2rml/airo/likelihood-low>
+  rdf:type airo:Likelihood ;
+  rdfs:label "Low"@en ;
+  dcterms:description "Refusals are head-matched fail-closed clauses; the malformed-input cases are explicitly enumerated."@en .
+
+<https://w3id.org/ash_r2rml/airo/likelihood-medium>
+  rdf:type airo:Likelihood ;
+  rdfs:label "Medium"@en ;
+  dcterms:description "The over-broad :REFUSED_UNKNOWN_ATTRIBUTE tag is live in the current tree; misdiagnosis requires only an unlucky repair."@en .
+
+<https://w3id.org/ash_r2rml/airo/severity-medium>
+  rdf:type airo:Severity ;
+  rdfs:label "Medium"@en ;
+  dcterms:description "Silent wrong-output class: the VKG is admitted empty or misdiagnosed before any human reads it."@en .
