@@ -123,3 +123,9 @@ $RECYCLE.BIN/
 .claude
 *.tar
 .discarded-knowledge-hook-duplicate/
+
+# lane-lease build roots (fan-out campaign)
+target/
+node_modules/
+_build-lane*/
+target-lane*/
