@@ -84,8 +84,7 @@ defmodule AshR2RML.SemanticSessionIdentity do
       shacl_hash: get(attrs, :shacl_hash),
       ir_sha256: get(attrs, :ir_sha256),
       mapping_sha256: get(attrs, :mapping_sha256),
-      compiler_module_sha256:
-        get(attrs, :compiler_module_sha256) || module_sha256(AshR2RML.Compiler),
+      compiler_module_sha256: get(attrs, :compiler_module_sha256) || module_sha256(AshR2RML.Compiler),
       compiler_version: get(attrs, :compiler_version) || app_version(),
       elixir_version: get(attrs, :elixir_version) || System.version(),
       otp_release: get(attrs, :otp_release) || System.otp_release(),
@@ -144,7 +143,7 @@ defmodule AshR2RML.SemanticSessionIdentity do
   end
 
   defp app_version do
-    case Application.spec(:ash_neo4j, :vsn) do
+    case Application.spec(:ash_r2rml, :vsn) do
       nil -> nil
       version -> to_string(version)
     end
@@ -764,6 +763,11 @@ defmodule AshR2RML.OBDA.Capabilities do
     :datatype_map
   ]
 
+  # Query-level capabilities requested by callers such as the VKG executor. They
+  # are a separate vocabulary from the R2RML mapping features above; Ontop answers
+  # SPARQL select/filter/join/aggregate at every supported version.
+  @query_capabilities [:select, :filter, :join, :aggregate]
+
   @ontop_conservative [
     :table_name,
     :subject_template,
@@ -789,8 +793,8 @@ defmodule AshR2RML.OBDA.Capabilities do
   @spec admit(atom() | String.t(), String.t() | nil, [atom()]) ::
           {:ok, CapabilityReceipt.t()} | {:error, Refusal.t()}
   def admit(engine, version, required) when is_list(required) do
-    supported = supported(engine, version)
-    unknown_standard = required -- @w3c
+    supported = supported(engine, version) ++ query_supported(engine)
+    unknown_standard = required -- (@w3c ++ @query_capabilities)
     missing = required -- supported
 
     cond do
@@ -836,6 +840,9 @@ defmodule AshR2RML.OBDA.Capabilities do
         {:ok, seal(receipt)}
     end
   end
+
+  defp query_supported(engine) when engine in [:ontop, "ontop"], do: @query_capabilities
+  defp query_supported(_engine), do: []
 
   def mark_executed(%CapabilityReceipt{} = receipt), do: seal(%{receipt | executed?: true})
 
@@ -1062,7 +1069,13 @@ defmodule AshR2RML.DfCM.Compiler do
 
     proofs =
       envelope.proof_classes --
-        [:relational_observed, :obda_query_observed, :subject_identity_verified, :result_parity_verified, :ontology_roundtrip_verified]
+        [
+          :relational_observed,
+          :obda_query_observed,
+          :subject_identity_verified,
+          :result_parity_verified,
+          :ontology_roundtrip_verified
+        ]
 
     receipt = envelope.compilation.receipt
 

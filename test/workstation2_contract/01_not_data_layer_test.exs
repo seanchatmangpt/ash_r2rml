@@ -3,6 +3,7 @@
 
 defmodule AshR2RML.WS2.NotDataLayerTest do
   use ExUnit.Case, async: true
+
   test "AshR2RML remains a semantic compiler, not an Ash.DataLayer" do
     contract = File.read!("AGENTS.md")
     assert contract =~ "not an `Ash.DataLayer`"

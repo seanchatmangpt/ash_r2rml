@@ -1,0 +1,8 @@
+{
+  "id": "",
+  "uri": "urn:source:document",
+  "graph": "urn:graph:document",
+  "subject_template": "https://example.org/document/{id}",
+  "version": "1",
+  "expect": "REFUSED_VKG_SOURCE_IDENTITY"
+}

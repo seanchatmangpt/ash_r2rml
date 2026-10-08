@@ -48,12 +48,27 @@ defmodule AshR2RML.Dsl.SparqlQuery do
   @moduledoc false
   @enforce_keys [:name]
   defstruct [:name, form: :select, select: [], where: [], __identifier__: nil, __spark_metadata__: nil]
+
+  @type t :: %__MODULE__{
+          name: atom(),
+          form: :select | :construct | :ask | :describe,
+          select: [atom()],
+          where: term(),
+          __identifier__: term(),
+          __spark_metadata__: term()
+        }
 end
 
 defmodule AshR2RML.Dsl.Graph do
   @moduledoc false
   @enforce_keys [:iri]
   defstruct [:iri, :__identifier__, :__spark_metadata__, scope: :resource]
+end
+
+defmodule AshR2RML.Dsl.KnowledgeHook do
+  @moduledoc false
+  @enforce_keys [:module]
+  defstruct [:module, :__identifier__, :__spark_metadata__]
 end
 
 defmodule AshR2RML.Resource do
@@ -159,11 +174,26 @@ defmodule AshR2RML.Resource do
 
   def section, do: @r2rml
 
+  # Auto-projection: declaring `AshR2RML.Resource` alone is the whole surface for
+  # a read-only GraphQL projection. `Spark`'s `add_extensions` expansion is a
+  # single pass (`Spark.Dsl.expand_modules/3`, deps/spark/lib/spark/dsl.ex:335),
+  # so `AshGraphql.Resource` is named here explicitly rather than relying on
+  # `AshR2RML.Graphql`'s own `add_extensions`. `ash_graphql` is an optional dep,
+  # so the list is empty when it is not loaded.
+  @auto_graphql_extensions (if Code.ensure_loaded?(AshGraphql.Resource) do
+                              [AshR2RML.Graphql, AshGraphql.Resource]
+                            else
+                              []
+                            end)
+
   use Spark.Dsl.Extension,
     sections: [@r2rml, @sparql],
-    transformers: [AshR2RML.Resource.Persist],
+    transformers: [
+      AshR2RML.Resource.Persist
+    ],
     verifiers: [AshR2RML.Resource.Verify],
-    single_extension_kinds: [:ash_r2rml]
+    single_extension_kinds: [:ash_r2rml],
+    add_extensions: @auto_graphql_extensions
 end
 
 defmodule AshR2RML.Resource.Persist do
@@ -643,14 +673,16 @@ defmodule AshR2RML.Resource.LegacyAdapter do
     end
   end
 
-  defp spark_resource?(resource) when is_atom(resource) do
-    function_exported?(resource, :spark_is, 0) or
-      not is_nil(Spark.Dsl.Extension.get_persisted(resource, :spark_dsl, nil))
+  defp spark_resource?(resource) do
+    if is_atom(resource) do
+      function_exported?(resource, :spark_is, 0) or
+        not is_nil(Spark.Dsl.Extension.get_persisted(resource, :spark_dsl, nil))
+    else
+      false
+    end
   rescue
     _ -> false
   end
-
-  defp spark_resource?(_), do: false
 
   defp safe_spark_opt(resource, path, key) do
     Spark.Dsl.Extension.get_opt(resource, path, key, nil)

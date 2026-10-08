@@ -120,12 +120,23 @@ defmodule AshR2RML.Production.Workload do
       |> Enum.filter(&(not present?(Map.get(intent, &1))))
 
     cond do
-      missing != [] -> {:error, refusal(:REFUSED_WORKLOAD_IDENTITY, %{missing: missing})}
-      intent.mode not in @modes -> {:error, refusal(:REFUSED_WORKLOAD_MODE, %{mode: intent.mode})}
-      intent.residency not in @residencies -> {:error, refusal(:REFUSED_WORKLOAD_RESIDENCY, %{residency: intent.residency})}
-      intent.mode == :do and not present?(intent.idempotency_key) -> {:error, refusal(:REFUSED_DO_WITHOUT_IDEMPOTENCY_KEY)}
-      not is_integer(intent.deadline_ms) or intent.deadline_ms <= 0 -> {:error, refusal(:REFUSED_WORKLOAD_DEADLINE)}
-      true -> {:ok, intent}
+      missing != [] ->
+        {:error, refusal(:REFUSED_WORKLOAD_IDENTITY, %{missing: missing})}
+
+      intent.mode not in @modes ->
+        {:error, refusal(:REFUSED_WORKLOAD_MODE, %{mode: intent.mode})}
+
+      intent.residency not in @residencies ->
+        {:error, refusal(:REFUSED_WORKLOAD_RESIDENCY, %{residency: intent.residency})}
+
+      intent.mode == :do and not present?(intent.idempotency_key) ->
+        {:error, refusal(:REFUSED_DO_WITHOUT_IDEMPOTENCY_KEY)}
+
+      not is_integer(intent.deadline_ms) or intent.deadline_ms <= 0 ->
+        {:error, refusal(:REFUSED_WORKLOAD_DEADLINE)}
+
+      true ->
+        {:ok, intent}
     end
   end
 
@@ -147,6 +158,7 @@ defmodule AshR2RML.Production.Quota do
     exceeded =
       Enum.filter(quotas, fn quota ->
         unknown? = quota in unknown
+
         not unknown? and
           ((quota.max_inflight && quota.current_inflight + cost > quota.max_inflight) or
              (quota.max_rps && quota.current_rps + cost > quota.max_rps))
@@ -172,7 +184,8 @@ defmodule AshR2RML.Production.Router do
   end
 
   @spec cells([String.t()], pos_integer()) :: [Cell.t()]
-  def cells(regions, cells_per_region \\ 3) when is_list(regions) and is_integer(cells_per_region) and cells_per_region > 0 do
+  def cells(regions, cells_per_region \\ 3)
+      when is_list(regions) and is_integer(cells_per_region) and cells_per_region > 0 do
     for region <- Enum.sort(regions), ordinal <- 1..cells_per_region do
       %Cell{
         id: "#{region}-c#{ordinal}",

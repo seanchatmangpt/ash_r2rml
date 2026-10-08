@@ -1,5 +1,5 @@
 <!--
-SPDX-FileCopyrightText: 2025 ash_neo4j contributors <https://github.com/diffo-dev/ash_neo4j/graphs.contributors>
+SPDX-FileCopyrightText: 2025 Matthew Graham Beanland and contributors
 SPDX-FileCopyrightText: 2026 ash_r2rml contributors
 
 SPDX-License-Identifier: MIT
@@ -46,6 +46,7 @@ The RDF graph is normally virtual. A compatible OBDA engine rewrites SPARQL into
 | Ash/SQL/SPARQL query boundaries | [query-surfaces.md](usage-rules/query-surfaces.md) |
 | Virtual RDF / OBDA boundary | [obda.md](usage-rules/obda.md) |
 | Ontology-first compilation | [ontology-first.md](usage-rules/ontology-first.md) |
+| Observe-only virtual knowledge graph federation | [vkg.md](usage-rules/vkg.md) |
 | ggen manufacturing | [ggen.md](usage-rules/ggen.md) |
 | Ash actions/mutation boundary | [actions.md](usage-rules/actions.md) |
 | Verification and semantic round trips | [testing.md](usage-rules/testing.md) |
@@ -214,8 +215,6 @@ AshR2RML does not:
 
 - replace AshPostgres or another Ash data layer;
 - write triples as its persistence model;
-- require Neo4j;
-- render Cypher;
 - manage graph indexes;
 - implement graph traversal expressions;
 - implement vector/spatial query engines;

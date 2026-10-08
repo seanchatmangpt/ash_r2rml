@@ -1,0 +1,16 @@
+{
+  "id": "invoice",
+  "source": "urn:source:invoice",
+  "graph": "urn:graph:invoice",
+  "subject_template": "https://example.org/invoice/{id}",
+  "version": "1",
+  "mapping": "mappings/invoice.r2rml.ttl",
+  "query": "queries/invoice.rq",
+  "ontology": "ontology/vkg.ttl",
+  "capabilities": [
+    "select",
+    "filter",
+    "join",
+    "aggregate"
+  ]
+}

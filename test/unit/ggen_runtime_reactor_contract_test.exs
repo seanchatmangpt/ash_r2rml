@@ -7,7 +7,12 @@ defmodule AshR2RML.GgenRuntime.ReactorContractTest do
 
   test "admits consequential step with compensation" do
     assert {:ok, %{rollback_order: :reverse}} =
-             ReactorContract.admit(%{step: "publish", on_error: :refuse, consequential: true, compensation: "unpublish"})
+             ReactorContract.admit(%{
+               step: "publish",
+               on_error: :refuse,
+               consequential: true,
+               compensation: "unpublish"
+             })
   end
 
   test "refuses consequential step without compensation" do

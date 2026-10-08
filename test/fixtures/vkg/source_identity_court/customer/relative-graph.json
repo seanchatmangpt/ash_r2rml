@@ -1,0 +1,8 @@
+{
+  "id": "customer",
+  "uri": "urn:source:customer",
+  "graph": "graph/customer",
+  "subject_template": "https://example.org/customer/{id}",
+  "version": "1",
+  "expect": "REFUSED_VKG_SOURCE_IDENTITY"
+}

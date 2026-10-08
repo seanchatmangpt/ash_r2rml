@@ -1,0 +1,15 @@
+{
+  "id": "organization",
+  "source": "urn:source:organization",
+  "graph": "urn:graph:organization",
+  "subject_template": "https://example.org/organization/{id}",
+  "version": "1",
+  "mapping": "mappings/organization.r2rml.ttl",
+  "query": "queries/organization.rq",
+  "ontology": "ontology/vkg.ttl",
+  "capabilities": [
+    "select",
+    "filter",
+    "join"
+  ]
+}

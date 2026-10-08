@@ -31,7 +31,7 @@ Ensure your `mix.exs` includes `:ash` and `:ash_r2rml`:
 def deps do
   [
     {:ash, "~> 3.0"},
-    {:ash_r2rml, "~> 0.1.0"}
+    {:ash_r2rml, "~> 26.10"}
   ]
 end
 ```

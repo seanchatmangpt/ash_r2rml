@@ -1,5 +1,5 @@
 <!--
-SPDX-FileCopyrightText: 2025 ash_neo4j contributors <https://github.com/diffo-dev/ash_neo4j/graphs.contributors>
+SPDX-FileCopyrightText: 2025 Matthew Graham Beanland and contributors
 SPDX-FileCopyrightText: 2026 ash_r2rml contributors
 
 SPDX-License-Identifier: MIT
@@ -78,7 +78,7 @@ def deps do
   [
     {:ash, "~> 3.0"},
     {:ash_postgres, "~> 2.0"},
-    {:ash_r2rml, "~> 1.0"}
+    {:ash_r2rml, "~> 26.10"}
   ]
 end
 ```
@@ -250,6 +250,7 @@ Typical built-ins include:
 | `:date` | `xsd:date` |
 | UTC datetime types | `xsd:dateTime` |
 | `:uuid` | `xsd:string` unless overridden |
+| `:duration` (`Ash.Type.Duration`, Ash >= 3.23) | `xsd:duration` |
 
 A type with no lawful mapping is `UNSUPPORTED`; it is never silently coerced to a string.
 
@@ -368,6 +369,31 @@ UNSUPPORTED_ASH_TYPE
 
 The exact Elixir error is a typed AshR2RML/Spark error. No mapping path silently drops a resource, attribute, relationship, or identity.
 
+## Knowledge hooks
+
+`AshR2RML.KnowledgeHooks` admits a read-only predicate over the graph, evaluates it against
+real data, and constructs a downstream `Intent` — hooks manufacture intents, they never
+actuate. Six predicate types are supported:
+
+```text
+:ask               — SPARQL ASK query truth value
+:result_delta      — change between successive SELECT result sets
+:external_trigger  — an externally-supplied receipt (no in-repo query)
+:shacl             — SHACL shape conformance for one or more focus nodes
+:threshold         — a bound SPARQL variable compared against a numeric bound
+:count             — row count of a SELECT query compared against a numeric bound
+```
+
+`:shacl`, `:threshold`, and `:count` each fail closed at admission time on malformed input
+(an unparseable shapes graph or empty focus set, an unsupported comparator atom, or a
+non-`SELECT` query form, respectively) — see `AGENTS.md`'s "Knowledge hooks" section for the
+exact refusal codes.
+
+Two predicate types are explicitly open, not-yet-designed extensions: `:temporal_window`
+(windowed evaluation over a time range) and `:datalog` (a predicate expressed as Datalog
+rules). Neither has admission rules, evaluation semantics, or a receipt shape defined yet —
+this is a named gap, not an oversight.
+
 ## Virtual RDF, not RDF synchronization
 
 AshR2RML generates mappings; an OBDA engine executes SPARQL against the relational database.
@@ -463,13 +489,89 @@ R2RML
 SPARQL
 ```
 
+## Virtual Knowledge Graph (observe-only)
+
+`AshR2RML.VKG` (`lib/ash_r2rml/vkg/**`, data in `priv/vkg`) federates Ontop-backed views by exact
+source identity: manifest, admitted catalog, deterministic plan, bounded execution, provenance-bearing
+result, receipt, replay verification. Failures are typed `REFUSED_VKG_*` refusals.
+
+**Authority ceiling:** observe-only (`authority: :NONE`). No DO, no source writes. It is not network
+federation and it is not `AshR2RML.Federation` (the in-process determinism substrate below). See
+`usage-rules/vkg.md`.
+
+## Federation
+
+`AshR2RML.Federation` (`lib/ash_r2rml/federation.ex`) is real, mechanically
+checkable determinism substrate: `admit_environment/1` admits a named
+environment identity (`name`, `compiler_version`, `admitted_ontology_sha256`)
+or refuses a malformed one; `compile_for_environments/2` compiles the SAME
+admitted semantic profile independently, once per admitted environment, and
+returns a `FederationReceipt` asserting whether the generated artifact
+identity (a sha256 over the compiled Ash/Ecto/DDL/R2RML/SHACL output) is
+byte-identical across every environment that shares compiler+ontology
+identity — "same input, same compiler identity, same artifact identity,"
+checked by hash equality, not narrative.
+
+**What this proves:** deterministic artifact identity is verifiable across
+independently-configured environments — compile the same profile N times, in
+N differently-named environment configs, and get back N byte-identical
+generated artifacts (or, when an environment's admitted ontology identity
+diverges, a receipt that names exactly which environment diverged instead of
+silently averaging it away). `test/federation_test.exs` compiles a real
+profile across 3 named environments and asserts this for real, then mutates
+one environment's `admitted_ontology_sha256` and asserts the receipt reports
+`all_identical?: false` and names the diverging environment.
+
+**What this does NOT prove:** no real multi-tenant deployment, no network
+federation protocol, no actual Fortune 500 customer environment. Every
+"environment" here is an in-process identity tuple compiled sequentially in
+one BEAM node — there is no runtime, no cluster, no customer infrastructure
+behind it. This module is the determinism substrate a federation claim would
+need, not the claim itself.
+
+## Knowledge hooks
+
+`AshR2RML.KnowledgeHooks` (`documentation/how_to/knowledge_hooks.md`) admits a read-only
+predicate over the RDF graph, evaluates it, and constructs a downstream `Intent` with
+`authority: :UNAUTHORIZED` — it never actuates. **PARTIAL_ALIVE**: 8 predicate types are real
+and tested end-to-end (`:ask`, `:result_delta`, `:external_trigger`, `:shacl`, `:threshold`,
+`:count`, `:temporal_window`, `:datalog`), each with typed admission refusals and zero-mock
+Chicago-style tests over real `RDF.Graph`/`RDF.Turtle` fixtures. `:datalog` is a deliberately
+scoped hand-written single-rule evaluator (no recursion/negation/aggregation/stratification),
+not a general Datalog engine — a real, named gap if broader Datalog semantics are ever needed.
+GitVan v4 and KNHK Turtle vocabularies are recognized on import.
+
+## Status
+
+This repository is **PARTIAL_ALIVE**, not a finished product. Real, verified capability:
+R2RML compilation from Ash resources (relational + join-derived reference object maps),
+two in-repo OBDA execution backends (`AshR2RML.OBDA.InMemory` over `Ash.DataLayer.Ets`,
+`AshR2RML.OBDA.Ontop` over `AshPostgres`+Ontop+JDBC), a typed refusal vocabulary (14 mapping
+refusal codes plus 4 knowledge-hook refusal codes), auto-projected GraphQL over the same
+admitted subject, 8 knowledge-hook predicate types, and an in-process `AshR2RML.Federation`
+determinism substrate (byte-identical artifact hashing across N named environment configs
+compiled sequentially in one BEAM node).
+
+Named gaps, stated honestly rather than glossed over:
+
+- `AshR2RML.Federation` proves deterministic artifact identity across in-process environment
+  configs — it does **not** implement network federation, multi-tenant deployment, or run
+  against any real Fortune 500 or other customer environment.
+- `Ash.Type.Range` has no R2RML datatype mapping yet (parameterized-type rendering path not
+  built; `UNSUPPORTED_ASH_TYPE`).
+- `:datalog` knowledge hooks support one non-recursive rule only, by design.
+- Live-Postgres/Ontop adversarial tests depend on a running local Postgres+Ontop stack and are
+  not run in every environment; see `test/adversarial/`.
+
+Never treat this README, `AGENTS.md`, or `CHANGELOG.md` as proof a capability is wired end to
+end — the real evidence is the cited test file and its actual passing run.
+
 ## What AshR2RML does not do
 
 AshR2RML deliberately does not:
 
 - replace AshPostgres, AshSql, Ecto, or another Ash data layer;
 - store RDF triples itself;
-- require Neo4j or another graph database;
 - implement a SPARQL optimizer;
 - infer arbitrary OWL semantics;
 - invent missing relationship or identity information;
@@ -481,6 +583,8 @@ AshR2RML deliberately does not:
 - [Ash-first mapping](documentation/how_to/ash_first.livemd)
 - [Ontology-first generation](documentation/how_to/ontology_first.livemd)
 - [Managing relational schema and R2RML](documentation/how_to/managing_schema.livemd)
+- [Knowledge hooks](documentation/how_to/knowledge_hooks.md)
+- [Palantir/Kudzu migration demonstration](documentation/topics/palantir_kudzu_migration.md)
 - [Usage rules](usage-rules.md)
 
 ## Development

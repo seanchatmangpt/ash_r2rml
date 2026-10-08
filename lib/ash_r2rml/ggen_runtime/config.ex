@@ -21,5 +21,10 @@ defmodule AshR2RML.GgenRuntime.Config do
 
   def admit(_), do: {:error, :REFUSED_RUNTIME_CONFIG_INCOMPLETE}
 
-  defp digest(term), do: term |> :erlang.term_to_binary([:deterministic]) |> then(&:crypto.hash(:sha256, &1)) |> Base.encode16(case: :lower)
+  defp digest(term),
+    do:
+      term
+      |> :erlang.term_to_binary([:deterministic])
+      |> then(&:crypto.hash(:sha256, &1))
+      |> Base.encode16(case: :lower)
 end

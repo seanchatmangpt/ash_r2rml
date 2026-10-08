@@ -18,6 +18,13 @@ defmodule AshR2RML.OBDA.InMemory do
   algebra) against that graph. No hand-rolled query language, no partial BGP
   matcher standing in for SPARQL.
 
+  Before any read result reaches graph construction, each mapping is passed through
+  `AshR2RML.Security.sanitize_in_memory_mapping/2`. That is an admission boundary, not
+  post-hoc redaction: a mapped field that no longer resolves to a real Ash attribute
+  (for example an `ash_cloak` encrypted attribute replaced by a decrypting calculation)
+  is structurally absent from the materialization mapping. A calculation becoming loaded
+  by default therefore does not manufacture RDF-publication authority for its plaintext.
+
   Because there is no data-layer check anywhere in this module, it works against any
   real Ash data layer a resource happens to use -- confirmed for real (not just by
   absence-of-a-check) against `Ash.DataLayer.Ets`, `AshCsv.DataLayer`, and
@@ -68,6 +75,7 @@ defmodule AshR2RML.OBDA.InMemory do
 
   alias AshR2RML.Mapping.{JoinCondition, PredicateObjectMap, ReferenceObjectMap, Resource, SubjectMap}
   alias AshR2RML.Refusal
+  alias AshR2RML.Security
   alias AshR2RML.SPARQL.{Local, Observation}
 
   @type spec :: {ash_resource :: module(), mapping_resource :: Resource.t()}
@@ -78,9 +86,11 @@ defmodule AshR2RML.OBDA.InMemory do
 
   `opts` is passed through to `Ash.read!/2` verbatim (e.g. `domain:`, `actor:`) --
   minus `:allow_sensitive`, this module's own option (see moduledoc) -- so this
-  always executes a real Ash action against the real ETS table -- never a
+  always executes a real Ash action against the real data layer -- never a
   fabricated row set. `allow_sensitive: true` opts into materializing attributes
-  marked `sensitive?: true`; the default (`false`) refuses instead.
+  marked `sensitive?: true`; the default (`false`) refuses instead. The
+  `previous_graph:` differential option of `materialize_many/2` flows through here
+  unchanged (this function delegates to it).
   """
   @spec materialize(module(), Resource.t(), keyword()) :: {:ok, RDF.Graph.t()} | {:error, Refusal.t()}
   def materialize(ash_resource, %Resource{} = mapping_resource, opts \\ []) when is_atom(ash_resource) do
@@ -96,21 +106,43 @@ defmodule AshR2RML.OBDA.InMemory do
   `domain:`/`actor:`), minus `:allow_sensitive` (see `materialize/3`); pass distinct
   options per resource by reading each resource's rows yourself and preferring
   `query/4`'s single-resource form instead if that's needed.
-  """
-  @spec materialize_many([spec()], keyword()) :: {:ok, RDF.Graph.t()} | {:error, Refusal.t()}
-  def materialize_many(specs, opts \\ []) when is_list(specs) do
-    mapping_index = Map.new(specs, fn {ash_resource, mapping_resource} -> {ash_resource, mapping_resource} end)
-    allow_sensitive? = Keyword.get(opts, :allow_sensitive, false)
-    read_opts = Keyword.delete(opts, :allow_sensitive)
 
-    Enum.reduce_while(specs, {:ok, RDF.Graph.new()}, fn {ash_resource, mapping_resource}, {:ok, graph_acc} ->
-      with {:ok, rows} <- rows_for(ash_resource, mapping_resource, read_opts),
-           {:ok, graph} <- add_rows(rows, graph_acc, mapping_resource, mapping_index, allow_sensitive?) do
-        {:cont, {:ok, graph}}
-      else
-        {:error, refusal} -> {:halt, {:error, refusal}}
-      end
-    end)
+  Pass `previous_graph: %RDF.Graph{}` to also get the differential projection: the
+  return becomes `{:ok, %{graph: graph, delta: AshR2RML.Delta.t()}}` where `delta`
+  is `AshR2RML.Delta.diff/2` between `previous_graph` (old) and the freshly
+  materialized graph (new) -- including its `root_digest`. Without the option the
+  return is the historical `{:ok, graph}` unchanged.
+  """
+  @spec materialize_many([spec()], keyword()) ::
+          {:ok, RDF.Graph.t()} | {:ok, %{graph: RDF.Graph.t(), delta: AshR2RML.Delta.t()}} | {:error, Refusal.t()}
+  def materialize_many(specs, opts \\ []) when is_list(specs) do
+    allow_sensitive? = Keyword.get(opts, :allow_sensitive, false)
+    previous_graph = Keyword.get(opts, :previous_graph)
+    read_opts = opts |> Keyword.delete(:allow_sensitive) |> Keyword.delete(:previous_graph)
+
+    admitted_specs =
+      Enum.map(specs, fn {ash_resource, mapping_resource} ->
+        {ash_resource, Security.sanitize_in_memory_mapping(ash_resource, mapping_resource)}
+      end)
+
+    mapping_index =
+      Map.new(admitted_specs, fn {ash_resource, mapping_resource} -> {ash_resource, mapping_resource} end)
+
+    base_result =
+      Enum.reduce_while(admitted_specs, {:ok, RDF.Graph.new()}, fn {ash_resource, mapping_resource}, {:ok, graph_acc} ->
+        with {:ok, rows} <- rows_for(ash_resource, mapping_resource, read_opts),
+             {:ok, graph} <- add_rows(rows, graph_acc, mapping_resource, mapping_index, allow_sensitive?) do
+          {:cont, {:ok, graph}}
+        else
+          {:error, refusal} -> {:halt, {:error, refusal}}
+        end
+      end)
+
+    case {base_result, previous_graph} do
+      {{:ok, graph}, nil} -> {:ok, graph}
+      {{:ok, graph}, %RDF.Graph{} = old_graph} -> {:ok, %{graph: graph, delta: AshR2RML.Delta.diff(old_graph, graph)}}
+      {{:error, refusal}, _} -> {:error, refusal}
+    end
   end
 
   @doc """
@@ -159,7 +191,7 @@ defmodule AshR2RML.OBDA.InMemory do
              Refusal.new(
                :REFUSED_UNSUPPORTED_SPARQL_FEATURE,
                mapping_resource.ash_resource,
-               "could not read the real ETS-backed resource for materialization",
+               "could not read the real Ash resource for materialization",
                %{exception: Exception.message(exception)}
              )}
         end

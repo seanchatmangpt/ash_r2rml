@@ -174,7 +174,11 @@ defmodule AshR2RML.Production do
   def design_space do
     dimensions = [
       dimension(:deployment_topology, [:single_region, :active_passive, :active_active, :cellular], :active_passive),
-      dimension(:tenancy_model, [:shared_schema, :schema_per_tenant, :database_per_tenant, :cell_per_tenant_class], :schema_per_tenant),
+      dimension(
+        :tenancy_model,
+        [:shared_schema, :schema_per_tenant, :database_per_tenant, :cell_per_tenant_class],
+        :schema_per_tenant
+      ),
       dimension(:consistency_model, [:strong, :bounded_staleness, :eventual], :strong),
       dimension(:execution_mode, [:compile_only, :read_only_runtime, :receipted_write_runtime], :compile_only),
       dimension(:control_plane, [:centralized, :regional, :cellular], :regional),
@@ -193,11 +197,21 @@ defmodule AshR2RML.Production do
 
     constraints = [
       constraint(:cellular_requires_cellular_control, %{deployment_topology: :cellular}, %{control_plane: :cellular}),
-      constraint(:cell_tenancy_requires_cellular_topology, %{tenancy_model: :cell_per_tenant_class}, %{deployment_topology: :cellular}),
-      constraint(:cell_progressive_requires_cellular_topology, %{release_strategy: :cell_progressive}, %{deployment_topology: :cellular}),
-      constraint(:active_active_rejects_centralized_control, %{deployment_topology: :active_active}, %{}, %{control_plane: :centralized}),
-      constraint(:write_runtime_requires_replay, %{execution_mode: :receipted_write_runtime}, %{recovery_strategy: [:replay, :failover_replay]}),
-      constraint(:dual_write_requires_receipted_write, %{migration_strategy: :shadow_dual_write}, %{execution_mode: :receipted_write_runtime})
+      constraint(:cell_tenancy_requires_cellular_topology, %{tenancy_model: :cell_per_tenant_class}, %{
+        deployment_topology: :cellular
+      }),
+      constraint(:cell_progressive_requires_cellular_topology, %{release_strategy: :cell_progressive}, %{
+        deployment_topology: :cellular
+      }),
+      constraint(:active_active_rejects_centralized_control, %{deployment_topology: :active_active}, %{}, %{
+        control_plane: :centralized
+      }),
+      constraint(:write_runtime_requires_replay, %{execution_mode: :receipted_write_runtime}, %{
+        recovery_strategy: [:replay, :failover_replay]
+      }),
+      constraint(:dual_write_requires_receipted_write, %{migration_strategy: :shadow_dual_write}, %{
+        execution_mode: :receipted_write_runtime
+      })
     ]
 
     {:ok, space} = DfCM.new(dimensions, constraints, max_examined: 250_000, max_candidates: 10_000)
@@ -256,7 +270,7 @@ defmodule AshR2RML.Production do
       :brce_receipt_sha256
     ]
 
-    missing = Enum.reject(required, &(present?(fetch(authority, &1, nil))))
+    missing = Enum.reject(required, &present?(fetch(authority, &1, nil)))
 
     cond do
       not operational_ready?(admission) ->

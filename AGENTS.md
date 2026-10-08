@@ -13,7 +13,7 @@ AshR2RML is the W3C R2RML/RDF semantic-mapping and DfCM type-compiler layer for 
 
 Ash resource metadata, explicit semantic annotations, and ontology-first profiles must normalize into one deterministic mapping IR before verification/rendering. Ash-first and ontology-first workflows must converge on the same admitted semantic subject.
 
-Ownership remains explicit: Ash owns resource/action/domain semantics; relational data layers (`AshPostgres`, `Ash.DataLayer.Ets`) own persistence; AshR2RML owns semantic metadata, introspection, compile-time validation, normalized IR, R2RML rendering, and semantic type compilation; Ontop/OBDA owns virtual graph projection and SPARQL→SQL rewriting; `AshR2RML.OBDA.InMemory` owns in-process SPARQL execution over `Ash.DataLayer.Ets`-backed rows; Ash.Reactor owns saga/DAG execution and rollback; OCEL telemetry owns event-stream/trace reconstruction. Do not blur these boundaries.
+Ownership remains explicit: Ash owns resource/action/domain semantics; relational and other Ash data layers own persistence; AshR2RML owns semantic metadata, introspection, compile-time validation, normalized IR, R2RML rendering, and semantic type compilation; Ontop/OBDA owns virtual graph projection and SPARQL→SQL rewriting; `AshR2RML.OBDA.InMemory` owns in-process RDF materialization/SPARQL execution over real Ash reads from any supported Ash data layer; Ash.Reactor owns saga/DAG execution and rollback; OCEL telemetry owns event-stream/trace reconstruction. Do not blur these boundaries.
 
 ## Preserve → Fence → Calculus
 
@@ -41,7 +41,15 @@ Preserve native Ash.Reactor step contracts, dependency order/concurrency semanti
 
 ## Query backend security
 
-Both query backends must honor Ash field policies, structurally, not by an operator remembering to. `AshR2RML.OBDA.InMemory` is Ash-mediated (`Ash.read!/2`), so denied fields (`%Ash.ForbiddenField{}`) are omitted for real, and every IRI built from row data is validated or percent-encoded (fail-closed against Turtle/IRIREF injection). Ontop connects to `AshPostgres.DataLayer` directly over JDBC with no Ash actor context, so `AshR2RML.Security.sanitize_mapping/2` (wired into `AshR2RML.Compiler.compile_resources/1`) strips any R2RML-mapped attribute that carries an explicit `field_policy` from the mapping *before* it can be rendered or handed to Ontop — the exclusion is recorded in `mapping.metadata[:field_policy_excluded_attributes]` for auditability. This is a structural exclusion, not a refusal gate: it never blocks compilation, and it does not attempt to distinguish an unconditional `authorize_if always()` policy from a genuinely conditional one (no stable, version-independent Ash API for that exists as of this writing — investigated and confirmed via `documentation/jira_v26_8_25_ard.md`'s R2RML-106).
+Semantic publication has its own authority boundary. **Readable by an Ash process is not equivalent to admitted for RDF publication.** The governing invariant is `RDF disclosure ⊆ explicitly admitted Ash attribute disclosure`.
+
+`AshR2RML.OBDA.InMemory` is Ash-mediated (`Ash.read!/2`), so denied fields (`%Ash.ForbiddenField{}`) are omitted and row-derived IRIs are validated or percent-encoded. That is necessary but not sufficient: an Ash extension can replace an admitted attribute with a derived field that an ordinary read loads automatically. `ash_cloak` is the observed falsifier — it replaces a cloaked attribute with a sensitive decrypting calculation under the same public name, and `decrypt_by_default` causes ordinary reads to carry plaintext. Therefore `AshR2RML.Security.sanitize_in_memory_mapping/2` is an obligatory pre-materialization admission transform. Any mapped scalar name that no longer resolves through `Ash.Resource.Info.attribute/2` is removed before graph construction and recorded in `mapping.metadata[:in_memory_non_attribute_excluded_attributes]`. Calculations, aggregates, or extension-manufactured fields have no ambient RDF-publication authority merely because their values are loaded into the record struct.
+
+Ontop connects to `AshPostgres.DataLayer` directly over JDBC with no Ash actor context, so `AshR2RML.Security.sanitize_mapping/2` (wired into `AshR2RML.Compiler.compile_resources/1`) strips any R2RML-mapped attribute that carries an explicit `field_policy` from the mapping *before* it can be rendered or handed to Ontop — the exclusion is recorded in `mapping.metadata[:field_policy_excluded_attributes]` for auditability. This is a structural exclusion, not a refusal gate: it never blocks compilation, and it deliberately does not attempt to distinguish an unconditional `authorize_if always()` policy from a genuinely conditional one.
+
+## Federation
+
+`AshR2RML.Federation` (`lib/ash_r2rml/federation.ex`, `test/federation_test.exs`) is deterministic-artifact-identity substrate across named environments, not a deployment. Proves: `compile_for_environments/2` compiles the SAME admitted profile independently per admitted `Environment` and asserts byte-identical generated-artifact sha256 across environments sharing `compiler_version` + `admitted_ontology_sha256` — mechanically checked by hash equality, with real divergence (a mismatched `admitted_ontology_sha256`) named in the receipt, not averaged away. Does NOT prove: multi-tenant deployment, a network federation protocol, or any real customer environment — every "environment" is an in-process identity tuple compiled sequentially in one BEAM node.
 
 ## Work / verification
 
@@ -67,7 +75,7 @@ per "live tree evidence outranks stale prose" above.
 
 ```text
 Ash.Resource + Semantic Metadata → AshR2RML.Mapping (IR) → Relational DB + R2RML (W3C Turtle)
-                                                          → Ontop OBDA (Postgres) | AshR2RML.OBDA.InMemory (Ets)
+                                                          → Ontop OBDA (Postgres) | AshR2RML.OBDA.InMemory (Ash read)
 
 Ontology-first: RDF/OWL/SKOS/QUDT + Profile/SHACL → AshR2RML.SemanticTypes (DfCM Compiler)
                 → generated Ash.Type/Ash.Resource → AshR2RML.Mapping (IR) → W3C R2RML Turtle
@@ -76,6 +84,17 @@ Ontology-first: RDF/OWL/SKOS/QUDT + Profile/SHACL → AshR2RML.SemanticTypes (Df
 All compilation surfaces converge on: `AshR2RML.Mapping.{Resource, SubjectMap,
 PredicateObjectMap, ReferenceObjectMap, JoinCondition, Datatype, GraphMap}`,
 `AshR2RML.SemanticType{, .Plan}`.
+
+**Naming note**: `AshR2RML.SemanticIR` (`lib/ash_r2rml/semantic_ir.ex`) is the real
+ontology-first admitted compilation object — `ontology_hash`/`profile_hash`/`shacl_hash`
+plus `Identity`/`Attribute`/`Relationship`/`Action`/`Policy`/`Resource` submodules —
+sitting **upstream** of `AshR2RML.Mapping` in the ontology-first path shown above
+(`RDF/OWL/... → SemanticIR → generated Ash.Resource → AshR2RML.Mapping (IR) → projections`).
+It is not a synonym for `AshR2RML.Mapping`; the two are distinct, both-real stages of one
+pipeline. Anyone reading external material that calls "SemanticIR" the single canonical
+intermediate representation for the whole `Ash → projections` pipeline should read that as
+this two-stage reality: `AshR2RML.SemanticIR` for the ontology-first admitted object,
+`AshR2RML.Mapping` for the Ash-first/general mapping IR every compilation surface converges on.
 
 ### Core semantic correspondences
 
@@ -122,11 +141,12 @@ end
 
 ### Two query-execution backends
 
-- **`AshR2RML.OBDA.InMemory`** materializes `Ash.DataLayer.Ets` resources into a real
-  `RDF.Graph` via real `Ash.read!/2`, then runs full SPARQL (`SELECT`/`ASK`/`CONSTRUCT`/
-  `DESCRIBE`) through `AshR2RML.SPARQL.Local`/`SPARQL.ex`. Supports `materialize_many/2`/
-  `query_many/3` for cross-resource joins via `reference_object_maps`, including
-  composite-key (multi-column) `rr:joinCondition`s. `:join_table` many-to-many shape is an explicit typed refusal, not a silent omission.
+- **`AshR2RML.OBDA.InMemory`** materializes resources from any real Ash data layer reachable by
+  `Ash.read!/2` into a real `RDF.Graph`, after `sanitize_in_memory_mapping/2` closes derived-field
+  disclosure, then runs full SPARQL (`SELECT`/`ASK`/`CONSTRUCT`/`DESCRIBE`) through `AshR2RML.SPARQL.Local`/`SPARQL.ex`.
+  Supports `materialize_many/2`/`query_many/3` for cross-resource joins via `reference_object_maps`,
+  including composite-key (multi-column) `rr:joinCondition`s; a `:join_table` many-to-many shape is an explicit typed refusal, not a silent omission.
+  `allow_sensitive: true` opts into materializing `sensitive?: true` attributes; the default refuses instead.
 - **`AshR2RML.OBDA.Ontop`** executes the rendered R2RML mapping against `AshPostgres.DataLayer`
   via the Ontop CLI over JDBC. See "Query backend security" above for the security asymmetry
   between these two surfaces.
@@ -143,6 +163,39 @@ end
 `REFUSED_SEMANTIC_TYPE_ASH_MISMATCH`, `REFUSED_SEMANTIC_TYPE_REQUIRES_RESOURCE_PROJECTION`,
 `REFUSED_SEMANTIC_ROUND_TRIP`, `REFUSED_UNSUPPORTED_SPARQL_FEATURE`.
 
+Execution and resource-bound codes: `REFUSED_OBDA_EXECUTION` (the Ontop/OBDA engine failed or
+returned an unusable result), `REFUSED_RESOURCE_BOUND` (a request, row or size bound was exceeded;
+fail closed, never truncate silently).
+
+VKG codes (`lib/ash_r2rml/vkg/**`, all observe-only; see `usage-rules/vkg.md`):
+`REFUSED_VKG_MANIFEST` (source descriptor/manifest malformed or unreadable),
+`REFUSED_VKG_CONTRACT_SHAPE` (contract fails the federation-contract shape),
+`REFUSED_VKG_CONTRACT_IDENTITY` (contract identity, digest or exact-source binding mismatch),
+`REFUSED_VKG_SOURCE_IDENTITY` (source identity tuple malformed or not admitted),
+`REFUSED_VKG_SOURCE_DRIFT` (observed source no longer matches the admitted digest),
+`REFUSED_VKG_REGISTRY_AMBIGUOUS` (subject/source lookup is not unique),
+`REFUSED_VKG_QUERY_SCOPE` (unknown/malformed contract ids or request),
+`REFUSED_VKG_QUERY_PLAN` (plan or plan options malformed, plan digest mismatch, or plan not bound to the admitted catalog),
+`REFUSED_VKG_CAPABILITY` (requested capability is not declared by the contract/manifest),
+`REFUSED_VKG_COMPATIBILITY` (engine/contract compatibility not established),
+`REFUSED_VKG_EXECUTION` (bounded execution failed or engine returned a malformed shape),
+`REFUSED_VKG_REPLAY` (receipt/result/replay verification or receipt signature check failed),
+`REFUSED_VKG_AUTHORITY_ESCALATION` (anything above `:NONE` authority, i.e. any attempt at DO).
+
+The closure test `test/vkg/v26_9_28_docs_test.exs` greps `lib/ash_r2rml/vkg` for `REFUSED_*` atoms
+and fails if one is missing from `AshR2RML.Refusal.code()` or from this section.
+
+### Virtual Knowledge Graph (VKG) — observe-only
+
+`AshR2RML.VKG` (`lib/ash_r2rml/vkg.ex`, `lib/ash_r2rml/vkg/**`, data in `priv/vkg/**`, tests in
+`test/vkg/**`) is observe-only exact-source federation of Ontop-backed views:
+manifest → admitted catalog → deterministic plan → bounded execution → provenance-bearing result →
+receipt → replay verification. Normalize to the contract/plan IR first; verify (source identity,
+digests, shapes) second; execute third. Authority ceiling is `:NONE`: no DO, no source writes.
+It is **not** network federation and **not** `AshR2RML.Federation` (the in-process determinism
+substrate above). Failures are typed `REFUSED_VKG_*`. Engine execution uses the existing Ontop
+adapter; tests use `test/support/vkg_case.ex` fake engines only for engine-shape probes.
+
 ### Benchmarks and explanatory docs
 
 Real, reproducible benchmark numbers (compilation scaling, `AshR2RML.OBDA.InMemory` vs
@@ -151,6 +204,40 @@ Ontop+Postgres query latency) live in `bench/RESULTS.md`, generated by
 or engine outside AshR2RML's own supported stack (Ash, `Ash.DataLayer.Ets`, `AshPostgres`,
 Ontop) is ever benchmarked — see `bench/README.md`. `documentation/topics/why-ashr2rml.md`
 explains the product positioning grounded in those numbers.
+
+### Knowledge hooks
+
+`AshR2RML.KnowledgeHooks` admits a read-only predicate over the graph, evaluates it, and
+constructs a downstream `Intent` — it never actuates (`A = μ(O*)` boundary above). Eight
+predicate types are supported today, each with `admit/2` compile-time validation and
+`evaluate/2` runtime execution:
+
+| Type | What it observes | Typed refusal on malformed input |
+|---|---|---|
+| `:ask` | SPARQL `ASK` query truth value | `REFUSED_UNPROVEN_EQUIVALENCE` |
+| `:result_delta` | Change between successive `SELECT` result sets | `REFUSED_UNPROVEN_EQUIVALENCE` |
+| `:external_trigger` | An externally-supplied receipt (no in-repo query) | `REFUSED_UNPROVEN_EQUIVALENCE` |
+| `:shacl` | SHACL shape conformance for one or more focus nodes | `REFUSED_INVALID_SHACL_SHAPES_GRAPH` |
+| `:threshold` | A bound SPARQL variable compared against a numeric bound (`:gt`/`:gte`/`:lt`/`:lte`/`:eq`) | `REFUSED_INVALID_BOUND_PREDICATE` |
+| `:count` | Row count of a `SELECT` query compared against a numeric bound | `REFUSED_UNSUPPORTED_SPARQL_FEATURE` (non-`SELECT` form) |
+| `:temporal_window` | Every extracted `time_field` value in a `SELECT` result set compared against a caller-supplied `evaluated_at` over a `{unit, comparator, bound}` window | admission: malformed window/non-`SELECT` form is Blocked; evaluation without a real `evaluated_at`: `REFUSED_MISSING_EVALUATION_TIME` |
+| `:datalog` | A single non-recursive Datalog rule (`head(Vars) :- (S,P,O), ...`) joined by nested-loop substitution over `RDF.Data.statements/1` | `REFUSED_INVALID_DATALOG_RULE` (malformed, recursive, or unsafe) |
+
+`:threshold` and `:count` both admission-refuse an unsupported `comparator` atom with
+`REFUSED_INVALID_BOUND_PREDICATE`; `:shacl` refuses a shapes graph that fails to parse or an
+empty focus set with `REFUSED_INVALID_SHACL_SHAPES_GRAPH`. `:temporal_window` never falls back
+to an internal wall-clock read (no `DateTime.utcnow()`/`System.os_time()` inside the module) —
+`evaluated_at` must be supplied as a real `%DateTime{}` in `evaluate/2` opts, or the evaluation
+is refused rather than silently defaulting to "now." `:datalog` is a deliberate hand-written
+scoped subset (`AshR2RML.KnowledgeHook.Datalog`): single rule only, no recursion, no negation,
+no aggregation, no stratification — `deps/rdf` ships no Datalog engine and a full external
+Datalog dependency was left as a future scope decision, not adopted unilaterally.
+
+Real test coverage for all 8 predicate types (conforming/violating/malformed cases per type,
+real `RDF.Graph`/`RDF.Turtle` fixtures, real local-RDF SPARQL execution, zero mocks) lives in
+`test/knowledge_hooks_shacl_threshold_count_test.exs`,
+`test/knowledge_hooks_temporal_window_test.exs` (6 cases), and
+`test/knowledge_hooks_datalog_test.exs` (8 cases).
 
 ### Standing vocabulary
 

@@ -34,7 +34,7 @@ Semantic mapping metadata normalized into AshR2RML.Mapping
 
 
 
-### r2rml.class
+### r2rml.class {: #r2rml-class }
 ```elixir
 class iri
 ```
@@ -58,7 +58,7 @@ class iri
 
 
 
-### r2rml.subject
+### r2rml.subject {: #r2rml-subject }
 
 
 
@@ -82,7 +82,7 @@ class iri
 
 
 
-### r2rml.property
+### r2rml.property {: #r2rml-property }
 ```elixir
 property attribute, predicate_iri
 ```
@@ -116,7 +116,7 @@ property attribute, predicate_iri
 
 
 
-### r2rml.reference
+### r2rml.reference {: #r2rml-reference }
 ```elixir
 reference relationship, predicate_iri
 ```
@@ -147,7 +147,7 @@ reference relationship, predicate_iri
 
 
 
-### r2rml.graph
+### r2rml.graph {: #r2rml-graph }
 ```elixir
 graph iri
 ```
@@ -188,7 +188,7 @@ Declarative SPARQL query definitions compiled with the resource
 
 
 
-### sparql.query
+### sparql.query {: #sparql-query }
 ```elixir
 query name
 ```

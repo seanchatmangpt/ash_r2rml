@@ -50,7 +50,9 @@ defmodule AshR2RML.Production.Capabilities do
   def catalog do
     [
       cap(:ontology_profile_ingestion, :semantic_core, :parser, :select, :critical),
-      cap(:shacl_operational_closure, :semantic_core, :parser_and_falsifier, :select, :critical, [:ontology_profile_ingestion]),
+      cap(:shacl_operational_closure, :semantic_core, :parser_and_falsifier, :select, :critical, [
+        :ontology_profile_ingestion
+      ]),
       cap(:semantic_admission, :semantic_core, :unit_and_falsifier, :select, :critical, [:shacl_operational_closure]),
       cap(:canonical_semantic_ir, :semantic_core, :unit, :construct, :critical, [:semantic_admission]),
       cap(:canonical_mapping_ir, :semantic_core, :unit, :construct, :critical, [:canonical_semantic_ir]),
@@ -62,7 +64,11 @@ defmodule AshR2RML.Production.Capabilities do
       cap(:ash_projection, :semantic_projection, :compile, :construct, :high, [:canonical_semantic_ir]),
       cap(:postgres_projection, :semantic_projection, :integration, :construct, :high, [:canonical_semantic_ir]),
       cap(:deterministic_compilation, :manufacturing, :two_pass, :construct, :critical, [:canonical_mapping_ir]),
-      cap(:ggen_manufacturing, :manufacturing, :ggen_execution, :construct, :critical, [:deterministic_compilation, :r2rml_projection, :shacl_projection]),
+      cap(:ggen_manufacturing, :manufacturing, :ggen_execution, :construct, :critical, [
+        :deterministic_compilation,
+        :r2rml_projection,
+        :shacl_projection
+      ]),
       cap(:ggen_fail_closed_gates, :manufacturing, :ggen_execution, :construct, :critical, [:ggen_manufacturing]),
       cap(:ggen_two_pass_determinism, :manufacturing, :two_pass, :construct, :critical, [:ggen_fail_closed_gates]),
       cap(:staged_hash_verification, :manufacturing, :hash_witness, :construct, :high, [:ggen_two_pass_determinism]),
@@ -77,7 +83,10 @@ defmodule AshR2RML.Production.Capabilities do
       cap(:million_concurrency_target, :operations, :load, :runtime, :critical, [:horizontal_scale]),
       cap(:multi_zone_failover, :resilience, :chaos, :runtime, :critical, [:otp_fault_isolation]),
       cap(:multi_region_failover, :resilience, :chaos, :runtime, :critical, [:multi_zone_failover]),
-      cap(:disaster_recovery, :resilience, :dr_drill, :runtime, :critical, [:multi_region_failover, :deterministic_replay]),
+      cap(:disaster_recovery, :resilience, :dr_drill, :runtime, :critical, [
+        :multi_region_failover,
+        :deterministic_replay
+      ]),
       cap(:tenant_context, :security, :falsifier, :runtime, :critical, [:canonical_mapping_ir]),
       cap(:tenant_isolation, :security, :adversarial, :runtime, :critical, [:tenant_context]),
       cap(:residency_routing, :security, :adversarial, :runtime, :high, [:tenant_context]),
@@ -92,11 +101,17 @@ defmodule AshR2RML.Production.Capabilities do
       cap(:artifact_signature, :supply_chain, :signature, :construct, :critical, [:sbom]),
       cap(:provenance_attestation, :supply_chain, :attestation, :construct, :critical, [:artifact_signature]),
       cap(:dependency_security_audit, :supply_chain, :security_audit, :construct, :critical, [:sbom]),
-      cap(:supply_chain_integrity, :supply_chain, :attestation, :construct, :critical, [:provenance_attestation, :dependency_security_audit]),
+      cap(:supply_chain_integrity, :supply_chain, :attestation, :construct, :critical, [
+        :provenance_attestation,
+        :dependency_security_audit
+      ]),
       cap(:progressive_delivery, :release, :runtime_observation, :runtime, :high, [:observability]),
       cap(:rollback_drill, :release, :replay, :runtime, :critical, [:progressive_delivery, :deterministic_replay]),
       cap(:migration_dry_run, :release, :integration, :construct, :critical, [:postgres_projection]),
-      cap(:schema_semantic_drift_detection, :release, :falsifier, :select, :critical, [:canonical_semantic_ir, :migration_dry_run])
+      cap(:schema_semantic_drift_detection, :release, :falsifier, :select, :critical, [
+        :canonical_semantic_ir,
+        :migration_dry_run
+      ])
     ]
   end
 

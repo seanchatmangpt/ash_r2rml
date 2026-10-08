@@ -11,13 +11,219 @@ See [Conventional Commits](Https://conventionalcommits.org) for commit guideline
 
 <!-- changelog -->
 
-## [v26.8.26](https://github.com/seanchatmangpt/ash_r2rml/releases/tag/v26.8.26) (2026-08-31)
+## v26.10.8 (2026-10-08)
+
+### Changes:
+* Version bump 26.9.28 -> 26.10.8 (`3ed1cd6`).
+
+## v26.10.6 (2026-10-07)
+
+### Features:
+* **Differential graph projection (`Delta.diff/2`)** (`0d5320f`): ΔG = G_new \\ G_old as triple-set
+  algebra with set semantics on `{s,p,o}`; `root_digest` = sha256 over the sorted canonical
+  N-Triples form (RDFC-1.0 roots for bnode-bearing graphs route via graphlaw's wasm canonical op).
+  `materialize_many/2` gains `opts[:previous_graph]`; absent = byte-identical historical behavior.
+  Budget harness asserts the spec's <=20 ms at the 100-row tier directly (measured 1.5/4.5 ms) with
+  a linear-scaled outlier guard.
+* **Authority-free SA2A semantic-evidence docs (`AshR2RML.VKG.SA2AEvidence`)** (`98b9263`): the
+  `bdd82b2` evidence producer (v26.9.29) gains a `usage-rules/vkg.md` semantic-evidence section plus
+  a W685 AIRo ledger-pin court over real fixture bytes and the cross-repo xaas copy.
+
+### Integrity closure:
+* AIRo risk description and vocabulary pin (`b86a6a6`): `priv/airo_risk_description.ttl` plus a court
+  test (`test/airo_risk_description_test.exs`) and an AIRo vocabulary snapshot fixture
+  (`test/fixtures/airo_vocabulary_snapshot.ttl`) pinning the AIRo vocabulary.
+
+## v26.9.29 (2026-09-29)
+
+### Features:
+* **Authority-free SA2A semantic-evidence producer (`AshR2RML.VKG.SA2AEvidence`)** (`bdd82b2`): `from_source/2`
+  projects an exact VKG `SourceIdentity` into the portable `sa2a.semantic-evidence-envelope.v1` envelope
+  (contractVersion `v26.9.29`, RDFC-1.0 canonicalization) carrying subject, source identity, graph/replay/receipt
+  digests and a sealed `envelopeDigest`, with `authority: "NONE"` and `consequence: "EVIDENCE_ONLY"` — evidence
+  identity, provenance and replay material, never authorization or a DO capability. Malformed digests and
+  authority/consequence drift yield typed `AshR2RML.Refusal` errors; the nine identity/canonicalization gates in
+  `priv/sa2a/evidence/*_required.rq` pin the same contract.
+
+## [v26.9.28](https://github.com/seanchatmangpt/ash_r2rml/releases/tag/v26.9.28) (2026-09-28)
+
+### Features:
+* **Observe-only Virtual Knowledge Graph federation (`AshR2RML.VKG`)** (`d61c0db`): exact-source
+  federation of Ontop-backed views: manifest -> admitted catalog -> deterministic plan -> bounded
+  execution -> provenance-bearing result -> receipt -> replay verification. Data under `priv/vkg`
+  (10 source descriptors, mappings, contracts, queries, SHACL contract shape, ontology); code under
+  `lib/ash_r2rml/vkg/**`; tests under `test/vkg/**`. Authority ceiling is `:NONE` (observe-only, no
+  DO, no source writes). It is not network federation and is distinct from `AshR2RML.Federation`.
+  Consumers: `VKG.Consumer.Graphql`, `VKG.Consumer.Engineering`; `VKG.Batch` bounds request size.
+
+### Integrity closure (post-release-subject work, stream-based):
+* Typed refusal vocabulary closed: `AshR2RML.Refusal.code()` and the `AGENTS.md` vocabulary now
+  include all 13 `REFUSED_VKG_*` codes plus `REFUSED_OBDA_EXECUTION` and `REFUSED_RESOURCE_BOUND`.
+  A closure test (`test/vkg/v26_9_28_docs_test.exs`) greps `lib/ash_r2rml/vkg` so new codes cannot drift.
+* Docs: `usage-rules/vkg.md`, README and AGENTS.md sections stating the observe-only authority
+  ceiling; `docs/jira/v26.9.28` PRD/ARD; docs group "Virtual Knowledge Graph"; `AGENTS.md`,
+  `usage-rules.md` and `usage-rules/` now ship in the Hex package files list.
+* Other streams' hardening of the VKG lib is recorded in their own tests
+  (`test/vkg/v26_9_28_*_test.exs`).
+* Honesty note: the release workflow subject is frozen at `40d181f`; these changes land after that
+  subject and need a re-pin or the next release to be part of a published package.
+
+### Residual-risk closure (v26.9.28 post-subject, `test/vkg/v26_9_28_residual_test.exs`):
+* TOCTOU: `Executor` reads mapping/query/ontology bytes once, hashes the bytes, compares them with
+  the admitted stage digests, writes them to a private temp directory and runs the engine on the
+  snapshot paths only; the directory is removed afterwards.
+* Hand-built plans: `Executor.execute/2` binds a plan to a catalog (`plan.catalog` set by the
+  planner, or the `:catalog` option) and re-resolves every stage; arbitrary paths/digests are refused
+  with `REFUSED_VKG_QUERY_PLAN` / `REFUSED_VKG_SOURCE_DRIFT`, and plans with no binding are refused.
+  `VKG.query/2` is unchanged. `Planner.stage_for/1` is public.
+* The requested capability is forwarded to `Engine.Ontop` as `required_capabilities`
+  (`OBDA.Capabilities` now knows the query capabilities select/filter/join/aggregate); every stage
+  must carry `ontology_sha256` or none may, and the plan's ontology digest must derive from its stages.
+* Plan and executor observation digests use the injective canonical JSON encoding instead of
+  `term_to_binary` (plan/observation digests change); the encoding tags atoms, dates, times,
+  decimals, tuples and escapes user maps with `"$"`-prefixed keys or colliding keys, and
+  `Serializer.decode_value/1` reverses the tags. Docs no longer describe the encoding as lossy.
+* `Serializer.decode_receipt/1` and the receipt integrity check derive the accepted standings from
+  `Result.standings/0`, the single source of truth.
+* Optional receipt signing: `Receipt.sign/2` (HMAC-SHA256 shared-key MAC, not a public-key
+  signature) and `key:` / `require_signature:` on `Receipt.verify`, `Replay.verify`,
+  `Session.verify`, `VKG.verify`, `Receipt.chain_valid?` and `Serializer.verify_receipt_json`;
+  the receipt JSON carries the signature. Unsigned receipts stay valid unless required.
+* `Executor.replay/3` is a documented public function that verifies recorded evidence against the
+  plan (recomputed observation digests, live standing only for `:ontop` system processes).
+* `Inspection.snapshot/1` and `Inspection.catalog/1` surface `ontology_sha256`; `VKG.Batch` refuses
+  malformed input with typed refusals; `Consumer.Engineering` tolerates non-map rows.
+* Docs closure test reads the `Refusal.code()` type through `Code.Typespec`, not the source text.
+* CHANGELOG correction: the "26.9.13 - 26.9.25" summary below now states which versions have
+  release commits (verified with `git log`).
+
+* **Breaking receipt format change**: receipts now seal result standing, observation evidence
+  (`evidence_sha256_by_contract`), and a strict integer `row_count`; `Receipt.standing` derives
+  from the result. Receipts sealed before this change do not verify. Live standing is stamped only
+  for the trusted Ontop engine path; other engines yield `:test_double_only`. Receipts are unsigned
+  by default; optional shared-key signing is described in the residual-risk closure above. Without
+  a key, a party that re-seals receipt, result and observations together can forge a
+  self-consistent chain.
+
+### Summary of 26.9.13 - 26.9.27 (no separate entries were written at the time; from git history):
+* Release commits ("bump: release ...") exist only for 26.9.12 (`f2dae0c`), 26.9.24 (`616644d`) and
+  26.9.28 (`40d181f`). 26.9.13 - 26.9.23 and 26.9.26 - 26.9.27 have no release commits, and 26.9.25
+  has fix commits but no release commit. The repository has no git tags in this checkout, so tag
+  presence cannot be confirmed from it.
+* 26.9.24: GALL-009 runtime-feedback-admission PRD/ARD closed as FINAL_SPEC (`07d3ac1`); missing
+  `:neo4j_postgres` `attach_parity_witness` compiler clause added (`241342a`); merges of the
+  knowledge-hooks, ws5-learning and release/v26.8.26 lines into main; AGENTS.md line-wrap repair;
+  release workflow tag/license fixes.
+* 26.9.25: Ontop compliance probes and crown fixes (`bb66c20`, `e794a33`, `2257f2c`), including
+  `lang()` over VALUES and refusing millennium-from-dateTime as published-but-refused by Ontop 5.5.0
+  (`2e82d00`); OBDA tuple-key JSON fix and format/REUSE fixes (`4e8f14e`).
+* 26.9.26 - 26.9.27: no commits of any kind found in git history.
+
+## [Earlier unreleased block — was targeting 26.9.12, superseded by the 26.9.28 entry above]
+
+### Features:
+* **Knowledge-hook predicate closure — 8 predicate types (`AshR2RML.KnowledgeHooks`)**: added
+  `:shacl` (SHACL shape conformance over one or more focus nodes, `REFUSED_INVALID_SHACL_SHAPES_GRAPH`),
+  `:threshold` and `:count` (bound SPARQL `SELECT` variable / row count vs. a numeric bound,
+  `REFUSED_INVALID_BOUND_PREDICATE`), `:temporal_window` (every extracted `time_field` value
+  compared against a caller-supplied `evaluated_at` over a `{unit, comparator, bound}` window —
+  never an internal wall-clock read; missing `evaluated_at` is `REFUSED_MISSING_EVALUATION_TIME`,
+  not a silent "now" default), and `:datalog` (`AshR2RML.KnowledgeHook.Datalog`, a deliberately
+  scoped hand-written single-rule evaluator — no recursion/negation/aggregation/stratification —
+  joined by nested-loop substitution over `RDF.Data.statements/1`; malformed/recursive/unsafe
+  rules refuse with `REFUSED_INVALID_DATALOG_RULE`). This closes out the two predicate types
+  named as open gaps in the prior release (`:temporal_window`, `:datalog`), bringing the total
+  to 8 (`:ask`, `:result_delta`, `:external_trigger`, `:shacl`, `:threshold`, `:count`,
+  `:temporal_window`, `:datalog`). Real Chicago-style test coverage, zero mocks, real
+  `RDF.Graph`/`RDF.Turtle` fixtures: `test/knowledge_hooks_shacl_threshold_count_test.exs`,
+  `test/knowledge_hooks_temporal_window_test.exs` (6 cases), `test/knowledge_hooks_datalog_test.exs`
+  (8 cases). `mix compile --warnings-as-errors` clean; full suite `693 tests, 6 failures`, all 6
+  pre-existing live-Ontop/Postgres row-count adversarial failures unrelated to this work and in
+  files this change never touched.
+* **Auto-projected GraphQL over the same admitted subject (`feat/graphql-query-only-projection`)**:
+  query-only GraphQL projection derived from the same `AshR2RML.SemanticIR`/mapping admission
+  path used for R2RML rendering, so a resource's semantic mapping produces GraphQL, R2RML, and
+  SPARQL surfaces from one admitted subject rather than three independently maintained ones. See
+  `lib/ash_r2rml/graphql.ex`, `lib/ash_r2rml/semantic_graphql.ex`,
+  `test/graphql_query_only_projection_test.exs`, `test/graphql_auto_projection_test.exs`,
+  `test/semantic_graphql_dfcm_test.exs`, `test/graphql_short_name_collision_test.exs`.
+* **`AshR2RML.SemanticIR` naming clarification**: the intermediate representation module used by
+  both the Ash-first and ontology-first compilation paths (`AshR2RML.SemanticIR.{Resource,
+  Attribute, Relationship, Identity, Action, Policy}`) is named and documented explicitly as the
+  shared IR both paths converge on, distinguishing it from the R2RML rendering stage downstream
+  of it (`lib/ash_r2rml/semantic_ir.ex`, `lib/ash_r2rml/admission.ex`).
+* **Palantir/Kudzu single-object migration demonstration**: a real, executed cross-repo proof
+  (`ash_kudzu` at commit `44ec739`, real path dependency on this repo's `test/support` fixtures,
+  real `AshKudzu.Introspector`/admission calls, no mocks) that `AshR2RML`'s SHACL-derived
+  admission path composes with `ash_kudzu`'s own introspection/admission pipeline across repo
+  boundaries. See `documentation/topics/palantir_kudzu_migration.md`,
+  `test/palantir_migration_demonstration_test.exs`.
+* **`AshR2RML.Federation` determinism module**: `admit_environment/1` admits a named environment
+  identity (`name`, `compiler_version`, `admitted_ontology_sha256`) or refuses a malformed one;
+  `compile_for_environments/2` compiles the same admitted semantic profile independently per
+  environment and returns a `FederationReceipt` asserting byte-identical generated-artifact
+  identity (sha256 over compiled Ash/Ecto/DDL/R2RML/SHACL output) across every environment
+  sharing compiler+ontology identity, naming exactly which environment diverges otherwise.
+  In-process determinism substrate only — explicitly **not** network federation, multi-tenant
+  deployment, or a real customer environment (`README.md` "Federation" section states this
+  distinction; do not read it as an enterprise-deployment claim). See
+  `lib/ash_r2rml/federation.ex`, `test/federation_test.exs`.
+
+### Documentation:
+* `documentation/how_to/knowledge_hooks.md` extended to document all 8 predicate types
+  (previously covered only `:ask`/`:result_delta`/`:external_trigger`), with real usage examples
+  for `:threshold`/`:count`/`:shacl`/`:temporal_window`/`:datalog`.
+* `AGENTS.md` "Knowledge hooks" section updated: predicate table extended from 6 to 8 rows,
+  `:temporal_window`/`:datalog` moved out of the "explicitly open, not-yet-designed" list (now
+  real and tested) into the main table with their typed refusal codes.
+* `README.md`: added a "Knowledge hooks" section and a "Status" section stating this repo's real
+  PARTIAL_ALIVE capability and named gaps explicitly (no Fortune-500/enterprise-deployed framing
+  anywhere), plus documentation links for the knowledge-hooks how-to and the Palantir/Kudzu
+  migration demonstration.
 
 ### Security:
 * **Sensitive-attribute plaintext leak into `AshR2RML.OBDA.InMemory` closed (R2RML-109)**: an attribute marked `sensitive?: true` on the Ash resource (Ash core's own redaction flag) previously materialized its real plaintext value into the RDF graph exactly like any other attribute — `Ash.read!/2` returns the real value for a `sensitive?: true` field, unlike a field-policy denial, which Ash itself replaces with a `%Ash.ForbiddenField{}` sentinel that materialization already omits. `AshR2RML.OBDA.InMemory.materialize/3`/`materialize_many/2` now check every predicate-object-mapped attribute against `Ash.Resource.Info.attribute/2`'s `sensitive?` flag and refuse (new typed `:REFUSED_SENSITIVE_ATTRIBUTE_MATERIALIZATION` code) rather than materialize by default; pass `allow_sensitive: true` to opt in explicitly.
 
 ### Deferred:
 * **`Ash.Type.Range` → constraint-aware R2RML mapping (part of this trial's original scope, blocked at execution time)**: `Ash.Type.Range` does not exist in this repo's currently locked Ash version (3.29.3; confirmed absent — `deps/ash/lib/ash/type/range.ex` does not exist in this dependency tree). Upgrading Ash to unlock it was out of scope for this trial (no dependency-version-bump approval sought). Left for a future release alongside an Ash upgrade.
+
+## [v26.8.29](https://github.com/seanchatmangpt/ash_r2rml/releases/tag/v26.8.29) (2026-08-28)
+
+### Dependency Updates:
+* `mix deps.update --all`: `ash` 3.29.3 -> 3.32.1, `igniter` 0.8.2 -> 0.8.3, `reactor` 1.0.2 -> 1.0.6, `spark` 2.7.2, `ex_ast` 0.13.1, plus transitive `ecto`/`req`/`mint`/etc bumps. Unlocks `Ash.Type.Range`/`Ash.Type.Duration` (deferred as a candidate in v26.8.28 pending this upgrade).
+
+### Features:
+* **`:duration` datatype mapping**: `AshR2RML.Datatype.Registry` now maps `:duration` / `Ash.Type.Duration` (Ash's builtin ISO-8601-style duration type, added upstream in 3.23) to `xsd:duration`, so resources with duration attributes get a real R2RML/RDF mapping instead of `UNSUPPORTED_ASH_TYPE`.
+
+### Deferred:
+* `Ash.Type.Range` was evaluated but not mapped this release: unlike every other registry entry, it is a parameterized type (`inner_type`/`inner_constraints`/bound-inclusivity constraints, not a fixed atom shorthand), so a lawful mapping needs a real constraint-aware R2RML rendering path (e.g. `xsd:date`/`xsd:dateTime` interval literals or decomposition into `owl-time`-style bound properties), not just a registry table entry. Left `UNSUPPORTED_ASH_TYPE` rather than a lossy placeholder mapping.
+
+## [v26.8.28](https://github.com/seanchatmangpt/ash_r2rml/releases/tag/v26.8.28) (2026-08-28)
+
+### Features & Architectural Highlights:
+* **`AshR2RML.Introspection.Manifest`**: a real, additive wrapper around `Ash.Info.manifest/1` (Ash >= 3.25's built-in codegen-oriented introspection API), producing a whole-application `resource_lookup` map (module -> fields/relationships/identities) for tooling and ggen-pack scaffolding use cases, without touching `AshR2RML.Compiler`'s existing per-resource `Ash.Resource.Info` mapping-IR pipeline. Refuses with a typed `:REFUSED_MANIFEST_GENERATION` `AshR2RML.Refusal` rather than propagating `Ash.Info.Manifest.generate/1`'s raw `{:error, term()}` shape.
+* **`mix ash_r2rml.install --target` is now idempotent**: uses Igniter 0.8's `Igniter.Code.Pattern.move_to/2` (ExAST pattern matching) to search the target module for an existing `r2rml do ... end` block before inserting a starter one, so re-running the installer against an already-patched module no longer duplicates the block.
+
+### Research:
+* Ran a deep-research pass over the current Ash/Reactor/Igniter ecosystem (Ash 3.29.3, Igniter 0.8.2 as locked in this repo) to identify capabilities worth adopting. Landed the two above; explicitly deferred `Ash.Type.Range`/`Duration` (Ash 3.32, not yet in this repo's locked Ash version) as a candidate for a future release once upgraded, for `xsd:duration`/interval R2RML literal mapping.
+
+## [v26.8.27](https://github.com/seanchatmangpt/ash_r2rml/releases/tag/v26.8.27) (2026-08-27)
+
+### Features & Architectural Highlights:
+* **`AshR2RML.Mapping.Changeset` / `AshR2RML.RDF.GraphAlgebra`**: a structured `add`/`update`/`replace`/`remove` diff algebra between two `RDF.Graph` snapshots (e.g. two successive R2RML Turtle renders, or two `AshR2RML.OBDA.InMemory.materialize/3` snapshots), with mutual-exclusion validation and inversion. Ported from the Gno RDF library's `Gno.Changeset` action algebra, stripped of the live-triple-store-diff half AshR2RML has no store to run (Ontop is virtual OBDA, never a materialized graph).
+* **`AshR2RML.OBDA.Adapter`**: a behaviour + typed configs (`OntopConfig`, `InMemoryConfig`) unifying dispatch to AshR2RML's two independently-evolved OBDA engines, modeled on Gno's `Gno.Store.Adapter` struct-type dispatch pattern, without the SPARQL-protocol-endpoint machinery AshR2RML has no use for.
+* **`mix ash_r2rml.install --target`**: the Igniter installer now optionally patches a named `Ash.Resource` module directly — adding `AshR2RML.Resource` to its `extensions:` list via `Spark.Igniter.add_extension/6` and inserting a starter `r2rml do end` block — instead of only ever printing manual instructions.
+
+### Bug Fixes:
+* fixed `mix ash_r2rml.install --target` crashing with a `SyntaxError`/`CaseClauseError` on any target module (the extension patch attempted to splice a bare `extensions: [...]` keyword fragment as standalone source, and the starter-block patch didn't wrap its zipper result in the `{:ok, _}` shape `Igniter.Project.Module.find_and_update_module!/3` requires); caught by a new real `Igniter.Test.test_project/1`-based test suite (`test/mix/tasks/ash_r2rml_install_test.exs`), not by inspection.
+* corrected the `ash-r2rml-pack` ggen pack's `[pack] name` (`ash-r2ml-pack` → `ash-r2rml-pack`).
+
+## [v26.8.26](https://github.com/seanchatmangpt/ash_r2rml/releases/tag/v26.8.26) (2026-08-25)
+
+### Features & Architectural Highlights:
+* **Confirmed `AshR2RML.OBDA.InMemory` data-layer agnosticism**: `materialize/3` has no data-layer gate at all (`rows_for/3` just calls `Ash.read!/2`) — proven for real against `AshCsv.DataLayer` (a real CSV file on disk) and `AshCubDB.DataLayer` (a real CubDB store), zero code changes needed for either. Corrected the module's moduledoc, which previously undersold this generality by calling itself "ETS-side".
+* **`AshR2RML.Ggen.compile_api_bundle/2`**: auto-derives minimal, verified-compilable `graphql do ... end` / `json_api do ... end` blocks from the same mapping IR that already drives `r2rml`'s `class_iri`/`table_name`, confirmed by actually `Code.eval_string/1`-ing the generated source and checking `AshGraphql.Resource.Info.type/1` / `AshJsonApi.Resource.Info.type/1` against it.
+* Five sourced research investigations into other Ash extensions, most notably a HIGH-severity gap: `ash_cloak`'s `decrypt_by_default` option can cause `AshR2RML.OBDA.InMemory` to silently materialize decrypted plaintext into the RDF graph via a plain `Ash.read!/2` — ticketed as `R2RML-109`, not yet fixed as of this release.
 
 ## [v26.8.25](https://github.com/seanchatmangpt/ash_r2rml/releases/tag/v26.8.25) (2026-08-25)
 

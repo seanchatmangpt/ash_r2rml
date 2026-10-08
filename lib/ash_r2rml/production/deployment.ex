@@ -44,6 +44,7 @@ defmodule AshR2RML.Production.Deployment do
       cells: [],
       invariants: []
     ]
+
     @type t :: %__MODULE__{}
   end
 
