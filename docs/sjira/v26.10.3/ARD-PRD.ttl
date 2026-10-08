@@ -1,0 +1,203 @@
+@prefix sj: <https://ggen-igniter.dev/ontology/semantic-jira#> .
+@prefix prd: <https://ggen-igniter.dev/ash_r2rml/v26.10.3/prd#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+# Local PRD vocabulary (terms not defined in the sj: ontology).
+prd:Goal a rdfs:Class ; rdfs:label "PRD goal" .
+prd:requirement a rdf:Property ; rdfs:range sj:AcceptanceCriterion .
+prd:exclusion a rdf:Property .
+prd:version a rdf:Property .
+
+# AshR2RML v26.9.28 Product Requirements Document as RDF/Turtle.
+# Grounded exclusively in in-repo capabilities and their cited test paths.
+# This graph authors NO sj:WorkOrder and NO sj:Receipt. Factual descriptions
+# only; nothing in this graph carries execution authority or claims standing
+# beyond what the cited test files actually witness.
+
+prd:project a sj:GoalCheckpoint ;
+    dcterms:identifier "PRD-ASHR2RML-26.9.28" ;
+    rdfs:label "AshR2RML v26.9.28 Product Requirements Document" ;
+    dcterms:title "AshR2RML — ontology-first semantic mappings for Ash" ;
+    dcterms:description "AshR2RML is an Ash extension that compiles Ash resources and relationships into standards-valid W3C R2RML mappings. PostgreSQL remains the operational store; R2RML defines a semantic projection over it, so the same admitted subject is exposed as RDF through a compatible OBDA/R2RML engine. It is not a graph database, not an Ash.DataLayer, and not a SPARQL engine." ;
+    sj:repository "seanchatmangpt/ash_r2rml" ;
+    prd:version "26.9.28" ;
+    sj:evidenceCeiling "PARTIAL_ALIVE" ;
+    sj:authorityCeiling "CONSTRUCT" ;
+    dcterms:hasPart
+        prd:goal-r2rml-compilation,
+        prd:goal-obda-parity,
+        prd:goal-in-memory-roundtrip,
+        prd:goal-sparql-local,
+        prd:goal-iri-injection-refusal,
+        prd:goal-typed-refusals,
+        prd:goal-delta-diff,
+        prd:goal-test-suite,
+        prd:goal-limitations .
+
+# ---------------------------------------------------------------------------
+# Goal 1: R2RML compilation from Ash resources
+# ---------------------------------------------------------------------------
+prd:goal-r2rml-compilation a prd:Goal ;
+    rdfs:label "R2RML compilation from Ash resources" ;
+    dcterms:description "AshR2RML introspects Ash resources, their data layer metadata, attributes, identities, and relationships and compiles them into a normalized mapping rendered as W3C R2RML Turtle: rr:TriplesMap with rr:logicalTable, rr:subjectMap (rr:template, rr:class, rr:termType rr:IRI), rr:predicateObjectMap with column object maps and datatypes, and join-derived rr:RefObjectMap for relational relationships. Mappings that cannot be derived without inventing semantics are refused." ;
+    prd:requirement prd:req-r2rml-render ;
+    sj:falsifier prd:fals-r2rml-invalid-shape,
+        prd:fals-r2rml-join-lost .
+
+prd:req-r2rml-render a sj:AcceptanceCriterion ;
+    rdfs:label "R2RML render requirement" ;
+    dcterms:description "AshR2RML.R2RML.render/1, given resources with declared r2rml blocks, emits Turtle equivalent in shape to hand-written rr:TriplesMap output: logical table, subject template with rr:IRI term type, attribute predicates with datatypes, and reference object maps with rr:joinCondition (child/parent) for belongs_to relationships." .
+
+prd:fals-r2rml-invalid-shape a sj:Falsifier ;
+    rdfs:label "Invalid R2RML shape falsifies the compilation goal" ;
+    dcterms:description "Rendered mapping output for a resource with a declared r2rml block omits logicalTable/subjectMap/predicateObjectMap structure or fails to parse as valid Turtle." .
+
+prd:fals-r2rml-join-lost a sj:Falsifier ;
+    rdfs:label "Lost join semantics falsify relationship compilation" ;
+    dcterms:description "A belongs_to relationship with a declared rdf predicate fails to produce an rr:RefObjectMap with the child/parent join condition derived from relational metadata, or the compiler silently invents join columns not present in the resource." .
+
+# ---------------------------------------------------------------------------
+# Goal 2: OBDA backends with adversarial Ontop+Postgres parity
+# ---------------------------------------------------------------------------
+prd:goal-obda-parity a prd:Goal ;
+    rdfs:label "OBDA backends with Ontop+Postgres adversarial parity" ;
+    dcterms:description "AshR2RML ships two OBDA execution backends: AshR2RML.OBDA.InMemory over Ash.DataLayer.Ets, and AshR2RML.OBDA.Ontop over AshPostgres plus Ontop plus JDBC. The adversarial parity tests run the same SPARQL query against the in-repo engine and against Ontop over a real PostgreSQL, canonicalize RDF terms on both sides, and compare results differentially." ;
+    prd:requirement prd:req-parity-court ;
+    sj:falsifier prd:fals-parity-divergence .
+
+prd:req-parity-court a sj:AcceptanceCriterion ;
+    rdfs:label "Differential SPARQL parity requirement" ;
+    dcterms:source "test/adversarial/ontop_postgres_test.exs" ,
+        "test/adversarial/sparql_parity_test.exs" ;
+    dcterms:description "test/adversarial/ontop_postgres_test.exs and test/adversarial/sparql_parity_test.exs execute identical SPARQL queries against the in-repo OBDA engine and against Ontop over real PostgreSQL, canonicalize RDF terms, and assert set equality of results." .
+
+prd:fals-parity-divergence a sj:Falsifier ;
+    rdfs:label "Divergent canonicalized results falsify parity" ;
+    dcterms:description "For a shared fixture subject and mapping, the in-repo OBDA engine and Ontop+Postgres return different canonicalized RDF term sets for the same SPARQL query; or the parity claim is repeated in a context where the Postgres leg was skipped without the skip being surfaced." .
+
+# ---------------------------------------------------------------------------
+# Goal 3: In-memory ETS to RDF to SPARQL roundtrip
+# ---------------------------------------------------------------------------
+prd:goal-in-memory-roundtrip a prd:Goal ;
+    rdfs:label "In-memory ETS-to-RDF-to-SPARQL roundtrip" ;
+    dcterms:description "AshR2RML.OBDA.InMemory executes compiled mappings over Ash.DataLayer.Ets resources with no external process: facts written through Ash actions project to RDF, SPARQL runs locally, and the same facts are observable through both the Ash and SPARQL surfaces." ;
+    prd:requirement prd:req-ets-roundtrip ;
+    sj:falsifier prd:fals-ets-roundtrip-loss .
+
+prd:req-ets-roundtrip a sj:AcceptanceCriterion ;
+    rdfs:label "ETS roundtrip requirement" ;
+    dcterms:description "A fact created through an Ash action on an Ets-backed resource with a compiled mapping is returned by a SPARQL query against AshR2RML.OBDA.InMemory with matching subject IRI, predicate, and typed object term, without any Postgres or Ontop dependency." .
+
+prd:fals-ets-roundtrip-loss a sj:Falsifier ;
+    rdfs:label "Roundtrip loss falsifies the in-memory goal" ;
+    dcterms:description "A fact visible through Ash on an Ets-backed resource is absent, mistyped, or mis-IRI'd in SPARQL results over the same subject, or the roundtrip requires an external database process." .
+
+# ---------------------------------------------------------------------------
+# Goal 4: SPARQL.ex local engine execution
+# ---------------------------------------------------------------------------
+prd:goal-sparql-local a prd:Goal ;
+    rdfs:label "SPARQL execution via the local SPARQL.ex engine" ;
+    dcterms:description "SPARQL query evaluation over the projected RDF graph uses the SPARQL.ex library's local engine; no remote SPARQL endpoint or triplestore is required for in-memory execution." ;
+    prd:requirement prd:req-local-engine ;
+    sj:falsifier prd:fals-local-endpoint-dependency .
+
+prd:req-local-engine a sj:AcceptanceCriterion ;
+    rdfs:label "Local engine requirement" ;
+    dcterms:description "SPARQL queries execute in-process over RDF graphs produced by AshR2RML projections using SPARQL.ex, with results asserted directly in Elixir tests without any network endpoint." .
+
+prd:fals-local-endpoint-dependency a sj:Falsifier ;
+    rdfs:label "Hidden endpoint dependency falsifies the local-engine goal" ;
+    dcterms:description "A SPARQL execution path in the in-memory backend requires a running remote endpoint, triplestore, or network service to return results." .
+
+# ---------------------------------------------------------------------------
+# Goal 5: IRI-injection adversarial refusals
+# ---------------------------------------------------------------------------
+prd:goal-iri-injection-refusal a prd:Goal ;
+    rdfs:label "IRI-injection adversarial refusals" ;
+    dcterms:description "Subject templates and identifiers that would allow injection of attacker-controlled IRIs (for example via interpolated column values or template fragments that break out of the intended IRI namespace) are refused at mapping or execution time with typed refusals rather than emitted into the graph." ;
+    prd:requirement prd:req-injection-refused ;
+    sj:falsifier prd:fals-injection-emitted .
+
+prd:req-injection-refused a sj:AcceptanceCriterion ;
+    rdfs:label "IRI injection refusal requirement" ;
+    dcterms:description "Adversarial inputs attempting IRI injection produce typed refusals; no triple with an injected foreign IRI enters the projected graph in the refusal test corpus." .
+
+prd:fals-injection-emitted a sj:Falsifier ;
+    rdfs:label "Emitted injected IRI falsifies the refusal goal" ;
+    dcterms:description "An adversarial IRI-injection input yields a projected triple containing the injected IRI instead of a typed refusal." .
+
+# ---------------------------------------------------------------------------
+# Goal 6: Typed refusal vocabulary for unsupported mapping strategies
+# ---------------------------------------------------------------------------
+prd:goal-typed-refusals a prd:Goal ;
+    rdfs:label "Typed refusal vocabulary for unsupported mapping strategies" ;
+    dcterms:description "Unsupported mapping strategies refuse with named, typed codes rather than silent fallbacks. The repository declares 14 mapping refusal codes plus 4 knowledge-hook refusal codes, including UNSUPPORTED_ASH_TYPE for Ash types without an R2RML datatype mapping (for example Ash.Type.Range)." ;
+    prd:requirement prd:req-refusal-codes ;
+    sj:falsifier prd:fals-silent-fallback .
+
+prd:req-refusal-codes a sj:AcceptanceCriterion ;
+    rdfs:label "Typed refusal code requirement" ;
+    dcterms:description "Each declared refusal code is emitted by the compiler for its corresponding unsupported input class, and unsupported input classes do not produce permissive default mappings." .
+
+prd:fals-silent-fallback a sj:Falsifier ;
+    rdfs:label "Silent fallback falsifies the refusal goal" ;
+    dcterms:description "An input class with a declared refusal code compiles successfully into a default/invented mapping instead of refusing, or a refusal is returned as an untyped string." .
+
+# ---------------------------------------------------------------------------
+# Goal 7: Delta.diff differential graph projection
+# ---------------------------------------------------------------------------
+prd:goal-delta-diff a prd:Goal ;
+    rdfs:label "Delta.diff differential graph projection" ;
+    dcterms:description "AshR2RML.Delta.diff computes the difference between two projected RDF graphs, supporting observation of how the semantic projection changes as the underlying relational state changes." ;
+    prd:requirement prd:req-delta-observe ;
+    sj:falsifier prd:fals-delta-wrong .
+
+prd:req-delta-observe a sj:AcceptanceCriterion ;
+    rdfs:label "Delta observation requirement" ;
+    dcterms:description "Given two projections of the same subject at different relational states, Delta.diff reports exactly the added and removed triples between them." .
+
+prd:fals-delta-wrong a sj:Falsifier ;
+    rdfs:label "Incorrect delta falsifies the differential goal" ;
+    dcterms:description "Delta.diff omits a changed triple, reports an unchanged triple as changed, or reports a changed triple as unchanged." .
+
+# ---------------------------------------------------------------------------
+# Goal 8: Test suite standing
+# ---------------------------------------------------------------------------
+prd:goal-test-suite a prd:Goal ;
+    rdfs:label "Test suite standing" ;
+    dcterms:description "The repository's mix test suite is the evidence surface for this document: 998 tests, 0 failures at the version recorded here. Per the repository's own README, the cited test files and their actual passing runs — not this document — are the evidence." ;
+    prd:requirement prd:req-suite-green ;
+    sj:falsifier prd:fals-suite-red .
+
+prd:req-suite-green a sj:AcceptanceCriterion ;
+    rdfs:label "Suite requirement" ;
+    dcterms:description "mix test reports 0 failures on the canonical checkout at the recorded version, excluding tests explicitly documented as Docker/Ontop-preconditioned." .
+
+prd:fals-suite-red a sj:Falsifier ;
+    rdfs:label "Failing suite falsifies the standing claim" ;
+    dcterms:description "mix test on the canonical checkout reports any failure in a test not documented as environment-preconditioned, or the 998-test count no longer matches the actual suite." .
+
+# ---------------------------------------------------------------------------
+# Honest limitations
+# ---------------------------------------------------------------------------
+prd:goal-limitations a prd:Goal ;
+    rdfs:label "Documented limitations" ;
+    dcterms:description "Limitations stated by the repository itself, carried here so the PRD does not overclaim." ;
+    prd:requirement prd:req-docker-precondition ;
+    prd:exclusion
+        "The Postgres leg of the Ontop parity tests is Docker-preconditioned: it requires a running local Postgres+Ontop stack and is not run in every environment; default mix test runs do not include an always-on persistent-Postgres demo.",
+        "AshR2RML.Federation proves deterministic artifact identity across in-process environment configs only; it does not implement network federation, multi-tenant deployment, or any real customer environment.",
+        "Ash.Type.Range has no R2RML datatype mapping (UNSUPPORTED_ASH_TYPE); the parameterized-type rendering path is not built.",
+        "The :datalog knowledge-hook predicate is a scoped single-rule evaluator (no recursion, negation, aggregation, or stratification), not a general Datalog engine.",
+        "AshR2RML does not replace AshPostgres or any Ash data layer, does not store RDF triples itself, does not implement a SPARQL optimizer, and does not infer arbitrary OWL semantics." .
+
+prd:req-docker-precondition a sj:AcceptanceCriterion ;
+    rdfs:label "Precondition disclosure requirement" ;
+    dcterms:description "Every claim in this document whose evidence depends on a running Postgres+Ontop stack names that precondition in its goal, and no such claim is counted as witnessed by a default mix test run." .
+
+prd:fals-limitation-hidden a sj:Falsifier ;
+    rdfs:label "Hidden precondition falsifies the disclosure goal" ;
+    dcterms:description "A claim in this document cites Postgres/Ontop-dependent evidence without naming the Docker precondition, or the repository removes its named-gaps disclosure while this PRD still asserts full coverage." .

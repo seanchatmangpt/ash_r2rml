@@ -40,6 +40,10 @@ Entry points: `AshR2RML.VKG.query/2`, `query_all/1`, `catalog/1`. Consumers: `VK
 
 Same admitted catalog + same options + same observed rows (in any transport order) yield the same plan sha, result sha and receipt id. Engine byte order is not semantic identity. A result may claim live observation only if every stage was observed by a real system process; injected evidence weakens the whole result.
 
+## SA2A semantic evidence
+
+`AshR2RML.VKG.SA2AEvidence.from_source/2` projects an admitted `SourceIdentity` into the authority-free SA2A semantic-evidence envelope (`sa2a.semantic-evidence-envelope.v1`, contractVersion `v26.9.29`, RDFC-1.0 canonicalization). Fields: `subject`, exact `source` identity, `graphDigest`, `replayIdentity`, `receiptDigest`, `provenance`, and a sealed `envelopeDigest`; `authority` is always `"NONE"` and `consequence` always `"EVIDENCE_ONLY"` — evidence identity, provenance and replay material, never authorization or a DO capability. `SA2AEvidence.verify/1` requires every field, enforces the RDFC-1.0 declaration, `sha256:<64 hex>` digest shapes and the digest seal, and returns a typed `AshR2RML.Refusal` on any malformed digest or authority/consequence drift. The nine identity/canonicalization queries in `priv/sa2a/evidence/*_required.rq` are the GraphLaw-side gates over the same contract.
+
 ## Refusals
 
 Every failure is `{:error, %AshR2RML.Refusal{}}` with a `REFUSED_VKG_*` code (plus `REFUSED_RESOURCE_BOUND` for size bounds). The full vocabulary is in `AGENTS.md`. New codes must be added to `AshR2RML.Refusal.code()` and `AGENTS.md`; `test/vkg/v26_9_28_docs_test.exs` enforces this.

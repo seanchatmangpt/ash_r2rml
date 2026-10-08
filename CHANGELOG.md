@@ -11,6 +11,17 @@ See [Conventional Commits](Https://conventionalcommits.org) for commit guideline
 
 <!-- changelog -->
 
+## v26.9.29 (2026-09-29)
+
+### Features:
+* **Authority-free SA2A semantic-evidence producer (`AshR2RML.VKG.SA2AEvidence`)** (`bdd82b2`): `from_source/2`
+  projects an exact VKG `SourceIdentity` into the portable `sa2a.semantic-evidence-envelope.v1` envelope
+  (contractVersion `v26.9.29`, RDFC-1.0 canonicalization) carrying subject, source identity, graph/replay/receipt
+  digests and a sealed `envelopeDigest`, with `authority: "NONE"` and `consequence: "EVIDENCE_ONLY"` — evidence
+  identity, provenance and replay material, never authorization or a DO capability. Malformed digests and
+  authority/consequence drift yield typed `AshR2RML.Refusal` errors; the nine identity/canonicalization gates in
+  `priv/sa2a/evidence/*_required.rq` pin the same contract.
+
 ## [v26.9.28](https://github.com/seanchatmangpt/ash_r2rml/releases/tag/v26.9.28) (2026-09-28)
 
 ### Features:
