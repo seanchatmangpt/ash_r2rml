@@ -265,10 +265,8 @@ Do not preserve a stale hand-authored join in R2RML.
 AshR2RML verifies that mapping references correspond to known Ash/data-layer structure before rendering.
 
 ```elixir
-:ok = AshR2RML.verify([
-  Schema.Account,
-  Schema.Transaction
-])
+{:ok, _account_mapping} = AshR2RML.Resource.Info.mapping_result(Schema.Account)
+{:ok, _tx_mapping} = AshR2RML.Resource.Info.mapping_result(Schema.Transaction)
 ```
 
 Verification includes:
@@ -354,7 +352,7 @@ Detect with the application's normal AshPostgres/Ecto migration verification.
 
 Generated R2RML no longer corresponds to the current Ash relationship, source column, datatype, or subject identity.
 
-Detect with `AshR2RML.verify/1`, deterministic regeneration, and the OBDA integration suite.
+Detect with DSL verification at resource compile time (`AshR2RML.VerifyMapping`, `AshR2RML.Resource.Verify`), deterministic regeneration, and the OBDA integration suite.
 
 ## Release artifact
 
