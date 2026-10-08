@@ -44,6 +44,7 @@ Strict, technical specifications, API contracts, DSL references, and refusal cat
 
 - [AshR2RML DSL Reference](reference/dsl_reference.md) — Complete specification for `r2rml`, `subject`, `rdf`, and `sparql` Spark DSL extensions.
 - [Normalized Mapping IR Reference](reference/mapping_ir.md) — Structural reference for `AshR2RML.Mapping.*` IR structs.
+- [Generated Reference (doc-hdit)](reference/generated/README.md) — Scaffolded per-namespace reference skeletons for all 245 lib modules (GENERATED, see regen command).
 - [Typed Refusals Catalog](reference/typed_refusals.md) — Exhaustive list of compile-time and runtime refusal exceptions (`REFUSED_*`).
 - [Feature Support Matrix](reference/support_matrix.md) — Compatibility matrix for W3C R2RML features and Ash data layers.
 - [Usage Rules Index](../usage-rules.md) — Specifications for [semantic IR](../usage-rules/semantic-ir.md), [R2RML](../usage-rules/r2rml.md), [identities](../usage-rules/identities.md), [relationships](../usage-rules/relationships.md), [datatypes](../usage-rules/datatypes.md), and [ggen](../usage-rules/ggen.md).
