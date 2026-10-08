@@ -6,7 +6,7 @@ defmodule AshR2RML.MixProject do
   @moduledoc false
   use Mix.Project
 
-  @version "26.9.28"
+  @version "26.10.8"
   @name "AshR2RML"
   @description "W3C R2RML and RDF semantic mapping compiler for Ash Framework"
   @github_url "https://github.com/seanchatmangpt/ash_r2rml"
