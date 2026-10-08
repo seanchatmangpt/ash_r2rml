@@ -11,6 +11,29 @@ See [Conventional Commits](Https://conventionalcommits.org) for commit guideline
 
 <!-- changelog -->
 
+## v26.10.8 (2026-10-08)
+
+### Changes:
+* Version bump 26.9.28 -> 26.10.8 (`3ed1cd6`).
+
+## v26.10.6 (2026-10-07)
+
+### Features:
+* **Differential graph projection (`Delta.diff/2`)** (`0d5320f`): ΔG = G_new \\ G_old as triple-set
+  algebra with set semantics on `{s,p,o}`; `root_digest` = sha256 over the sorted canonical
+  N-Triples form (RDFC-1.0 roots for bnode-bearing graphs route via graphlaw's wasm canonical op).
+  `materialize_many/2` gains `opts[:previous_graph]`; absent = byte-identical historical behavior.
+  Budget harness asserts the spec's <=20 ms at the 100-row tier directly (measured 1.5/4.5 ms) with
+  a linear-scaled outlier guard.
+* **Authority-free SA2A semantic-evidence docs (`AshR2RML.VKG.SA2AEvidence`)** (`98b9263`): the
+  `bdd82b2` evidence producer (v26.9.29) gains a `usage-rules/vkg.md` semantic-evidence section plus
+  a W685 AIRo ledger-pin court over real fixture bytes and the cross-repo xaas copy.
+
+### Integrity closure:
+* AIRo risk description and vocabulary pin (`b86a6a6`): `priv/airo_risk_description.ttl` plus a court
+  test (`test/airo_risk_description_test.exs`) and an AIRo vocabulary snapshot fixture
+  (`test/fixtures/airo_vocabulary_snapshot.ttl`) pinning the AIRo vocabulary.
+
 ## v26.9.29 (2026-09-29)
 
 ### Features:
