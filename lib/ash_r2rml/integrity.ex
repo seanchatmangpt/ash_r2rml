@@ -143,7 +143,7 @@ defmodule AshR2RML.SemanticSessionIdentity do
   end
 
   defp app_version do
-    case Application.spec(:ash_neo4j, :vsn) do
+    case Application.spec(:ash_r2rml, :vsn) do
       nil -> nil
       version -> to_string(version)
     end
