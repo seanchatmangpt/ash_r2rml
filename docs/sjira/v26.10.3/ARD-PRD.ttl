@@ -1,3 +1,4 @@
+# HISTORICAL: this file documents the v26.9.28 PRD despite its v26.10.3 directory location.
 @prefix sj: <https://ggen-igniter.dev/ontology/semantic-jira#> .
 @prefix prd: <https://ggen-igniter.dev/ash_r2rml/v26.10.3/prd#> .
 @prefix dcterms: <http://purl.org/dc/terms/> .
