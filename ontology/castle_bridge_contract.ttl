@@ -1,0 +1,82 @@
+# SPDX-FileCopyrightText: 2026 ash_r2rml contributors <https://github.com/seanchatmangpt/ash_r2rml/graphs/contributors>
+# SPDX-License-Identifier: MIT
+
+# HISTORICAL — hand-authored mirror of the consumer-side trust pins. Audit
+# finding #3: the trust chain was one-directional — consumer packs
+# (packs/xaas-castle-bridge-pack) pin ash_r2rml's sha via xcb:ashR2rmlSha /
+# xcb:consumerBaseSha, while ash_r2rml pinned nothing back. This file records
+# r2rml-side OBSERVATIONS of those pins. It is NOT generated: no generator
+# hook exists in the compiler receipt pipeline that projects receipt identity
+# into TTL (lib/ash_r2rml/ggen_ttl.ex projects mapping bundles only).
+#
+# MANUAL-SYNC LAW: whenever packs/xaas-castle-bridge-pack/ontology.ttl
+# (xcb:bridge xcb:sourceSha/packSha/ashR2rmlSha/consumerBaseSha) changes in
+# ggen-marketplace, a maintainer MUST update the matching observation below
+# in the same dependency-closed transition and stamp a fresh
+# ar:observedAsOf date. The court test
+# test/unit/castle_bridge_contract_test.exs fails closed on any recorded sha
+# that no longer matches the live repo unless allowlisted with an as-of date.
+#
+# as-of: 2026-10-13
+
+@prefix ar: <https://ash-r2rml.dev/ontology/castle-bridge-observation#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix prov: <http://www.w3.org/ns/prov#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+ar:castle-bridge-mirror a skos:Concept ;
+  skos:prefLabel "ash_r2rml castle bridge trust mirror" ;
+  dcterms:description "Reverse-direction trust observations mirroring the consumer-side pins in packs/xaas-castle-bridge-pack (xcb:bridge). Each observation records the sha the consumer recorded against this project, not a live claim; the court test compares repo-local shas against live HEAD with an as-of-dated staleness allowlist." ;
+  dcterms:source <https://github.com/seanchatmangpt/ggen-marketplace/blob/main/packs/xaas-castle-bridge-pack/ontology.ttl> ;
+  ar:authority "SELECT_ONLY" .
+
+ar:observed-castle-source-sha a skos:Concept ;
+  skos:prefLabel "Observed CASTLE PaaS source sha" ;
+  dcterms:description "xcb:sourceSha recorded by xcb:bridge (repo seanchatmangpt/castle). External repo; not resolvable in this checkout, so the court verifies structure and as-of dating only." ;
+  ar:sha "a71801dcc0c0783eb8a4544cbee8b40bb0b30296" ;
+  ar:repo "seanchatmangpt/castle" ;
+  ar:external true ;
+  ar:observedAsOf "2026-10-13"^^xsd:date ;
+  prov:wasDerivedFrom <https://github.com/seanchatmangpt/ggen-marketplace/blob/main/packs/xaas-castle-bridge-pack/ontology.ttl> .
+
+ar:observed-pack-sha a skos:Concept ;
+  skos:prefLabel "Observed castle bridge pack sha" ;
+  dcterms:description "xcb:packSha recorded by xcb:bridge (ggen-marketplace packs/xaas-castle-bridge-pack). External repo; not resolvable in this checkout, so the court verifies structure and as-of dating only." ;
+  ar:sha "238b408c5cf74e8334046165ac87102026bd8c1e" ;
+  ar:repo "seanchatmangpt/ggen-marketplace" ;
+  ar:external true ;
+  ar:observedAsOf "2026-10-13"^^xsd:date ;
+  prov:wasDerivedFrom <https://github.com/seanchatmangpt/ggen-marketplace/blob/main/packs/xaas-castle-bridge-pack/ontology.ttl> .
+
+ar:observed-ash-r2rml-sha a skos:Concept ;
+  skos:prefLabel "Observed ash_r2rml pin held by the consumer" ;
+  dcterms:description "xcb:ashR2rmlSha recorded by xcb:bridge against this repository. KNOWN STALE relative to live dev HEAD 6666824da1bb86d633aa744f16765b663583dcd9; allowlisted in the court test with as-of 2026-10-13 pending consumer-side regen of the pack pin." ;
+  ar:sha "067954ad406fd637fd47646bdb10c4580809c79d" ;
+  ar:repo "seanchatmangpt/ash_r2rml" ;
+  ar:external false ;
+  ar:observedAsOf "2026-10-13"^^xsd:date ;
+  ar:allowlisted true ;
+  prov:wasDerivedFrom <https://github.com/seanchatmangpt/ggen-marketplace/blob/main/packs/xaas-castle-bridge-pack/ontology.ttl> .
+
+ar:observed-consumer-base-sha a skos:Concept ;
+  skos:prefLabel "Observed consumer base sha" ;
+  dcterms:description "xcb:consumerBaseSha recorded by xcb:bridge (the consumer-side base the pack was authored against). External to this checkout; the court verifies structure and as-of dating only." ;
+  ar:sha "5b7fb55ffff02d7434c634ce7d80d54f68fd76e7" ;
+  ar:repo "seanchatmangpt/ggen-marketplace" ;
+  ar:external true ;
+  ar:observedAsOf "2026-10-13"^^xsd:date ;
+  prov:wasDerivedFrom <https://github.com/seanchatmangpt/ggen-marketplace/blob/main/packs/xaas-castle-bridge-pack/ontology.ttl> .
+
+ar:sha a rdf:Property ;
+  dcterms:description "40-hex sha recorded on the consumer side" .
+ar:repo a rdf:Property ;
+  dcterms:description "repo the recorded sha belongs to" .
+ar:external a rdf:Property ;
+  dcterms:description "true when the sha cannot be resolved in the ash_r2rml checkout" .
+ar:observedAsOf a rdf:Property ;
+  dcterms:description "date the observation was mirrored from the consumer pack" .
+ar:allowlisted a rdf:Property ;
+  dcterms:description "true when the recorded sha is known stale against live HEAD and is allowlisted in the court test" .
+ar:authority a rdf:Property .
