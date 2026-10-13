@@ -8,7 +8,9 @@ defmodule AshR2RML.GgenRuntimeTest do
 
   test "manufactures a deterministic construct-only runtime contract" do
     input = %{
-      subject: %{repo: "seanchatmangpt/ash_r2rml", base: "main", head: "067954ad406fd637"},
+      # as-of 2026-10-13: refreshed from 067954ad406fd637 (26.9.28-era) to
+      # 37ce7e016a2860192 (full sha 37ce7e016a2860192cbfb6ce799396450bffa3a1, 26.10.8)
+      subject: %{repo: "seanchatmangpt/ash_r2rml", base: "main", head: "37ce7e016a2860192"},
       authority: %{policy: "project2", action: "construct"},
       runtime: %{resource: "Example.Resource", action: "read"}
     }
@@ -25,7 +27,9 @@ defmodule AshR2RML.GgenRuntimeTest do
 
   test "canonical Ggen API delegates runtime contract manufacture" do
     input = %{
-      subject: %{repo: "seanchatmangpt/ash_r2rml", base: "main", head: "067954ad406fd637"},
+      # as-of 2026-10-13: refreshed from 067954ad406fd637 to 37ce7e016a2860192
+      # (full sha 37ce7e016a2860192cbfb6ce799396450bffa3a1, 26.10.8)
+      subject: %{repo: "seanchatmangpt/ash_r2rml", base: "main", head: "37ce7e016a2860192"},
       authority: %{policy: "project2", action: "construct"},
       runtime: %{resource: "Example.Resource", action: "read"}
     }
@@ -36,7 +40,9 @@ defmodule AshR2RML.GgenRuntimeTest do
   test "preserves an explicit replay identity" do
     assert {:ok, contract} =
              GgenRuntime.contract(%{
-               subject: %{repo: "seanchatmangpt/ash_r2rml", base: "main", head: "067954ad"},
+               # as-of 2026-10-13: refreshed from 067954ad to 37ce7e01 (prefix of
+               # 37ce7e016a2860192cbfb6ce799396450bffa3a1)
+               subject: %{repo: "seanchatmangpt/ash_r2rml", base: "main", head: "37ce7e01"},
                authority: %{policy: "project2", action: "construct"},
                runtime: %{resource: "Example.Resource", action: "read"},
                replay_key: "receipt-42"
@@ -57,7 +63,8 @@ defmodule AshR2RML.GgenRuntimeTest do
   test "refuses missing authority" do
     assert {:error, :REFUSED_RUNTIME_AUTHORITY_MISSING} =
              GgenRuntime.contract(%{
-               subject: %{repo: "seanchatmangpt/ash_r2rml", base: "main", head: "067954ad"},
+               # as-of 2026-10-13: refreshed from 067954ad to 37ce7e01
+               subject: %{repo: "seanchatmangpt/ash_r2rml", base: "main", head: "37ce7e01"},
                authority: %{},
                runtime: %{}
              })
