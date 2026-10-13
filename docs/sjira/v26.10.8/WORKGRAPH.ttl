@@ -1,0 +1,98 @@
+@prefix sj: <https://ggen-igniter.dev/ontology/semantic-jira#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+# Canonical RDF for the v26.10.8 fleet campaign on seanchatmangpt/ash_r2rml.
+# One sj:WorkOrder per campaign work order, grounded in landed commits on the
+# docs/doc-hdit-scaffold branch. Shape follows the xaas v26.10.8 canonical
+# workgraph and this repo's archived docs/sjira/v26.10.3/ARD-PRD.ttl
+# vocabulary. Standing is NOT asserted here: it is observed state, projected
+# from the per-commit court evidence named in each order. This graph grants
+# no authority and claims no standing; standing belongs to independent
+# exact-subject courts, not to this document.
+
+sj:WorkOrder a rdfs:Class .
+sj:AcceptanceCriterion a rdfs:Class .
+sj:Falsifier a rdfs:Class .
+sj:DependencyEdge a rdfs:Class .
+
+<#WO-R2RML-26108-1> a sj:WorkOrder ;
+    sj:identity "R2RML-26108-1" ;
+    dcterms:title "Release v26.10.8: version bump 26.9.28 -> 26.10.8" ;
+    dcterms:description "Bump the mix.exs project version from 26.9.28 to 26.10.8 as part of the fleet campaign (3ed1cd609b35a130e3ffedb94a442dcfe3ce154e)." ;
+    sj:subject "v26108-version-bump" ;
+    sj:repository "seanchatmangpt/ash_r2rml" ;
+    sj:baseSha "c25938cdca5a8bd1dd481dbec974254e3842f0ab" ;
+    sj:landedCommit "3ed1cd609b35a130e3ffedb94a442dcfe3ce154e" ;
+    sj:evidenceCeiling "EXECUTED_VERIFIED" ;
+    sj:promotionRule "verified_by_required_courts_then_receipted" ;
+    sj:replayIdentity "sjira-v26.10.8-R2RML-26108-1" ;
+    sj:authorityRequirement "NONE" ;
+    sj:requiredCourt "compile", "tests" ;
+    sj:requiredEvidence "command_exit_codes", "real_output" ;
+    sj:acceptanceItem [ a sj:AcceptanceCriterion ; sj:index 0 ; dcterms:description "mix.exs @version reads 26.10.8 on the branch head b1d2a9fc288530a71298783dba7a6779ab1a5539 and mix compile --warnings-as-errors exits 0" ] ;
+    sj:falsifierItem [ a sj:Falsifier ; sj:index 0 ; dcterms:description "a version carrier on the branch head still names 26.9.28" ] ;
+    sj:projection "jira", "receipt" ;
+    sj:pathScope "mix.exs" .
+
+<#WO-R2RML-26108-2> a sj:WorkOrder ;
+    sj:identity "R2RML-26108-2" ;
+    dcterms:title "Changelog backfill: v26.10.8/v26.10.6 entries + install pins to ~> 26.10" ;
+    dcterms:description "Backfill CHANGELOG.md with the v26.10.8 and v26.10.6 entries and fix install pins from ~> 26.9 to ~> 26.10 across README.md, documentation/tutorials/getting_started.md and usage-rules/setup.md (0cb5eb3dc15ccc0899837fd005318db3936a67e8)." ;
+    sj:subject "changelog-backfill-26108" ;
+    sj:repository "seanchatmangpt/ash_r2rml" ;
+    sj:baseSha "3ed1cd609b35a130e3ffedb94a442dcfe3ce154e" ;
+    sj:landedCommit "0cb5eb3dc15ccc0899837fd005318db3936a67e8" ;
+    sj:evidenceCeiling "EXECUTED_VERIFIED" ;
+    sj:promotionRule "verified_by_required_courts_then_receipted" ;
+    sj:replayIdentity "sjira-v26.10.8-R2RML-26108-2" ;
+    sj:authorityRequirement "NONE" ;
+    sj:requiredCourt "compile" ;
+    sj:requiredEvidence "command_exit_codes", "real_output" ;
+    sj:acceptanceItem [ a sj:AcceptanceCriterion ; sj:index 0 ; dcterms:description "CHANGELOG.md carries both the 26.10.8 and 26.10.6 section headers, and no install pin in README.md, documentation/tutorials/getting_started.md or usage-rules/setup.md names a pre-26.10 version" ] ;
+    sj:falsifierItem [ a sj:Falsifier ; sj:index 0 ; dcterms:description "an install pin on the branch head still resolves to ~> 26.9 or older" ], [ a sj:Falsifier ; sj:index 1 ; dcterms:description "a changelog entry names a version whose carriers disagree with mix.exs" ] ;
+    sj:projection "jira", "verification" ;
+    sj:pathScope "CHANGELOG.md README.md documentation/tutorials/getting_started.md usage-rules/setup.md" ;
+    sj:dependency [ a sj:DependencyEdge ; sj:upstream "R2RML-26108-1" ; sj:dependencyType "requiresReceipt" ] .
+
+<#WO-R2RML-26108-3> a sj:WorkOrder ;
+    sj:identity "R2RML-26108-3" ;
+    dcterms:title "Sync livemd how-to install pins to ~> 26.10" ;
+    dcterms:description "Sync the executable how-to Livebooks (documentation/how_to/ash_first.livemd, documentation/how_to/managing_schema.livemd) install pins to ~> 26.10 so a fresh Mix.install replay of either how-to resolves the campaign line (11da8e6dc7cffa3450bdad827287d94be1da8f3d)." ;
+    sj:subject "livemd-pin-sync" ;
+    sj:repository "seanchatmangpt/ash_r2rml" ;
+    sj:baseSha "0cb5eb3dc15ccc0899837fd005318db3936a67e8" ;
+    sj:landedCommit "11da8e6dc7cffa3450bdad827287d94be1da8f3d" ;
+    sj:evidenceCeiling "EXECUTED_VERIFIED" ;
+    sj:promotionRule "verified_by_required_courts_then_receipted" ;
+    sj:replayIdentity "sjira-v26.10.8-R2RML-26108-3" ;
+    sj:authorityRequirement "NONE" ;
+    sj:requiredCourt "compile" ;
+    sj:requiredEvidence "command_exit_codes", "real_output" ;
+    sj:acceptanceItem [ a sj:AcceptanceCriterion ; sj:index 0 ; dcterms:description "both .livemd files name ~> 26.10 in their Mix.install block and no how-to livemd still names ~> 26.9" ] ;
+    sj:falsifierItem [ a sj:Falsifier ; sj:index 0 ; dcterms:description "a how-to livemd on the branch head still pins a pre-26.10 version" ] ;
+    sj:projection "jira", "verification" ;
+    sj:pathScope "documentation/how_to/ash_first.livemd documentation/how_to/managing_schema.livemd" ;
+    sj:dependency [ a sj:DependencyEdge ; sj:upstream "R2RML-26108-2" ; sj:dependencyType "requiresReceipt" ] .
+
+<#WO-R2RML-26108-4> a sj:WorkOrder ;
+    sj:identity "R2RML-26108-4" ;
+    dcterms:title "doc-hdit scaffolded reference skeletons (coverage remediation)" ;
+    dcterms:description "Land the doc-hdit scaffolded reference skeletons under documentation/reference/generated/ (ce947d4651326605032d42b837813d76abf2b592) plus the identifier-backtick regen (b1d2a9fc288530a71298783dba7a6779ab1a5539). DISCLOSED DRIFT: the skeletons were authored by a local script, not by the canonical doc-hdit generator; a canonical regen against the pinned generator is OWED and tracked by this order's falsifier." ;
+    sj:subject "doc-hdit-skeletons" ;
+    sj:repository "seanchatmangpt/ash_r2rml" ;
+    sj:baseSha "11da8e6dc7cffa3450bdad827287d94be1da8f3d" ;
+    sj:landedCommit "ce947d4651326605032d42b837813d76abf2b592", "b1d2a9fc288530a71298783dba7a6779ab1a5539" ;
+    sj:evidenceCeiling "PARTIAL_ALIVE" ;
+    sj:promotionRule "verified_by_required_courts_then_receipted" ;
+    sj:replayIdentity "sjira-v26.10.8-R2RML-26108-4" ;
+    sj:authorityRequirement "NONE" ;
+    sj:requiredCourt "compile" ;
+    sj:requiredEvidence "command_exit_codes", "real_output" ;
+    sj:acceptanceItem [ a sj:AcceptanceCriterion ; sj:index 0 ; dcterms:description "documentation/reference/generated/ carries the scaffolded skeletons and documentation/README.md indexes them on the branch head" ] ;
+    sj:falsifierItem [ a sj:Falsifier ; sj:index 0 ; dcterms:description "a canonical doc-hdit regen against the pinned generator produces bytes that differ from the committed skeletons and the drift is not disclosed" ], [ a sj:Falsifier ; sj:index 1 ; dcterms:description "a generated skeleton references a module that does not exist in lib/" ] ;
+    sj:projection "jira", "verification" ;
+    sj:pathScope "documentation/reference/generated documentation/README.md" ;
+    sj:dependency [ a sj:DependencyEdge ; sj:upstream "R2RML-26108-3" ; sj:dependencyType "requiresReceipt" ] .
