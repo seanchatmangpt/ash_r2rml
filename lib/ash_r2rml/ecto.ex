@@ -101,8 +101,13 @@ defmodule AshR2RML.Semantic.Ecto do
         primary? = primary_key?(resource, attribute.name)
         null? = if primary?, do: false, else: attribute.nullable
 
-        "add #{atom_literal(attribute.column)}, #{inspect(ecto_type(attribute))}, " <>
-          "null: #{inspect(null?)}, primary_key: #{inspect(primary?)}"
+        if AshR2RML.Semantic.Extensions.encrypted?(attribute) do
+          "add #{atom_literal("encrypted_" <> to_string(attribute.name))}, :binary, " <>
+            "null: #{inspect(null?)}, primary_key: false"
+        else
+          "add #{atom_literal(attribute.column)}, #{inspect(ecto_type(attribute))}, " <>
+            "null: #{inspect(null?)}, primary_key: #{inspect(primary?)}"
+        end
       end)
 
     """

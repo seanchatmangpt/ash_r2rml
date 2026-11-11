@@ -38,6 +38,27 @@ defmodule AshR2RML.Semantic.Extensions do
   def generated?(%{provenance: prov}) when is_map(prov), do: Map.get(prov, :generated) == true
   def generated?(_), do: false
 
+  def encrypted?(%{provenance: prov}) when is_map(prov), do: Map.get(prov, :encrypted) == true
+  def encrypted?(_), do: false
+
+  @doc "Vault module (string) declared by `r2ml:cloakVault`, or nil."
+  def cloak_vault(%Resource{provenance: prov}), do: Map.get(prov, :cloak_vault)
+
+  @doc "Names of attributes marked `r2ml:encrypted true`, in declaration order."
+  def encrypted_attributes(%Resource{} = resource),
+    do: for(attribute <- resource.attributes, encrypted?(attribute), do: attribute.name)
+
+  @doc "Renders the AshCloak `cloak do ... end` block, or an empty string."
+  def render_cloak(%Resource{} = resource) do
+    case encrypted_attributes(resource) do
+      [] ->
+        ""
+
+      names ->
+        "  cloak do\n    vault #{cloak_vault(resource)}\n    attributes #{inspect(names)}\n  end\n\n"
+    end
+  end
+
   def multitenancy(%Resource{provenance: prov}), do: Map.get(prov, :multitenancy)
   def state_machine(%Resource{provenance: prov}), do: Map.get(prov, :state_machine)
 
@@ -125,6 +146,7 @@ defmodule AshR2RML.Semantic.Extensions do
   def verify(%Resource{} = resource) do
     verify_enums(resource) ++
       verify_generated(resource) ++
+      verify_encrypted(resource) ++
       verify_multitenancy(resource) ++
       verify_actions(resource) ++
       verify_policies(resource) ++
@@ -168,6 +190,24 @@ defmodule AshR2RML.Semantic.Extensions do
           end
       end
     end)
+  end
+
+  defp verify_encrypted(resource) do
+    key_names = resource.identities |> Enum.flat_map(& &1.keys)
+    encrypted = encrypted_attributes(resource)
+
+    cond do
+      encrypted == [] ->
+        []
+
+      is_nil(cloak_vault(resource)) ->
+        [refuse(resource, hd(encrypted), "r2ml:encrypted requires r2ml:cloakVault on the resource shape")]
+
+      true ->
+        for name <- encrypted, name in key_names do
+          refuse(resource, name, "r2ml:encrypted attribute cannot be an identity key")
+        end
+    end
   end
 
   defp verify_generated(resource) do
@@ -440,7 +480,19 @@ defmodule AshR2RML.Semantic.Extensions do
     kinds = Enum.uniq(Enum.map(declared, & &1.kind) ++ if(generated == [], do: [], else: [:update]))
     defaults = [:read, :create, :update, :destroy] -- kinds
 
-    defaults_line = if defaults == [], do: [], else: ["    defaults #{inspect(defaults)}"]
+    accept_line =
+      case encrypted_attributes(resource) do
+        [] ->
+          []
+
+        _ ->
+          # Encrypted attributes are private; default actions must still accept them as input.
+          names = for a <- resource.attributes, encrypted?(a) or not generated?(a), do: a.name
+          ["    default_accept #{inspect(names)}"]
+      end
+
+    defaults_line =
+      if defaults == [], do: [], else: accept_line ++ ["    defaults #{inspect(defaults)}"]
     rendered = Enum.map(declared, &render_action(&1, transitions[&1.name]))
 
     "  actions do\n" <> Enum.join(defaults_line ++ rendered ++ generated, "\n\n") <> "\n  end"

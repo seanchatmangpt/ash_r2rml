@@ -527,7 +527,9 @@ defmodule AshR2RML.SemanticAdapter do
   defp convert_resource(resource, by_class) do
     with {:ok, references} <- convert_references(resource, by_class) do
       properties =
-        Enum.map(resource.attributes, fn attribute ->
+        resource.attributes
+        |> Enum.reject(&AshR2RML.Semantic.Extensions.encrypted?/1)
+        |> Enum.map(fn attribute ->
           %PredicateObjectMap{
             attribute: attribute.name,
             predicate_iri: attribute.predicate_iri,

@@ -127,6 +127,7 @@ defmodule AshR2RML.MixProject do
       {:ash_csv, "~> 0.9.8", only: [:test]},
       {:ash_cubdb, "~> 0.6.2", only: [:test]},
       {:ash_cloak, "~> 0.4", only: [:test]},
+      {:cloak, "~> 1.1", only: [:test]},
       {:spark, ">= 2.7.0"},
       {:rdf, "~> 3.0"},
       {:sparql, "~> 0.3.12"},

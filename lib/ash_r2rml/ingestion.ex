@@ -158,6 +158,7 @@ defmodule AshR2RML.Ingestion do
          }
        }
        |> put_optional(:domain, optional_literal(index, shape, @r2ml <> "domainModule"))
+       |> put_optional(:cloak_vault, optional_literal(index, shape, @r2ml <> "cloakVault"))
        |> put_optional(:multitenancy, multitenancy)
        |> put_optional(:state_machine, state_machine)
        |> put_optional(:actions, if(actions == [], do: nil, else: actions))
@@ -259,8 +260,23 @@ defmodule AshR2RML.Ingestion do
     end
   end
 
+  @known_property_terms ~w(ashName columnName postgresType ashType identityKey generated
+    inversePredicate inverseName storageStrategy sourceKey destinationKey joinTable
+    sourceJoinColumn destinationJoinColumn associationResource enumModule encrypted)
+
+  # An r2ml: term on a property shape that no admitted rule consumes must refuse, never drop silently.
+  defp unknown_property_terms(index, property_shape) do
+    index
+    |> Map.get(property_shape, %{})
+    |> Map.keys()
+    |> Enum.filter(&String.starts_with?(&1, @r2ml))
+    |> Enum.reject(&(String.replace_prefix(&1, @r2ml, "") in @known_property_terms))
+    |> Enum.sort()
+  end
+
   defp parse_property(index, property_shape, source_class, shape_iri) do
     with {:ok, predicate_iri} <- required_iri(index, property_shape, @sh <> "path", shape_iri),
+         :ok <- reject_unknown_terms(unknown_property_terms(index, property_shape), predicate_iri),
          {:ok, name_string} <-
            required_literal(index, property_shape, @r2ml <> "ashName", predicate_iri),
          {:ok, name} <- safe_atom(name_string, predicate_iri) do
@@ -287,6 +303,11 @@ defmodule AshR2RML.Ingestion do
       end
     end
   end
+
+  defp reject_unknown_terms([], _subject), do: :ok
+
+  defp reject_unknown_terms(terms, subject),
+    do: incomplete(subject, "property shape carries unsupported r2ml: terms", %{terms: terms})
 
   defp parse_property_kind(
          index,
@@ -330,6 +351,10 @@ defmodule AshR2RML.Ingestion do
             provenance:
               %{property_shape: term_sort_key(property_shape, index)}
               |> put_optional(:enum, enum)
+              |> put_optional(
+                :encrypted,
+                if(optional_boolean(index, property_shape, @r2ml <> "encrypted", false), do: true)
+              )
               |> put_optional(
                 :generated,
                 if(optional_boolean(index, property_shape, @r2ml <> "generated", false), do: true)
@@ -519,8 +544,10 @@ defmodule AshR2RML.Ingestion do
     end
   end
 
-  defp action_kind(kind, _) when kind in ["create", "update", "read", "destroy"],
-    do: {:ok, String.to_existing_atom(kind)}
+  defp action_kind("create", _), do: {:ok, :create}
+  defp action_kind("update", _), do: {:ok, :update}
+  defp action_kind("read", _), do: {:ok, :read}
+  defp action_kind("destroy", _), do: {:ok, :destroy}
 
   defp action_kind(kind, subject),
     do: incomplete(subject, "r2ml:actionKind must be create|update|read|destroy", %{got: kind})

@@ -104,7 +104,7 @@ defmodule AshR2RML.Admission do
 
   # Additive ontology-first terms are carried in provenance only when present.
   defp resource_provenance(raw) do
-    Enum.reduce([:multitenancy, :state_machine], get(raw, :provenance, %{}), fn key, acc ->
+    Enum.reduce([:multitenancy, :state_machine, :cloak_vault], get(raw, :provenance, %{}), fn key, acc ->
       case get(raw, key) do
         nil -> acc
         value -> Map.put(acc, key, value)

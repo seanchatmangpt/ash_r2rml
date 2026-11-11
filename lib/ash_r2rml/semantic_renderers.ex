@@ -162,7 +162,9 @@ defmodule AshR2RML.Semantic.Ash do
 
     extensions =
       ["AshR2RML"] ++
-        api_extension_names(opts) ++ if(Extensions.state_machine(resource), do: ["AshStateMachine"], else: [])
+        api_extension_names(opts) ++
+        if(Extensions.state_machine(resource), do: ["AshStateMachine"], else: []) ++
+        if(Extensions.encrypted_attributes(resource) == [], do: [], else: ["AshCloak"])
 
     authorizers =
       if resource.policies == [], do: "", else: ",\n    authorizers: [Ash.Policy.Authorizer]"
@@ -192,7 +194,7 @@ defmodule AshR2RML.Semantic.Ash do
     #{attributes}
       end
 
-    #{identity_block(identities)}#{relationship_block(relationships)}#{Extensions.render_multitenancy(resource)}#{Extensions.render_state_machine(resource)}#{Extensions.render_actions(resource)}#{policies_suffix(resource)}
+    #{identity_block(identities)}#{relationship_block(relationships)}#{Extensions.render_cloak(resource)}#{Extensions.render_multitenancy(resource)}#{Extensions.render_state_machine(resource)}#{Extensions.render_actions(resource)}#{policies_suffix(resource)}
     end
     """
     |> String.trim()
@@ -212,7 +214,7 @@ defmodule AshR2RML.Semantic.Ash do
     options =
       [
         "allow_nil?: #{inspect(if(primary?, do: false, else: attribute.nullable))}",
-        "public?: true",
+        "public?: #{inspect(not Extensions.encrypted?(attribute))}",
         if(primary?, do: "primary_key?: true", else: nil),
         attribute_default(resource, attribute),
         if(attribute.column != to_string(attribute.name),
@@ -380,12 +382,14 @@ defmodule AshR2RML.Semantic.Ash do
 
   defp untyped_attribute_mappings(resource) do
     for attribute <- resource.attributes,
+        not Extensions.encrypted?(attribute),
         is_nil(attribute.datatype_iri),
         do: {attribute.name, attribute.predicate_iri}
   end
 
   defp typed_attribute_mappings(resource) do
     for attribute <- resource.attributes,
+        not Extensions.encrypted?(attribute),
         not is_nil(attribute.datatype_iri),
         do: {attribute.name, attribute.predicate_iri, attribute.datatype_iri}
   end
@@ -449,7 +453,11 @@ defmodule AshR2RML.Semantic.SQL do
 
   defp column_definition(attribute) do
     nullability = if attribute.nullable, do: "", else: " NOT NULL"
-    "#{quote_ident(attribute.column)} #{attribute.postgres_type}#{nullability}"
+    if AshR2RML.Semantic.Extensions.encrypted?(attribute) do
+      "#{quote_ident("encrypted_" <> to_string(attribute.name))} bytea#{nullability}"
+    else
+      "#{quote_ident(attribute.column)} #{attribute.postgres_type}#{nullability}"
+    end
   end
 
   defp identity_constraints(resource) do
@@ -521,7 +529,10 @@ defmodule AshR2RML.Semantic.R2RML do
   end
 
   defp render_resource(resource, resources) do
-    attrs = Enum.map(resource.attributes, &render_attribute/1)
+    attrs =
+      resource.attributes
+      |> Enum.reject(&AshR2RML.Semantic.Extensions.encrypted?/1)
+      |> Enum.map(&render_attribute/1)
 
     relationships =
       resource.relationships

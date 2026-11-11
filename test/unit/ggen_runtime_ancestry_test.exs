@@ -28,12 +28,16 @@ defmodule AshR2RML.GgenRuntimeAncestryTest do
   # not fail". Refreshing the pin (or adding a NEW stale pin) requires a
   # fresh allowlist entry with a fresh as-of date.
   @staleness_allowlist %{
-                         # Example shape (kept empty while pins are fresh):
-                         # "documentation/how_to/ggen_runtime_integration.md" => %{
-                         #   sha: "067954ad406fd637fd47646bdb10c4580809c79d",
-                         #   as_of: "2026-10-13",
-                         #   reason: "26.9.28-era pin documented as drifted; pack-side regen pending"
-                         # }
+                         "documentation/how_to/ggen_runtime_integration.md" => %{
+                           sha: "c395b33a358571d4a90c77e2099df2609a816e2f",
+                           as_of: "2026-11-10",
+                           reason: "pin predates the ontology-first/encryption commits; refresh with next ggen runtime integration run"
+                         },
+                         "test/unit/ggen_runtime_test.exs" => %{
+                           sha: "c395b33a358571d4a90c77e2099df2609a816e2f",
+                           as_of: "2026-11-10",
+                           reason: "pin predates the ontology-first/encryption commits; refresh with next ggen runtime integration run"
+                         }
                        }
 
   @today "2026-11-10"
