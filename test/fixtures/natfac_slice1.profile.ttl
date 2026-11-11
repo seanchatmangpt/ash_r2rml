@@ -1,0 +1,200 @@
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix schema: <https://schema.org/> .
+@prefix nf: <https://natfac.example/ns#> .
+@prefix r2ml: <https://seanchatmangpt.github.io/ash_r2rml#> .
+
+# NatFac slice-1 profile: provider onboarding + alignment.
+# Source of truth for domains/resources (manufactured by ash_r2rml via ggen_igniter).
+# Slice-1 fixture copy extended with enums, tenancy, actions, policies and a Provider state machine.
+# schema:Organization / schema:Place are public IRIs; nf: terms are NOT_FOUND publicly (see docs).
+
+nf:CompanyShape a sh:NodeShape ; sh:targetClass nf:Company ;
+  r2ml:ashModule "NatFac.Facilities.Company" ; r2ml:domainModule "NatFac.Facilities" ; r2ml:repoModule "NatFac.Repo" ;
+  r2ml:tableName "companies" ;
+  r2ml:subjectTemplate "https://natfac.example/companies/{id}" ;
+  r2ml:identity [ r2ml:identityName "primary" ; r2ml:identityKey "id" ; r2ml:primaryIdentity true ] ;
+  sh:property [ sh:path nf:id ; r2ml:ashName "id" ; r2ml:postgresType "UUID" ; sh:datatype xsd:string ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path nf:legal_name ; r2ml:ashName "legal_name" ; r2ml:postgresType "TEXT" ; sh:datatype xsd:string ; sh:minCount 1 ; sh:maxCount 1 ]  .
+
+nf:OperatingDbaShape a sh:NodeShape ; sh:targetClass nf:OperatingDba ;
+  r2ml:ashModule "NatFac.Facilities.OperatingDba" ; r2ml:domainModule "NatFac.Facilities" ; r2ml:repoModule "NatFac.Repo" ;
+  r2ml:tableName "operating_dbas" ;
+  r2ml:subjectTemplate "https://natfac.example/operating_dbas/{id}" ;
+  r2ml:identity [ r2ml:identityName "primary" ; r2ml:identityKey "id" ; r2ml:primaryIdentity true ] ;
+  sh:property [ sh:path nf:id ; r2ml:ashName "id" ; r2ml:postgresType "UUID" ; sh:datatype xsd:string ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path nf:name ; r2ml:ashName "name" ; r2ml:postgresType "TEXT" ; sh:datatype xsd:string ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path nf:subdomain ; r2ml:ashName "subdomain" ; r2ml:postgresType "TEXT" ; sh:datatype xsd:string ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path nf:category ; r2ml:ashName "category" ; r2ml:postgresType "TEXT" ; sh:datatype xsd:string ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path nf:status ; r2ml:ashName "status" ; sh:in ( "active" "inactive" ) ; r2ml:postgresType "TEXT" ; sh:datatype xsd:string ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path nf:company_id ; r2ml:ashName "company_id" ; r2ml:postgresType "UUID" ; sh:datatype xsd:string ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path nf:company ; r2ml:ashName "company" ; sh:class nf:Company ; sh:minCount 1 ; sh:maxCount 1 ;
+    r2ml:storageStrategy "foreign_key" ; r2ml:sourceKey "company_id" ; r2ml:destinationKey "id" ; r2ml:inverseName "operating_dbas" ]  .
+
+nf:PartyShape a sh:NodeShape ; sh:targetClass schema:Organization ;
+  r2ml:ashModule "NatFac.Facilities.Party" ; r2ml:domainModule "NatFac.Facilities" ; r2ml:repoModule "NatFac.Repo" ;
+  r2ml:tableName "parties" ;
+  r2ml:subjectTemplate "https://natfac.example/parties/{id}" ;
+  r2ml:identity [ r2ml:identityName "primary" ; r2ml:identityKey "id" ; r2ml:primaryIdentity true ] ;
+  sh:property [ sh:path nf:id ; r2ml:ashName "id" ; r2ml:postgresType "UUID" ; sh:datatype xsd:string ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path nf:legal_name ; r2ml:ashName "legal_name" ; r2ml:postgresType "TEXT" ; sh:datatype xsd:string ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path nf:ein ; r2ml:ashName "ein" ; r2ml:postgresType "TEXT" ; sh:datatype xsd:string ; sh:minCount 0 ; sh:maxCount 1 ]  .
+
+nf:TradeShape a sh:NodeShape ; sh:targetClass nf:Trade ;
+  r2ml:ashModule "NatFac.Facilities.Trade" ; r2ml:domainModule "NatFac.Facilities" ; r2ml:repoModule "NatFac.Repo" ;
+  r2ml:tableName "trades" ;
+  r2ml:subjectTemplate "https://natfac.example/trades/{id}" ;
+  r2ml:identity [ r2ml:identityName "primary" ; r2ml:identityKey "id" ; r2ml:primaryIdentity true ] ;
+  sh:property [ sh:path nf:id ; r2ml:ashName "id" ; r2ml:postgresType "UUID" ; sh:datatype xsd:string ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path nf:name ; r2ml:ashName "name" ; r2ml:postgresType "TEXT" ; sh:datatype xsd:string ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path nf:parent_trade_id ; r2ml:ashName "parent_trade_id" ; r2ml:postgresType "UUID" ; sh:datatype xsd:string ; sh:minCount 0 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path nf:parent ; r2ml:ashName "parent" ; sh:class nf:Trade ; sh:minCount 0 ; sh:maxCount 1 ;
+    r2ml:storageStrategy "foreign_key" ; r2ml:sourceKey "parent_trade_id" ; r2ml:destinationKey "id" ; r2ml:inverseName "sub_trades" ]  .
+
+nf:ClientShape a sh:NodeShape ; sh:targetClass nf:Client ;
+  r2ml:ashModule "NatFac.Facilities.Client" ; r2ml:domainModule "NatFac.Facilities" ; r2ml:repoModule "NatFac.Repo" ;
+  r2ml:tableName "clients" ;
+  r2ml:subjectTemplate "https://natfac.example/clients/{id}" ;
+  r2ml:multitenancy [ r2ml:tenantStrategy "attribute" ; r2ml:tenantAttribute "operating_dba_id" ; r2ml:tenantGlobal false ] ;
+  r2ml:identity [ r2ml:identityName "primary" ; r2ml:identityKey "id" ; r2ml:primaryIdentity true ] ;
+  sh:property [ sh:path nf:id ; r2ml:ashName "id" ; r2ml:postgresType "UUID" ; sh:datatype xsd:string ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path nf:client_type ; r2ml:ashName "client_type" ; sh:in ( "direct" "reseller" ) ; r2ml:postgresType "TEXT" ; sh:datatype xsd:string ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path nf:status ; r2ml:ashName "status" ; sh:in ( "active" "inactive" "suspended" ) ; r2ml:postgresType "TEXT" ; sh:datatype xsd:string ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path nf:party_id ; r2ml:ashName "party_id" ; r2ml:postgresType "UUID" ; sh:datatype xsd:string ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path nf:party ; r2ml:ashName "party" ; sh:class schema:Organization ; sh:minCount 1 ; sh:maxCount 1 ;
+    r2ml:storageStrategy "foreign_key" ; r2ml:sourceKey "party_id" ; r2ml:destinationKey "id" ; r2ml:inverseName "clients" ] ;
+  sh:property [ sh:path nf:operating_dba_id ; r2ml:ashName "operating_dba_id" ; r2ml:postgresType "UUID" ; sh:datatype xsd:string ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path nf:operating_dba ; r2ml:ashName "operating_dba" ; sh:class nf:OperatingDba ; sh:minCount 1 ; sh:maxCount 1 ;
+    r2ml:storageStrategy "foreign_key" ; r2ml:sourceKey "operating_dba_id" ; r2ml:destinationKey "id" ; r2ml:inverseName "clients" ] ;
+  sh:property [ sh:path nf:contracted_via_client_id ; r2ml:ashName "contracted_via_client_id" ; r2ml:postgresType "UUID" ; sh:datatype xsd:string ; sh:minCount 0 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path nf:contracted_via ; r2ml:ashName "contracted_via" ; sh:class nf:Client ; sh:minCount 0 ; sh:maxCount 1 ;
+    r2ml:storageStrategy "foreign_key" ; r2ml:sourceKey "contracted_via_client_id" ; r2ml:destinationKey "id" ; r2ml:inverseName "downstream_clients" ]  .
+
+nf:BrandShape a sh:NodeShape ; sh:targetClass nf:Brand ;
+  r2ml:ashModule "NatFac.Facilities.Brand" ; r2ml:domainModule "NatFac.Facilities" ; r2ml:repoModule "NatFac.Repo" ;
+  r2ml:tableName "brands" ;
+  r2ml:subjectTemplate "https://natfac.example/brands/{id}" ;
+  r2ml:multitenancy [ r2ml:tenantStrategy "attribute" ; r2ml:tenantAttribute "operating_dba_id" ; r2ml:tenantGlobal false ] ;
+  r2ml:identity [ r2ml:identityName "primary" ; r2ml:identityKey "id" ; r2ml:primaryIdentity true ] ;
+  sh:property [ sh:path nf:id ; r2ml:ashName "id" ; r2ml:postgresType "UUID" ; sh:datatype xsd:string ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path nf:name ; r2ml:ashName "name" ; r2ml:postgresType "TEXT" ; sh:datatype xsd:string ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path nf:operating_dba_id ; r2ml:ashName "operating_dba_id" ; r2ml:postgresType "UUID" ; sh:datatype xsd:string ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path nf:client_id ; r2ml:ashName "client_id" ; r2ml:postgresType "UUID" ; sh:datatype xsd:string ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path nf:client ; r2ml:ashName "client" ; sh:class nf:Client ; sh:minCount 1 ; sh:maxCount 1 ;
+    r2ml:storageStrategy "foreign_key" ; r2ml:sourceKey "client_id" ; r2ml:destinationKey "id" ; r2ml:inverseName "brands" ]  .
+
+nf:SiteShape a sh:NodeShape ; sh:targetClass schema:Place ;
+  r2ml:ashModule "NatFac.Facilities.Site" ; r2ml:domainModule "NatFac.Facilities" ; r2ml:repoModule "NatFac.Repo" ;
+  r2ml:tableName "sites" ;
+  r2ml:subjectTemplate "https://natfac.example/sites/{id}" ;
+  r2ml:multitenancy [ r2ml:tenantStrategy "attribute" ; r2ml:tenantAttribute "operating_dba_id" ; r2ml:tenantGlobal false ] ;
+  r2ml:identity [ r2ml:identityName "primary" ; r2ml:identityKey "id" ; r2ml:primaryIdentity true ] ;
+  sh:property [ sh:path nf:id ; r2ml:ashName "id" ; r2ml:postgresType "UUID" ; sh:datatype xsd:string ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path nf:site_code ; r2ml:ashName "site_code" ; r2ml:postgresType "TEXT" ; sh:datatype xsd:string ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path nf:site_type ; r2ml:ashName "site_type" ; r2ml:postgresType "TEXT" ; sh:datatype xsd:string ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path nf:address ; r2ml:ashName "address" ; r2ml:postgresType "TEXT" ; sh:datatype xsd:string ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path nf:state ; r2ml:ashName "state" ; r2ml:postgresType "TEXT" ; sh:datatype xsd:string ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path nf:zip ; r2ml:ashName "zip" ; r2ml:postgresType "TEXT" ; sh:datatype xsd:string ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path nf:operating_dba_id ; r2ml:ashName "operating_dba_id" ; r2ml:postgresType "UUID" ; sh:datatype xsd:string ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path nf:brand_id ; r2ml:ashName "brand_id" ; r2ml:postgresType "UUID" ; sh:datatype xsd:string ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path nf:brand ; r2ml:ashName "brand" ; sh:class nf:Brand ; sh:minCount 1 ; sh:maxCount 1 ;
+    r2ml:storageStrategy "foreign_key" ; r2ml:sourceKey "brand_id" ; r2ml:destinationKey "id" ; r2ml:inverseName "sites" ]  .
+
+nf:ProviderShape a sh:NodeShape ; sh:targetClass nf:Provider ;
+  r2ml:ashModule "NatFac.Facilities.Provider" ; r2ml:domainModule "NatFac.Facilities" ; r2ml:repoModule "NatFac.Repo" ;
+  r2ml:tableName "providers" ;
+  r2ml:subjectTemplate "https://natfac.example/providers/{id}" ;
+  r2ml:stateMachine [ r2ml:stateAttribute "status" ; r2ml:initial "draft" ; r2ml:terminal "terminated" ;
+    r2ml:transition [ r2ml:action "submit" ; r2ml:from "draft" ; r2ml:to "under_review" ] ;
+    r2ml:transition [ r2ml:action "approve" ; r2ml:from "under_review" ; r2ml:to "approved" ] ;
+    r2ml:transition [ r2ml:action "suspend" ; r2ml:from "approved" ; r2ml:to "suspended" ] ;
+    r2ml:transition [ r2ml:action "reinstate" ; r2ml:from "suspended" ; r2ml:to "approved" ] ;
+    r2ml:transition [ r2ml:action "terminate" ; r2ml:from "approved" ; r2ml:to "terminated" ] ;
+    r2ml:transition [ r2ml:action "terminate" ; r2ml:from "suspended" ; r2ml:to "terminated" ] ] ;
+  r2ml:action [ r2ml:actionName "register" ; r2ml:actionKind "create" ; r2ml:primary true ; r2ml:accept "party_id,classification,segment,company_name" ] ;
+  r2ml:action [ r2ml:actionName "amend" ; r2ml:actionKind "update" ; r2ml:primary true ; r2ml:accept "segment,company_name" ] ;
+  r2ml:action [ r2ml:actionName "list" ; r2ml:actionKind "read" ; r2ml:primary true ] ;
+  r2ml:action [ r2ml:actionName "search" ; r2ml:actionKind "read" ;
+    r2ml:argument [ r2ml:argName "classification" ; r2ml:argType "string" ; r2ml:argAllowNil true ] ] ;
+  r2ml:policy [ r2ml:policyName "provider_read" ; r2ml:actionType "read" ; r2ml:authorizeIf "NatFac.Checks.ActorHasCapability" ; r2ml:bypassActor "NatFac.Checks.ActorIsSystem" ] ;
+  r2ml:policy [ r2ml:policyName "provider_create" ; r2ml:actionType "create" ; r2ml:authorizeIf "NatFac.Checks.ActorHasCapability" ] ;
+  r2ml:policy [ r2ml:policyName "provider_update" ; r2ml:actionType "update" ; r2ml:authorizeIf "NatFac.Checks.ActorHasCapability" ] ;
+  r2ml:policy [ r2ml:policyName "provider_destroy" ; r2ml:actionType "destroy" ; r2ml:authorizeIf "NatFac.Checks.ActorHasCapability" ] ;
+  r2ml:identity [ r2ml:identityName "primary" ; r2ml:identityKey "id" ; r2ml:primaryIdentity true ] ;
+  sh:property [ sh:path nf:id ; r2ml:ashName "id" ; r2ml:postgresType "UUID" ; sh:datatype xsd:string ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path nf:classification ; r2ml:ashName "classification" ; sh:in ( "national" "regional" "local" ) ; r2ml:postgresType "TEXT" ; sh:datatype xsd:string ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path nf:segment ; r2ml:ashName "segment" ; r2ml:postgresType "TEXT" ; sh:datatype xsd:string ; sh:minCount 0 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path nf:status ; r2ml:ashName "status" ; sh:in ( "draft" "under_review" "approved" "suspended" "terminated" ) ; r2ml:postgresType "TEXT" ; sh:datatype xsd:string ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path nf:company_name ; r2ml:ashName "company_name" ; r2ml:postgresType "TEXT" ; sh:datatype xsd:string ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path nf:party_id ; r2ml:ashName "party_id" ; r2ml:postgresType "UUID" ; sh:datatype xsd:string ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path nf:party ; r2ml:ashName "party" ; sh:class schema:Organization ; sh:minCount 1 ; sh:maxCount 1 ;
+    r2ml:storageStrategy "foreign_key" ; r2ml:sourceKey "party_id" ; r2ml:destinationKey "id" ; r2ml:inverseName "providers" ]  .
+
+nf:ProviderTradeShape a sh:NodeShape ; sh:targetClass nf:ProviderTrade ;
+  r2ml:ashModule "NatFac.Facilities.ProviderTrade" ; r2ml:domainModule "NatFac.Facilities" ; r2ml:repoModule "NatFac.Repo" ;
+  r2ml:tableName "provider_trades" ;
+  r2ml:subjectTemplate "https://natfac.example/provider_trades/{id}" ;
+  r2ml:identity [ r2ml:identityName "primary" ; r2ml:identityKey "id" ; r2ml:primaryIdentity true ] ;
+  sh:property [ sh:path nf:id ; r2ml:ashName "id" ; r2ml:postgresType "UUID" ; sh:datatype xsd:string ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path nf:approved ; r2ml:ashName "approved" ; r2ml:postgresType "BOOLEAN" ; sh:datatype xsd:boolean ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path nf:provider_id ; r2ml:ashName "provider_id" ; r2ml:postgresType "UUID" ; sh:datatype xsd:string ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path nf:provider ; r2ml:ashName "provider" ; sh:class nf:Provider ; sh:minCount 1 ; sh:maxCount 1 ;
+    r2ml:storageStrategy "foreign_key" ; r2ml:sourceKey "provider_id" ; r2ml:destinationKey "id" ; r2ml:inverseName "provider_trades" ] ;
+  sh:property [ sh:path nf:trade_id ; r2ml:ashName "trade_id" ; r2ml:postgresType "UUID" ; sh:datatype xsd:string ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path nf:trade ; r2ml:ashName "trade" ; sh:class nf:Trade ; sh:minCount 1 ; sh:maxCount 1 ;
+    r2ml:storageStrategy "foreign_key" ; r2ml:sourceKey "trade_id" ; r2ml:destinationKey "id" ; r2ml:inverseName "provider_trades" ]  .
+
+nf:ProviderDocumentShape a sh:NodeShape ; sh:targetClass nf:ProviderDocument ;
+  r2ml:ashModule "NatFac.Facilities.ProviderDocument" ; r2ml:domainModule "NatFac.Facilities" ; r2ml:repoModule "NatFac.Repo" ;
+  r2ml:tableName "provider_documents" ;
+  r2ml:subjectTemplate "https://natfac.example/provider_documents/{id}" ;
+  r2ml:identity [ r2ml:identityName "primary" ; r2ml:identityKey "id" ; r2ml:primaryIdentity true ] ;
+  sh:property [ sh:path nf:id ; r2ml:ashName "id" ; r2ml:postgresType "UUID" ; sh:datatype xsd:string ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path nf:doc_type ; r2ml:ashName "doc_type" ; r2ml:postgresType "TEXT" ; sh:datatype xsd:string ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path nf:expires_on ; r2ml:ashName "expires_on" ; r2ml:postgresType "DATE" ; sh:datatype xsd:date ; sh:minCount 0 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path nf:file_ref ; r2ml:ashName "file_ref" ; r2ml:postgresType "TEXT" ; sh:datatype xsd:string ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path nf:provider_id ; r2ml:ashName "provider_id" ; r2ml:postgresType "UUID" ; sh:datatype xsd:string ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path nf:provider ; r2ml:ashName "provider" ; sh:class nf:Provider ; sh:minCount 1 ; sh:maxCount 1 ;
+    r2ml:storageStrategy "foreign_key" ; r2ml:sourceKey "provider_id" ; r2ml:destinationKey "id" ; r2ml:inverseName "documents" ]  .
+
+nf:CoverageLineShape a sh:NodeShape ; sh:targetClass nf:CoverageLine ;
+  r2ml:ashModule "NatFac.Facilities.CoverageLine" ; r2ml:domainModule "NatFac.Facilities" ; r2ml:repoModule "NatFac.Repo" ;
+  r2ml:tableName "coverage_lines" ;
+  r2ml:subjectTemplate "https://natfac.example/coverage_lines/{id}" ;
+  r2ml:identity [ r2ml:identityName "primary" ; r2ml:identityKey "id" ; r2ml:primaryIdentity true ] ;
+  sh:property [ sh:path nf:id ; r2ml:ashName "id" ; r2ml:postgresType "UUID" ; sh:datatype xsd:string ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path nf:line_kind ; r2ml:ashName "line_kind" ; r2ml:postgresType "TEXT" ; sh:datatype xsd:string ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path nf:limit_cents ; r2ml:ashName "limit_cents" ; r2ml:postgresType "BIGINT" ; sh:datatype xsd:integer ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path nf:expires_on ; r2ml:ashName "expires_on" ; r2ml:postgresType "DATE" ; sh:datatype xsd:date ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path nf:document_id ; r2ml:ashName "document_id" ; r2ml:postgresType "UUID" ; sh:datatype xsd:string ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path nf:document ; r2ml:ashName "document" ; sh:class nf:ProviderDocument ; sh:minCount 1 ; sh:maxCount 1 ;
+    r2ml:storageStrategy "foreign_key" ; r2ml:sourceKey "document_id" ; r2ml:destinationKey "id" ; r2ml:inverseName "coverage_lines" ]  .
+
+nf:AlignmentTemplateShape a sh:NodeShape ; sh:targetClass nf:AlignmentTemplate ;
+  r2ml:ashModule "NatFac.Facilities.AlignmentTemplate" ; r2ml:domainModule "NatFac.Facilities" ; r2ml:repoModule "NatFac.Repo" ;
+  r2ml:tableName "alignment_templates" ;
+  r2ml:subjectTemplate "https://natfac.example/alignment_templates/{id}" ;
+  r2ml:identity [ r2ml:identityName "primary" ; r2ml:identityKey "id" ; r2ml:primaryIdentity true ] ;
+  sh:property [ sh:path nf:id ; r2ml:ashName "id" ; r2ml:postgresType "UUID" ; sh:datatype xsd:string ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path nf:tier ; r2ml:ashName "tier" ; sh:in ( "standard" "preferred" "strategic" ) ; r2ml:postgresType "TEXT" ; sh:datatype xsd:string ; sh:minCount 1 ; sh:maxCount 1 ]  .
+
+nf:AlignmentLineShape a sh:NodeShape ; sh:targetClass nf:AlignmentLine ;
+  r2ml:ashModule "NatFac.Facilities.AlignmentLine" ; r2ml:domainModule "NatFac.Facilities" ; r2ml:repoModule "NatFac.Repo" ;
+  r2ml:tableName "alignment_lines" ;
+  r2ml:subjectTemplate "https://natfac.example/alignment_lines/{id}" ;
+  r2ml:action [ r2ml:actionName "add" ; r2ml:actionKind "create" ; r2ml:primary true ; r2ml:accept "effect,dimension,dimension_value,rank,provider_id,template_id" ] ;
+  r2ml:action [ r2ml:actionName "reorder" ; r2ml:actionKind "update" ; r2ml:primary true ; r2ml:accept "rank" ] ;
+  r2ml:action [ r2ml:actionName "list" ; r2ml:actionKind "read" ; r2ml:primary true ] ;
+  r2ml:identity [ r2ml:identityName "primary" ; r2ml:identityKey "id" ; r2ml:primaryIdentity true ] ;
+  sh:property [ sh:path nf:id ; r2ml:ashName "id" ; r2ml:postgresType "UUID" ; sh:datatype xsd:string ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path nf:effect ; r2ml:ashName "effect" ; sh:in ( "include" "exclude" ) ; r2ml:postgresType "TEXT" ; sh:datatype xsd:string ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path nf:dimension ; r2ml:ashName "dimension" ; sh:in ( "state" "zip" "trade" "segment" ) ; r2ml:postgresType "TEXT" ; sh:datatype xsd:string ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path nf:dimension_value ; r2ml:ashName "dimension_value" ; r2ml:postgresType "TEXT" ; sh:datatype xsd:string ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path nf:rank ; r2ml:ashName "rank" ; r2ml:postgresType "INTEGER" ; sh:datatype xsd:integer ; sh:minCount 0 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path nf:provider_id ; r2ml:ashName "provider_id" ; r2ml:postgresType "UUID" ; sh:datatype xsd:string ; sh:minCount 0 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path nf:provider ; r2ml:ashName "provider" ; sh:class nf:Provider ; sh:minCount 0 ; sh:maxCount 1 ;
+    r2ml:storageStrategy "foreign_key" ; r2ml:sourceKey "provider_id" ; r2ml:destinationKey "id" ; r2ml:inverseName "alignment_lines" ] ;
+  sh:property [ sh:path nf:template_id ; r2ml:ashName "template_id" ; r2ml:postgresType "UUID" ; sh:datatype xsd:string ; sh:minCount 0 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path nf:template ; r2ml:ashName "template" ; sh:class nf:AlignmentTemplate ; sh:minCount 0 ; sh:maxCount 1 ;
+    r2ml:storageStrategy "foreign_key" ; r2ml:sourceKey "template_id" ; r2ml:destinationKey "id" ; r2ml:inverseName "lines" ]  .
+

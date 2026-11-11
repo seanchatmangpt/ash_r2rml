@@ -1,0 +1,238 @@
+@prefix sj: <https://ggen-igniter.dev/ontology/semantic-jira#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+# Canonical RDF for the v26.11.10 milestone on seanchatmangpt/ash_r2rml.
+# One sj:WorkOrder per milestone work order, grounded in the admitted HEAD
+# commit c395b33a358571d4a90c77e2099df2609a816e2f and working tree features.
+# Shape conforms to https://ggen-igniter.dev/ontology/semantic-jira# and
+# follows the pattern established in docs/sjira/v26.10.8/WORKGRAPH.ttl.
+# Standing is NOT asserted here: it is observed state, projected from the
+# per-order court evidence named in each work order. This graph grants
+# no authority and claims no standing; standing belongs to independent
+# exact-subject courts, not to this document.
+
+sj:WorkOrder a rdfs:Class .
+sj:AcceptanceCriterion a rdfs:Class .
+sj:Falsifier a rdfs:Class .
+sj:DependencyEdge a rdfs:Class .
+
+<#WO-R2RML-261110-01> a sj:WorkOrder ;
+    sj:identity "R2RML-261110-01" ;
+    dcterms:title "Ontology-First Ash Domain Projection (r2ml:domainModule)" ;
+    dcterms:description "Ingest optional r2ml:domainModule literal from SHACL node shapes, validate Elixir module naming syntax in AshR2RML.Admission, persist :domain in SemanticIR.Resource, and project governing Ash.Domain modules grouping member resources." ;
+    sj:subject "domain-module-projection" ;
+    sj:repository "seanchatmangpt/ash_r2rml" ;
+    sj:baseSha "c395b33a358571d4a90c77e2099df2609a816e2f" ;
+    sj:landedCommit "c395b33a358571d4a90c77e2099df2609a816e2f" ;
+    sj:evidenceCeiling "EXECUTED_VERIFIED" ;
+    sj:promotionRule "verified_by_required_courts_then_receipted" ;
+    sj:replayIdentity "sjira-v26.11.10-R2RML-261110-01" ;
+    sj:authorityRequirement "NONE" ;
+    sj:requiredCourt "compile", "tests" ;
+    sj:requiredEvidence "command_exit_codes", "real_output" ;
+    sj:acceptanceItem [ a sj:AcceptanceCriterion ; sj:index 0 ; dcterms:description "SHACL profiles specifying r2ml:domainModule synthesize valid Ash.Domain modules with resources registration, and mix test test/ontology_first_domains_test.exs exits 0" ] ;
+    sj:falsifierItem [ a sj:Falsifier ; sj:index 0 ; dcterms:description "a shape declaring r2ml:domainModule fails to generate an Ash.Domain module or generates resources with domain: nil" ] ,
+                     [ a sj:Falsifier ; sj:index 1 ; dcterms:description "a malformed domain module identifier does not trigger typed refusal REFUSED_UNPROVEN_EQUIVALENCE" ] ;
+    sj:projection "jira", "verification" ;
+    sj:pathScope "lib/ash_r2rml/ingestion.ex lib/ash_r2rml/semantic_ir.ex lib/ash_r2rml/admission.ex lib/ash_r2rml/semantic_renderers.ex test/fixtures/natfac.profile.ttl test/ontology_first_domains_test.exs" .
+
+<#WO-R2RML-261110-02> a sj:WorkOrder ;
+    sj:identity "R2RML-261110-02" ;
+    dcterms:title "Inverse Relationship Synthesis & Collision Admission (r2ml:inverseName)" ;
+    dcterms:description "Ingest optional r2ml:inverseName on property shapes, enforce collision-free admission against existing destination attributes and forward relationships, and synthesize reciprocal has_many relationships on destination resources." ;
+    sj:subject "inverse-relationship-projection" ;
+    sj:repository "seanchatmangpt/ash_r2rml" ;
+    sj:baseSha "c395b33a358571d4a90c77e2099df2609a816e2f" ;
+    sj:landedCommit "c395b33a358571d4a90c77e2099df2609a816e2f" ;
+    sj:evidenceCeiling "EXECUTED_VERIFIED" ;
+    sj:promotionRule "verified_by_required_courts_then_receipted" ;
+    sj:replayIdentity "sjira-v26.11.10-R2RML-261110-02" ;
+    sj:authorityRequirement "NONE" ;
+    sj:requiredCourt "compile", "tests" ;
+    sj:requiredEvidence "command_exit_codes", "real_output" ;
+    sj:acceptanceItem [ a sj:AcceptanceCriterion ; sj:index 0 ; dcterms:description "SHACL property shapes specifying r2ml:inverseName synthesize reciprocal has_many relationships on target resources with inverted source and destination keys" ] ;
+    sj:falsifierItem [ a sj:Falsifier ; sj:index 0 ; dcterms:description "an inverse relationship name collides with an existing attribute or forward relationship on destination resource without triggering REFUSED_UNPROVEN_EQUIVALENCE" ] ;
+    sj:projection "jira", "verification" ;
+    sj:pathScope "lib/ash_r2rml/ingestion.ex lib/ash_r2rml/semantic_ir.ex lib/ash_r2rml/admission.ex lib/ash_r2rml/semantic_renderers.ex test/ontology_first_domains_test.exs" ;
+    sj:dependency [ a sj:DependencyEdge ; sj:upstream "R2RML-261110-01" ; sj:dependencyType "requiresReceipt" ] .
+
+<#WO-R2RML-261110-03> a sj:WorkOrder ;
+    sj:identity "R2RML-261110-03" ;
+    dcterms:title "Multi-File Per-Resource Code Generation Layout & File-Set Receipts" ;
+    dcterms:description "Support files: :per_resource in AshR2RML.Ggen.compile_bundle/2 partitioning generated code into modular per-resource files with deterministic provenance headers and sealed receipts/ash-file-set.json manifests." ;
+    sj:subject "per-resource-generation-layout" ;
+    sj:repository "seanchatmangpt/ash_r2rml" ;
+    sj:baseSha "c395b33a358571d4a90c77e2099df2609a816e2f" ;
+    sj:landedCommit "c395b33a358571d4a90c77e2099df2609a816e2f" ;
+    sj:evidenceCeiling "EXECUTED_VERIFIED" ;
+    sj:promotionRule "verified_by_required_courts_then_receipted" ;
+    sj:replayIdentity "sjira-v26.11.10-R2RML-261110-03" ;
+    sj:authorityRequirement "NONE" ;
+    sj:requiredCourt "compile", "tests" ;
+    sj:requiredEvidence "command_exit_codes", "real_output" ;
+    sj:acceptanceItem [ a sj:AcceptanceCriterion ; sj:index 0 ; dcterms:description "Ggen.compile_bundle/2 with files: :per_resource emits individual .ex files for every resource and domain, alongside a cryptographic receipts/ash-file-set.json manifest" ] ;
+    sj:falsifierItem [ a sj:Falsifier ; sj:index 0 ; dcterms:description "the per-resource layout omits files, generates invalid Elixir code, or produces an ash-file-set.json whose sha256 checksums do not match file contents" ] ;
+    sj:projection "jira", "verification" ;
+    sj:pathScope "lib/ash_r2rml/ggen.ex lib/ash_r2rml/semantic_renderers.ex test/ontology_first_domains_test.exs" ;
+    sj:dependency [ a sj:DependencyEdge ; sj:upstream "R2RML-261110-02" ; sj:dependencyType "requiresReceipt" ] .
+
+<#WO-R2RML-261110-04> a sj:WorkOrder ;
+    sj:identity "R2RML-261110-04" ;
+    dcterms:title "Bidirectional Castle-Bridge Trust Mirror (castle_bridge_contract.ttl)" ;
+    dcterms:description "Maintain 4 r2rml-side observations mirroring xcb:bridge in ontology/castle_bridge_contract.ttl closing C12 bilateral trust-chain symmetry with consumer packs." ;
+    sj:subject "castle-bridge-trust-mirror" ;
+    sj:repository "seanchatmangpt/ash_r2rml" ;
+    sj:baseSha "c395b33a358571d4a90c77e2099df2609a816e2f" ;
+    sj:landedCommit "c395b33a358571d4a90c77e2099df2609a816e2f" ;
+    sj:evidenceCeiling "EXECUTED_VERIFIED" ;
+    sj:promotionRule "verified_by_required_courts_then_receipted" ;
+    sj:replayIdentity "sjira-v26.11.10-R2RML-261110-04" ;
+    sj:authorityRequirement "NONE" ;
+    sj:requiredCourt "tests" ;
+    sj:requiredEvidence "command_exit_codes", "real_output" ;
+    sj:acceptanceItem [ a sj:AcceptanceCriterion ; sj:index 0 ; dcterms:description "mix test test/unit/castle_bridge_contract_test.exs passes 4 courts verifying shape conformance, bilateral symmetry, sibling pack mirrors, and live HEAD alignment" ] ;
+    sj:falsifierItem [ a sj:Falsifier ; sj:index 0 ; dcterms:description "a consumer pack bridge contract lacks reciprocal observation in ash_r2rml or points to an uncommitted commit SHA" ] ;
+    sj:projection "jira", "verification" ;
+    sj:pathScope "ontology/castle_bridge_contract.ttl test/unit/castle_bridge_contract_test.exs" .
+
+<#WO-R2RML-261110-05> a sj:WorkOrder ;
+    sj:identity "R2RML-261110-05" ;
+    dcterms:title "Ggen Runtime Pin Refresh & Ancestry Court Enforcement" ;
+    dcterms:description "Refresh documentation commit pins to live HEAD and enforce ancestry court verification via test/unit/ggen_runtime_ancestry_test.exs to prevent stale commit references." ;
+    sj:subject "ggen-runtime-pin-ancestry-court" ;
+    sj:repository "seanchatmangpt/ash_r2rml" ;
+    sj:baseSha "c395b33a358571d4a90c77e2099df2609a816e2f" ;
+    sj:landedCommit "c395b33a358571d4a90c77e2099df2609a816e2f" ;
+    sj:evidenceCeiling "EXECUTED_VERIFIED" ;
+    sj:promotionRule "verified_by_required_courts_then_receipted" ;
+    sj:replayIdentity "sjira-v26.11.10-R2RML-261110-05" ;
+    sj:authorityRequirement "NONE" ;
+    sj:requiredCourt "tests" ;
+    sj:requiredEvidence "command_exit_codes", "real_output" ;
+    sj:acceptanceItem [ a sj:AcceptanceCriterion ; sj:index 0 ; dcterms:description "All documentation commit pins resolve to full 40-hex SHAs that are valid ancestors of live HEAD and test/unit/ggen_runtime_ancestry_test.exs exits 0" ] ;
+    sj:falsifierItem [ a sj:Falsifier ; sj:index 0 ; dcterms:description "a documentation pin references a dangling SHA or a commit not in the direct ancestry of live HEAD" ] ;
+    sj:projection "jira", "verification" ;
+    sj:pathScope "documentation/how_to/ggen_runtime_integration.md test/unit/ggen_runtime_ancestry_test.exs test/unit/ggen_runtime_test.exs" ;
+    sj:dependency [ a sj:DependencyEdge ; sj:upstream "R2RML-261110-04" ; sj:dependencyType "requiresReceipt" ] .
+
+<#WO-R2RML-261110-06> a sj:WorkOrder ;
+    sj:identity "R2RML-261110-06" ;
+    dcterms:title "Doc-Hdit Reference Skeletons & Diataxis Documentation Remediation" ;
+    dcterms:description "Remediate reference documentation coverage across 100% of modules (245/245) using doc-hdit Diataxis reference skeletons and synchronize Livebook guides." ;
+    sj:subject "doc-hdit-reference-remediation" ;
+    sj:repository "seanchatmangpt/ash_r2rml" ;
+    sj:baseSha "c395b33a358571d4a90c77e2099df2609a816e2f" ;
+    sj:landedCommit "c395b33a358571d4a90c77e2099df2609a816e2f" ;
+    sj:evidenceCeiling "EXECUTED_VERIFIED" ;
+    sj:promotionRule "verified_by_required_courts_then_receipted" ;
+    sj:replayIdentity "sjira-v26.11.10-R2RML-261110-06" ;
+    sj:authorityRequirement "NONE" ;
+    sj:requiredCourt "compile" ;
+    sj:requiredEvidence "command_exit_codes", "real_output" ;
+    sj:acceptanceItem [ a sj:AcceptanceCriterion ; sj:index 0 ; dcterms:description "100% of lib/ modules have corresponding reference documentation files in documentation/reference/generated/ and Livebook install pins name ~> 26.11" ] ;
+    sj:falsifierItem [ a sj:Falsifier ; sj:index 0 ; dcterms:description "a module in lib/ lacks reference documentation or a Livebook tutorial fails to evaluate under the current release" ] ;
+    sj:projection "jira", "verification" ;
+    sj:pathScope "documentation/reference/ documentation/how_to/ash_first.livemd documentation/how_to/managing_schema.livemd ash_r2rml.livemd" .
+
+<#WO-R2RML-261110-07> a sj:WorkOrder ;
+    sj:identity "R2RML-261110-07" ;
+    dcterms:title "Release Workflow Retirement & ggen.toml Version Synchronization" ;
+    dcterms:description "Retire obsolete scheduled release workflow release-v26.9.28.yml, synchronize version carriers across mix.exs and ggen.toml to 26.11.10, and update dependency install pins." ;
+    sj:subject "workflow-hygiene-and-version-carrier" ;
+    sj:repository "seanchatmangpt/ash_r2rml" ;
+    sj:baseSha "c395b33a358571d4a90c77e2099df2609a816e2f" ;
+    sj:landedCommit "c395b33a358571d4a90c77e2099df2609a816e2f" ;
+    sj:evidenceCeiling "EXECUTED_VERIFIED" ;
+    sj:promotionRule "verified_by_required_courts_then_receipted" ;
+    sj:replayIdentity "sjira-v26.11.10-R2RML-261110-07" ;
+    sj:authorityRequirement "NONE" ;
+    sj:requiredCourt "compile" ;
+    sj:requiredEvidence "command_exit_codes", "real_output" ;
+    sj:acceptanceItem [ a sj:AcceptanceCriterion ; sj:index 0 ; dcterms:description "Obsolete scheduled release workflows are deleted and version carriers across mix.exs, ggen.toml, and documentation uniformly declare 26.11.10" ] ;
+    sj:falsifierItem [ a sj:Falsifier ; sj:index 0 ; dcterms:description "a retired release workflow remains active in .github/workflows/ or a carrier names a divergent version" ] ;
+    sj:projection "jira", "verification" ;
+    sj:pathScope ".github/workflows/ mix.exs ggen.toml README.md usage-rules/setup.md documentation/tutorials/getting_started.md" .
+
+<#WO-R2RML-261110-08> a sj:WorkOrder ;
+    sj:identity "R2RML-261110-08" ;
+    dcterms:title "Hex Package Build Verification & Release Gate for v26.11.10" ;
+    dcterms:description "Verify package readiness via mix hex.build, validate tarball size (<8 MB) and checksum, backfill CHANGELOG.md, and enforce prohibition on live mix hex.publish." ;
+    sj:subject "hex-publish-readiness-verification" ;
+    sj:repository "seanchatmangpt/ash_r2rml" ;
+    sj:baseSha "c395b33a358571d4a90c77e2099df2609a816e2f" ;
+    sj:landedCommit "c395b33a358571d4a90c77e2099df2609a816e2f" ;
+    sj:evidenceCeiling "EXECUTED_VERIFIED" ;
+    sj:promotionRule "verified_by_required_courts_then_receipted" ;
+    sj:replayIdentity "sjira-v26.11.10-R2RML-261110-08" ;
+    sj:authorityRequirement "NONE" ;
+    sj:requiredCourt "packaging" ;
+    sj:requiredEvidence "command_exit_codes", "real_output" ;
+    sj:acceptanceItem [ a sj:AcceptanceCriterion ; sj:index 0 ; dcterms:description "mix hex.build succeeds with exit code 0, package tarball measures ~1.3 MB with valid checksum, and zero live publish operations were performed" ] ;
+    sj:falsifierItem [ a sj:Falsifier ; sj:index 0 ; dcterms:description "mix hex.build fails, emits compiler warnings, exceeds package size limits, or an unauthorized live publish is executed" ] ;
+    sj:projection "jira", "verification" ;
+    sj:pathScope "mix.exs CHANGELOG.md" ;
+    sj:dependency [ a sj:DependencyEdge ; sj:upstream "R2RML-261110-07" ; sj:dependencyType "requiresReceipt" ] .
+
+<#WO-R2RML-261110-09> a sj:WorkOrder ;
+    sj:identity "R2RML-261110-09" ;
+    dcterms:title "Five-Persona Architectural & Release Quality Audit Specifications" ;
+    dcterms:description "Specify formal review criteria for 5 specialized domain personas (Zach Daniel, Joe Armstrong, José Valim, Verification Specialist, and Security Auditor) ensuring multi-perspective qualification." ;
+    sj:subject "multi-persona-architectural-review" ;
+    sj:repository "seanchatmangpt/ash_r2rml" ;
+    sj:baseSha "c395b33a358571d4a90c77e2099df2609a816e2f" ;
+    sj:landedCommit "c395b33a358571d4a90c77e2099df2609a816e2f" ;
+    sj:evidenceCeiling "EXECUTED_VERIFIED" ;
+    sj:promotionRule "verified_by_required_courts_then_receipted" ;
+    sj:replayIdentity "sjira-v26.11.10-R2RML-261110-09" ;
+    sj:authorityRequirement "NONE" ;
+    sj:requiredCourt "review" ;
+    sj:requiredEvidence "command_exit_codes", "real_output" ;
+    sj:acceptanceItem [ a sj:AcceptanceCriterion ; sj:index 0 ; dcterms:description "Review criteria for all 5 personas are published with formal evaluation rubrics, acceptance criteria, and verdict requirements" ] ;
+    sj:falsifierItem [ a sj:Falsifier ; sj:index 0 ; dcterms:description "A persona review specification omits domain-critical acceptance criteria or permits unverified claims" ] ;
+    sj:projection "jira", "verification" ;
+    sj:pathScope "docs/jira/v26.11.10/R2RML-261110-09-multi-persona-architectural-review.md" ;
+    sj:dependency [ a sj:DependencyEdge ; sj:upstream "R2RML-261110-08" ; sj:dependencyType "requiresReceipt" ] .
+
+<#WO-R2RML-261110-10> a sj:WorkOrder ;
+    sj:identity "R2RML-261110-10" ;
+    dcterms:title "Ontology-First Semantic Extensions (Enums, Tenancy, Actions, Policies, State Machines & Residue)" ;
+    dcterms:description "Implement AshR2RML.Semantic.Extensions synthesizing Ash.Type.Enum modules from sh:in, attribute-based multitenancy, actions, policies, state machines, and sealing receipts/ash-residue.json." ;
+    sj:subject "ontology-first-semantic-extensions" ;
+    sj:repository "seanchatmangpt/ash_r2rml" ;
+    sj:baseSha "c395b33a358571d4a90c77e2099df2609a816e2f" ;
+    sj:landedCommit "c395b33a358571d4a90c77e2099df2609a816e2f" ;
+    sj:evidenceCeiling "EXECUTED_VERIFIED" ;
+    sj:promotionRule "verified_by_required_courts_then_receipted" ;
+    sj:replayIdentity "sjira-v26.11.10-R2RML-261110-10" ;
+    sj:authorityRequirement "NONE" ;
+    sj:requiredCourt "compile", "tests" ;
+    sj:requiredEvidence "command_exit_codes", "real_output" ;
+    sj:acceptanceItem [ a sj:AcceptanceCriterion ; sj:index 0 ; dcterms:description "mix test test/ontology_first_extensions_test.exs passes with 0 failures, synthesizing enums, tenancy, actions, policies, state machines, and generating ash-residue.json" ] ;
+    sj:falsifierItem [ a sj:Falsifier ; sj:index 0 ; dcterms:description "An extension construct fails Ash compilation, produces unverified check modules without residue tracking, or breaks non-extension IR hashing" ] ;
+    sj:projection "jira", "verification" ;
+    sj:pathScope "lib/ash_r2rml/semantic_extensions.ex lib/ash_r2rml/ingestion.ex lib/ash_r2rml/admission.ex lib/ash_r2rml/semantic_renderers.ex lib/ash_r2rml/ggen.ex test/fixtures/natfac_slice1.profile.ttl test/ontology_first_extensions_test.exs" ;
+    sj:dependency [ a sj:DependencyEdge ; sj:upstream "R2RML-261110-01" ; sj:dependencyType "requiresReceipt" ] ,
+                  [ a sj:DependencyEdge ; sj:upstream "R2RML-261110-03" ; sj:dependencyType "requiresReceipt" ] .
+
+<#WO-R2RML-261110-11> a sj:WorkOrder ;
+    sj:identity "R2RML-261110-11" ;
+    dcterms:title "Ingestion Determinism & Ggen Pack Gate Realignment" ;
+    dcterms:description "Implement deterministic term sorting and blank-node label isolation in AshR2RML.Ingestion, establish multi-process determinism court, and realign SPARQL pack gates to r2ml: and MINUS." ;
+    sj:subject "ingestion-determinism-and-pack-gates" ;
+    sj:repository "seanchatmangpt/ash_r2rml" ;
+    sj:baseSha "c395b33a358571d4a90c77e2099df2609a816e2f" ;
+    sj:landedCommit "c395b33a358571d4a90c77e2099df2609a816e2f" ;
+    sj:evidenceCeiling "EXECUTED_VERIFIED" ;
+    sj:promotionRule "verified_by_required_courts_then_receipted" ;
+    sj:replayIdentity "sjira-v26.11.10-R2RML-261110-11" ;
+    sj:authorityRequirement "NONE" ;
+    sj:requiredCourt "compile", "tests" ;
+    sj:requiredEvidence "command_exit_codes", "real_output" ;
+    sj:acceptanceItem [ a sj:AcceptanceCriterion ; sj:index 0 ; dcterms:description "mix test test/ingestion_determinism_test.exs passes with 0 failures asserting byte-identical file generation across shuffled statements and randomized blank-node prefixes" ] ;
+    sj:falsifierItem [ a sj:Falsifier ; sj:index 0 ; dcterms:description "Compiling identical RDF profiles with distinct blank-node labels produces divergent IR hashes or differing output files" ] ;
+    sj:projection "jira", "verification" ;
+    sj:pathScope "lib/ash_r2rml/ingestion.ex priv/ggen/ash-r2rml-pack/gates/010_required_resource_contract.rq priv/ggen/ash-r2rml-pack/gates/020_property_contract.rq test/ingestion_determinism_test.exs" ;
+    sj:dependency [ a sj:DependencyEdge ; sj:upstream "R2RML-261110-10" ; sj:dependencyType "requiresReceipt" ] .

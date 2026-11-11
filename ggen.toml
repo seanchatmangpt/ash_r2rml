@@ -1,6 +1,6 @@
 [project]
 name = "ash-r2rml"
-version = "26.10.8"
+version = "26.11.10"
 description = "GGEN manufacturing contract for AshR2RML semantic compilation capabilities"
 
 [ontology]

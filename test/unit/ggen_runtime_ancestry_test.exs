@@ -28,15 +28,15 @@ defmodule AshR2RML.GgenRuntimeAncestryTest do
   # not fail". Refreshing the pin (or adding a NEW stale pin) requires a
   # fresh allowlist entry with a fresh as-of date.
   @staleness_allowlist %{
-    # Example shape (kept empty while pins are fresh):
-    # "documentation/how_to/ggen_runtime_integration.md" => %{
-    #   sha: "067954ad406fd637fd47646bdb10c4580809c79d",
-    #   as_of: "2026-10-13",
-    #   reason: "26.9.28-era pin documented as drifted; pack-side regen pending"
-    # }
-  }
+                         # Example shape (kept empty while pins are fresh):
+                         # "documentation/how_to/ggen_runtime_integration.md" => %{
+                         #   sha: "067954ad406fd637fd47646bdb10c4580809c79d",
+                         #   as_of: "2026-10-13",
+                         #   reason: "26.9.28-era pin documented as drifted; pack-side regen pending"
+                         # }
+                       }
 
-  @today "2026-10-13"
+  @today "2026-11-10"
 
   defp extract_pins(path) do
     full = Path.join(@repo_root, path)
@@ -97,8 +97,11 @@ defmodule AshR2RML.GgenRuntimeAncestryTest do
                  "STALE_PIN[#{site}]: allowlist entry for #{full} has invalid as-of " <>
                    "date #{inspect(entry.as_of)}"
 
-          IO.puts(:stderr, "STALE_PIN_WARNING[#{site}]: pin #{full} allowlisted as of " <>
-                   "#{entry.as_of} (#{entry.reason}); live HEAD #{head}")
+          IO.puts(
+            :stderr,
+            "STALE_PIN_WARNING[#{site}]: pin #{full} allowlisted as of " <>
+              "#{entry.as_of} (#{entry.reason}); live HEAD #{head}"
+          )
         end
       end
     end
@@ -115,6 +118,7 @@ defmodule AshR2RML.GgenRuntimeAncestryTest do
 
     for site <- @pin_sites do
       pins = extract_pins(site)
+
       assert head in Enum.map(pins, fn p -> elem(resolve_full(p), 1) end),
              "STALE_PIN[#{site}]: none of #{inspect(pins)} equals live HEAD #{head}"
     end

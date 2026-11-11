@@ -72,6 +72,7 @@ defmodule AshR2RML.SemanticIR.Relationship do
     :source_join_column,
     :destination_join_column,
     :association_resource,
+    :inverse_name,
     :storage_strategy,
     min_count: 0,
     max_count: nil,
@@ -106,6 +107,7 @@ defmodule AshR2RML.SemanticIR.Relationship do
           source_join_column: String.t() | nil,
           destination_join_column: String.t() | nil,
           association_resource: module() | String.t() | nil,
+          inverse_name: String.t() | atom() | nil,
           properties: list(),
           provenance: map()
         }
@@ -151,6 +153,7 @@ defmodule AshR2RML.SemanticIR.Resource do
     :shape_iri,
     :module,
     :repo_module,
+    :domain,
     :table,
     :subject_template,
     identities: [],
@@ -167,6 +170,7 @@ defmodule AshR2RML.SemanticIR.Resource do
           shape_iri: String.t(),
           module: module() | String.t(),
           repo_module: module() | String.t() | nil,
+          domain: module() | String.t() | nil,
           table: String.t(),
           subject_template: String.t(),
           identities: [AshR2RML.SemanticIR.Identity.t()],

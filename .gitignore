@@ -129,3 +129,6 @@ target/
 node_modules/
 _build-lane*/
 target-lane*/
+
+# per-agent build roots
+_build_*/

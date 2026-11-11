@@ -1,0 +1,112 @@
+{
+  "work_order_id": "WO-ASH-R2RML-v26.11.10-M2",
+  "origin_authority": {
+    "ceiling": "CONSTRUCT",
+    "grant": "user-request-2026-11-10T23:25:37Z",
+    "actor": "orchestrator:8284eb82-28ac-4607-9e2c-3748a1e11bbc"
+  },
+  "provider": {
+    "name": "teamwork_worker_m2",
+    "transport": "antigravity-subagent",
+    "authority_ceiling": "CONSTRUCT",
+    "receipt_protocol": "dfcm-receipt-v2"
+  },
+  "provider_execution_id": "fc8a9705-c97e-4341-b5ed-682a64adcf1e-m2",
+  "identity": {
+    "subject": "ash_r2rml-v26.11.10-hex-packaging-readiness",
+    "repo": "/Users/sac/ash_r2rml",
+    "subject_sha": "c395b33a358571d4a90c77e2099df2609a816e2f",
+    "base_sha": "c395b33a358571d4a90c77e2099df2609a816e2f"
+  },
+  "authority": {
+    "ceiling": "CONSTRUCT",
+    "grant": "work-order:v26.11.10:M2",
+    "actor": "teamwork_worker_m2"
+  },
+  "consequence": {
+    "commits": [],
+    "files_changed": [
+      "docs/release/v26.11.10-hex-publish-readiness.md",
+      "receipts/v26.11.10-hex-release-receipt.json"
+    ],
+    "remote_effects": []
+  },
+  "replay": {
+    "commands": [
+      {
+        "cmd": "mix hex.build",
+        "cwd": "/Users/sac/ash_r2rml",
+        "exit": 0,
+        "summary": "Hex package construction, compiling ash_r2rml 26.11.10 into ash_r2rml-26.11.10.tar"
+      },
+      {
+        "cmd": "shasum -a 256 ash_r2rml-26.11.10.tar",
+        "cwd": "/Users/sac/ash_r2rml",
+        "exit": 0,
+        "summary": "Verify tarball SHA-256 digest: a3f6f0a46e131f76f6e83e4f77d9422c29d1b7daf3110594aa126f24d994bab0"
+      },
+      {
+        "cmd": "tar -xOf ash_r2rml-26.11.10.tar contents.tar.gz | tar -ztf - | wc -l",
+        "cwd": "/Users/sac/ash_r2rml",
+        "exit": 0,
+        "summary": "Verify package contents census equals 263 files"
+      },
+      {
+        "cmd": "mix hex.publish --dry-run --yes",
+        "cwd": "/Users/sac/ash_r2rml",
+        "exit": 0,
+        "summary": "Hex dry-run publishing, validating ExDocs generation and metadata without network mutations"
+      },
+      {
+        "cmd": "mix hex.user whoami",
+        "cwd": "/Users/sac/ash_r2rml",
+        "exit": 0,
+        "summary": "Inspect Hex CLI user authentication, returning seanchatman"
+      },
+      {
+        "cmd": "mix hex.info ash_r2rml",
+        "cwd": "/Users/sac/ash_r2rml",
+        "exit": 0,
+        "summary": "Query Hex.pm remote registry, confirming latest published release is 26.9.28 and 26.11.10 is vacant"
+      }
+    ],
+    "durable_location": "receipts/v26.11.10-hex-release-receipt.json"
+  },
+  "standing": {
+    "value": "ALIVE",
+    "derived_from": "All packaging, checksum, dry-run publish, and registry verification commands executed with exit 0 at subject_sha c395b33a358571d4a90c77e2099df2609a816e2f"
+  },
+  "provider_ext.release_engineering": {
+    "package_name": "ash_r2rml",
+    "target_version": "26.11.10",
+    "tarball_filename": "ash_r2rml-26.11.10.tar",
+    "tarball_byte_size": 1362432,
+    "tarball_sha256": "a3f6f0a46e131f76f6e83e4f77d9422c29d1b7daf3110594aa126f24d994bab0",
+    "hex_internal_checksum": "a3f6f0a46e131f76f6e83e4f77d9422c29d1b7daf3110594aa126f24d994bab0",
+    "outer_tar_checksum_entry": "60F3FA0F66E48AA2B9366A0FF0A1EA3F00129261C8275D898215477E00A7CA58",
+    "total_included_files": 263,
+    "included_files_breakdown": {
+      "lib": 139,
+      "priv": 94,
+      "usage_rules": 22,
+      "licenses": 1,
+      "root_files": 7
+    },
+    "dry_run_exdocs_generated": [
+      "doc/index.html",
+      "doc/llms.txt",
+      "doc/AshR2RML.epub"
+    ],
+    "remote_registry_latest_version": "26.9.28",
+    "hex_cli_authenticated_user": "seanchatman",
+    "hex_api_key_env_set": false,
+    "direct_local_publish_status": "REFUSED",
+    "refusal_classification": "REFUSED(LOCAL_MUTATION_FORBIDDEN)",
+    "refusal_reason": "Direct publishing from local uncommitted branch is REFUSED under repository release doctrine (R_missing_identity, R_missing_authority). Lawful path requires git tag push triggering .github/workflows/release.yaml",
+    "canonical_release_mechanism": {
+      "workflow_path": ".github/workflows/release.yaml",
+      "trigger": "push tags v*",
+      "gating_workflow": ".github/workflows/exact-head-release-court.yml"
+    }
+  }
+}

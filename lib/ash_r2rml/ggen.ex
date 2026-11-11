@@ -40,10 +40,11 @@ defmodule AshR2RML.Ggen do
          {:ok, receipt_json} <- encode_json(compilation.receipt),
          {:ok, integrity_json} <- encode_json(dfcm.integrity_receipt),
          {:ok, catalog_json} <- encode_json(compilation.ir),
-         {:ok, graphql_files} <- graphql_files(compilation.ir, Keyword.get(opts, :graphql, false)) do
+         {:ok, graphql_files} <- graphql_files(compilation.ir, Keyword.get(opts, :graphql, false)),
+         {:ok, ash_files} <- ash_files(compilation, Keyword.get(opts, :files, :single)),
+         {:ok, residue_files} <- residue_files(compilation.ir) do
       files =
         %{
-          "generated/ash/ontology_resources.ex" => compilation.ash_source,
           "generated/ecto/semantic_schema_migration.exs" => compilation.ecto_migration,
           "generated/sql/semantic_schema.sql" => compilation.postgres_ddl,
           "priv/r2rml/mapping.ttl" => compilation.r2rml,
@@ -53,6 +54,8 @@ defmodule AshR2RML.Ggen do
           "receipts/semantic-integrity.json" => integrity_json
         }
         |> Map.merge(graphql_files)
+        |> Map.merge(ash_files)
+        |> Map.merge(residue_files)
 
       {:ok,
        %{
@@ -66,6 +69,51 @@ defmodule AshR2RML.Ggen do
          files: files
        }}
     end
+  end
+
+  # Policy check modules are hand-written residue by design. When any exist, a typed manifest
+  # enumerates them so a gate can verify each one is present; absent otherwise (additive).
+  defp residue_files(ir) do
+    modules =
+      ir.resources
+      |> Enum.flat_map(&AshR2RML.Semantic.Extensions.residue/1)
+      |> Enum.sort_by(&{&1.module, &1.resource, &1.policy, &1.role})
+
+    if modules == [] do
+      {:ok, %{}}
+    else
+      with {:ok, json} <-
+             encode_json(%{
+               kind: "ash-residue",
+               note: "hand-written check modules referenced by generated policies; not generated",
+               check_modules: modules,
+               modules: modules |> Enum.map(& &1.module) |> Enum.uniq()
+             }) do
+        {:ok, %{"receipts/ash-residue.json" => json <> "\n"}}
+      end
+    end
+  end
+
+  # `files: :single` (default) is the historical one-file layout. `files: :per_resource` emits one
+  # file per Ash module (resource, join resource, domain) plus a receipt binding the file set to the
+  # single-source hash already carried by the compilation receipt.
+  defp ash_files(compilation, :single), do: {:ok, %{"generated/ash/ontology_resources.ex" => compilation.ash_source}}
+
+  defp ash_files(compilation, :per_resource) do
+    with {:ok, per_resource} <- AshR2RML.Semantic.Ash.render_files(compilation.ir),
+         {:ok, set_json} <-
+           encode_json(%{
+             layout: :per_resource,
+             single_source_ash_sha256: compilation.receipt.ash_sha256,
+             files: Map.new(per_resource, fn {path, text} -> {path, AshR2RML.Integrity.Canonical.sha256(text)} end)
+           }) do
+      {:ok, Map.put(per_resource, "receipts/ash-file-set.json", set_json <> "\n")}
+    end
+  end
+
+  defp ash_files(_compilation, other) do
+    {:error,
+     Refusal.new(:REFUSED_UNPROVEN_EQUIVALENCE, :files, "files must be :single or :per_resource", %{got: inspect(other)})}
   end
 
   @doc "Verify hashes reported by ggen for an isolated stage before atomic publication."
@@ -113,7 +161,7 @@ defmodule AshR2RML.Ggen do
   def compile_turtle_bundle(turtle, opts \\ []) do
     with :ok <- AshR2RML.Bounds.admit_input(turtle, opts),
          {:ok, profile} <- AshR2RML.Ingestion.from_turtle(turtle, opts) do
-      compile_bundle(profile, Keyword.take(opts, [:graphql]))
+      compile_bundle(profile, Keyword.take(opts, [:graphql, :files]))
     end
   end
 
@@ -122,7 +170,7 @@ defmodule AshR2RML.Ggen do
   def compile_jsonld_bundle(jsonld, opts \\ []) do
     with :ok <- AshR2RML.Bounds.admit_input(jsonld, opts),
          {:ok, profile} <- AshR2RML.JSONLD.ingest(jsonld, opts) do
-      compile_bundle(profile, Keyword.take(opts, [:graphql]))
+      compile_bundle(profile, Keyword.take(opts, [:graphql, :files]))
     end
   end
 

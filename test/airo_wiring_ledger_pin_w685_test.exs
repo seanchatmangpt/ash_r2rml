@@ -26,6 +26,7 @@ defmodule AshR2RML.AIRoWiringLedgerPinW685Test do
       content = File.read!(path(@fixture_path))
 
       assert byte_size(content) > 0
+
       assert :crypto.hash(:sha256, content) |> Base.encode16(case: :lower) ==
                @ledger_pin_sha256
     end

@@ -24,7 +24,7 @@ defmodule AshR2RML.Ingestion do
   @spec from_turtle(String.t(), keyword()) :: {:ok, map()} | {:error, [Refusal.t()]}
   def from_turtle(turtle, opts \\ []) when is_binary(turtle) and is_list(opts) do
     case RDF.Turtle.read_string(turtle) do
-      {:ok, graph} -> from_graph(graph, Keyword.put_new(opts, :source_sha256, sha256(turtle)))
+      {:ok, graph} -> from_graph(graph, opts)
       {:error, reason} -> {:error, [parse_refusal(reason)]}
     end
   rescue
@@ -50,7 +50,7 @@ defmodule AshR2RML.Ingestion do
             else: []
       end)
       |> Enum.uniq()
-      |> Enum.sort_by(&term_sort_key/1)
+      |> Enum.sort_by(&term_sort_key(&1, index))
 
     if shapes == [] do
       {:error,
@@ -74,7 +74,8 @@ defmodule AshR2RML.Ingestion do
            %{
              ontology_hash: Keyword.get(opts, :ontology_hash),
              profile_hash: profile_hash,
-             shacl_hash: Keyword.get(opts, :shacl_hash, Keyword.get(opts, :source_sha256)),
+             shacl_hash:
+               Keyword.get(opts, :shacl_hash, Keyword.get(opts, :source_sha256)) || graph_hash(statements, index),
              resources: canonical_resources
            }}
       end
@@ -122,7 +123,11 @@ defmodule AshR2RML.Ingestion do
          {:ok, subject_template} <-
            required_literal(index, shape, @r2ml <> "subjectTemplate", shape_iri),
          {:ok, identities} <- parse_identities(index, shape, shape_iri),
-         {:ok, parsed_properties} <- parse_properties(index, shape, class_iri, shape_iri) do
+         {:ok, parsed_properties} <- parse_properties(index, shape, class_iri, shape_iri),
+         {:ok, multitenancy} <- parse_multitenancy(index, shape, shape_iri),
+         {:ok, actions} <- parse_actions(index, shape, shape_iri),
+         {:ok, policies} <- parse_policies(index, shape, shape_iri),
+         {:ok, state_machine} <- parse_state_machine(index, shape, shape_iri) do
       {attributes, relationships} = Enum.split_with(parsed_properties, &match?({:attribute, _}, &1))
 
       attributes =
@@ -151,9 +156,19 @@ defmodule AshR2RML.Ingestion do
            ingestion: :rdf_shacl,
            shape_iri: shape_iri
          }
-       }}
+       }
+       |> put_optional(:domain, optional_literal(index, shape, @r2ml <> "domainModule"))
+       |> put_optional(:multitenancy, multitenancy)
+       |> put_optional(:state_machine, state_machine)
+       |> put_optional(:actions, if(actions == [], do: nil, else: actions))
+       |> put_optional(:policies, if(policies == [], do: nil, else: policies))}
     end
   end
+
+  # Additive terms are carried only when present so profiles that do not use them keep
+  # byte-identical normalized profiles (and therefore identical profile hashes).
+  defp put_optional(map, _key, nil), do: map
+  defp put_optional(map, key, value), do: Map.put(map, key, value)
 
   defp parse_identities(index, shape, shape_iri) do
     identity_nodes = objects(index, shape, @r2ml <> "identity")
@@ -167,7 +182,7 @@ defmodule AshR2RML.Ingestion do
        )}
     else
       identity_nodes
-      |> Enum.sort_by(&term_sort_key/1)
+      |> Enum.sort_by(&term_sort_key(&1, index))
       |> Enum.reduce_while({:ok, []}, fn identity_node, {:ok, acc} ->
         with {:ok, name_string} <-
                required_literal(index, identity_node, @r2ml <> "identityName", shape_iri),
@@ -231,7 +246,7 @@ defmodule AshR2RML.Ingestion do
 
   defp parse_properties(index, shape, source_class, shape_iri) do
     objects(index, shape, @sh <> "property")
-    |> Enum.sort_by(&term_sort_key/1)
+    |> Enum.sort_by(&term_sort_key(&1, index))
     |> Enum.reduce_while({:ok, []}, fn property_shape, {:ok, acc} ->
       case parse_property(index, property_shape, source_class, shape_iri) do
         {:ok, property} -> {:cont, {:ok, [property | acc]}}
@@ -254,62 +269,360 @@ defmodule AshR2RML.Ingestion do
       min_count = optional_integer(index, property_shape, @sh <> "minCount", 0)
       max_count = optional_integer(index, property_shape, @sh <> "maxCount", nil)
 
-      cond do
-        datatype_iri && target_class ->
-          {:error,
-           Refusal.new(
-             :REFUSED_SHACL_PROFILE_INCOMPLETE,
-             predicate_iri,
-             "property shape cannot be both sh:datatype and sh:class"
-           )}
-
-        datatype_iri ->
-          {:ok,
-           {:attribute,
-            %{
-              name: name,
-              column: optional_literal(index, property_shape, @r2ml <> "columnName") || name_string,
-              predicate_iri: predicate_iri,
-              datatype_iri: datatype_iri,
-              ash_type: optional_ash_type(index, property_shape),
-              postgres_type: optional_literal(index, property_shape, @r2ml <> "postgresType"),
-              min_count: min_count,
-              max_count: max_count,
-              nullable: min_count == 0,
-              identity?: optional_boolean(index, property_shape, @r2ml <> "identityKey", false),
-              provenance: %{property_shape: term_sort_key(property_shape)}
-            }}}
-
-        target_class ->
-          {:ok,
-           {:relationship,
-            %{
-              name: name,
-              predicate_iri: predicate_iri,
-              inverse_predicate: optional_iri(index, property_shape, @r2ml <> "inversePredicate"),
-              source_class: source_class,
-              target_class: target_class,
-              min_count: min_count,
-              max_count: max_count,
-              storage_strategy: optional_storage_strategy(index, property_shape, @r2ml <> "storageStrategy"),
-              source_key: optional_atom(index, property_shape, @r2ml <> "sourceKey", predicate_iri),
-              destination_key: optional_atom(index, property_shape, @r2ml <> "destinationKey", predicate_iri),
-              join_table: optional_literal(index, property_shape, @r2ml <> "joinTable"),
-              source_join_column: optional_literal(index, property_shape, @r2ml <> "sourceJoinColumn"),
-              destination_join_column: optional_literal(index, property_shape, @r2ml <> "destinationJoinColumn"),
-              association_resource: optional_literal(index, property_shape, @r2ml <> "associationResource"),
-              properties: [],
-              provenance: %{property_shape: term_sort_key(property_shape)}
-            }}}
-
-        true ->
-          {:error,
-           Refusal.new(
-             :REFUSED_SHACL_PROFILE_INCOMPLETE,
-             predicate_iri,
-             "property shape must close value semantics with sh:datatype or sh:class"
-           )}
+      with {:ok, enum} <- parse_enum(index, property_shape, predicate_iri) do
+        parse_property_kind(
+          index,
+          property_shape,
+          source_class,
+          shape_iri,
+          predicate_iri,
+          name,
+          name_string,
+          datatype_iri,
+          target_class,
+          min_count,
+          max_count,
+          enum
+        )
       end
+    end
+  end
+
+  defp parse_property_kind(
+         index,
+         property_shape,
+         source_class,
+         shape_iri,
+         predicate_iri,
+         name,
+         name_string,
+         datatype_iri,
+         target_class,
+         min_count,
+         max_count,
+         enum
+       ) do
+    _ = {shape_iri, source_class}
+
+    cond do
+      datatype_iri && target_class ->
+        {:error,
+         Refusal.new(
+           :REFUSED_SHACL_PROFILE_INCOMPLETE,
+           predicate_iri,
+           "property shape cannot be both sh:datatype and sh:class"
+         )}
+
+      datatype_iri ->
+        {:ok,
+         {:attribute,
+          %{
+            name: name,
+            column: optional_literal(index, property_shape, @r2ml <> "columnName") || name_string,
+            predicate_iri: predicate_iri,
+            datatype_iri: datatype_iri,
+            ash_type: optional_ash_type(index, property_shape),
+            postgres_type: optional_literal(index, property_shape, @r2ml <> "postgresType"),
+            min_count: min_count,
+            max_count: max_count,
+            nullable: min_count == 0,
+            identity?: optional_boolean(index, property_shape, @r2ml <> "identityKey", false),
+            provenance:
+              %{property_shape: term_sort_key(property_shape, index)}
+              |> put_optional(:enum, enum)
+              |> put_optional(
+                :generated,
+                if(optional_boolean(index, property_shape, @r2ml <> "generated", false), do: true)
+              )
+          }}}
+
+      target_class ->
+        {:ok,
+         {:relationship,
+          %{
+            name: name,
+            predicate_iri: predicate_iri,
+            inverse_predicate: optional_iri(index, property_shape, @r2ml <> "inversePredicate"),
+            source_class: source_class,
+            target_class: target_class,
+            min_count: min_count,
+            max_count: max_count,
+            storage_strategy: optional_storage_strategy(index, property_shape, @r2ml <> "storageStrategy"),
+            source_key: optional_atom(index, property_shape, @r2ml <> "sourceKey", predicate_iri),
+            destination_key: optional_atom(index, property_shape, @r2ml <> "destinationKey", predicate_iri),
+            join_table: optional_literal(index, property_shape, @r2ml <> "joinTable"),
+            source_join_column: optional_literal(index, property_shape, @r2ml <> "sourceJoinColumn"),
+            destination_join_column: optional_literal(index, property_shape, @r2ml <> "destinationJoinColumn"),
+            association_resource: optional_literal(index, property_shape, @r2ml <> "associationResource"),
+            properties: [],
+            provenance: %{property_shape: term_sort_key(property_shape, index)}
+          }
+          |> put_optional(:inverse_name, optional_literal(index, property_shape, @r2ml <> "inverseName"))}}
+
+      true ->
+        {:error,
+         Refusal.new(
+           :REFUSED_SHACL_PROFILE_INCOMPLETE,
+           predicate_iri,
+           "property shape must close value semantics with sh:datatype or sh:class"
+         )}
+    end
+  end
+
+  # --- ontology-first extension terms -----------------------------------------------------------
+
+  @rdf_first "http://www.w3.org/1999/02/22-rdf-syntax-ns#first"
+  @rdf_rest "http://www.w3.org/1999/02/22-rdf-syntax-ns#rest"
+  @rdf_nil "http://www.w3.org/1999/02/22-rdf-syntax-ns#nil"
+
+  defp incomplete(subject, detail, evidence \\ %{}),
+    do: {:error, Refusal.new(:REFUSED_SHACL_PROFILE_INCOMPLETE, subject, detail, evidence)}
+
+  defp parse_enum(index, property_shape, subject) do
+    case objects(index, property_shape, @sh <> "in") do
+      [] ->
+        {:ok, nil}
+
+      [head] ->
+        with {:ok, items} <- rdf_list(index, head, [], subject),
+             {:ok, values} <- enum_values(items, subject) do
+          {:ok, %{values: values, module: optional_literal(index, property_shape, @r2ml <> "enumModule")}}
+        end
+
+      _ ->
+        incomplete(subject, "expected at most one sh:in")
+    end
+  end
+
+  defp rdf_list(index, node, acc, subject) when length(acc) > 4096,
+    do: incomplete(subject, "sh:in list is unbounded", %{node: term_sort_key(node, index)})
+
+  defp rdf_list(index, node, acc, subject) do
+    if iri_string(node) == @rdf_nil do
+      {:ok, Enum.reverse(acc)}
+    else
+      case {objects(index, node, @rdf_first), objects(index, node, @rdf_rest)} do
+        {[first], [rest]} -> rdf_list(index, rest, [first | acc], subject)
+        _ -> incomplete(subject, "sh:in must be a well-formed RDF list")
+      end
+    end
+  end
+
+  defp enum_values(items, subject) do
+    Enum.reduce_while(items, {:ok, []}, fn item, {:ok, acc} ->
+      with value when is_binary(value) <- literal_value(item),
+           {:ok, atom} <- safe_atom(value, subject) do
+        {:cont, {:ok, [atom | acc]}}
+      else
+        _ -> {:halt, incomplete(subject, "sh:in members must be string literals naming bounded identifiers")}
+      end
+    end)
+    |> case do
+      {:ok, values} -> {:ok, Enum.reverse(values)}
+      other -> other
+    end
+  end
+
+  defp single_node(index, shape, predicate, subject) do
+    case objects(index, shape, @r2ml <> predicate) do
+      [] -> {:ok, nil}
+      [node] -> {:ok, node}
+      _ -> incomplete(subject, "expected at most one r2ml:#{predicate}")
+    end
+  end
+
+  defp parse_multitenancy(index, shape, subject) do
+    with {:ok, node} <- single_node(index, shape, "multitenancy", subject) do
+      if is_nil(node) do
+        {:ok, nil}
+      else
+        with {:ok, strategy} <- required_literal(index, node, @r2ml <> "tenantStrategy", subject),
+             {:ok, strategy} <- tenant_strategy(strategy, subject),
+             {:ok, attribute} <- optional_name(index, node, @r2ml <> "tenantAttribute", subject) do
+          {:ok,
+           %{
+             strategy: strategy,
+             attribute: attribute,
+             global?: optional_boolean(index, node, @r2ml <> "tenantGlobal", false)
+           }}
+        end
+      end
+    end
+  end
+
+  defp tenant_strategy("attribute", _), do: {:ok, :attribute}
+  defp tenant_strategy("context", _), do: {:ok, :context}
+
+  defp tenant_strategy(other, subject),
+    do: incomplete(subject, "r2ml:tenantStrategy must be \"attribute\" or \"context\"", %{got: other})
+
+  defp optional_name(index, node, predicate, subject) do
+    case optional_literal(index, node, predicate) do
+      nil -> {:ok, nil}
+      value -> safe_atom(value, subject) |> wrap_error()
+    end
+  end
+
+  defp wrap_error({:ok, _} = ok), do: ok
+  defp wrap_error({:error, _} = error), do: error
+
+  defp name_list(nil, _subject), do: {:ok, nil}
+
+  defp name_list(value, subject) do
+    value
+    |> String.split(",", trim: true)
+    |> Enum.map(&String.trim/1)
+    |> Enum.reduce_while({:ok, []}, fn name, {:ok, acc} ->
+      case safe_atom(name, subject) do
+        {:ok, atom} -> {:cont, {:ok, [atom | acc]}}
+        error -> {:halt, error}
+      end
+    end)
+    |> case do
+      {:ok, names} -> {:ok, Enum.reverse(names)}
+      other -> other
+    end
+  end
+
+  defp parse_actions(index, shape, subject) do
+    objects(index, shape, @r2ml <> "action")
+    |> Enum.sort_by(&term_sort_key(&1, index))
+    |> Enum.reduce_while({:ok, []}, fn node, {:ok, acc} ->
+      case parse_action(index, node, subject) do
+        {:ok, action} -> {:cont, {:ok, [action | acc]}}
+        error -> {:halt, error}
+      end
+    end)
+    |> case do
+      {:ok, actions} -> {:ok, Enum.reverse(actions)}
+      other -> other
+    end
+  end
+
+  defp parse_action(index, node, subject) do
+    with {:ok, name} <- required_literal(index, node, @r2ml <> "actionName", subject),
+         {:ok, name} <- safe_atom(name, subject),
+         {:ok, kind} <- required_literal(index, node, @r2ml <> "actionKind", subject),
+         {:ok, kind} <- action_kind(kind, subject),
+         {:ok, accept} <- name_list(optional_literal(index, node, @r2ml <> "accept"), subject),
+         {:ok, arguments} <- parse_arguments(index, node, subject) do
+      {:ok,
+       %{
+         name: name,
+         kind: kind,
+         input_shape: %{
+           accept: accept,
+           primary?: optional_boolean(index, node, @r2ml <> "primary", false),
+           arguments: arguments
+         }
+       }}
+    end
+  end
+
+  defp action_kind(kind, _) when kind in ["create", "update", "read", "destroy"],
+    do: {:ok, String.to_existing_atom(kind)}
+
+  defp action_kind(kind, subject),
+    do: incomplete(subject, "r2ml:actionKind must be create|update|read|destroy", %{got: kind})
+
+  defp parse_arguments(index, node, subject) do
+    objects(index, node, @r2ml <> "argument")
+    |> Enum.sort_by(&term_sort_key(&1, index))
+    |> Enum.reduce_while({:ok, []}, fn arg, {:ok, acc} ->
+      with {:ok, name} <- required_literal(index, arg, @r2ml <> "argName", subject),
+           {:ok, name} <- safe_atom(name, subject),
+           {:ok, type} <- required_literal(index, arg, @r2ml <> "argType", subject),
+           {:ok, type} <- arg_type(type, subject) do
+        {:cont,
+         {:ok,
+          [%{name: name, type: type, allow_nil?: optional_boolean(index, arg, @r2ml <> "argAllowNil", true)} | acc]}}
+      else
+        error -> {:halt, error}
+      end
+    end)
+    |> case do
+      {:ok, args} -> {:ok, Enum.reverse(args)}
+      other -> other
+    end
+  end
+
+  defp arg_type(type, subject) do
+    case Enum.find(AshR2RML.Semantic.Extensions.arg_types(), &(Atom.to_string(&1) == type)) do
+      nil -> incomplete(subject, "r2ml:argType is not a supported Ash type", %{got: type})
+      atom -> {:ok, atom}
+    end
+  end
+
+  defp parse_policies(index, shape, subject) do
+    objects(index, shape, @r2ml <> "policy")
+    |> Enum.sort_by(&term_sort_key(&1, index))
+    |> Enum.reduce_while({:ok, []}, fn node, {:ok, acc} ->
+      with {:ok, name} <- required_literal(index, node, @r2ml <> "policyName", subject),
+           {:ok, name} <- safe_atom(name, subject),
+           {:ok, type} <- required_literal(index, node, @r2ml <> "actionType", subject),
+           {:ok, type} <- action_kind(type, subject) do
+        expression = %{
+          action_type: type,
+          authorize_if: module_list(index, node, "authorizeIf"),
+          forbid_if: module_list(index, node, "forbidIf"),
+          bypass_actor: optional_literal(index, node, @r2ml <> "bypassActor")
+        }
+
+        {:cont, {:ok, [%{name: name, effect: :deny_by_default, expression: expression} | acc]}}
+      else
+        error -> {:halt, error}
+      end
+    end)
+    |> case do
+      {:ok, policies} -> {:ok, Enum.reverse(policies)}
+      other -> other
+    end
+  end
+
+  # Check modules are carried as raw strings; admission validates them as module names.
+  defp module_list(index, node, predicate) do
+    index
+    |> objects(node, @r2ml <> predicate)
+    |> Enum.map(&(&1 |> literal_value() |> maybe_to_string()))
+    |> Enum.flat_map(&String.split(&1 || "", ",", trim: true))
+    |> Enum.map(&String.trim/1)
+  end
+
+  defp parse_state_machine(index, shape, subject) do
+    with {:ok, node} <- single_node(index, shape, "stateMachine", subject) do
+      if is_nil(node) do
+        {:ok, nil}
+      else
+        with {:ok, attribute} <- required_literal(index, node, @r2ml <> "stateAttribute", subject),
+             {:ok, attribute} <- safe_atom(attribute, subject),
+             {:ok, initial} <- required_literal(index, node, @r2ml <> "initial", subject),
+             {:ok, initial} <- safe_atom(initial, subject),
+             {:ok, terminal} <- name_list(optional_literal(index, node, @r2ml <> "terminal"), subject),
+             {:ok, transitions} <- parse_transitions(index, node, subject) do
+          {:ok, %{attribute: attribute, initial: initial, terminal: terminal || [], transitions: transitions}}
+        end
+      end
+    end
+  end
+
+  defp parse_transitions(index, node, subject) do
+    objects(index, node, @r2ml <> "transition")
+    |> Enum.sort_by(&term_sort_key(&1, index))
+    |> Enum.reduce_while({:ok, []}, fn transition, {:ok, acc} ->
+      with {:ok, action} <- required_literal(index, transition, @r2ml <> "action", subject),
+           {:ok, action} <- safe_atom(action, subject),
+           {:ok, from} <- required_literal(index, transition, @r2ml <> "from", subject),
+           {:ok, from} <- name_list(from, subject),
+           {:ok, to} <- required_literal(index, transition, @r2ml <> "to", subject),
+           {:ok, to} <- safe_atom(to, subject) do
+        {:cont, {:ok, [%{action: action, from: from, to: to} | acc]}}
+      else
+        error -> {:halt, error}
+      end
+    end)
+    |> case do
+      {:ok, transitions} -> {:ok, Enum.reverse(transitions)}
+      other -> other
     end
   end
 
@@ -501,9 +814,52 @@ defmodule AshR2RML.Ingestion do
   defp maybe_to_string(nil), do: nil
   defp maybe_to_string(value), do: to_string(value)
 
-  defp term_sort_key(%RDF.IRI{} = iri), do: RDF.IRI.to_string(iri)
-  defp term_sort_key(%RDF.BlankNode{} = bnode), do: "_:" <> to_string(RDF.BlankNode.value(bnode))
-  defp term_sort_key(term), do: inspect(term)
+  # Blank-node labels are parser-assigned and unstable across runs and statement orders. Every
+  # label that can reach a hash, the IR, or a projection is content-derived instead: the hash of
+  # the node's own outgoing subgraph (recursively), independent of the parser's label.
+  defp term_sort_key(%RDF.IRI{} = iri, _index), do: RDF.IRI.to_string(iri)
+  defp term_sort_key(%RDF.BlankNode{} = bnode, index), do: "_:c" <> canon_label(index, bnode, [])
+  defp term_sort_key(term, _index), do: inspect(term)
+
+  defp canon_label(index, node, seen) do
+    if node in seen do
+      "cycle"
+    else
+      index
+      |> Map.get(node, %{})
+      |> Enum.flat_map(fn {predicate, objects} ->
+        Enum.map(objects, &{predicate, canon_term(index, &1, [node | seen])})
+      end)
+      |> Enum.sort()
+      |> canonical_hash()
+    end
+  end
+
+  defp canon_term(index, %RDF.BlankNode{} = bnode, seen), do: {:bnode, canon_label(index, bnode, seen)}
+  defp canon_term(_index, %RDF.IRI{} = iri, _seen), do: {:iri, RDF.IRI.to_string(iri)}
+
+  defp canon_term(_index, %RDF.Literal{} = literal, _seen),
+    do:
+      {:literal, RDF.Literal.lexical(literal), literal |> RDF.Literal.datatype_id() |> to_string(),
+       RDF.Literal.language(literal)}
+
+  defp canon_term(_index, other, _seen), do: {:other, inspect(other)}
+
+  defp graph_hash(statements, index) do
+    statements
+    |> Enum.map(fn statement ->
+      {subject, predicate, object} = triple(statement)
+      {canon_term(index, subject, []), iri_string(predicate), canon_term(index, object, [])}
+    end)
+    |> Enum.uniq()
+    |> Enum.sort()
+    |> canonical_hash()
+  end
+
+  defp triple({s, p, o}), do: {s, p, o}
+  defp triple({s, p, o, _}), do: {s, p, o}
+
+  defp canonical_hash(term), do: sha256(:erlang.term_to_binary(term, [:deterministic]))
 
   defp parse_refusal(reason) do
     Refusal.new(

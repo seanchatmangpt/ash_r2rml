@@ -85,6 +85,7 @@ defmodule AshR2RML.AIRoRiskDescriptionTest do
 
       used_terms = airo_terms(description)
       unknown = MapSet.difference(used_terms, vocabulary_terms)
+
       assert MapSet.size(unknown) == 0,
              "terms not in AIRo vocabulary: #{inspect(MapSet.to_list(unknown))}"
     end

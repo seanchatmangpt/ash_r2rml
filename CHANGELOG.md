@@ -11,6 +11,43 @@ See [Conventional Commits](Https://conventionalcommits.org) for commit guideline
 
 <!-- changelog -->
 
+## v26.11.10 (2026-11-10)
+
+### Features:
+* **Ash 3.0 Domain Module projection (`r2ml:domainModule`)**:
+  - Ingest `r2ml:domainModule` from SHACL node shapes into `AshR2RML.SemanticIR.Resource.domain`.
+  - Compile-time module syntax validation in `AshR2RML.Admission.verify_domain/1` rejecting malformed module identifiers with typed refusal `:REFUSED_UNPROVEN_EQUIVALENCE`.
+  - Project governing `Ash.Domain` modules (`use Ash.Domain, validate_config_inclusion?: false`) grouping all member resources within `resources do resource ... end`.
+  - Inject explicit `domain: <DomainModule>` context into rendered `use Ash.Resource` definitions.
+* **Inverse relationship projection (`r2ml:inverseName`)**:
+  - Ingest `r2ml:inverseName` from property shapes into `AshR2RML.SemanticIR.Relationship.inverse_name`.
+  - Comprehensive collision validation in `AshR2RML.Admission.verify_inverse_names/1` guarding against name collisions with existing attributes or relationships, multi-declaration target conflicts, and invalid naming conventions.
+  - Project synthesized `has_many` inverses on target resources with inverted `source_attribute` and `destination_attribute` keys.
+* **Per-resource code generation layout (`files: :per_resource`)**:
+  - Added `:per_resource` layout option to `AshR2RML.Ggen.compile_bundle/2` and variants (default `:single`).
+  - Emits discrete, modular `.ex` files for each resource, join table, and domain module under domain-specific folder hierarchies.
+  - Seals `receipts/ash-file-set.json` recording multi-file layout, single-source composite sha256, and per-file sha256 digests.
+* **Bidirectional castle-bridge trust mirror (`castle_bridge_contract.ttl`)**:
+  - Added 4 r2rml-side observations mirroring `xcb:bridge` in `ontology/castle_bridge_contract.ttl` (castle source, pack, self `067954ad` allowlisted, consumer base).
+  - Implemented 4 court tests in `test/unit/castle_bridge_contract_test.exs` ensuring contract shape, mirror cross-check, HEAD-match, and fail-closed staleness detection.
+
+### Enhancements:
+* **Doc-hdit Diataxis reference generation (100% module coverage)**:
+  - Generated per-namespace reference documentation under `documentation/reference/generated/` covering all 245 modules in `lib/` (883 function/macro definitions across 64 namespace groups).
+  - Reorganized disparate reference docs into structured 4-quadrant Diataxis layout (Tutorials, How-To Guides, Reference, Topics).
+* **Livebook synchronization**:
+  - Updated `managing_schema.livemd` and `ash_r2rml.livemd` to use `AshR2RML.Resource.Info.mapping_result/1` and version `~> 26.11`.
+  - Cleaned dead relative documentation links across fleet guides.
+* **Ggen runtime pin ancestry court refresh**:
+  - Refreshed pinned git commit SHAs in `documentation/how_to/ggen_runtime_integration.md` and `test/unit/ggen_runtime_test.exs` to live HEAD `c395b33a358571d4a`.
+  - Added ancestry court in `test/unit/ggen_runtime_ancestry_test.exs` enforcing that all runtime pins are 40-hex SHAs and valid historical ancestors of live HEAD.
+
+### Packaging & Verification:
+* **Hex package release gate for v26.11.10**:
+  - Verified package construction via `mix hex.build` with exit code 0, package size 1.3 MB, and zero live publication.
+  - Synchronized version carriers in `mix.exs` (`@version "26.11.10"`) and `ggen.toml` (`version = "26.11.10"`).
+  - Retired superseded scheduled release workflow (`.github/workflows/release-v26.9.28.yml`).
+
 ## v26.10.8 (2026-10-08)
 
 ### Changes:

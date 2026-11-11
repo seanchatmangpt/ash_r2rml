@@ -84,6 +84,7 @@ defmodule AshR2RML.Admission do
          shape_iri: get(raw, :shape_iri),
          module: get(raw, :module),
          repo_module: get(raw, :repo_module),
+         domain: get(raw, :domain),
          table: get(raw, :table),
          subject_template: get(raw, :subject_template),
          identities: sort_identities(identities),
@@ -91,13 +92,24 @@ defmodule AshR2RML.Admission do
          relationships: Enum.sort_by(relationships, &to_string(&1.name)),
          actions: raw |> get(:actions, []) |> normalize_actions() |> Enum.sort_by(&to_string(&1.name)),
          policies: raw |> get(:policies, []) |> normalize_policies() |> Enum.sort_by(&to_string(&1.name)),
-         provenance: get(raw, :provenance, %{})
-       }}
+         provenance: resource_provenance(raw)
+       }
+       |> AshR2RML.Semantic.Extensions.derive()}
     end
   end
 
   defp normalize_resource(other) do
     {:error, Refusal.new(:REFUSED_UNMAPPED_RESOURCE_CLASS, other, "resource profile entry must be a map")}
+  end
+
+  # Additive ontology-first terms are carried in provenance only when present.
+  defp resource_provenance(raw) do
+    Enum.reduce([:multitenancy, :state_machine], get(raw, :provenance, %{}), fn key, acc ->
+      case get(raw, key) do
+        nil -> acc
+        value -> Map.put(acc, key, value)
+      end
+    end)
   end
 
   defp normalize_attributes(values) when is_list(values) do
@@ -187,6 +199,7 @@ defmodule AshR2RML.Admission do
         source_join_column: get(raw, :source_join_column),
         destination_join_column: get(raw, :destination_join_column),
         association_resource: get(raw, :association_resource),
+        inverse_name: get(raw, :inverse_name),
         storage_strategy: normalize_strategy(get(raw, :storage_strategy)),
         min_count: get(raw, :min_count, 0),
         max_count: get(raw, :max_count),
@@ -269,7 +282,30 @@ defmodule AshR2RML.Admission do
         )
       end)
 
-    global ++ Enum.flat_map(resources, &verify_resource(&1, by_class))
+    global ++
+      verify_enum_modules(resources) ++
+      verify_inverse_names(resources) ++ Enum.flat_map(resources, &verify_resource(&1, by_class))
+  end
+
+  # A shared r2ml:enumModule must carry one value set everywhere it is used.
+  defp verify_enum_modules(resources) do
+    resources
+    |> Enum.flat_map(&AshR2RML.Semantic.Extensions.enum_modules/1)
+    |> Enum.group_by(&elem(&1, 0), &elem(&1, 1))
+    |> Enum.flat_map(fn {module, value_sets} ->
+      if length(Enum.uniq(value_sets)) > 1,
+        do: [
+          Refusal.new(
+            :REFUSED_UNPROVEN_EQUIVALENCE,
+            module,
+            "enum module declared with conflicting sh:in value sets",
+            %{
+              module: module
+            }
+          )
+        ],
+        else: []
+    end)
   end
 
   defp verify_resource(resource, by_class) do
@@ -280,9 +316,77 @@ defmodule AshR2RML.Admission do
     |> require_nonempty(resource.module, resource.module, "resource module is required")
     |> require_nonempty(resource.table, resource.module, "relational table name is required")
     |> require_nonempty(resource.subject_template, resource.module, "subject template is required")
+    |> Kernel.++(verify_domain(resource))
+    |> Kernel.++(AshR2RML.Semantic.Extensions.verify(resource))
     |> Kernel.++(verify_identity(resource))
     |> Kernel.++(verify_attributes(resource))
     |> Kernel.++(verify_relationships(resource, by_class))
+  end
+
+  defp verify_domain(%Resource{domain: nil}), do: []
+
+  defp verify_domain(%Resource{domain: domain} = resource) do
+    if is_binary(domain) and Regex.match?(~r/\A[A-Z][A-Za-z0-9_]*(\.[A-Z][A-Za-z0-9_]*)*\z/, domain) do
+      []
+    else
+      [
+        Refusal.new(
+          :REFUSED_UNPROVEN_EQUIVALENCE,
+          resource.module,
+          "r2ml:domainModule must be a valid Elixir module name",
+          %{domain: domain}
+        )
+      ]
+    end
+  end
+
+  # r2ml:inverseName projects a has_many onto the TARGET resource; its name must not collide
+  # with an attribute, a declared relationship, or another inverse on that target.
+  defp verify_inverse_names(resources) do
+    by_class = Map.new(resources, &{&1.class_iri, &1})
+
+    inverses =
+      for resource <- resources,
+          rel <- resource.relationships,
+          not is_nil(rel.inverse_name),
+          target = Map.get(by_class, rel.target_class),
+          not is_nil(target),
+          do: {target, to_string(rel.inverse_name), resource, rel}
+
+    taken_by_target =
+      Map.new(resources, fn r ->
+        {r.class_iri, Enum.map(r.attributes, &to_string(&1.name)) ++ Enum.map(r.relationships, &to_string(&1.name))}
+      end)
+
+    seen = Enum.frequencies_by(inverses, fn {t, name, _, _} -> {t.class_iri, name} end)
+
+    Enum.flat_map(inverses, fn {target, name, resource, rel} ->
+      cond do
+        not Regex.match?(~r/\A[a-z_][a-z0-9_]*\z/, name) ->
+          [
+            Refusal.new(
+              :REFUSED_UNPROVEN_EQUIVALENCE,
+              {resource.module, rel.name},
+              "r2ml:inverseName must be a snake_case Ash name",
+              %{inverse_name: name}
+            )
+          ]
+
+        name in Map.fetch!(taken_by_target, target.class_iri) or
+            Map.fetch!(seen, {target.class_iri, name}) > 1 ->
+          [
+            Refusal.new(
+              :REFUSED_UNPROVEN_EQUIVALENCE,
+              {resource.module, rel.name},
+              "r2ml:inverseName collides with an existing attribute or relationship on the target resource",
+              %{inverse_name: name, target: target.module}
+            )
+          ]
+
+        true ->
+          []
+      end
+    end)
   end
 
   defp verify_identity(%Resource{identities: []} = resource) do

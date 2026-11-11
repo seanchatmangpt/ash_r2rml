@@ -8,7 +8,7 @@
     subject: %{
       repo: "seanchatmangpt/ash_r2rml",
       base: "main",
-      head: "37ce7e016a2860192"
+      head: "c395b33a358571d4a"
     },
     authority: %{policy: "project2", action: "construct"},
     runtime: %{
