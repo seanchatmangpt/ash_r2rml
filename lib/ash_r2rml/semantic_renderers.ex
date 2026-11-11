@@ -453,6 +453,7 @@ defmodule AshR2RML.Semantic.SQL do
 
   defp column_definition(attribute) do
     nullability = if attribute.nullable, do: "", else: " NOT NULL"
+
     if AshR2RML.Semantic.Extensions.encrypted?(attribute) do
       "#{quote_ident("encrypted_" <> to_string(attribute.name))} bytea#{nullability}"
     else

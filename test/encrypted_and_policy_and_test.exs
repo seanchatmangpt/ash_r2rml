@@ -184,10 +184,47 @@ defmodule AshR2RML.EncryptedAndPolicyAndTest do
       check!("Enc.Checks.TenantScope", [:scope_only, :both])
       check!("Enc.Checks.HasCap", [:cap_only, :both])
 
-      one = ~s(r2ml:policy [ r2ml:policyName "either" ; r2ml:actionType "read" ; r2ml:authorizeIf "Enc.Checks.TenantScope, Enc.Checks.HasCap" ] ;)
+      one =
+        ~s(r2ml:policy [ r2ml:policyName "either" ; r2ml:actionType "read" ; r2ml:authorizeIf "Enc.Checks.TenantScope, Enc.Checks.HasCap" ] ;)
+
       assert {:ok, bundle} = Ggen.compile_turtle_bundle(shape("Pol2", str("title"), one), files: :per_resource)
       load!(bundle)
       assert Ash.can?({Enc.Pol2, :read}, :cap_only)
+    end
+  end
+
+  describe "default create/update accept" do
+    test "create with params, update a field, update cannot change :id, encrypted round-trips" do
+      vault!()
+      ttl = shape("Acc1", str("title") <> str("ein", @encrypted, 0), ~s(r2ml:cloakVault "Enc.Vault" ;))
+      assert {:ok, a} = Ggen.compile_turtle_bundle(ttl, files: :per_resource)
+      assert {:ok, b} = Ggen.compile_turtle_bundle(ttl, files: :per_resource)
+      assert a.files == b.files
+      load!(a)
+
+      id = Ash.UUID.generate()
+
+      rec =
+        Enc.Acc1
+        |> Ash.Changeset.for_create(:create, %{id: id, title: "t", ein: "98-7654321"})
+        |> Ash.create!(authorize?: false)
+
+      assert rec.id == id
+
+      upd =
+        rec
+        |> Ash.Changeset.for_update(:update, %{title: "t2"})
+        |> Ash.update!(authorize?: false)
+
+      assert upd.title == "t2"
+
+      changeset = Ash.Changeset.for_update(upd, :update, %{id: Ash.UUID.generate()})
+      refute changeset.valid?
+
+      loaded = Ash.load!(upd, :ein, authorize?: false)
+      assert loaded.ein == "98-7654321"
+      assert Ash.Resource.Info.action(Enc.Acc1, :read)
+      assert Ash.Resource.Info.action(Enc.Acc1, :destroy)
     end
   end
 end

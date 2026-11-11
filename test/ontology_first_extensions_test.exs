@@ -248,7 +248,9 @@ defmodule AshR2RML.OntologyFirstExtensionsTest do
     test "no residue manifest and unchanged defaults when no policy is declared" do
       assert {:ok, bundle} = Ggen.compile_turtle_bundle(shape("Pol3", str("title")), files: :per_resource)
       refute Map.has_key?(bundle.files, "receipts/ash-residue.json")
-      assert bundle.files["generated/ash/ext/pol3.ex"] =~ "defaults [:read, :create, :update, :destroy]"
+      assert bundle.files["generated/ash/ext/pol3.ex"] =~ "defaults [:read, :destroy]"
+      assert bundle.files["generated/ash/ext/pol3.ex"] =~ "default_accept [:id, :title]"
+      assert bundle.files["generated/ash/ext/pol3.ex"] =~ "create :create do"
     end
   end
 

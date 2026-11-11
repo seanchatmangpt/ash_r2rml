@@ -478,21 +478,31 @@ defmodule AshR2RML.Semantic.Extensions do
       end
 
     kinds = Enum.uniq(Enum.map(declared, & &1.kind) ++ if(generated == [], do: [], else: [:update]))
-    defaults = [:read, :create, :update, :destroy] -- kinds
+    # create/update are rendered explicitly (same action names) so they accept the attributes;
+    # a declared action of that kind supersedes the generated one.
+    pk = resource.identities |> Enum.filter(& &1.primary?) |> Enum.flat_map(& &1.keys)
+    sm_attr = if sm, do: [sm.attribute], else: []
+    create_accept = resource.attributes |> Enum.map(& &1.name) |> Enum.sort()
+    update_accept = create_accept -- (pk ++ sm_attr)
 
-    accept_line =
-      case encrypted_attributes(resource) do
-        [] ->
-          []
+    explicit =
+      [
+        if(:create in kinds,
+          do: nil,
+          else: "    create :create do\n      primary? true\n      accept #{inspect(create_accept)}\n    end"
+        ),
+        if(:update in kinds,
+          do: nil,
+          else: "    update :update do\n      primary? true\n      accept #{inspect(update_accept)}\n    end"
+        )
+      ]
+      |> Enum.reject(&is_nil/1)
 
-        _ ->
-          # Encrypted attributes are private; default actions must still accept them as input.
-          names = for a <- resource.attributes, encrypted?(a) or not generated?(a), do: a.name
-          ["    default_accept #{inspect(names)}"]
-      end
+    defaults = [:read, :destroy] -- kinds
+    accept_line = ["    default_accept #{inspect(create_accept)}"]
+    defaults_line = if defaults == [], do: [], else: ["    defaults #{inspect(defaults)}"]
+    defaults_line = accept_line ++ defaults_line ++ explicit
 
-    defaults_line =
-      if defaults == [], do: [], else: accept_line ++ ["    defaults #{inspect(defaults)}"]
     rendered = Enum.map(declared, &render_action(&1, transitions[&1.name]))
 
     "  actions do\n" <> Enum.join(defaults_line ++ rendered ++ generated, "\n\n") <> "\n  end"
