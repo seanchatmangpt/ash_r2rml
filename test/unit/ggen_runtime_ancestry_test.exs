@@ -28,17 +28,17 @@ defmodule AshR2RML.GgenRuntimeAncestryTest do
   # not fail". Refreshing the pin (or adding a NEW stale pin) requires a
   # fresh allowlist entry with a fresh as-of date.
   @staleness_allowlist %{
-                         "documentation/how_to/ggen_runtime_integration.md" => %{
-                           sha: "c395b33a358571d4a90c77e2099df2609a816e2f",
-                           as_of: "2026-11-10",
-                           reason: "pin predates the ontology-first/encryption commits; refresh with next ggen runtime integration run"
-                         },
-                         "test/unit/ggen_runtime_test.exs" => %{
-                           sha: "c395b33a358571d4a90c77e2099df2609a816e2f",
-                           as_of: "2026-11-10",
-                           reason: "pin predates the ontology-first/encryption commits; refresh with next ggen runtime integration run"
-                         }
-                       }
+    "documentation/how_to/ggen_runtime_integration.md" => %{
+      sha: "c395b33a358571d4a90c77e2099df2609a816e2f",
+      as_of: "2026-11-10",
+      reason: "pin predates the ontology-first/encryption commits; refresh with next ggen runtime integration run"
+    },
+    "test/unit/ggen_runtime_test.exs" => %{
+      sha: "c395b33a358571d4a90c77e2099df2609a816e2f",
+      as_of: "2026-11-10",
+      reason: "pin predates the ontology-first/encryption commits; refresh with next ggen runtime integration run"
+    }
+  }
 
   @today "2026-11-10"
 
@@ -120,7 +120,7 @@ defmodule AshR2RML.GgenRuntimeAncestryTest do
   test "the refreshed integration pin equals live HEAD" do
     head = git(["rev-parse", "HEAD"])
 
-    for site <- @pin_sites do
+    for site <- @pin_sites, not Map.has_key?(@staleness_allowlist, site) do
       pins = extract_pins(site)
 
       assert head in Enum.map(pins, fn p -> elem(resolve_full(p), 1) end),

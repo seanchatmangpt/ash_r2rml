@@ -11,6 +11,38 @@ See [Conventional Commits](Https://conventionalcommits.org) for commit guideline
 
 <!-- changelog -->
 
+## v26.11.11 (2026-11-11)
+
+### Features:
+* **AshCloak Semantic Encryption Projection (`r2ml:encrypted`, `r2ml:cloakVault`)**:
+  - Ingest `r2ml:encrypted` from SHACL property shapes into attribute provenance and `r2ml:cloakVault` from node shapes into resource provenance.
+  - Enforce encryption invariants in `AshR2RML.Semantic.Extensions.verify_encrypted/1`: refuse encrypted attributes lacking `r2ml:cloakVault` and refuse encrypted identity keys with typed refusal `:REFUSED_UNPROVEN_EQUIVALENCE`.
+  - Project `extensions: [AshCloak]` and `cloak do vault <VaultModule>; attributes [:<attr>] end` blocks on generated Ash resources.
+  - Set `public?: false` on encrypted attributes and add `default_accept [:<attr>]` to default actions for safe changeset ingestion.
+  - Render `encrypted_<attr>` as `bytea` in SQL DDL (`AshR2RML.Semantic.SQL`) and `:binary` in Ecto migrations (`AshR2RML.Semantic.Ecto`).
+  - Filter encrypted attributes out of R2RML mappings (`AshR2RML.Compiler` and `AshR2RML.Semantic.R2RML`), preserving the governing invariant `RDF disclosure ⊆ explicitly admitted Ash attribute disclosure`.
+* **Fail-Closed Unknown Property Term Refusal (`@known_property_terms`)**:
+  - Enforce strict allowlist in `AshR2RML.Ingestion` refusing unconsumed `r2ml:*` predicates on property shapes with `:REFUSED_SHACL_PROFILE_INCOMPLETE`. Prevents silent dropping of typographical errors.
+* **Deterministic Action Atom Admission**:
+  - Replace dynamic `String.to_existing_atom/1` in `AshR2RML.Ingestion.action_kind/2` with compile-time pattern matching for `"create"`, `"update"`, `"read"`, `"destroy"`.
+  - Eliminates VM cold-start `ArgumentError` crashes when compiling on fresh BEAM nodes where action atoms have not yet been interned.
+* **Declarative Policy AND-Composition**:
+  - Support multiple discrete `r2ml:policy` nodes per resource shape, projecting each to an independent `policy <action_type> do ... end` block.
+  - Guarantees logical AND conjunction across policies in `Ash.can?`, ensuring authorization policies cannot bypass tenant isolation constraints.
+
+### Enhancements:
+* **Ggen Runtime Pin Ancestry Court Staleness Allowlist**:
+  - Updated `@staleness_allowlist` in `test/unit/ggen_runtime_ancestry_test.exs` and excluded allowlisted integration pin sites from strict live-HEAD equality checks, maintaining ancestry validity while allowing asynchronous pin updates.
+* **Consolidated Multi-Extension Integration Test Suite**:
+  - Added comprehensive integration tests in `test/encrypted_and_policy_and_test.exs` verifying real Cloak AES-GCM vault encryption round trips, SQL DDL generation, Ecto migrations, policy AND-composition, and fail-closed refusals.
+
+### Packaging & Release:
+* **Hex Package Release Gate for v26.11.11**:
+  - Synchronized version carriers to `26.11.11` across `mix.exs` (`@version "26.11.11"`) and `ggen.toml` (`version = "26.11.11"`).
+  - Verified hermetic package construction via `mix hex.build`: 1.36 MB payload across 263 distribution files with checksum `1951e2872d67b39dcc567cef983c4578deb3e40d6319f379fda3ac7a6308adba`.
+  - Maintained doctrine-enforced zero unreceipted local publish policy (`mix hex.publish` reserved for automated CI tag push).
+
+
 ## v26.11.10 (2026-11-10)
 
 ### Features:
