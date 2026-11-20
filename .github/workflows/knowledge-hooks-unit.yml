@@ -26,6 +26,7 @@ on:
       - "test/frontier_evidence_test.exs"
       - "test/frontier_evidence_identity_test.exs"
       - "test/adversarial/knowledge_hooks_authority_test.exs"
+      - "test/adversarial/knowledge_hooks_no_actuation_chicago_test.exs"
       - ".github/workflows/knowledge-hooks-unit.yml"
   pull_request:
     paths:
@@ -46,6 +47,7 @@ on:
       - "test/frontier_evidence_test.exs"
       - "test/frontier_evidence_identity_test.exs"
       - "test/adversarial/knowledge_hooks_authority_test.exs"
+      - "test/adversarial/knowledge_hooks_no_actuation_chicago_test.exs"
       - ".github/workflows/knowledge-hooks-unit.yml"
 
 concurrency:
@@ -94,3 +96,4 @@ jobs:
           test/frontier_evidence_test.exs
           test/frontier_evidence_identity_test.exs
           test/adversarial/knowledge_hooks_authority_test.exs
+          test/adversarial/knowledge_hooks_no_actuation_chicago_test.exs
