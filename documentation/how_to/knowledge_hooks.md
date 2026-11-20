@@ -13,7 +13,44 @@ hook definition
   -X-> no execution authority
 ```
 
-A matched hook returns `%AshR2RML.KnowledgeHook.Intent{}` with `authority: :UNAUTHORIZED`, `standing: :constructed_not_actuated`, and `requires_actuation_receipt?: true`. A downstream BRCE/Reactor boundary must separately admit authority and produce its own actuation receipt.
+A matched hook returns `%AshR2RML.KnowledgeHook.Intent{}` with `authority: :UNAUTHORIZED`, `standing: :constructed_not_actuated`, and `requires_actuation_receipt?: true`.
+
+The opposite side of that fence is `AshR2RML.KnowledgeHook.Actuator` (also
+`AshR2RML.actuate_knowledge_hook/3`): an explicit BRCE authority admission plus a
+caller-supplied `perform/2` effect. The effect function is admitted only at the
+actuator boundary — never inside a hook definition or intent payload.
+
+```elixir
+{:ok, [evaluation]} =
+  AshR2RML.KnowledgeHooks.evaluate(plan,
+    current: [data: graph, strategy: :local_rdf]
+  )
+
+intent = evaluation.intent
+
+{:ok, actuation} =
+  AshR2RML.KnowledgeHook.Actuator.actuate(
+    intent,
+    %{
+      brce?: true,
+      authority_sha256: authority_sha,
+      brce_receipt_sha256: brce_sha,
+      pre_state_sha256: pre_sha,
+      post_state_sha256: post_sha
+    },
+    perform: fn target, payload ->
+      # real downstream DO owned by the caller (Reactor/Ash/Oban/etc.)
+      MyApp.Notify.deliver(target, payload)
+    end
+  )
+
+actuation.authority == :AUTHORIZED
+actuation.standing == :actuated_with_receipt
+actuation.evaluation_receipt_sha256 == intent.evaluation_receipt_sha256
+```
+
+Chicago-style coverage for this path lives in
+`test/adversarial/knowledge_hooks_actuation_chicago_test.exs`.
 
 ## Normalized hooks
 

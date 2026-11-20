@@ -128,6 +128,16 @@ defmodule AshR2RML do
   @doc "Project a constructed Knowledge Hook intent to a typed inert downstream target."
   def project_knowledge_hook_target(intent), do: AshR2RML.KnowledgeHook.Target.from_intent(intent)
 
+  @doc """
+  Actuate a constructed Knowledge Hook intent under explicit BRCE authority.
+
+  This is the opposite side of `evaluate_knowledge_hooks/2`: hooks construct
+  unauthorized intents; `actuate_knowledge_hook/3` admits DO and emits an
+  actuation receipt. Pass `perform: fn target, payload -> {:ok, effect} end`.
+  """
+  def actuate_knowledge_hook(intent, authority, opts \\ []),
+    do: AshR2RML.KnowledgeHook.Actuator.actuate(intent, authority, opts)
+
   @doc "Evaluate cognition-to-reflex promotion evidence without granting actuation authority."
   def evaluate_knowledge_hook_promotion(candidate, evidence, opts \\ []),
     do: AshR2RML.KnowledgeHook.Promotion.evaluate(candidate, evidence, opts)
