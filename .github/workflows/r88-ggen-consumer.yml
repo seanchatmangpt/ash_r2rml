@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_r2rml contributors <https://github.com/seanchatmangpt/ash_r2rml/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 name: R88 GGEN Consumer Contract
 
 on:
@@ -15,40 +19,57 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: r88-ggen-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
 jobs:
   manufacture:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
       SUBJECT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      GGEN_PRODUCER_SHA: ddfa602bfbab57b7ed5150f61b0acac7a41e3020
     steps:
       - name: Checkout exact consumer subject
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ env.SUBJECT_SHA }}
           persist-credentials: false
 
+      - name: Assert exact subject identity
+        uses: ./.github/actions/assert-exact-head
+        with:
+          subject_sha: ${{ env.SUBJECT_SHA }}
+
       - name: Record exact consumer subject
         run: |
-          test "$(git rev-parse HEAD)" = "${SUBJECT_SHA}"
+          set -euo pipefail
           printf 'consumer=%s\n' "${SUBJECT_SHA}"
-          printf 'producer=%s\n' "ddfa602bfbab57b7ed5150f61b0acac7a41e3020"
+          printf 'producer=%s\n' "${GGEN_PRODUCER_SHA}"
 
       - name: Resolve exact ggen producer
         run: |
-          git clone --filter=blob:none https://github.com/seanchatmangpt/ggen.git "$RUNNER_TEMP/ggen"
-          git -C "$RUNNER_TEMP/ggen" checkout --detach ddfa602bfbab57b7ed5150f61b0acac7a41e3020
-          test "$(git -C "$RUNNER_TEMP/ggen" rev-parse HEAD)" = "ddfa602bfbab57b7ed5150f61b0acac7a41e3020"
+          set -euo pipefail
+          git clone --filter=blob:none https://github.com/seanchatmangpt/ggen.git "${RUNNER_TEMP}/ggen"
+          git -C "${RUNNER_TEMP}/ggen" checkout --detach "${GGEN_PRODUCER_SHA}"
+          test "$(git -C "${RUNNER_TEMP}/ggen" rev-parse HEAD)" = "${GGEN_PRODUCER_SHA}"
 
       - name: Admit canonical GGEN Rust toolchain
         run: rustup toolchain install nightly --profile minimal
 
       - name: Manufacture through canonical GGEN
         run: |
-          cargo +nightly run --manifest-path "$RUNNER_TEMP/ggen/Cargo.toml" -p ggen-cli-lib --bin ggen -- sync run
+          set -euo pipefail
+          cargo +nightly run --manifest-path "${RUNNER_TEMP}/ggen/Cargo.toml" -p ggen-cli-lib --bin ggen -- sync run
 
       - name: Qualify generated consequence
         run: |
+          set -euo pipefail
           test -s documentation/reference/ggen-consumer-capabilities.md
           grep -q 'Ash-first TTL GGEN bundle' documentation/reference/ggen-consumer-capabilities.md
           grep -q 'AshR2RML.Ggen.compile_bundle/1' documentation/reference/ggen-consumer-capabilities.md
@@ -56,5 +77,6 @@ jobs:
 
       - name: Preserve authority boundary
         run: |
+          set -euo pipefail
           grep -q 'SELECT_CONSTRUCT_ONLY' ontology/ggen-consumer-capabilities.ttl
           ! grep -R --line-number -E '(deploy|release|publish|kubectl|terraform apply)' ggen.toml ontology/ggen-consumer-capabilities.ttl templates/ggen-consumer-capabilities.md.tera
