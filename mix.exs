@@ -59,14 +59,21 @@ defmodule AshR2RML.MixProject do
         {"README.md", title: "Home"},
         {"LICENSES/MIT.md", title: "License"},
         {"ash_r2rml.livemd", title: "AshR2RML Livebook"},
-        "CHANGELOG.md"
+        "CHANGELOG.md",
+        {"documentation/README.md", title: "Documentation Hub (Diátaxis)"},
+        {"documentation/tutorials/knowledge_hooks_n3.md", title: "Tutorial: N3-style Knowledge Hooks"},
+        {"documentation/how_to/knowledge_hooks.md", title: "How To: Knowledge Hooks"},
+        {"documentation/topics/knowledge_hooks_thesis.md", title: "Explanation: Knowledge Hooks Thesis"},
+        {"documentation/reference/knowledge_hooks.md", title: "Reference: Knowledge Hooks"}
       ],
       groups_for_extras: [
         Tutorials: ~r'documentation/tutorials',
         "How To": ~r'documentation/how_to',
+        Reference: ~r'documentation/reference',
         Topics: ~r'documentation/topics',
         "About AshR2RML": [
-          "CHANGELOG.md"
+          "CHANGELOG.md",
+          "documentation/README.md"
         ]
       ],
       groups_for_modules: [
