@@ -39,6 +39,33 @@ and:
 semantic\ certainty \not\Rightarrow authority
 \]
 
+## N3 correspondence (Explanation)
+
+Knowledge Hooks are the Elixir substrate for an N3-style implication cycle.
+They are **not** a Notation3 parser; they simulate the rule discipline in
+AshR2RML's admitted observation / construct / actuate stages.
+
+| N3 | AshR2RML |
+|---|---|
+| `{ antecedent } => { consequent }` | admitted hook: predicate → inert intent |
+| Formula match over a graph | `KnowledgeHooks.evaluate/2` over `RDF.Graph` |
+| Derived consequent description | `%KnowledgeHook.Intent{}` + evaluation receipt |
+| Asserting / acting on the consequent | `KnowledgeHook.Actuator.actuate/3` under BRCE |
+
+Classical N3 reasoners often blur implication with side effect. AshR2RML keeps
+the split mechanical:
+
+```text
+SELECT / observe   →   CONSTRUCT intent   →   (separate) DO via Actuator
+```
+
+`perform/2` is admitted only at the actuator boundary. Hook definitions, intent
+payloads, GitVan pipelines, and KNHK actions never carry ambient DO authority.
+
+Learning path: [N3 tutorial](../tutorials/knowledge_hooks_n3.md).
+Task recipes: [how-to](../how_to/knowledge_hooks.md).
+API catalog: [reference](../reference/knowledge_hooks.md).
+
 ## Historical lineage
 
 The implementation is a convergence, not a new disconnected hook system.
