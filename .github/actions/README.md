@@ -15,3 +15,7 @@ invoked as the first step.
 
 Third-party actions are pinned to full commit SHAs with a trailing `# vN` comment.
 Dependabot (`.github/dependabot.yml`) refreshes those pins weekly.
+
+Jobs that run git ancestry / pin courts (`release-security`, `test`, WS4 runtime
+contract, exact-head release court) must set `fetch-depth: 0` on checkout —
+the default depth of 1 hides historical pins and fails `ggen_runtime_ancestry_test`.

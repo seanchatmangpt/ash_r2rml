@@ -82,6 +82,8 @@ jobs:
         with:
           ref: ${{ env.SUBJECT_SHA }}
           persist-credentials: false
+          # Ancestry/pin courts need full history (default fetch-depth: 1 hides pins).
+          fetch-depth: 0
 
       - name: Assert exact subject identity
         uses: ./.github/actions/assert-exact-head
@@ -157,6 +159,8 @@ jobs:
         with:
           ref: ${{ env.SUBJECT_SHA }}
           persist-credentials: false
+          # Ancestry/pin courts need full history (default fetch-depth: 1 hides pins).
+          fetch-depth: 0
 
       - name: Assert exact subject identity
         uses: ./.github/actions/assert-exact-head
