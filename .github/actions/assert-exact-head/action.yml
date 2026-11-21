@@ -1,0 +1,29 @@
+# SPDX-FileCopyrightText: 2026 ash_r2rml contributors <https://github.com/seanchatmangpt/ash_r2rml/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
+name: Assert exact head
+description: >
+  After actions/checkout of the admitted subject SHA, assert HEAD matches.
+  Local composite actions require a prior checkout before they can run.
+
+inputs:
+  subject_sha:
+    description: Admitted git subject SHA that must equal HEAD
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Assert exact subject identity
+      shell: bash
+      env:
+        SUBJECT_SHA: ${{ inputs.subject_sha }}
+      run: |
+        set -euo pipefail
+        actual="$(git rev-parse HEAD)"
+        printf 'admitted=%s\nobserved=%s\n' "${SUBJECT_SHA}" "${actual}"
+        if [[ "${actual}" != "${SUBJECT_SHA}" ]]; then
+          echo "::error title=REFUSED:EXACT_HEAD_MISMATCH::actual=${actual} expected=${SUBJECT_SHA}"
+          exit 2
+        fi

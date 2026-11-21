@@ -1,64 +1,64 @@
-# SPDX-FileCopyrightText: 2026 ash_r2rml contributors
+# SPDX-FileCopyrightText: 2026 ash_r2rml contributors <https://github.com/seanchatmangpt/ash_r2rml/graphs/contributors>
+#
 # SPDX-License-Identifier: MIT
 
 name: ChatGPT Cloud Qualification
 
 on:
-  pull_request:
   push:
-    branches: [main, "feat/**"]
+    branches: [main]
+  pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: chatgpt-cloud-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
 jobs:
   qualify:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     env:
       MIX_ENV: test
       SUBJECT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout admitted subject
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ env.SUBJECT_SHA }}
+          persist-credentials: false
 
-      - name: Verify exact subject identity
-        shell: bash
-        run: |
-          set -euo pipefail
-          observed="$(git rev-parse HEAD)"
-          printf 'admitted=%s\nobserved=%s\n' "$SUBJECT_SHA" "$observed"
-          test "$observed" = "$SUBJECT_SHA"
+      - name: Assert exact subject identity
+        uses: ./.github/actions/assert-exact-head
+        with:
+          subject_sha: ${{ env.SUBJECT_SHA }}
 
-      - name: Set up declared Elixir / Erlang
-        uses: jdx/mise-action@v2
-
-      - name: Resolve exact locked dependency graph
-        shell: bash
-        run: |
-          set -euo pipefail
-          before="$(sha256sum mix.lock | awk '{print $1}')"
-          mix deps.get
-          after="$(sha256sum mix.lock | awk '{print $1}')"
-          test "$before" = "$after"
+      - name: Setup Elixir (clean resolve + lock verify)
+        uses: ./.github/actions/setup-elixir
+        with:
+          clean: "true"
+          verify_lock: "true"
 
       - name: Compile with warnings as errors
-        shell: bash
         run: |
           set -euo pipefail
           mkdir -p tmp/chatgpt-cloud
           MIX_ENV=test mix compile --force --warnings-as-errors 2>&1 | tee tmp/chatgpt-cloud/compile.log
 
       - name: Execute Fortune5 in-memory crown
-        shell: bash
         run: |
           set -euo pipefail
           MIX_ENV=test mix test test/fortune5/ 2>&1 | tee tmp/chatgpt-cloud/fortune5.log
           grep -Eq '51 tests, 0 failures' tmp/chatgpt-cloud/fortune5.log
 
       - name: Manufacture exact-head qualification receipt
-        shell: bash
         run: |
           set -euo pipefail
           export SUBJECT_TREE_SHA="$(git rev-parse 'HEAD^{tree}')"
@@ -121,7 +121,7 @@ jobs:
 
       - name: Upload qualification receipt
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: ash-r2rml-chatgpt-cloud-${{ env.SUBJECT_SHA }}
           path: |

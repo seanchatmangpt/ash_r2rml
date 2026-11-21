@@ -1,14 +1,13 @@
 # SPDX-FileCopyrightText: 2026 ash_r2rml contributors <https://github.com/seanchatmangpt/ash_r2rml/graphs/contributors>
+#
 # SPDX-License-Identifier: MIT
 
 name: Knowledge Hooks Unit
 
 on:
   push:
-    branches:
-      - main
-      - feat/knowledge-hooks
-    paths:
+    branches: [main]
+    paths: &knowledge-hooks-paths
       - "lib/ash_r2rml.ex"
       - "lib/ash_r2rml/semantic_web.ex"
       - "lib/ash_r2rml/knowledge_hooks.ex"
@@ -29,52 +28,43 @@ on:
       - "test/adversarial/knowledge_hooks_actuation_chicago_test.exs"
       - "lib/ash_r2rml/knowledge_hook/actuator.ex"
       - ".github/workflows/knowledge-hooks-unit.yml"
+      - ".github/actions/**"
   pull_request:
-    paths:
-      - "lib/ash_r2rml.ex"
-      - "lib/ash_r2rml/semantic_web.ex"
-      - "lib/ash_r2rml/knowledge_hooks.ex"
-      - "lib/ash_r2rml/knowledge_hook/**"
-      - "lib/ash_r2rml/ggen/knowledge_hooks.ex"
-      - "lib/ash_r2rml/frontier_evidence.ex"
-      - "priv/ontology/knowledge-hooks.ttl"
-      - "priv/shapes/knowledge-hooks.shacl.ttl"
-      - "test/knowledge_hooks_test.exs"
-      - "test/knowledge_hook_ash_test.exs"
-      - "test/knowledge_hook_spec_test.exs"
-      - "test/knowledge_hook_promotion_test.exs"
-      - "test/knowledge_hook_vocabulary_test.exs"
-      - "test/knowledge_hook_rdf_test.exs"
-      - "test/frontier_evidence_test.exs"
-      - "test/frontier_evidence_identity_test.exs"
-      - "test/adversarial/knowledge_hooks_authority_test.exs"
-      - "test/adversarial/knowledge_hooks_actuation_chicago_test.exs"
-      - "lib/ash_r2rml/knowledge_hook/actuator.ex"
-      - ".github/workflows/knowledge-hooks-unit.yml"
+    paths: *knowledge-hooks-paths
 
 concurrency:
-  group: knowledge-hooks-unit-${{ github.event.pull_request.number || github.ref }}
+  group: knowledge-hooks-unit-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
 
 jobs:
   knowledge-hooks:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      SUBJECT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Elixir / Erlang (from .tool-versions)
-        uses: jdx/mise-action@v2
-
-      - name: Cache exact-toolchain deps and build
-        uses: actions/cache@v4
+      - name: Checkout admitted subject
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          path: |
-            deps
-            _build
-          key: ${{ runner.os }}-knowledge-hooks-${{ hashFiles('.tool-versions') }}-${{ hashFiles('**/mix.lock') }}
+          ref: ${{ env.SUBJECT_SHA }}
+          persist-credentials: false
 
-      - name: Install dependencies
-        run: mix deps.get
+      - name: Assert exact subject identity
+        uses: ./.github/actions/assert-exact-head
+        with:
+          subject_sha: ${{ env.SUBJECT_SHA }}
+
+      - name: Setup Elixir (clean resolve)
+        uses: ./.github/actions/setup-elixir
+        with:
+          clean: "true"
 
       - name: Check FrontierEvidence formatting
         run: >-

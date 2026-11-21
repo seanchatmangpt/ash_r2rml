@@ -5,14 +5,21 @@
 
 name: CI
 
-on: [push, pull_request]
+on:
+  push:
+    branches: [main]
+  pull_request:
 
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 permissions:
   contents: read
+
+defaults:
+  run:
+    shell: bash
 
 # Five evidence gates:
 # - `types` is database-free: clean dependency resolution, format, compile warnings-as-errors,
@@ -31,23 +38,26 @@ permissions:
 # artifacts are toolchain-sensitive and stale restoration can manufacture false evidence.
 jobs:
   types:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      SUBJECT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
-      - uses: actions/checkout@v7
+      - name: Checkout admitted subject
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ env.SUBJECT_SHA }}
           persist-credentials: false
 
-      - name: Set up Elixir / Erlang (from .tool-versions)
-        uses: jdx/mise-action@v4
+      - name: Assert exact subject identity
+        uses: ./.github/actions/assert-exact-head
         with:
-          minimum_release_age: 7d
+          subject_sha: ${{ env.SUBJECT_SHA }}
 
-      - name: Resolve dependencies from clean state
-        run: |
-          set -euo pipefail
-          rm -rf deps _build
-          mix deps.get
+      - name: Setup Elixir (clean resolve)
+        uses: ./.github/actions/setup-elixir
+        with:
+          clean: "true"
 
       - name: Check formatting
         run: mix format --check-formatted
@@ -62,31 +72,29 @@ jobs:
         run: mix hex.build
 
   release-security:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      SUBJECT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
-      - uses: actions/checkout@v7
+      - name: Checkout admitted subject
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ env.SUBJECT_SHA }}
           persist-credentials: false
+          # Ancestry/pin courts need full history (default fetch-depth: 1 hides pins).
+          fetch-depth: 0
 
-      - name: Set up Elixir / Erlang (from .tool-versions)
-        uses: jdx/mise-action@v4
+      - name: Assert exact subject identity
+        uses: ./.github/actions/assert-exact-head
         with:
-          minimum_release_age: 7d
+          subject_sha: ${{ env.SUBJECT_SHA }}
 
-      - name: Cache exact-toolchain deps and build
-        uses: actions/cache@v6
+      - name: Setup Elixir (clean resolve + lock verify)
+        uses: ./.github/actions/setup-elixir
         with:
-          path: |
-            deps
-            _build
-          key: ${{ runner.os }}-mix-${{ hashFiles('.tool-versions') }}-${{ hashFiles('**/mix.lock') }}
-
-      - name: Install dependencies
-        run: mix deps.get
-
-      - name: Verify dependency lock is deterministic
-        run: git diff --exit-code -- mix.lock
+          clean: "true"
+          verify_lock: "true"
 
       - name: Check formatting
         run: mix format --check-formatted
@@ -101,29 +109,31 @@ jobs:
         run: mix hex.build
 
   production:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     env:
+      SUBJECT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       MIX_ENV: test
       # config/test.exs keeps the inherited Bolt clients disabled by default so
       # pure compiler tests stay database-free. This job explicitly owns the
       # real Neo4j control topology, so it must opt those clients in.
       NEO4J_ENABLED: "true"
     steps:
-      - uses: actions/checkout@v7
+      - name: Checkout admitted subject
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ env.SUBJECT_SHA }}
           persist-credentials: false
 
-      - name: Set up Elixir / Erlang (from .tool-versions)
-        uses: jdx/mise-action@v4
+      - name: Assert exact subject identity
+        uses: ./.github/actions/assert-exact-head
         with:
-          minimum_release_age: 7d
+          subject_sha: ${{ env.SUBJECT_SHA }}
 
-      - name: Resolve dependencies from clean state
-        run: |
-          set -euo pipefail
-          rm -rf deps _build
-          mix deps.get
+      - name: Setup Elixir (clean resolve)
+        uses: ./.github/actions/setup-elixir
+        with:
+          clean: "true"
 
       - name: Compile exact production candidate
         run: mix compile --force --warnings-as-errors
@@ -139,23 +149,28 @@ jobs:
           test/ggen_production_test.exs
 
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      SUBJECT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
-      - uses: actions/checkout@v7
+      - name: Checkout admitted subject
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ env.SUBJECT_SHA }}
           persist-credentials: false
+          # Ancestry/pin courts need full history (default fetch-depth: 1 hides pins).
+          fetch-depth: 0
 
-      - name: Set up Elixir / Erlang (from .tool-versions)
-        uses: jdx/mise-action@v4
+      - name: Assert exact subject identity
+        uses: ./.github/actions/assert-exact-head
         with:
-          minimum_release_age: 7d
+          subject_sha: ${{ env.SUBJECT_SHA }}
 
-      - name: Resolve dependencies from clean state
-        run: |
-          set -euo pipefail
-          rm -rf deps _build
-          mix deps.get
+      - name: Setup Elixir (clean resolve)
+        uses: ./.github/actions/setup-elixir
+        with:
+          clean: "true"
 
       - name: Execute DfCM semantic-integrity Livebook contract
         run: mix test test/livebook_semantic_integrity_test.exs test/dfcm_semantic_execution_integrity_test.exs
@@ -194,7 +209,10 @@ jobs:
         run: docker compose down -v
 
   obda:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      SUBJECT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     services:
       postgres:
         image: postgis/postgis:16-3.4
@@ -211,21 +229,21 @@ jobs:
           --health-retries 30
 
     steps:
-      - uses: actions/checkout@v7
+      - name: Checkout admitted subject
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ env.SUBJECT_SHA }}
           persist-credentials: false
 
-      - name: Set up Elixir / Erlang (from .tool-versions)
-        uses: jdx/mise-action@v4
+      - name: Assert exact subject identity
+        uses: ./.github/actions/assert-exact-head
         with:
-          minimum_release_age: 7d
+          subject_sha: ${{ env.SUBJECT_SHA }}
 
-      - name: Resolve dependencies from clean state
-        run: |
-          set -euo pipefail
-          rm -rf deps _build
-          mix deps.get
+      - name: Setup Elixir (clean resolve)
+        uses: ./.github/actions/setup-elixir
+        with:
+          clean: "true"
 
       - name: Compile candidate compiler
         run: mix compile --force --warnings-as-errors
@@ -270,7 +288,7 @@ jobs:
 
       - name: Publish bounded parity receipts
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: ash-r2ml-obda-parity
           path: |

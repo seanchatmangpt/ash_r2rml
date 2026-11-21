@@ -1,0 +1,54 @@
+# SPDX-FileCopyrightText: 2026 ash_r2rml contributors <https://github.com/seanchatmangpt/ash_r2rml/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
+name: Setup Elixir toolchain
+description: >
+  Install Elixir/Erlang from .tool-versions via mise, optionally wipe deps/_build
+  for a clean resolve, fetch locked dependencies, and optionally refuse lock drift.
+  deps/_build are never restored from cache — contaminated caches are a known
+  falsifier in this repository's production quality doctrine.
+
+inputs:
+  clean:
+    description: Remove deps/ and _build/ before mix deps.get
+    required: false
+    default: "true"
+  verify_lock:
+    description: Fail if mix.lock changes after deps.get
+    required: false
+    default: "false"
+  minimum_release_age:
+    description: mise minimum_release_age for supply-chain lag
+    required: false
+    default: "7d"
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Elixir / Erlang (from .tool-versions)
+      uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
+      with:
+        minimum_release_age: ${{ inputs.minimum_release_age }}
+
+    - name: Resolve dependencies
+      shell: bash
+      env:
+        CLEAN: ${{ inputs.clean }}
+        VERIFY_LOCK: ${{ inputs.verify_lock }}
+      run: |
+        set -euo pipefail
+        if [[ "${CLEAN}" == "true" ]]; then
+          rm -rf deps _build
+        fi
+        before="$(sha256sum mix.lock | awk '{print $1}')"
+        mix deps.get
+        after="$(sha256sum mix.lock | awk '{print $1}')"
+        if [[ "${VERIFY_LOCK}" == "true" && "${before}" != "${after}" ]]; then
+          echo "::error title=REFUSED:MIX_LOCK_DRIFT::mix.lock changed during deps.get"
+          git diff -- mix.lock || true
+          exit 2
+        fi
+        if [[ "${VERIFY_LOCK}" == "true" ]]; then
+          git diff --exit-code -- mix.lock
+        fi

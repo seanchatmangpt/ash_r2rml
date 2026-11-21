@@ -1,32 +1,57 @@
+# SPDX-FileCopyrightText: 2026 ash_r2rml contributors <https://github.com/seanchatmangpt/ash_r2rml/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 name: WS4 Runtime Contract Unit Crown
 
 on:
   pull_request:
     paths:
-      - 'lib/ash_r2rml/ggen_runtime.ex'
-      - 'lib/ash_r2rml/ggen_runtime/**'
-      - 'lib/ash_r2rml/ggen.ex'
-      - 'test/unit/ggen_runtime*_test.exs'
-      - '.github/workflows/ws4-runtime-contract-unit.yml'
+      - "lib/ash_r2rml/ggen_runtime.ex"
+      - "lib/ash_r2rml/ggen_runtime/**"
+      - "lib/ash_r2rml/ggen.ex"
+      - "test/unit/ggen_runtime*_test.exs"
+      - ".github/workflows/ws4-runtime-contract-unit.yml"
+      - ".github/actions/**"
 
 permissions:
   contents: read
+
+concurrency:
+  group: ws4-runtime-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
 
 jobs:
   runtime-contract-unit:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    env:
+      SUBJECT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - name: Checkout exact subject
-        uses: actions/checkout@v4
-      - name: Set up exact BEAM toolchain
-        uses: erlef/setup-beam@v1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          elixir-version: '1.18.4'
-          otp-version: '27.2.4'
-      - name: Install dependencies
-        run: mix deps.get
+          ref: ${{ env.SUBJECT_SHA }}
+          persist-credentials: false
+          # Ancestry/pin courts need full history (default fetch-depth: 1 hides pins).
+          fetch-depth: 0
+
+      - name: Assert exact subject identity
+        uses: ./.github/actions/assert-exact-head
+        with:
+          subject_sha: ${{ env.SUBJECT_SHA }}
+
+      - name: Setup Elixir (clean resolve)
+        uses: ./.github/actions/setup-elixir
+        with:
+          clean: "true"
+
       - name: Compile exact candidate
         run: mix compile --warnings-as-errors
+
       - name: Execute runtime contract unit and refusal boundary
         run: mix test test/unit/ggen_runtime*_test.exs
