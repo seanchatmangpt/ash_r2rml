@@ -87,7 +87,7 @@ defmodule AshR2RML.MixProject do
         "AshR2RML contributors"
       ],
       licenses: ["MIT"],
-      files: ~w(lib .formatter.exs mix.exs AGENTS.md usage-rules.md usage-rules README* LICENSE* CHANGELOG* priv),
+      files: ~w(lib .formatter.exs mix.exs AGENTS.md usage-rules.md usage-rules README* LICENSE* CHANGELOG*),
       links: %{
         "GitHub" => @github_url,
         "Changelog" => "#{@github_url}/blob/main/CHANGELOG.md"
