@@ -169,7 +169,9 @@ defmodule AshR2RML.SPARQLResultParityTest do
 
       url = serve_once("200 OK", body)
 
-      assert {:ok, obs} = Protocol.query(url, "SELECT ?s ?o WHERE { ?s ?p ?o }", timeout: 5_000)
+      assert {:ok, obs} =
+               Protocol.query(url, "SELECT ?s ?o WHERE { ?s ?p ?o }", timeout: 5_000, allow_private_network: true)
+
       assert obs.strategy == :protocol
       assert obs.endpoint == url
       assert obs.result_kind == :bindings
@@ -181,7 +183,9 @@ defmodule AshR2RML.SPARQLResultParityTest do
 
     test "HTTP 500 is refused as an error" do
       url = serve_once("500 Internal Server Error", ~s({"error":"boom"}))
-      assert {:error, _} = Protocol.query(url, "SELECT * WHERE { ?s ?p ?o }", timeout: 5_000)
+
+      assert {:error, _} =
+               Protocol.query(url, "SELECT * WHERE { ?s ?p ?o }", timeout: 5_000, allow_private_network: true)
     end
   end
 

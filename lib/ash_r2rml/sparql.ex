@@ -345,7 +345,9 @@ defmodule AshR2RML.SPARQL.Protocol do
   @spec query(String.t(), String.t() | Query.t(), keyword()) ::
           {:ok, Observation.t()} | {:error, term()}
   def query(endpoint, query, opts \\ []) when is_binary(endpoint) do
-    with :ok <- validate_endpoint(endpoint) do
+    {allow_private, opts} = Keyword.pop(opts, :allow_private_network, false)
+
+    with :ok <- validate_endpoint(endpoint, allow_private) do
       {timeout, opts} = Keyword.pop(opts, :timeout, @default_timeout_ms)
       client_opts = Keyword.put_new(opts, :request_opts, adapter: [recv_timeout: timeout])
 
@@ -360,11 +362,22 @@ defmodule AshR2RML.SPARQL.Protocol do
     end
   end
 
-  defp validate_endpoint(endpoint) do
+  defp validate_endpoint(endpoint, allow_private) do
     case URI.parse(endpoint) do
       %URI{scheme: scheme, host: host}
       when scheme in ["http", "https"] and is_binary(host) and host != "" ->
-        :ok
+        if allow_private == true or not private_host?(host) do
+          :ok
+        else
+          {:error,
+           Refusal.new(
+             :REFUSED_INVALID_FEDERATION_ENVIRONMENT,
+             endpoint,
+             "SPARQL endpoint resolves to a private network address; " <>
+               "pass allow_private_network: true to permit",
+             %{private_network: true}
+           )}
+        end
 
       _ ->
         {:error,
@@ -376,6 +389,37 @@ defmodule AshR2RML.SPARQL.Protocol do
          )}
     end
   end
+
+  defp private_host?(host) do
+    h = host |> String.trim_leading("[") |> String.trim_trailing("]") |> String.downcase()
+
+    cond do
+      h == "localhost" or String.ends_with?(h, ".localhost") ->
+        true
+
+      true ->
+        case :inet.parse_address(String.to_charlist(h)) do
+          {:ok, ip} -> private_ip?(ip)
+          {:error, _} -> false
+        end
+    end
+  end
+
+  defp private_ip?({0, 0, 0, 0}), do: true
+  defp private_ip?({127, _, _, _}), do: true
+  defp private_ip?({10, _, _, _}), do: true
+  defp private_ip?({172, b, _, _}) when b in 16..31, do: true
+  defp private_ip?({192, 168, _, _}), do: true
+  defp private_ip?({169, 254, _, _}), do: true
+  defp private_ip?({0, 0, 0, 0, 0, 0, 0, 0}), do: true
+  defp private_ip?({0, 0, 0, 0, 0, 0, 0, 1}), do: true
+
+  defp private_ip?({0, 0, 0, 0, 0, 0xFFFF, a, b}),
+    do: private_ip?({div(a, 256), rem(a, 256), div(b, 256), rem(b, 256)})
+
+  defp private_ip?({w, _, _, _, _, _, _, _}) when w >= 0xFE80 and w <= 0xFEBF, do: true
+  defp private_ip?({w, _, _, _, _, _, _, _}) when w >= 0xFC00 and w <= 0xFDFF, do: true
+  defp private_ip?(_), do: false
 
   @doc "Injected client path for deterministic unit tests. Never a remote-query witness."
   @spec query_with(String.t(), String.t() | Query.t(), keyword(), function()) ::

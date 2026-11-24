@@ -11,6 +11,7 @@ on:
 
 permissions:
   contents: read
+  checks: read
 
 concurrency:
   group: release-${{ github.ref }}
@@ -21,6 +22,27 @@ jobs:
     name: Publish exact admitted tag to Hex.pm
     runs-on: ubuntu-latest
     steps:
+      - name: Require green CI check runs for tagged SHA
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          runs="$(gh api --paginate "repos/${{ github.repository }}/commits/${{ github.sha }}/check-runs?per_page=100" \
+            --jq '.check_runs[] | [.name, (.conclusion // "in_progress")] | @tsv')"
+          fail=0
+          for name in test types release-security; do
+            rows="$(printf '%s\n' "${runs}" | awk -F'\t' -v n="${name}" '$1 == n')"
+            if [ -z "${rows}" ]; then
+              echo "::error title=CI gate::no check run named '${name}' for ${{ github.sha }}"
+              fail=1
+            elif printf '%s\n' "${rows}" | awk -F'\t' '$2 != "success" { bad=1 } END { exit !bad }'; then
+              echo "::error title=CI gate::check run '${name}' not all success for ${{ github.sha }}: $(printf '%s' "${rows}" | tr '\t\n' ' :')"
+              fail=1
+            fi
+          done
+          exit "${fail}"
+
       - name: Checkout exact tag subject
         uses: actions/checkout@v7
         with:
