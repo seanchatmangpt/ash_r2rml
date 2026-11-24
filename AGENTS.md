@@ -143,6 +143,14 @@ end
 `REFUSED_SEMANTIC_TYPE_ASH_MISMATCH`, `REFUSED_SEMANTIC_TYPE_REQUIRES_RESOURCE_PROJECTION`,
 `REFUSED_SEMANTIC_ROUND_TRIP`, `REFUSED_UNSUPPORTED_SPARQL_FEATURE`.
 
-Execution and resource-bound codes: `REFUSED_OBDA_EXECUTION` (the OBDA engine failed or
-returned an unusable result), `REFUSED_RESOURCE_BOUND` (a request, row or size bound was exceeded;
-fail closed, never truncate silently).
+Mapping-shape codes: `REFUSED_INVALID_LOGICAL_TABLE`, `REFUSED_UNKNOWN_ATTRIBUTE`,
+`REFUSED_INVALID_TERM_MAP`, `REFUSED_INVALID_GRAPH_MAP`, `REFUSED_NON_LITERAL_DATATYPE`,
+`REFUSED_RELATIONSHIP_TARGET_UNMAPPED` (relationship target resource has no R2RML mapping).
+
+Policy, generation and conflict codes: `REFUSED_SENSITIVE_ATTRIBUTE_MATERIALIZATION`
+(a sensitive attribute would be materialized), `REFUSED_MANIFEST_GENERATION` (manifest
+generation failed), `REFUSED_CHANGESET_CONFLICT` (conflicting changeset).
+
+Resource-bound code: `REFUSED_RESOURCE_BOUND` (a request, row or size bound was exceeded;
+fail closed, never truncate silently). `OBDA.InMemory` is the sole OBDA backend; there is no
+external-engine execution refusal.

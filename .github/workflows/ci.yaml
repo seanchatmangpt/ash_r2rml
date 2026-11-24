@@ -20,7 +20,7 @@ permissions:
 # - `release-security` is the AshR2RML package/release gate: deterministic dependency lock,
 #   formatting, compile, database-free suite (including the real AshCloak R2RML-109
 #   regression), and Hex build.
-# - `test` executes the complete suite against real Ash data layers (zero Java, zero JDBC).
+# - `test` executes the complete suite against real Ash data layers.
 #
 # PR jobs explicitly checkout the PR head SHA rather than GitHub's synthetic merge ref,
 # binding receipts to the exact candidate. `deps/` and `_build/` are never cached: Rebar
@@ -91,7 +91,7 @@ jobs:
         run: mix compile --force --warnings-as-errors
 
       - name: Execute database-free release suite
-        run: mix test --exclude external
+        run: mix test
 
       - name: Build Hex package
         run: mix hex.build

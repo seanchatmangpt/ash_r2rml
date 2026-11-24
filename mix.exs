@@ -61,9 +61,6 @@ defmodule AshR2RML.MixProject do
         "CHANGELOG.md"
       ],
       groups_for_extras: [
-        Tutorials: ~r'documentation/tutorials',
-        "How To": ~r'documentation/how_to',
-        Topics: ~r'documentation/topics',
         "About AshR2RML": [
           "CHANGELOG.md"
         ]
@@ -119,16 +116,13 @@ defmodule AshR2RML.MixProject do
       {:jason, "~> 1.4"},
       {:telemetry, "~> 1.0"},
       {:igniter, ">= 0.6.29 and < 1.0.0-0", [env: :prod, hex: "igniter", repo: "hexpm", optional: true]},
-      {:simple_sat, ">= 0.0.0", only: [:dev, :test]},
       {:ex_doc, "~> 0.37", only: [:dev, :test], runtime: false},
-      {:ex_check, "~> 0.12", only: [:dev, :test]},
       {:git_ops, "~> 2.7", only: [:dev], runtime: false},
       {:credo, ">= 1.7.16", only: [:dev, :test], runtime: false},
       {:dialyxir, ">= 1.4.3", only: [:dev, :test], runtime: false},
       {:sobelow, ">= 0.0.0", only: [:dev, :test], runtime: false},
       {:excoveralls, "~> 0.18.0", only: [:dev, :test]},
-      {:mix_audit, ">= 0.0.0", only: [:dev, :test], runtime: false},
-      {:benchee, "~> 1.3", only: [:dev, :test]}
+      {:mix_audit, ">= 0.0.0", only: [:dev, :test], runtime: false}
     ]
   end
 

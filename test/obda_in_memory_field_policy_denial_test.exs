@@ -38,15 +38,46 @@ defmodule AshR2RML.OBDA.InMemoryFieldPolicyDenialTest do
     )
   end
 
+  test "mapping handed to InMemory still declares the secret predicate (cause pinned)" do
+    mapping = AshR2RML.mapping(PaymentGateway)
+
+    assert Enum.any?(mapping.predicate_object_maps, &(&1.predicate_iri == @secret_pred))
+  end
+
   test "non-admin actor: permitted attribute present, secret_key omitted" do
     actor = %{role: :user}
 
     assert {:ok, name_obs} = run(actor, @name_pred)
     assert name_obs.rows != []
+    refute inspect(name_obs) =~ @secret
 
     assert {:ok, secret_obs} = run(actor, @secret_pred)
     assert secret_obs.rows == []
-    refute inspect(secret_obs) =~ @secret
+
+    assert {:ok, all_obs} =
+             InMemory.query(
+               PaymentGateway,
+               AshR2RML.mapping(PaymentGateway),
+               "SELECT ?p ?v WHERE { ?s ?p ?v }",
+               actor: actor
+             )
+
+    assert all_obs.rows != []
+    refute inspect(all_obs) =~ @secret
+    refute inspect(all_obs) =~ @secret_pred
+  end
+
+  for {label, actor} <- [nil: nil, empty: %{}, uppercase_admin: %{role: :ADMIN}] do
+    test "actor #{label} is denied the secret_key" do
+      case run(unquote(Macro.escape(actor)), @secret_pred) do
+        {:ok, obs} ->
+          assert obs.rows == []
+          refute inspect(obs) =~ @secret
+
+        {:error, err} ->
+          refute inspect(err) =~ @secret
+      end
+    end
   end
 
   test "admin actor sees secret_key (omission is policy-driven)" do

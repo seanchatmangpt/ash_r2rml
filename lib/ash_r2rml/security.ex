@@ -58,6 +58,77 @@ defmodule AshR2RML.Security do
     ash_resource
     |> non_attribute_mapped_fields(mapping)
     |> then(&remove_attributes(mapping, &1, :in_memory_non_attribute_excluded_attributes))
+    |> sanitize_subject_map(ash_resource)
+    |> sanitize_reference_object_maps(ash_resource)
+  end
+
+  # Subject map columns/template fields that are not real attributes are replaced by a
+  # constant-free blank-node subject; the offending names are recorded in metadata.
+  defp sanitize_subject_map(%Resource{subject_map: subject_map} = mapping, ash_resource) do
+    bad =
+      subject_map
+      |> subject_fields()
+      |> Enum.reject(&attribute_column?(ash_resource, &1))
+
+    case bad do
+      [] ->
+        mapping
+
+      _ ->
+        stripped = %{subject_map | strategy: :blank_node, value: "excluded", term_type: :blank_node}
+
+        %{
+          mapping
+          | subject_map: stripped,
+            metadata: Map.put(mapping.metadata, :in_memory_non_attribute_subject_fields, Enum.uniq(bad))
+        }
+    end
+  end
+
+  # Reference object maps whose child join column is not a real attribute are removed.
+  defp sanitize_reference_object_maps(%Resource{reference_object_maps: refs} = mapping, ash_resource) do
+    {kept, dropped} =
+      Enum.split_with(refs, fn ref ->
+        Enum.all?(ref.joins || [], &attribute_column?(ash_resource, &1.child))
+      end)
+
+    case dropped do
+      [] ->
+        mapping
+
+      _ ->
+        %{
+          mapping
+          | reference_object_maps: kept,
+            metadata:
+              Map.put(
+                mapping.metadata,
+                :in_memory_non_attribute_join_relationships,
+                dropped |> Enum.map(& &1.relationship) |> Enum.uniq()
+              )
+        }
+    end
+  end
+
+  defp subject_fields(%{strategy: :column, value: value}), do: [value]
+
+  defp subject_fields(%{strategy: :template, value: value}) when is_binary(value) do
+    ~r/\{([^}]+)\}/ |> Regex.scan(value, capture: :all_but_first) |> List.flatten()
+  end
+
+  defp subject_fields(_), do: []
+
+  # Fail closed: any resolution error means the column is not admitted.
+  defp attribute_column?(ash_resource, column) do
+    name = to_string(column)
+
+    ash_resource
+    |> Ash.Resource.Info.attributes()
+    |> Enum.any?(fn attr ->
+      to_string(attr.name) == name or (not is_nil(attr.source) and to_string(attr.source) == name)
+    end)
+  rescue
+    _ -> false
   end
 
   @doc """
@@ -128,6 +199,6 @@ defmodule AshR2RML.Security do
     Code.ensure_loaded?(Ash.Policy.Info) and
       match?([_ | _], Ash.Policy.Info.field_policies_for_field(ash_resource, attribute))
   rescue
-    _ -> false
+    _ -> true
   end
 end

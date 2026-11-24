@@ -68,8 +68,8 @@ defmodule AshR2RML.Compiler do
   @moduledoc """
   Compiler from Ash resources to the canonical `AshR2RML.Mapping.Bundle` IR.
 
-  This is CONSTRUCT only. It neither applies migrations nor starts an OBDA
-  service, and therefore cannot grant cutover standing by itself.
+  This is CONSTRUCT only. It neither applies migrations nor starts any query
+  runtime, and therefore cannot grant cutover standing by itself.
   """
 
   alias AshR2RML.{CompilationReceipt, Refusal}

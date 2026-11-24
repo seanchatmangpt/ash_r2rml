@@ -11,9 +11,9 @@
   # There is no source line in this repository to change.
   {"lib/ash_r2rml/resource.ex", :pattern_match, 1},
   # Analyser limitation (success typing through SPARQL.ex protocol dispatch):
-  # Dialyzer infers AshR2RML.SPARQL.Local.query/2 can only return {:error, _}.
+  # Dialyzer infers AshR2RML.SPARQL.Local.query/3 can only return {:error, _}.
   # Runtime witness (v26.9.25): Local.query(graph, "SELECT ?s WHERE { ?s ?p ?o }")
   # returns {:ok, %Observation{}}; the in-memory OBDA suites
   # (test/obda_in_memory_*_test.exs) exercise this exact {:ok, observation} arm.
-  {"lib/ash_r2rml/obda_in_memory.ex", :pattern_match, {167, 16}}
+  {"lib/ash_r2rml/obda_in_memory.ex", :pattern_match, {166, 16}}
 ]

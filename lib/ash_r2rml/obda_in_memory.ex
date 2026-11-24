@@ -129,7 +129,7 @@ defmodule AshR2RML.OBDA.InMemory do
     base_result =
       Enum.reduce_while(admitted_specs, {:ok, RDF.Graph.new()}, fn {ash_resource, mapping_resource}, {:ok, graph_acc} ->
         with {:ok, rows} <- rows_for(ash_resource, mapping_resource, read_opts),
-             {:ok, graph} <- add_rows(rows, graph_acc, mapping_resource, mapping_index, allow_sensitive?) do
+             {:ok, graph} <- add_rows(rows, graph_acc, ash_resource, mapping_resource, mapping_index, allow_sensitive?) do
           {:cont, {:ok, graph}}
         else
           {:error, refusal} -> {:halt, {:error, refusal}}
@@ -146,8 +146,7 @@ defmodule AshR2RML.OBDA.InMemory do
   @doc """
   Materializes `ash_resource`/`mapping_resource` and executes `sparql` against the
   resulting real RDF graph, returning an `Observation` shaped identically to the
-  observations `AshR2RML.SPARQL.Local` already produces so
-  it composes with `AshR2RML.SPARQL.Differential.compare/3`.
+  observations `AshR2RML.SPARQL.Local` already produces.
   """
   @spec query(module(), Resource.t(), String.t(), keyword()) ::
           {:ok, Observation.t()} | {:error, Refusal.t()}
@@ -188,8 +187,8 @@ defmodule AshR2RML.OBDA.InMemory do
             {:error,
              Refusal.new(
                :REFUSED_UNSUPPORTED_SPARQL_FEATURE,
-               mapping_resource.ash_resource,
-               "could not read the real Ash resource for materialization",
+               ash_resource,
+               "fail-closed: could not read the real Ash resource for materialization (#{inspect(exception.__struct__)}, e.g. forbidden by policy)",
                %{exception: Exception.message(exception)}
              )}
         end
@@ -200,34 +199,82 @@ defmodule AshR2RML.OBDA.InMemory do
   # (see `add_reference_triples/4`) surfaces as a real refusal now, so every caller between
   # here and `materialize_many/2` must be able to propagate it rather than only ever
   # returning a bare graph.
-  defp add_rows(rows, graph_acc, mapping_resource, mapping_index, allow_sensitive?) do
+  defp add_rows(rows, graph_acc, ash_resource, mapping_resource, mapping_index, allow_sensitive?) do
     Enum.reduce_while(rows, {:ok, graph_acc}, fn row, {:ok, acc} ->
-      case add_row(acc, row, mapping_resource, mapping_index, allow_sensitive?) do
+      case add_row(acc, row, ash_resource, mapping_resource, mapping_index, allow_sensitive?) do
         {:ok, graph} -> {:cont, {:ok, graph}}
         {:error, refusal} -> {:halt, {:error, refusal}}
       end
     end)
   end
 
-  defp add_row(graph, row, %Resource{} = mapping_resource, mapping_index, allow_sensitive?) do
-    case subject_iri(mapping_resource.subject_map, row) do
+  defp add_row(graph, row, ash_resource, %Resource{} = mapping_resource, mapping_index, allow_sensitive?) do
+    with :ok <- check_subject_sensitive(mapping_resource.subject_map, ash_resource, allow_sensitive?),
+         :ok <- check_joins_sensitive(mapping_resource.reference_object_maps, ash_resource, allow_sensitive?) do
+      case subject_iri(mapping_resource.subject_map, row) do
+        nil ->
+          {:ok, graph}
+
+        subject ->
+          graph = add_class_triples(graph, subject, mapping_resource.class_iris)
+
+          with {:ok, graph} <-
+                 add_predicate_triples(
+                   graph,
+                   subject,
+                   row,
+                   mapping_resource.predicate_object_maps,
+                   ash_resource,
+                   allow_sensitive?
+                 ) do
+            add_reference_triples(graph, subject, row, mapping_resource.reference_object_maps, mapping_index)
+          end
+      end
+    end
+  end
+
+  defp check_subject_sensitive(_subject_map, _ash_resource, true), do: :ok
+
+  defp check_subject_sensitive(%SubjectMap{strategy: :template, value: template}, ash_resource, false) do
+    ~r/\{([a-zA-Z0-9_]+)\}/
+    |> Regex.scan(template, capture: :all_but_first)
+    |> Enum.map(fn [field] -> field end)
+    |> check_fields_sensitive(ash_resource, "subject template")
+  end
+
+  defp check_subject_sensitive(%SubjectMap{strategy: :column, value: column}, ash_resource, false) do
+    check_fields_sensitive([to_string(column)], ash_resource, "subject column")
+  end
+
+  defp check_subject_sensitive(_subject_map, _ash_resource, false), do: :ok
+
+  defp check_joins_sensitive(_references, _ash_resource, true), do: :ok
+
+  defp check_joins_sensitive(references, ash_resource, false) do
+    references
+    |> Enum.flat_map(fn %ReferenceObjectMap{joins: joins} -> Enum.map(joins, &to_string(&1.child)) end)
+    |> check_fields_sensitive(ash_resource, "join child column")
+  end
+
+  defp field_sensitive?(ash_resource, field) do
+    sensitive_attribute?(ash_resource, String.to_existing_atom(field))
+  rescue
+    ArgumentError -> false
+  end
+
+  defp check_fields_sensitive(fields, ash_resource, where) do
+    case Enum.find(fields, &field_sensitive?(ash_resource, &1)) do
       nil ->
-        {:ok, graph}
+        :ok
 
-      subject ->
-        graph = add_class_triples(graph, subject, mapping_resource.class_iris)
-
-        with {:ok, graph} <-
-               add_predicate_triples(
-                 graph,
-                 subject,
-                 row,
-                 mapping_resource.predicate_object_maps,
-                 mapping_resource.ash_resource,
-                 allow_sensitive?
-               ) do
-          add_reference_triples(graph, subject, row, mapping_resource.reference_object_maps, mapping_index)
-        end
+      field ->
+        {:error,
+         Refusal.new(
+           :REFUSED_SENSITIVE_ATTRIBUTE_MATERIALIZATION,
+           ash_resource,
+           "attribute #{inspect(field)} is marked sensitive?: true on the Ash resource and cannot be used in a #{where} without allow_sensitive: true",
+           %{attribute: field}
+         )}
     end
   end
 

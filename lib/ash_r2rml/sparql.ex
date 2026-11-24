@@ -141,6 +141,31 @@ defmodule AshR2RML.SPARQL.Result do
 
   alias AshR2RML.Refusal
 
+  @default_max_rows 100_000
+
+  @doc "Default row bound applied to local and protocol results."
+  @spec default_max_rows() :: pos_integer()
+  def default_max_rows, do: @default_max_rows
+
+  @doc "Fails closed with `:REFUSED_RESOURCE_BOUND` when `rows` exceeds `max_rows`."
+  @spec bound({:ok, atom(), list()} | term(), term(), pos_integer()) :: term()
+  def bound({:ok, _kind, rows} = ok, subject, max_rows)
+      when is_integer(max_rows) and max_rows > 0 do
+    if length(rows) > max_rows do
+      {:error,
+       Refusal.new(
+         :REFUSED_RESOURCE_BOUND,
+         subject,
+         "SPARQL result exceeds the max_rows bound",
+         %{max_rows: max_rows, rows: length(rows)}
+       )}
+    else
+      ok
+    end
+  end
+
+  def bound(other, _subject, _max_rows), do: other
+
   @spec normalize(term()) :: {:ok, atom(), list()} | {:error, Refusal.t()}
   def normalize(%Elixir.SPARQL.Query.Result{results: results}) when is_list(results) do
     {:ok, :bindings, Enum.map(results, &normalize_binding/1)}
@@ -206,17 +231,15 @@ defmodule AshR2RML.SPARQL.Result do
   # xsd:decimal (and other arbitrary-precision numeric datatypes) have an XSD
   # *value space* that ignores trailing zeros ("45.50" == "45.5"), so
   # `RDF.Term.value/1` legitimately collapses "45.50" to `Decimal.new("45.5")`.
-  # An external OBDA engine emits the database's raw lexical numeric
-  # string over CSV with no datatype tag and no value-space reduction — a
-  # `NUMERIC(6,2)` column round-trips as the literal text "45.50". Comparing
-  # the local engine's value-space-reduced Decimal against the engine's untouched
-  # lexical string byte-for-bit was producing spurious parity mismatches
-  # (`receipt.verified? == false`) for any decimal literal with a lexical
-  # scale not preserved by its numeric value (observed: xsd:decimal "45.50",
-  # "30.00", "50000.00" all reduced to "45.5"/"30"/"50000" locally while the engine
-  # kept the ".50"/".00" trailing zeros). Preserve the original lexical form
-  # for decimal literals so both engines are compared on the same text this
-  # relational/RDF round-trip actually produces.
+  # A relational source can yield the raw lexical numeric string with no
+  # datatype tag and no value-space reduction — a `NUMERIC(6,2)` column
+  # round-trips as the literal text "45.50". Comparing a value-space-reduced
+  # Decimal against an untouched lexical string produced spurious parity
+  # mismatches (`receipt.verified? == false`) for any decimal literal whose
+  # lexical scale is not preserved by its numeric value (observed: xsd:decimal
+  # "45.50", "30.00", "50000.00" reduced to "45.5"/"30"/"50000"). Preserve the
+  # original lexical form for decimal literals so every observation path is
+  # compared on the same text.
   defp normalize_term(%RDF.Literal{} = literal) do
     if RDF.Literal.datatype_id(literal) == RDF.NS.XSD.decimal() do
       RDF.Literal.lexical(literal)
@@ -240,14 +263,20 @@ defmodule AshR2RML.SPARQL.Local do
   alias AshR2RML.Refusal
   alias AshR2RML.SPARQL.{Observation, Query, Result}
 
-  @spec query(RDF.Data.Source.t(), String.t() | Query.t()) ::
+  @doc "Option `:max_rows` bounds the result (default 100_000), else `:REFUSED_RESOURCE_BOUND`."
+  @spec query(RDF.Data.Source.t(), String.t() | Query.t(), keyword()) ::
           {:ok, Observation.t()} | {:error, Refusal.t()}
-  def query(data, query) do
+  def query(data, query, opts \\ []) do
+    max_rows = Keyword.get(opts, :max_rows, Result.default_max_rows())
+
     with {:ok, admitted} <- Query.admit(query) do
       try do
         result = Elixir.SPARQL.execute_query(data, admitted.parsed)
 
-        with {:ok, result_kind, rows} <- normalize_local_result(admitted.form, result) do
+        with {:ok, result_kind, rows} <-
+               admitted.form
+               |> normalize_local_result(result)
+               |> Result.bound(:local_sparql_execution, max_rows) do
           {:ok,
            %Observation{
              strategy: :local_rdf,
@@ -306,17 +335,46 @@ defmodule AshR2RML.SPARQL.Protocol do
   alias AshR2RML.Refusal
   alias AshR2RML.SPARQL.{Observation, Query, Result}
 
+  @default_timeout_ms 30_000
+
+  @doc """
+  Options: `:timeout` (ms, default 30_000, passed to the HTTP adapter) and
+  `:max_rows` (default #{Result.default_max_rows()}); exceeding it refuses with
+  `:REFUSED_RESOURCE_BOUND`.
+  """
   @spec query(String.t(), String.t() | Query.t(), keyword()) ::
           {:ok, Observation.t()} | {:error, term()}
   def query(endpoint, query, opts \\ []) when is_binary(endpoint) do
-    do_query(
-      endpoint,
-      query,
-      opts,
-      &Elixir.SPARQL.Client.query/3,
-      :sparql_protocol,
-      :observed_remote_query
-    )
+    with :ok <- validate_endpoint(endpoint) do
+      {timeout, opts} = Keyword.pop(opts, :timeout, @default_timeout_ms)
+      client_opts = Keyword.put_new(opts, :request_opts, adapter: [recv_timeout: timeout])
+
+      do_query(
+        endpoint,
+        query,
+        client_opts,
+        &Elixir.SPARQL.Client.query/3,
+        :sparql_protocol,
+        :observed_remote_query
+      )
+    end
+  end
+
+  defp validate_endpoint(endpoint) do
+    case URI.parse(endpoint) do
+      %URI{scheme: scheme, host: host}
+      when scheme in ["http", "https"] and is_binary(host) and host != "" ->
+        :ok
+
+      _ ->
+        {:error,
+         Refusal.new(
+           :REFUSED_INVALID_FEDERATION_ENVIRONMENT,
+           endpoint,
+           "SPARQL endpoint must be an http or https URL with a non-empty host",
+           %{allowed_schemes: ["http", "https"]}
+         )}
+    end
   end
 
   @doc "Injected client path for deterministic unit tests. Never a remote-query witness."
@@ -328,9 +386,12 @@ defmodule AshR2RML.SPARQL.Protocol do
   end
 
   defp do_query(endpoint, query, opts, client_fun, evidence_kind, standing) do
+    {max_rows, opts} = Keyword.pop(opts, :max_rows, Result.default_max_rows())
+
     with {:ok, admitted} <- Query.admit(query),
          {:ok, result} <- client_fun.(admitted.parsed, endpoint, opts),
-         {:ok, result_kind, rows} <- Result.normalize(result) do
+         {:ok, result_kind, rows} <-
+           result |> Result.normalize() |> Result.bound(endpoint, max_rows) do
       {:ok,
        %Observation{
          strategy: :protocol,

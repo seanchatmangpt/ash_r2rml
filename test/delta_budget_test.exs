@@ -10,8 +10,8 @@ defmodule AshR2RML.DeltaBudgetTest do
   Chicago-style: real `Ash.DataLayer.Ets` rows (dedicated private table, so the row
   count per tier is exact -- no cross-test pollution), real `Ash.create!`/`Ash.read!`,
   real `materialize_many/2`, real `AshR2RML.Delta.diff/2` with its real SHA-256
-  digest. `:timer.tc` measurements; no Benchee (the bench/ scripts explore, this
-  suite asserts).
+  digest. `:timer.tc` measurements; no Benchee (this suite asserts budgets
+  directly rather than benchmarking).
 
   Budget law (per the loops-of-loops spec): measure, print, assert. The 20 ms spec
   budget at the 100-row tier is asserted *directly* (both diff+digest and
