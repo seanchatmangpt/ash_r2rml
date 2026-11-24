@@ -1,8 +1,0 @@
-{
-  "id": "project",
-  "uri": "urn:source:project",
-  "graph": "urn:graph:project",
-  "subject_template": "https://example.org/project/{id}",
-  "version": "1",
-  "expect": "ok"
-}

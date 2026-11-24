@@ -1,8 +1,0 @@
-{
-  "id": "event",
-  "uri": "urn:source:event",
-  "graph": "urn:graph:event",
-  "subject_template": "https://example.org/event/{id}",
-  "version": "1",
-  "expect": "ok"
-}
