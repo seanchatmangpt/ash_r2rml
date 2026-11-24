@@ -27,9 +27,32 @@ check runs are green for the tagged SHA and the SHA is an ancestor of `origin/ma
 
 ## Mutation court (non-vacuity)
 
-Break each guard, the named test must fail, restore, it must pass:
-field-policy omission (`readable/1` in `obda_in_memory.ex`), `sensitive_attribute?/2`,
-actor/tenant forwarding (`read_opts`), and the zero-JDBC guard (add a `lib/` module named `*Ontop*`).
+Run `bin/mutation-court` on a clean tree (preflight exits 2 when `git status --porcelain` is
+non-empty). Each mutation breaks one guard in place, the named test must fail, the file is
+restored (`git checkout --`) and the tree re-verified clean, then the test must pass again. A
+test that passes under mutation exits 1 as `VACUOUS_TEST_DETECTED`. The court ends with
+`git diff --exit-code`.
+
+| Mutation | Break | Test that must fail |
+|---|---|---|
+| M1 | field-policy omission (`readable/1` in `obda_in_memory.ex` leaks `ForbiddenField`) | `test/data_layer_contract_test.exs` |
+| M2 | `sensitive_attribute?/2` always false | `test/data_layer_contract_test.exs` |
+| M3 | actor/tenant forwarding (`:tenant` dropped from the `Ash.read` options) | `test/data_layer_contract_test.exs` |
+| M4 | zero-JDBC guard (add `lib/ash_r2rml/ontop_mutant.ex`) | `test/zero_jdbc_guard_test.exs` |
+| M5 | Reactor compensation (`undo(:always)` removed from `test/reactor_semantic_test.exs`) | `test/reactor_semantic_test.exs` |
+
+Exit codes: 0 all killed and tree clean, 1 vacuous test or red baseline, 2 dirty preflight,
+3 mutation not applied, 4 restore left the tree dirty, 5 final `git diff` not empty.
+
+## Data-layer contract
+
+`test/data_layer_contract_test.exs` and `test/cross_layer_equivalence_test.exs` compile one
+canonical Organization (composite `{tenant_id}/{code}` subject, `:attribute` multitenancy,
+sensitive `internal_tax_id`) and Person (field policy on `secret_note`, sensitive `ssn_token`)
+onto ETS (always), AshSqlite (tag `:sqlite`, present only when `ash_sqlite` is a dependency) and
+Postgres (tag `:postgres`, excluded unless `ASH_R2RML_POSTGRES_URL` is set), and require
+byte-identical R2RML across input order, subject IRI round trip for `acme/west #1`, equal
+canonical bindings across layers, and admin/member/outsider/nil-actor/tenant isolation.
 
 ## Accepted gaps (named, not hidden)
 

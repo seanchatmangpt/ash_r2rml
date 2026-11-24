@@ -293,7 +293,11 @@ defmodule AshR2RML.Resource.Persist do
           metadata: %{
             attribute_columns: attribute_columns,
             data_layer: Ash.Resource.Info.data_layer(resource),
-            source: :ash_first
+            source: :ash_first,
+            derived_attributes:
+              dsl
+              |> derived_names()
+              |> Map.take(Enum.map(properties, & &1.attribute))
           }
         }
         |> AshR2RML.Mapping.normalize()
@@ -382,7 +386,8 @@ defmodule AshR2RML.Resource.Persist do
   defp compile_property(resource, dsl, property) do
     attribute =
       Ash.Resource.Info.attribute(resource, property.attribute) ||
-        find_dsl_attribute(dsl, property.attribute)
+        find_dsl_attribute(dsl, property.attribute) ||
+        find_derived(dsl, property.attribute)
 
     if is_nil(attribute) do
       {:error,
@@ -537,6 +542,39 @@ defmodule AshR2RML.Resource.Persist do
     |> Enum.find(fn attr -> attr.name == attribute_name end)
   end
 
+  # Calculations and aggregates declared locally on this resource, exposed as
+  # read-only attribute-like terms. Reads only this resource's own DSL state.
+  defp find_derived(dsl, name) do
+    calculation =
+      Transformer.get_entities(dsl, [:calculations])
+      |> Enum.find(&(Map.get(&1, :name) == name))
+
+    aggregate =
+      Transformer.get_entities(dsl, [:aggregates])
+      |> Enum.find(&(Map.get(&1, :name) == name))
+
+    cond do
+      calculation -> %{name: name, type: derived_type(Map.get(calculation, :type)), derived: :calculation}
+      aggregate -> %{name: name, type: aggregate_type(aggregate), derived: :aggregate}
+      true -> nil
+    end
+  end
+
+  defp aggregate_type(%{type: type}) when not is_nil(type), do: derived_type(type)
+  defp aggregate_type(%{kind: :count}), do: Ash.Type.Integer
+  defp aggregate_type(%{kind: :exists}), do: Ash.Type.Boolean
+  defp aggregate_type(_), do: nil
+
+  defp derived_type(nil), do: nil
+  defp derived_type(type), do: Ash.Type.get_type(type)
+
+  defp derived_names(dsl) do
+    for section <- [:calculations, :aggregates],
+        entity <- Transformer.get_entities(dsl, [section]),
+        into: %{},
+        do: {entity.name, section}
+  end
+
   defp reverse_ok({:ok, values}), do: {:ok, Enum.reverse(values)}
   defp reverse_ok(other), do: other
 end
@@ -606,9 +644,26 @@ defmodule AshR2RML.Resource.Info do
     |> Enum.filter(&(AshR2RML in Spark.extensions(&1)))
   end
 
-  def mapped?(resource) do
-    match?({:ok, _}, mapping_result(resource))
+  @doc "True when the module carries a mapping. Never raises, including on plain Ash resources."
+  @spec mapped?(term()) :: boolean()
+  def mapped?(resource), do: match?({:ok, _}, fetch_mapping(resource))
+
+  @doc """
+  Fetches the mapping for a module without raising.
+
+  Plain Ash resources, non-Spark modules, and non-atoms yield `{:error, :not_mapped}`.
+  """
+  @spec fetch_mapping(term()) :: {:ok, AshR2RML.Mapping.Resource.t()} | {:error, :not_mapped}
+  def fetch_mapping(resource) when is_atom(resource) and not is_nil(resource) do
+    case mapping_result(resource) do
+      {:ok, %AshR2RML.Mapping.Resource{} = mapping} -> {:ok, mapping}
+      _ -> {:error, :not_mapped}
+    end
+  rescue
+    _ -> {:error, :not_mapped}
   end
+
+  def fetch_mapping(_), do: {:error, :not_mapped}
 
   @spec sparql_queries(module()) :: [AshR2RML.Dsl.SparqlQuery.t()]
   def sparql_queries(resource) do

@@ -141,6 +141,32 @@ defmodule AshR2RML.Datatype.Registry do
     end
   end
 
+  @doc """
+  Recursively unwraps `Ash.Type.NewType` modules to their base type, merging
+  constraints (outer constraints win over `subtype_constraints/0` of each layer).
+
+  Returns `{base_type, constraints}`. Non-NewType input is returned unchanged.
+  """
+  @spec unwrap(term(), keyword()) :: {term(), keyword()}
+  def unwrap(type, constraints \\ []), do: do_unwrap(type, constraints, 0)
+
+  defp do_unwrap(type, constraints, depth) when is_atom(type) and depth < 8 do
+    resolved = Ash.Type.get_type(type)
+
+    if new_type?(resolved) do
+      inner = Keyword.merge(subtype_constraints(resolved), constraints)
+      do_unwrap(resolved.subtype_of(), inner, depth + 1)
+    else
+      {resolved, constraints}
+    end
+  end
+
+  defp do_unwrap(type, constraints, _depth), do: {type, constraints}
+
+  defp subtype_constraints(module) do
+    if function_exported?(module, :subtype_constraints, 0), do: module.subtype_constraints() || [], else: []
+  end
+
   @spec builtin_contracts() :: map()
   def builtin_contracts, do: @builtins
 

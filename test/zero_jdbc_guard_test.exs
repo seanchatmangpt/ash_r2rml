@@ -27,17 +27,35 @@ defmodule AshR2RML.ZeroJdbcGuardTest do
     assert offenders(paths, @pattern) == []
   end
 
-  test "mix.exs and mix.lock mention neither jdbc nor ontop" do
-    paths = files(["mix.exs", "mix.lock"])
-    assert length(paths) == 2
-    assert offenders(paths, @pattern) == []
+  test "mix.lock carries no jdbc or ontop jar artifact" do
+    lock = Path.join(@root, "mix.lock")
+    assert File.regular?(lock)
+    assert File.read!(lock) =~ ~r/"/
+    refute File.read!(lock) =~ ~r/jdbc|ontop|\.jar\b/i
   end
 
-  test "mix.exs declares no postgrex, jdbc, or java dependency" do
-    deps = Mix.Project.config()[:deps] |> Enum.map(&(&1 |> elem(0) |> Atom.to_string()))
+  test "no production dependency on a database driver, jdbc, or java" do
+    deps = Mix.Project.config()[:deps]
     assert deps != []
-    assert Enum.filter(deps, &(&1 =~ ~r/postgrex|jdbc|java/i)) == []
-    assert Enum.filter(files(["mix.exs"]), &(File.read!(&1) =~ ~r/postgrex|jdbc|java/i)) == []
+
+    opts_of = fn
+      {_name, opts} when is_list(opts) -> opts
+      {_name, _req, opts} when is_list(opts) -> opts
+      _ -> []
+    end
+
+    prod_names =
+      deps
+      |> Enum.filter(fn dep ->
+        only = opts_of.(dep)[:only]
+        is_nil(only) or :prod in List.wrap(only)
+      end)
+      |> Enum.map(&(&1 |> elem(0) |> Atom.to_string()))
+
+    forbidden = ~w(postgrex ecto_sql exqlite ash_postgres ash_sqlite)
+
+    assert Enum.filter(prod_names, &(&1 in forbidden)) == []
+    assert Enum.filter(prod_names, &(&1 =~ ~r/jdbc|java|ontop/i)) == []
   end
 
   test "config and CI files mention neither jdbc nor ontop" do

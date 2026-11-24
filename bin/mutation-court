@@ -1,0 +1,160 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 ash_r2rml contributors <https://github.com/seanchatmangpt/ash_r2rml/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+#
+# Mutation court (non-vacuity). Each mutation breaks one guard in place; the named test file
+# must then FAIL. A test that still passes under mutation is VACUOUS_TEST_DETECTED (exit 1).
+# Every mutation is restored (git checkout -- <file>, or rm for a created file) and the tree is
+# re-verified clean before the next one. After restore the test file must pass again.
+#
+# Exit codes: 0 all mutations killed, tree clean | 1 vacuous test or red baseline
+#             2 dirty tree at preflight          | 3 mutation did not apply
+#             4 restore left the tree dirty      | 5 final git diff not empty
+
+set -u
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT" || exit 2
+
+export MIX_ENV=test
+
+IN_MEMORY="lib/ash_r2rml/obda_in_memory.ex"
+SECURITY="lib/ash_r2rml/security.ex"
+DATATYPE="lib/ash_r2rml/datatype_registry.ex"
+MIX_EXS="mix.exs"
+REACTOR_TEST="test/reactor_semantic_test.exs"
+OFFENDER="lib/ash_r2rml/ontop_mutant.ex"
+
+CURRENT_FILE=""
+CURRENT_KIND=""
+
+restore_current() {
+  if [ -n "$CURRENT_FILE" ]; then
+    if [ "$CURRENT_KIND" = "created" ]; then
+      rm -f -- "$CURRENT_FILE"
+    else
+      git checkout -- "$CURRENT_FILE"
+    fi
+    CURRENT_FILE=""
+    CURRENT_KIND=""
+  fi
+}
+
+trap restore_current EXIT INT TERM
+
+porcelain_empty() {
+  [ -z "$(git status --porcelain)" ]
+}
+
+if ! porcelain_empty; then
+  echo "PREFLIGHT_DIRTY: git status --porcelain is not empty; commit or clean first" >&2
+  git status --porcelain >&2
+  exit 2
+fi
+
+# mutate <id> <description> <file> <test-file> <perl-substitution-or-:create:>
+mutate() {
+  local id="$1" description="$2" file="$3" test_file="$4" edit="$5"
+
+  echo "== $id: $description"
+
+  CURRENT_FILE="$file"
+  if [ "$edit" = ":create:" ]; then
+    CURRENT_KIND="created"
+    cat >"$file" <<'EOF'
+defmodule AshR2RML.OntopMutant do
+  @moduledoc false
+end
+EOF
+  else
+    CURRENT_KIND="edited"
+    perl -pi -e "$edit" "$file"
+  fi
+
+  if [ "$CURRENT_KIND" = "edited" ] && git diff --quiet -- "$file"; then
+    echo "MUTATION_NOT_APPLIED: $id left $file unchanged" >&2
+    exit 3
+  fi
+
+  mix test "$test_file" --seed 0 --max-failures 1
+  local mutated_rc=$?
+
+  restore_current
+
+  if ! porcelain_empty; then
+    echo "RESTORE_DIRTY: $id left the tree dirty" >&2
+    git status --porcelain >&2
+    exit 4
+  fi
+
+  if [ "$mutated_rc" -eq 0 ]; then
+    echo "VACUOUS_TEST_DETECTED: $id ($description): $test_file passed under mutation" >&2
+    exit 1
+  fi
+
+  mix test "$test_file" --seed 0 --max-failures 1
+  local baseline_rc=$?
+  if [ "$baseline_rc" -ne 0 ]; then
+    echo "BASELINE_RED: $test_file fails after restoring $id (rc=$baseline_rc)" >&2
+    exit 1
+  fi
+
+  echo "KILLED: $id ($description) -> $test_file failed under mutation, passes after restore"
+}
+
+# M1: sensitive/forbidden-field omission. Forbidden or sensitive data must be omitted/refused.
+mutate M1a "field-policy omission (readable/1 leaks ForbiddenField)" \
+  "$IN_MEMORY" test/obda_in_memory_field_policy_denial_test.exs \
+  's/^(\s*)defp readable\(%Ash\.ForbiddenField\{\}\), do: nil/$1defp readable(%Ash.ForbiddenField{}), do: "MUTANT-LEAK"/'
+
+mutate M1b "sensitive_attribute?/2 always false (sensitive attribute materialized)" \
+  "$IN_MEMORY" test/obda_in_memory_sensitive_coverage_test.exs \
+  's/%\{sensitive\?: true\} -> true/%{sensitive?: true} -> false/'
+
+mutate M1c "Security sensitive-attribute detection never matches" \
+  "$SECURITY" test/security_sensitive_compile_path_test.exs \
+  's/match\?\(%\{sensitive\?: true\}/match?(%{sensitive?: :mutant}/'
+
+# M2: tenant forwarding drop. Tenant must reach Ash.read.
+mutate M2 "tenant dropped from read options" \
+  "$IN_MEMORY" test/obda_in_memory_row_policy_tenant_test.exs \
+  's/\[:actor, :tenant, :authorize\?/[:actor, :authorize?/g'
+
+# M3: max_rows bound removal and datatype Range refusal.
+mutate M3a "max_rows surplus check disabled" \
+  "$IN_MEMORY" test/obda_in_memory_limits_test.exs \
+  's/length\(rows\) > max_rows/length(rows) > max_rows * 1_000_000/'
+
+mutate M3b "Ash.Type.Range admitted by the datatype registry" \
+  "$DATATYPE" test/datatype_registry_coverage_test.exs \
+  's/("Elixir\.Ash\.Type\.Module" => :module)\s*$/$1, "Elixir.Ash.Type.Range" => :string/'
+
+# M4: zero-JDBC/dep guard. ash_sqlite moved out of only: :test must trip the deps guard.
+mutate M4a "ash_sqlite dependency no longer test-only" \
+  "$MIX_EXS" test/zero_jdbc_and_deps_guard_test.exs \
+  's/\{:ash_sqlite, "~> 0\.2", only: \[:test\]\}/{:ash_sqlite, "~> 0.2"}/'
+
+# M4b: a lib module named *Ontop* must trip the zero-JDBC guard.
+mutate M4b "Ontop-named module added under lib/" \
+  "$OFFENDER" test/zero_jdbc_guard_test.exs ":create:"
+
+# M5: removing Reactor undo compensation must leave stale triples.
+mutate M5 "reactor undo(:always) neutered, compensation never runs" \
+  "$REACTOR_TEST" test/reactor_semantic_test.exs \
+  's/undo\(:always\)/undo(:never)/'
+
+if ! git diff --exit-code >/dev/null; then
+  echo "FINAL_DIFF_NOT_EMPTY: tracked files differ after the court" >&2
+  git diff --stat >&2
+  exit 5
+fi
+
+if ! porcelain_empty; then
+  echo "FINAL_TREE_DIRTY after the court" >&2
+  git status --porcelain >&2
+  exit 4
+fi
+
+echo "MUTATION_COURT_PASS: M1a-M5 killed, tree clean"
+exit 0

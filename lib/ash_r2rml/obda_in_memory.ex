@@ -78,6 +78,9 @@ defmodule AshR2RML.OBDA.InMemory do
 
   @type spec :: {ash_resource :: module(), mapping_resource :: Resource.t()}
 
+  @default_max_rows 10_000
+  @default_max_triples 100_000
+
   @doc """
   Materializes real rows read from `ash_resource` (via a real Ash read action)
   into an `RDF.Graph` shaped by `mapping_resource`.
@@ -115,9 +118,30 @@ defmodule AshR2RML.OBDA.InMemory do
   @spec materialize_many([spec()], keyword()) ::
           {:ok, RDF.Graph.t()} | {:ok, %{graph: RDF.Graph.t(), delta: AshR2RML.Delta.t()}} | {:error, Refusal.t()}
   def materialize_many(specs, opts \\ []) when is_list(specs) do
+    {result, _stats} = materialize_many_with_stats(specs, opts)
+    result
+  end
+
+  # Bounds (all read from `opts`, stripped before the Ash read):
+  #   * `:max_rows` (default #{@default_max_rows}) -- rows read per resource; the read is
+  #     limited to `max_rows + 1` and a surplus row is a typed refusal.
+  #   * `:max_triples` (default #{@default_max_triples}) -- accumulation halts as soon as the
+  #     emitted triple count exceeds the limit, before any sorting or SPARQL execution.
+  #   * `:subject_iri` -- constant subject IRI; with exactly one spec and an invertible
+  #     template it is pushed down as a key filter (point lookup reads one row). If the IRI
+  #     does not invert, the read is not narrowed.
+  # `triples_emitted` counts triples produced per row before cross-row de-duplication.
+  defp materialize_many_with_stats(specs, opts) do
     allow_sensitive? = Keyword.get(opts, :allow_sensitive, false)
     previous_graph = Keyword.get(opts, :previous_graph)
-    read_opts = opts |> Keyword.delete(:allow_sensitive) |> Keyword.delete(:previous_graph)
+    max_triples = Keyword.get(opts, :max_triples, @default_max_triples)
+
+    read_opts =
+      opts
+      |> Keyword.drop([:allow_sensitive, :previous_graph, :max_triples])
+      |> Keyword.put_new(:max_rows, @default_max_rows)
+      |> Keyword.put(:pushdown_ok, match?([_], specs))
+
     # guard options (:allow_unauthorized, :require_*) are consumed and stripped in read_rows/2
 
     admitted_specs =
@@ -128,21 +152,51 @@ defmodule AshR2RML.OBDA.InMemory do
     mapping_index =
       Map.new(admitted_specs, fn {ash_resource, mapping_resource} -> {ash_resource, mapping_resource} end)
 
-    base_result =
-      Enum.reduce_while(admitted_specs, {:ok, RDF.Graph.new()}, fn {ash_resource, mapping_resource}, {:ok, graph_acc} ->
-        with {:ok, rows} <- rows_for(ash_resource, mapping_resource, read_opts),
-             {:ok, graph} <- add_rows(rows, graph_acc, ash_resource, mapping_resource, mapping_index, allow_sensitive?) do
-          {:cont, {:ok, graph}}
-        else
-          {:error, refusal} -> {:halt, {:error, refusal}}
-        end
-      end)
+    {base_result, stats} =
+      Enum.reduce_while(
+        admitted_specs,
+        {{:ok, RDF.Graph.new()}, %{rows_read: 0, triples_emitted: 0}},
+        fn {ash_resource, mapping_resource}, {{:ok, graph_acc}, stats} ->
+          case rows_for(ash_resource, mapping_resource, read_opts) do
+            {:ok, rows} ->
+              stats = %{stats | rows_read: stats.rows_read + length(rows)}
 
-    case {base_result, previous_graph} do
-      {{:ok, graph}, nil} -> {:ok, graph}
-      {{:ok, graph}, %RDF.Graph{} = old_graph} -> {:ok, %{graph: graph, delta: AshR2RML.Delta.diff(old_graph, graph)}}
-      {{:error, refusal}, _} -> {:error, refusal}
-    end
+              case add_rows(
+                     rows,
+                     graph_acc,
+                     stats.triples_emitted,
+                     max_triples,
+                     ash_resource,
+                     mapping_resource,
+                     mapping_index,
+                     allow_sensitive?
+                   ) do
+                {:ok, graph, emitted} ->
+                  {:cont, {{:ok, graph}, %{stats | triples_emitted: emitted}}}
+
+                {:error, refusal, emitted} ->
+                  {:halt, {{:error, refusal}, %{stats | triples_emitted: emitted}}}
+              end
+
+            {:error, refusal} ->
+              {:halt, {{:error, refusal}, stats}}
+          end
+        end
+      )
+
+    result =
+      case {base_result, previous_graph} do
+        {{:ok, graph}, nil} ->
+          {:ok, graph}
+
+        {{:ok, graph}, %RDF.Graph{} = old_graph} ->
+          {:ok, %{graph: graph, delta: AshR2RML.Delta.diff(old_graph, graph)}}
+
+        {{:error, refusal}, _} ->
+          {:error, refusal}
+      end
+
+    {result, stats}
   end
 
   @doc """
@@ -164,10 +218,42 @@ defmodule AshR2RML.OBDA.InMemory do
   """
   @spec query_many([spec()], String.t(), keyword()) :: {:ok, Observation.t()} | {:error, Refusal.t()}
   def query_many(specs, sparql, read_opts \\ []) when is_list(specs) and is_binary(sparql) do
-    with {:ok, graph} <- materialize_many(specs, read_opts),
-         {:ok, observation} <- Local.query(graph, sparql) do
-      observation = canonical_order(observation, sparql)
-      {:ok, %{observation | metadata: Map.put(observation.metadata, :engine, :in_memory_ets)}}
+    {result, _stats} = query_with_stats(specs, sparql, read_opts)
+    result
+  end
+
+  @doc """
+  Like `query_many/3`, additionally returning `%{rows_read: n, triples_emitted: n}`.
+  The stats are returned on refusals too (counts reached when the bound tripped).
+
+  Options: `max_rows` (default #{@default_max_rows}, refusal `:REFUSED_RESULT_LIMIT_EXCEEDED`),
+  `max_triples` (default #{@default_max_triples}, refusal `:REFUSED_TRIPLE_LIMIT_EXCEEDED`),
+  and `subject_iri` (constant subject IRI pushed down as a key filter for a single spec).
+  """
+  @spec query_with_stats([spec()], String.t(), keyword()) ::
+          {{:ok, Observation.t()} | {:error, Refusal.t()},
+           %{rows_read: non_neg_integer(), triples_emitted: non_neg_integer()}}
+  def query_with_stats(specs, sparql, read_opts \\ []) when is_list(specs) and is_binary(sparql) do
+    case materialize_many_with_stats(specs, read_opts) do
+      {{:ok, %RDF.Graph{} = graph}, stats} ->
+        query_with_stats_graph(graph, sparql, stats)
+
+      {{:ok, %{graph: graph}}, stats} ->
+        query_with_stats_graph(graph, sparql, stats)
+
+      {{:error, _} = error, stats} ->
+        {error, stats}
+    end
+  end
+
+  defp query_with_stats_graph(graph, sparql, stats) do
+    case Local.query(graph, sparql) do
+      {:ok, observation} ->
+        observation = canonical_order(observation, sparql)
+        {{:ok, %{observation | metadata: Map.put(observation.metadata, :engine, :in_memory_ets)}}, stats}
+
+      {:error, _} = error ->
+        {error, stats}
     end
   end
 
@@ -195,8 +281,30 @@ defmodule AshR2RML.OBDA.InMemory do
          )}
 
       _subject_map ->
-        read_rows(ash_resource, read_opts)
+        read_rows(ash_resource, Keyword.put(read_opts, :pushdown, pushdown_keys(mapping_resource, read_opts)))
     end
+  end
+
+  # Trivial pushdown: a constant `:subject_iri` inverted through the template subject map
+  # into key attribute values. Only for a single-spec call (a filter must not starve a join
+  # partner). A non-invertible IRI yields no pushdown -- the read is simply not narrowed.
+  defp pushdown_keys(%Resource{subject_map: %SubjectMap{strategy: :template}} = mapping, read_opts) do
+    with true <- read_opts[:pushdown_ok] == true,
+         iri when is_binary(iri) <- read_opts[:subject_iri],
+         {:ok, keys} when map_size(keys) > 0 <- AshR2RML.Subject.from_iri(mapping, iri) do
+      Map.to_list(keys)
+    else
+      _ -> nil
+    end
+  end
+
+  defp pushdown_keys(_mapping, _read_opts), do: nil
+
+  defp apply_pushdown(query, nil), do: query
+
+  defp apply_pushdown(query, keys) do
+    filtered = Ash.Query.do_filter(query, keys)
+    if filtered.valid?, do: filtered, else: query
   end
 
   # Result-tuple read path: every Ash error class (Forbidden, Invalid, Unknown, ...) is a
@@ -248,7 +356,23 @@ defmodule AshR2RML.OBDA.InMemory do
         Keyword.take(read_opts, [:actor, :tenant, :authorize?, :context, :domain])
       )
 
+    max_rows = Keyword.get(read_opts, :max_rows, @default_max_rows)
+
+    query =
+      query
+      |> apply_pushdown(read_opts[:pushdown])
+      |> Ash.Query.limit(max_rows + 1)
+
     case Ash.read(query, Keyword.take(read_opts, [:actor, :tenant, :authorize?, :domain])) do
+      {:ok, rows} when is_list(rows) and length(rows) > max_rows ->
+        {:error,
+         Refusal.new(
+           :REFUSED_RESULT_LIMIT_EXCEEDED,
+           ash_resource,
+           "read returned more than max_rows (#{max_rows}) rows; refusing to materialize",
+           %{resource: ash_resource, limit: max_rows}
+         )}
+
       {:ok, rows} when is_list(rows) ->
         {:ok, Enum.map(rows, &Map.from_struct/1)}
 
@@ -289,11 +413,30 @@ defmodule AshR2RML.OBDA.InMemory do
   # (see `add_reference_triples/4`) surfaces as a real refusal now, so every caller between
   # here and `materialize_many/2` must be able to propagate it rather than only ever
   # returning a bare graph.
-  defp add_rows(rows, graph_acc, ash_resource, mapping_resource, mapping_index, allow_sensitive?) do
-    Enum.reduce_while(rows, {:ok, graph_acc}, fn row, {:ok, acc} ->
-      case add_row(acc, row, ash_resource, mapping_resource, mapping_index, allow_sensitive?) do
-        {:ok, graph} -> {:cont, {:ok, graph}}
-        {:error, refusal} -> {:halt, {:error, refusal}}
+  #
+  # Each row is built into its own small graph so its triple count is cheap; the running
+  # `emitted` total halts accumulation the moment it exceeds `max_triples`.
+  defp add_rows(rows, graph_acc, emitted0, max_triples, ash_resource, mapping_resource, mapping_index, allow_sensitive?) do
+    Enum.reduce_while(rows, {:ok, graph_acc, emitted0}, fn row, {:ok, acc, emitted} ->
+      case add_row(RDF.Graph.new(), row, ash_resource, mapping_resource, mapping_index, allow_sensitive?) do
+        {:ok, row_graph} ->
+          emitted = emitted + RDF.Graph.triple_count(row_graph)
+
+          if emitted > max_triples do
+            {:halt,
+             {:error,
+              Refusal.new(
+                :REFUSED_TRIPLE_LIMIT_EXCEEDED,
+                ash_resource,
+                "materialization exceeded max_triples (#{max_triples}); refusing",
+                %{resource: ash_resource, limit: max_triples}
+              ), emitted}}
+          else
+            {:cont, {:ok, RDF.Graph.add(acc, row_graph), emitted}}
+          end
+
+        {:error, refusal} ->
+          {:halt, {:error, refusal, emitted}}
       end
     end)
   end

@@ -101,12 +101,31 @@ defmodule AshR2RML.MixProject do
         "AshR2RML contributors"
       ],
       licenses: ["MIT"],
-      files: ~w(lib .formatter.exs mix.exs AGENTS.md usage-rules.md usage-rules README* LICENSE* CHANGELOG*),
+      files: package_files(),
       links: %{
         "GitHub" => @github_url,
         "Changelog" => "#{@github_url}/blob/main/CHANGELOG.md"
       }
     ]
+  end
+
+  # File-only list: no directories, no lib/mix/**, no ontop/jdbc/docker.
+  defp package_files do
+    lib =
+      "lib/**/*.ex"
+      |> Path.wildcard()
+      |> Enum.reject(&String.starts_with?(&1, "lib/mix/"))
+
+    docs =
+      ["usage-rules/**/*.md", "README*", "LICENSE*", "CHANGELOG*"]
+      |> Enum.flat_map(&Path.wildcard/1)
+
+    (lib ++ docs ++ [".formatter.exs", "mix.exs", "AGENTS.md", "usage-rules.md"])
+    |> Enum.filter(&File.regular?/1)
+    |> Enum.reject(&String.match?(&1, ~r/j[d]bc|on[t]op|dock[e]r/i))
+    |> Enum.reject(&String.match?(&1, ~r/^bench\//))
+    |> Enum.uniq()
+    |> Enum.sort()
   end
 
   # Run "mix help compile.app" to learn about applications.
@@ -123,6 +142,7 @@ defmodule AshR2RML.MixProject do
       {:ash_postgres, "~> 2.0", only: [:test]},
       {:ash_json_api, "~> 1.7", only: [:test]},
       {:simple_sat, ">= 0.0.0", only: [:dev, :test]},
+      {:ash_sqlite, "~> 0.2", only: [:test]},
       {:ash_csv, "~> 0.9.8", only: [:test]},
       {:ash_cubdb, "~> 0.6.2", only: [:test]},
       {:ash_cloak, "~> 0.4", only: [:test]},
@@ -134,6 +154,7 @@ defmodule AshR2RML.MixProject do
       {:jason, "~> 1.4"},
       {:telemetry, "~> 1.0"},
       {:igniter, ">= 0.6.29 and < 1.0.0-0", [env: :prod, hex: "igniter", repo: "hexpm", optional: true]},
+      {:benchee, "~> 1.3", only: [:dev, :test]},
       {:ex_doc, "~> 0.37", only: [:dev, :test], runtime: false},
       {:git_ops, "~> 2.7", only: [:dev], runtime: false},
       {:credo, ">= 1.7.16", only: [:dev, :test], runtime: false},

@@ -156,15 +156,15 @@ defmodule AshR2RML.SubjectIriRoundtripTest do
     refused(Subject.from_iri(m, @ex <> "constant"), :UNSUPPORTED_TERM_TYPE)
   end
 
-  test "missing or nil template field refuses :REFUSED_INVALID_TERM_MAP" do
-    refused(Subject.to_iri(member_mapping(), %{org: "acme"}), :REFUSED_INVALID_TERM_MAP)
-    refused(Subject.to_iri(member_mapping(), %{org: "acme", pid: nil}), :REFUSED_INVALID_TERM_MAP)
-    refused(Subject.to_iri(item_mapping(), []), :REFUSED_INVALID_TERM_MAP)
+  test "missing or nil template field refuses :REFUSED_MISSING_SUBJECT_KEY" do
+    refused(Subject.to_iri(member_mapping(), %{org: "acme"}), :REFUSED_MISSING_SUBJECT_KEY)
+    refused(Subject.to_iri(member_mapping(), %{org: "acme", pid: nil}), :REFUSED_MISSING_SUBJECT_KEY)
+    refused(Subject.to_iri(item_mapping(), []), :REFUSED_MISSING_SUBJECT_KEY)
   end
 
   test "adjacent placeholders are not invertible" do
     m = mapping(Member, @ex <> "k/{org}{pid}")
-    refused(Subject.from_iri(m, @ex <> "k/ab"), :REFUSED_INVALID_TERM_MAP)
+    refused(Subject.from_iri(m, @ex <> "k/ab"), :REFUSED_NON_INVERTIBLE_TEMPLATE)
     assert Subject.to_iri(m, %{org: "a", pid: "b"}) == {:ok, @ex <> "k/ab"}
   end
 

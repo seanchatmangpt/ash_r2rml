@@ -11,6 +11,12 @@ defmodule AshR2RML.Subject do
   `from_iri/2` inverts the template and refuses any template or IRI whose inversion is not
   exact (the captured values must re-encode to the very same IRI).
 
+  Values are cast through the attribute's `Ash.Type` (type and constraints) in both
+  directions when the mapping names an Ash resource. Refusals: `:REFUSED_MISSING_SUBJECT_KEY`
+  (nil, `Ash.ForbiddenField`, `Ash.NotLoaded` or absent key), `:REFUSED_INVALID_SUBJECT_IRI`
+  (segment fails `Ash.Type.cast_input/3`), `:REFUSED_NON_INVERTIBLE_TEMPLATE` (adjacent
+  placeholders, `from_iri/2`).
+
   Only the `:template` subject strategy is supported; other strategies refuse with
   `:UNSUPPORTED_TERM_TYPE`.
 
@@ -57,13 +63,14 @@ defmodule AshR2RML.Subject do
   `to_iri/2` could have produced, or a refusal for non-invertible templates and mismatches.
   """
   @spec from_iri(source(), String.t()) ::
-          {:ok, %{atom() => String.t()}} | {:error, Refusal.t()}
+          {:ok, %{atom() => term()}} | {:error, Refusal.t()}
   def from_iri(source, iri) when is_binary(iri) do
     with {:ok, mapping, template} <- template(source),
          {:ok, segments} <- parse(mapping, template),
          :ok <- check_separators(mapping, segments),
-         {:ok, values} <- capture(mapping, segments, iri) do
-      verify_roundtrip(mapping, segments, values, iri)
+         {:ok, values} <- capture(mapping, segments, iri),
+         {:ok, typed} <- cast_values(mapping, values, iri) do
+      verify_roundtrip(mapping, segments, typed, iri)
     end
   end
 
@@ -190,9 +197,11 @@ defmodule AshR2RML.Subject do
         {:cont, {:ok, [text | acc]}}
 
       {:field, field}, {:ok, acc} ->
-        case fetch(record, field) do
-          {:ok, value} -> {:cont, {:ok, [encode(value) | acc]}}
-          :error -> {:halt, {:error, missing(mapping, field)}}
+        with {:ok, value} <- fetch_or_refuse(mapping, record, field),
+             {:ok, lexical} <- lexical(mapping, field, value) do
+          {:cont, {:ok, [percent_encode(lexical) | acc]}}
+        else
+          {:error, _} = error -> {:halt, error}
         end
     end)
     |> case do
@@ -211,20 +220,61 @@ defmodule AshR2RML.Subject do
 
     cond do
       is_nil(value) -> :error
+      match?(%Ash.ForbiddenField{}, value) -> :error
+      match?(%Ash.NotLoaded{}, value) -> :error
       is_struct(value) and is_nil(String.Chars.impl_for(value)) -> :error
       true -> {:ok, value}
     end
   end
 
-  defp encode(value), do: value |> to_string() |> percent_encode()
+  defp fetch_or_refuse(mapping, record, field) do
+    case fetch(record, field) do
+      {:ok, _} = ok -> ok
+      :error -> {:error, missing(mapping, field)}
+    end
+  end
+
+  # Ash.Type lexical form: cast the value through the attribute type (when the mapping
+  # resolves to an Ash resource attribute), then render with String.Chars.
+  defp lexical(mapping, field, value) do
+    case attribute(mapping, field) do
+      nil ->
+        {:ok, to_string(value)}
+
+      %{type: type, constraints: constraints} ->
+        case Ash.Type.cast_input(type, value, constraints) do
+          {:ok, cast} when not is_nil(cast) ->
+            {:ok, to_string(cast)}
+
+          _ ->
+            {:error,
+             refuse(
+               mapping,
+               :REFUSED_INVALID_SUBJECT_IRI,
+               "subject template field #{inspect(field)} value is not valid for its Ash type",
+               %{field: field}
+             )}
+        end
+    end
+  rescue
+    Protocol.UndefinedError ->
+      {:error, missing(mapping, field)}
+  end
+
+  defp attribute(%MappingResource{ash_resource: resource}, field)
+       when is_atom(resource) and not is_nil(resource) do
+    if Ash.Resource.Info.resource?(resource), do: Ash.Resource.Info.attribute(resource, field)
+  end
+
+  defp attribute(_mapping, _field), do: nil
 
   defp percent_encode(value), do: URI.encode(value, &URI.char_unreserved?/1)
 
   defp missing(mapping, field) do
     refuse(
       mapping,
-      :REFUSED_INVALID_TERM_MAP,
-      "subject template field #{inspect(field)} is missing or nil",
+      :REFUSED_MISSING_SUBJECT_KEY,
+      "subject template field #{inspect(field)} is missing, nil, forbidden or not loaded",
       %{field: field}
     )
   end
@@ -241,7 +291,7 @@ defmodule AshR2RML.Subject do
       {:error,
        refuse(
          mapping,
-         :REFUSED_INVALID_TERM_MAP,
+         :REFUSED_NON_INVERTIBLE_TEMPLATE,
          "subject template has adjacent placeholders with no separator; not invertible",
          %{}
        )}
@@ -289,6 +339,40 @@ defmodule AshR2RML.Subject do
     {:ok, URI.decode(raw)}
   rescue
     ArgumentError -> {:error, mismatch(m, iri, "malformed percent-encoding")}
+  end
+
+  defp cast_values(mapping, values, iri) do
+    Enum.reduce_while(values, {:ok, %{}}, fn {field, raw}, {:ok, acc} ->
+      case cast_value(mapping, field, raw) do
+        {:ok, value} ->
+          {:cont, {:ok, Map.put(acc, field, value)}}
+
+        :error ->
+          {:halt,
+           {:error,
+            refuse(
+              mapping,
+              :REFUSED_INVALID_SUBJECT_IRI,
+              "captured segment for #{inspect(field)} does not cast to its Ash type",
+              %{iri: iri, field: field}
+            )}}
+      end
+    end)
+  end
+
+  defp cast_value(mapping, field, raw) do
+    case attribute(mapping, field) do
+      nil ->
+        {:ok, raw}
+
+      %{type: type, constraints: constraints} ->
+        with {:ok, value} when not is_nil(value) <- Ash.Type.cast_input(type, raw, constraints),
+             {:ok, value} <- Ash.Type.apply_constraints(type, value, constraints) do
+          {:ok, value}
+        else
+          _ -> :error
+        end
+    end
   end
 
   defp verify_roundtrip(mapping, segments, values, iri) do
