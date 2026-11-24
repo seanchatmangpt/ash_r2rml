@@ -40,3 +40,5 @@ actor/tenant forwarding (`read_opts`), and the zero-JDBC guard (add a `lib/` mod
 - `SPARQL.Protocol` blocks literal private/loopback hosts but does no DNS resolution (hostname
   pointing at a private address is not blocked).
 - Ash `scoped_caller` in `ash_a2a` yields a principal key, not an Ash actor; the mapping is unwritten.
+- `OBDA.InMemory` row order is unspecified (SPARQL semantics; `ORDER BY` is honored). For stable
+  digests use `AshR2RML.SPARQL.Result.hash_rows/1`, which is order-insensitive; do not hash raw row lists.
