@@ -140,7 +140,8 @@ defmodule AshR2RML.OBDA.InMemory do
       opts
       |> Keyword.drop([:allow_sensitive, :previous_graph, :max_triples])
       |> Keyword.put_new(:max_rows, @default_max_rows)
-      |> Keyword.put(:pushdown_ok, match?([_], specs))
+      |> Keyword.put(:pushdown_ok, true)
+      |> Keyword.put(:pushdown_parents, referenced_parents(specs))
 
     # guard options (:allow_unauthorized, :require_*) are consumed and stripped in read_rows/2
 
@@ -286,10 +287,21 @@ defmodule AshR2RML.OBDA.InMemory do
   end
 
   # Trivial pushdown: a constant `:subject_iri` inverted through the template subject map
-  # into key attribute values. Only for a single-spec call (a filter must not starve a join
-  # partner). A non-invertible IRI yields no pushdown -- the read is simply not narrowed.
+  # into key attribute values. Applied per spec, and never to a resource that another spec (or
+  # itself) references as a join parent -- a filter must not starve a join partner. A
+  # non-invertible IRI (e.g. another resource's template) yields no pushdown for that spec.
+  defp referenced_parents(specs) do
+    specs
+    |> Enum.flat_map(fn {_ash, %Resource{reference_object_maps: refs}} ->
+      Enum.map(refs, & &1.parent_resource)
+    end)
+    |> Enum.reject(&is_nil/1)
+    |> Enum.uniq()
+  end
+
   defp pushdown_keys(%Resource{subject_map: %SubjectMap{strategy: :template}} = mapping, read_opts) do
     with true <- read_opts[:pushdown_ok] == true,
+         false <- mapping.ash_resource in Keyword.get(read_opts, :pushdown_parents, []),
          iri when is_binary(iri) <- read_opts[:subject_iri],
          {:ok, keys} when map_size(keys) > 0 <- AshR2RML.Subject.from_iri(mapping, iri) do
       Map.to_list(keys)

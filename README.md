@@ -13,6 +13,34 @@ AshR2RML is an Ash extension that compiles Ash resources and relationships into 
 
 AshR2RML is **not** a graph database, **not** an `Ash.DataLayer`, and **not** a SPARQL engine.
 
+### Scope (v26.11.25)
+
+**Shipped**
+
+- Bounded, Ash-mediated OBDA (`AshR2RML.OBDA.InMemory`): `max_rows`, `max_triples`,
+  `max_heap_size` (worker-process isolation), and `timeout_ms` bound every evaluation.
+- `Ash.Query` pushdown for constant-subject lookups.
+- Zero Java, zero JDBC; all reads go through Ash actions.
+- R2RML Turtle from `AshR2RML.R2RML.render/1` is the frozen wire contract for a future
+  PurRDF/graphlaw backend.
+
+**Explicitly NOT built**
+
+- Federation
+- Reverse actuation (RDF writes back into Ash)
+- AOT `.rq` compile
+- Live streaming
+
+**Documented divergence.** Ash field policies strip fields per actor on the Ash-mediated
+path. R2RML Turtle rendered for a SQL/Postgres-backed engine reads columns directly and
+cannot apply those field policies, so the two surfaces can differ for the same subject.
+
+**Test tiers**
+
+- ETS (default): `mix test`
+- SQLite: `mix test --include sqlite`
+- Postgres: set `ASH_R2RML_POSTGRES_URL`, then `mix test --include postgres`
+
 Its job is narrower and more useful:
 
 ```text

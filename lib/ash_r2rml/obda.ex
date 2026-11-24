@@ -91,15 +91,57 @@ defmodule AshR2RML.OBDA do
 
   defp execute(source, sparql, opts, started) do
     with {:ok, specs} <- resolve_specs(source),
-         {:ok, graph} <- InMemory.materialize_many(specs, materialize_opts(opts)),
-         :ok <- check_max_triples(graph, specs, opts[:max_triples]),
+         {:ok, readable, pruned} <- preflight(specs, opts),
+         {:ok, graph} <- InMemory.materialize_many(readable, materialize_opts(opts, specs, sparql)),
+         :ok <- check_max_triples(graph, readable, opts[:max_triples]),
          {:ok, ttl} <- AshR2RML.R2RML.render(%Bundle{resources: Enum.map(specs, &elem(&1, 1))}),
          {:ok, observation} <- Local.query(graph, sparql, local_opts(opts)) do
-      {:ok, envelope(observation, graph, specs, ttl, sparql, opts, started)}
+      {:ok, envelope(observation, graph, pruned, ttl, sparql, started)}
     end
   end
 
-  defp envelope(observation, graph, specs, ttl, sparql, opts, started) do
+  # Per-resource policy/tenant preflight. Skipped entirely for `authorize?: false` so the
+  # existing guard refusals of the read path keep their semantics. Pruned resources are
+  # dropped from the read (zero rows) but still counted.
+  defp preflight(specs, opts) do
+    if Keyword.get(opts, :authorize?, true) == false do
+      {:ok, specs, 0}
+    else
+      pre_opts = Keyword.take(opts, [:actor, :tenant, :domain])
+
+      Enum.reduce_while(specs, {:ok, [], 0}, fn {resource, _mapping} = spec, {:ok, keep, pruned} ->
+        case AshR2RML.OBDA.Preflight.check(resource, pre_opts) do
+          :ok -> {:cont, {:ok, [spec | keep], pruned}}
+          :pruned -> {:cont, {:ok, keep, pruned + 1}}
+          {:error, _} = error -> {:halt, error}
+        end
+      end)
+      |> case do
+        {:ok, keep, pruned} -> {:ok, Enum.reverse(keep), pruned}
+        error -> error
+      end
+    end
+  end
+
+  # A constant subject IRI is pushed down only when the query is a single group whose
+  # statements all belong to that one subject (a lone pattern, optionally `;`-chained) and
+  # exactly one spec is queried. Anything else reads unnarrowed.
+  @doc false
+  @spec constant_subject(String.t()) :: String.t() | nil
+  def constant_subject(sparql) do
+    with [[_, body]] <- Regex.scan(~r/\bWHERE\s*\{([^{}]*)\}/is, sparql, capture: :all),
+         1 <- sparql |> String.graphemes() |> Enum.count(&(&1 == "{")),
+         [_, iri] <- Regex.run(~r/^\s*<([^>\s]+)>\s/, body),
+         stripped = body |> String.replace(~r/<[^>\s]*>/, "<I>") |> String.replace(~r/"[^"]*"/, "\"S\""),
+         false <- Regex.match?(~r/\b(UNION|OPTIONAL|MINUS|GRAPH|SERVICE|FILTER|BIND|VALUES)\b/i, stripped),
+         true <- Regex.match?(~r/^\s*<I>[^.{}]*?\.?\s*$/s, stripped) do
+      iri
+    else
+      _ -> nil
+    end
+  end
+
+  defp envelope(observation, graph, pruned, ttl, sparql, started) do
     rows = canonical_rows(observation, sparql)
 
     {bindings, triples} =
@@ -112,7 +154,7 @@ defmodule AshR2RML.OBDA do
       rows_read: graph |> RDF.Graph.subjects() |> Enum.count(),
       triples_emitted: RDF.Graph.triple_count(graph),
       duration_us: System.convert_time_unit(System.monotonic_time() - started, :native, :microsecond),
-      resources_pruned_by_policy: pruned_count(specs, opts)
+      resources_pruned_by_policy: pruned
     }
 
     %Result{
@@ -130,10 +172,16 @@ defmodule AshR2RML.OBDA do
 
   defp canonical_rows(%{rows: rows}, _sparql), do: Result.canonical_sort(rows)
 
-  defp materialize_opts(opts) do
-    opts
-    |> Keyword.take(@forwarded)
-    |> Keyword.put(:allow_sensitive, Keyword.get(opts, :allow_sensitive?, false))
+  defp materialize_opts(opts, specs, sparql) do
+    base =
+      opts
+      |> Keyword.take(@forwarded)
+      |> Keyword.put(:allow_sensitive, Keyword.get(opts, :allow_sensitive?, false))
+
+    case {specs, constant_subject(sparql)} do
+      {_, iri} when is_binary(iri) -> base |> Keyword.put(:subject_iri, iri) |> Keyword.put(:pushdown_ok, true)
+      _ -> base
+    end
   end
 
   defp local_opts(opts), do: opts |> Keyword.take([:max_rows]) |> Enum.reject(fn {_k, v} -> is_nil(v) end)
@@ -157,22 +205,6 @@ defmodule AshR2RML.OBDA do
     else
       :ok
     end
-  end
-
-  defp pruned_count(specs, opts) do
-    if Keyword.get(opts, :authorize?, true) == false do
-      0
-    else
-      Enum.count(specs, fn {resource, _mapping} -> not can_read?(resource, opts) end)
-    end
-  end
-
-  defp can_read?(resource, opts) do
-    action = Ash.Resource.Info.primary_action!(resource, :read).name
-    can_opts = opts |> Keyword.take([:tenant, :domain]) |> Keyword.put(:maybe_is, true)
-    Ash.can?({resource, action}, opts[:actor], can_opts) != false
-  rescue
-    _ -> true
   end
 
   @doc false

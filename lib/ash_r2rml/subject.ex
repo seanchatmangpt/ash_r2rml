@@ -163,6 +163,22 @@ defmodule AshR2RML.Subject do
 
   @spec parse(MappingResource.t(), String.t()) :: {:ok, [segment()]} | {:error, Refusal.t()}
   defp parse(mapping, template) do
+    key = {__MODULE__, :segments, template}
+
+    case :persistent_term.get(key, nil) do
+      nil ->
+        with {:ok, segments} = ok <- parse_uncached(mapping, template) do
+          # Write-once: only successful parses are cached (errors depend on atom existence).
+          :persistent_term.put(key, segments)
+          ok
+        end
+
+      segments ->
+        {:ok, segments}
+    end
+  end
+
+  defp parse_uncached(mapping, template) do
     segments =
       @placeholder
       |> Regex.split(template, include_captures: true, trim: true)

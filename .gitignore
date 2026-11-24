@@ -131,3 +131,4 @@ target-lane*/
 
 # per-agent build roots
 _build_*/
+bench/results/

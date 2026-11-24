@@ -476,10 +476,21 @@ defmodule AshR2RML.DataLayerContract.Cases do
         assert forward == backward
         assert forward == via_domain
         assert forward =~ "rr:predicate <#{C.pred(:org_name)}>"
-        assert forward =~ "rr:predicate <#{C.pred(:born_on)}>"
-        # secret_note is field-policy gated at read time (see the security cases), not stripped from
-        # the rendered mapping metadata.
-        assert forward =~ C.pred(:secret_note)
+
+        # Intentional, documented layer divergence: AshPostgres columns are reachable by external SQL
+        # engines that would bypass Ash policies, so Security.sanitize_mapping/2 strips every
+        # field-policy-gated attribute from the rendered R2RML. Non-SQL layers keep them.
+        if unquote(layer) == AshR2RML.DataLayerContract.Postgres do
+          refute forward =~ "rr:predicate <#{C.pred(:born_on)}>"
+        else
+          assert forward =~ "rr:predicate <#{C.pred(:born_on)}>"
+        end
+
+        # secret_note is field-policy gated at read time (see the security cases).
+        if unquote(layer) != AshR2RML.DataLayerContract.Postgres do
+          assert forward =~ C.pred(:secret_note)
+        end
+
         refute forward =~ C.pred(:ssn_token)
         refute forward =~ C.pred(:internal_tax_id)
       end
@@ -622,10 +633,10 @@ end
 
 defmodule AshR2RML.DataLayerContract.PostgresRepo do
   @moduledoc """
-  Real `Ecto.Repo` for the `:postgres` contract; started by `Db.start_postgres!/0` only when
+  Real `AshPostgres.Repo` for the `:postgres` contract; started by `Db.start_postgres!/0` only when
   `ASH_R2RML_POSTGRES_URL` is set.
   """
-  use Ecto.Repo, otp_app: :ash_r2rml, adapter: Ecto.Adapters.Postgres
+  use AshPostgres.Repo, otp_app: :ash_r2rml, warn_on_missing_ash_functions?: false
 
   def installed_extensions, do: []
   def min_pg_version, do: %Version{major: 14, minor: 0, patch: 0}
