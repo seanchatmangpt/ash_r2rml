@@ -69,14 +69,11 @@ defmodule AshR2RML.OBDA.InMemoryFieldPolicyDenialTest do
 
   for {label, actor} <- [nil: nil, empty: %{}, uppercase_admin: %{role: :ADMIN}] do
     test "actor #{label} is denied the secret_key" do
-      case run(unquote(Macro.escape(actor)), @secret_pred) do
-        {:ok, obs} ->
-          assert obs.rows == []
-          refute inspect(obs) =~ @secret
-
-        {:error, err} ->
-          refute inspect(err) =~ @secret
-      end
+      # Resource policy is `always()`; the field policy yields %Ash.ForbiddenField{}, which
+      # materialization omits: the exact outcome is an empty successful observation.
+      assert {:ok, obs} = run(unquote(Macro.escape(actor)), @secret_pred)
+      assert obs.rows == []
+      refute inspect(obs) =~ @secret
     end
   end
 

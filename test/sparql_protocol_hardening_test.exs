@@ -20,7 +20,8 @@ defmodule AshR2RML.SPARQLProtocolHardeningTest do
         ""
       ] do
     test "Protocol.query refuses endpoint #{inspect(endpoint)}" do
-      assert {:error, %Refusal{}} = Protocol.query(unquote(endpoint), @query)
+      assert {:error, %Refusal{code: :REFUSED_INVALID_FEDERATION_ENVIRONMENT}} =
+               Protocol.query(unquote(endpoint), @query)
     end
   end
 

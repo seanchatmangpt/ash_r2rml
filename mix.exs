@@ -105,6 +105,7 @@ defmodule AshR2RML.MixProject do
       {:ash, "~> 3.0 and >= 3.28.0"},
       {:ash_postgres, "~> 2.0", only: [:test]},
       {:ash_json_api, "~> 1.7", only: [:test]},
+      {:simple_sat, ">= 0.0.0", only: [:dev, :test]},
       {:ash_csv, "~> 0.9.8", only: [:test]},
       {:ash_cubdb, "~> 0.6.2", only: [:test]},
       {:ash_cloak, "~> 0.4", only: [:test]},

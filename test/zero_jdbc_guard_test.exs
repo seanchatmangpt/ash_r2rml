@@ -33,6 +33,13 @@ defmodule AshR2RML.ZeroJdbcGuardTest do
     assert offenders(paths, @pattern) == []
   end
 
+  test "mix.exs declares no postgrex, jdbc, or java dependency" do
+    deps = Mix.Project.config()[:deps] |> Enum.map(&(&1 |> elem(0) |> Atom.to_string()))
+    assert deps != []
+    assert Enum.filter(deps, &(&1 =~ ~r/postgrex|jdbc|java/i)) == []
+    assert Enum.filter(files(["mix.exs"]), &(File.read!(&1) =~ ~r/postgrex|jdbc|java/i)) == []
+  end
+
   test "config and CI files mention neither jdbc nor ontop" do
     paths = files(["config/**/*", ".github/**/*"])
     assert paths != []

@@ -69,6 +69,7 @@ defmodule AshR2RML.OBDA.InMemorySensitiveCoverageTest do
 
   defp assert_refused(result) do
     assert {:error, %Refusal{code: :REFUSED_SENSITIVE_ATTRIBUTE_MATERIALIZATION}} = result
+    refute match?({:ok, _}, result)
   end
 
   test "sensitive attribute in subject template is refused" do

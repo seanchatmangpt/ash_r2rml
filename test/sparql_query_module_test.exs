@@ -44,12 +44,13 @@ defmodule AshR2RML.SPARQLQueryModuleTest do
   end
 
   test "admit/1 refuses garbage text with a typed refusal" do
-    assert {:error, %Refusal{}} = Query.admit("THIS IS NOT SPARQL {{{")
+    assert {:error, %Refusal{code: :REFUSED_UNPROVEN_EQUIVALENCE}} =
+             Query.admit("THIS IS NOT SPARQL {{{")
   end
 
   test "admit/1 refuses non-query terms" do
-    assert {:error, %Refusal{}} = Query.admit(42)
-    assert {:error, %Refusal{}} = Query.admit(nil)
+    assert {:error, %Refusal{code: :REFUSED_UNPROVEN_EQUIVALENCE}} = Query.admit(42)
+    assert {:error, %Refusal{code: :REFUSED_UNPROVEN_EQUIVALENCE}} = Query.admit(nil)
   end
 
   test "load_file/1 admits a query read from disk" do
@@ -62,6 +63,6 @@ defmodule AshR2RML.SPARQLQueryModuleTest do
 
   test "load_file/1 refuses a missing file" do
     path = Path.join(System.tmp_dir!(), "missing_#{System.unique_integer([:positive])}.rq")
-    assert {:error, %Refusal{}} = Query.load_file(path)
+    assert {:error, %Refusal{code: :REFUSED_UNPROVEN_EQUIVALENCE}} = Query.load_file(path)
   end
 end

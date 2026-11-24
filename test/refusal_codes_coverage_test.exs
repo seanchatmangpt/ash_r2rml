@@ -1,0 +1,354 @@
+# SPDX-FileCopyrightText: 2026 ash_r2rml contributors <https://github.com/seanchatmangpt/ash_r2rml/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
+defmodule AshR2RML.RefusalCodesCoverageTest do
+  @moduledoc """
+  One real trigger per refusal code that previously had no direct test:
+  REFUSED_AMBIGUOUS_RELATIONSHIP, REFUSED_UNKNOWN_ATTRIBUTE, REFUSED_INVALID_TERM_MAP,
+  UNSUPPORTED_TERM_TYPE, REFUSED_INVALID_FEDERATION_ENVIRONMENT,
+  REFUSED_UNPROVEN_EQUIVALENCE, REFUSED_UNSUPPORTED_SPARQL_FEATURE.
+
+  DSL-compile emitters (resource.ex Persist transformer) surface only the refusal detail
+  inside a compile-time exception, so those cases assert the detail substring on the
+  raised message; every other case asserts the exact `%Refusal{code: ...}`.
+  """
+  use ExUnit.Case, async: true
+
+  alias AshR2RML.Introspection
+  alias AshR2RML.Mapping
+  alias AshR2RML.Refusal
+
+  defmodule PlainThing do
+    use Ash.Resource, domain: nil, data_layer: Ash.DataLayer.Ets
+
+    attributes do
+      uuid_primary_key :id
+      attribute :name, :string, public?: true
+    end
+
+    actions do
+      defaults [:read]
+    end
+  end
+
+  defmodule LegacyGhost do
+    use Ash.Resource, domain: nil, data_layer: Ash.DataLayer.Ets
+
+    attributes do
+      uuid_primary_key :id
+    end
+
+    actions do
+      defaults [:read]
+    end
+
+    def __ash_r2rml_mapping__ do
+      %AshR2RML.LegacyMapping{
+        resource: __MODULE__,
+        class_iri: "https://example.org/Ghost",
+        subject_template: "https://example.org/ghost/{id}",
+        logical_table: {:table, "ghosts"},
+        attributes: [
+          %AshR2RML.AttributeMapping{
+            attribute: :no_such_attribute,
+            column: "no_such_attribute",
+            predicate_iri: "https://example.org/p"
+          }
+        ]
+      }
+    end
+  end
+
+  defp compile_error_message(source) do
+    Code.compile_string(source)
+    flunk("expected compilation to fail")
+  rescue
+    exception in ExUnit.AssertionError -> reraise exception, __STACKTRACE__
+    exception -> Exception.message(exception)
+  end
+
+  defp resource_source(name, r2rml_body) do
+    """
+    defmodule AshR2RML.RefusalCoverage.#{name} do
+      use Ash.Resource,
+        domain: nil,
+        data_layer: Ash.DataLayer.Ets,
+        extensions: [AshR2RML.Resource]
+
+      attributes do
+        uuid_primary_key :id
+        attribute :name, :string, public?: true
+      end
+
+      actions do
+        defaults [:read]
+      end
+
+      r2rml do
+        table_name("things")
+        class("https://example.org/Thing")
+
+        subject do
+          template("https://example.org/thing/{id}")
+        end
+
+    #{r2rml_body}
+      end
+    end
+    """
+  end
+
+  defp base_resource(overrides) do
+    struct!(
+      %Mapping.Resource{
+        ash_resource: :CoverageRes,
+        logical_table: %Mapping.LogicalTable{table_name: "items"},
+        class_iris: ["https://example.org/Item"],
+        subject_map: %Mapping.SubjectMap{strategy: :template, value: "https://example.org/i/{id}", term_type: :iri},
+        identities: [[:id]],
+        metadata: %{attribute_columns: %{id: "id", name: "name"}}
+      },
+      overrides
+    )
+  end
+
+  defp refusals({:error, list}) when is_list(list), do: list
+  defp refusals({:error, %Refusal{} = r}), do: [r]
+
+  defp refusal_with(list, code, substring) do
+    Enum.find(list, fn r -> r.code == code and String.contains?(r.detail, substring) end)
+  end
+
+  describe "REFUSED_AMBIGUOUS_RELATIONSHIP" do
+    test "Introspection.relationship refuses a relationship the Ash resource does not declare" do
+      assert {:error, %Refusal{code: :REFUSED_AMBIGUOUS_RELATIONSHIP} = refusal} =
+               Introspection.relationship(PlainThing, :ghost)
+
+      assert refusal.detail =~ "Ash relationship does not exist"
+      assert refusal.subject == {PlainThing, :ghost}
+    end
+
+    test "DSL compile refuses a reference to an undeclared relationship" do
+      source =
+        resource_source(
+          "AmbiguousRel",
+          ~s|    property(:name, "https://example.org/name")\n    reference(:ghost, "https://example.org/hasGhost")|
+        )
+
+      assert compile_error_message(source) =~ "Ash relationship does not exist"
+    end
+  end
+
+  describe "REFUSED_UNKNOWN_ATTRIBUTE" do
+    test "compatibility adapter refuses a mapping on an attribute the resource lacks" do
+      assert {:error, %Refusal{code: :REFUSED_UNKNOWN_ATTRIBUTE} = refusal} =
+               AshR2RML.Resource.Info.mapping_result(LegacyGhost)
+
+      assert refusal.detail =~ "unknown attribute"
+      assert refusal.subject == {LegacyGhost, :no_such_attribute}
+    end
+
+    test "DSL compile refuses a property on an unknown attribute" do
+      source = resource_source("UnknownAttr", ~s|    property(:ghost_attr, "https://example.org/ghost")|)
+
+      assert compile_error_message(source) =~ "unknown Ash attribute"
+    end
+  end
+
+  describe "REFUSED_INVALID_TERM_MAP" do
+    test "DSL compile refuses a language tag on a non-literal term map" do
+      source =
+        resource_source(
+          "LangIri",
+          ~s|    property(:name, "https://example.org/name", language: "en", term_type: :iri)|
+        )
+
+      assert compile_error_message(source) =~ "language-tagged values must be literal term maps"
+    end
+
+    test "Mapping.validate refuses an unsupported subject strategy" do
+      mapping =
+        base_resource(
+          subject_map: %Mapping.SubjectMap{strategy: :bogus, value: "https://example.org/i/{id}", term_type: :iri}
+        )
+
+      found =
+        refusal_with(refusals(Mapping.validate(mapping)), :REFUSED_INVALID_TERM_MAP, "unsupported subject strategy")
+
+      assert %Refusal{evidence: %{strategy: :bogus}} = found
+    end
+
+    test "Mapping.validate refuses an empty object map value" do
+      mapping =
+        base_resource(
+          predicate_object_maps: [
+            %Mapping.PredicateObjectMap{
+              attribute: :name,
+              predicate_iri: "https://example.org/name",
+              object_map: %Mapping.ObjectMap{strategy: :column, value: "", term_type: :literal}
+            }
+          ]
+        )
+
+      assert refusal_with(
+               refusals(Mapping.validate(mapping)),
+               :REFUSED_INVALID_TERM_MAP,
+               "object map value must be non-empty"
+             )
+    end
+  end
+
+  describe "UNSUPPORTED_TERM_TYPE" do
+    test "Mapping.validate refuses an unsupported subject term type" do
+      mapping =
+        base_resource(
+          subject_map: %Mapping.SubjectMap{
+            strategy: :template,
+            value: "https://example.org/i/{id}",
+            term_type: :literal
+          }
+        )
+
+      found = refusal_with(refusals(Mapping.validate(mapping)), :UNSUPPORTED_TERM_TYPE, "unsupported subject term type")
+      assert %Refusal{evidence: %{term_type: :literal}} = found
+    end
+
+    test "Mapping.validate refuses an unsupported object term type" do
+      mapping =
+        base_resource(
+          predicate_object_maps: [
+            %Mapping.PredicateObjectMap{
+              attribute: :name,
+              predicate_iri: "https://example.org/name",
+              object_map: %Mapping.ObjectMap{strategy: :column, value: "name", term_type: :bogus}
+            }
+          ]
+        )
+
+      assert refusal_with(refusals(Mapping.validate(mapping)), :UNSUPPORTED_TERM_TYPE, "unsupported object term type")
+    end
+
+    test "renderer refuses a many_to_many bridge over a blank-node subject strategy" do
+      source =
+        base_resource(
+          ash_resource: AshR2RML.GrandExample.Person,
+          logical_table: %Mapping.LogicalTable{table_name: "sources"},
+          class_iris: ["https://example.org/Source"],
+          subject_map: %Mapping.SubjectMap{strategy: :blank_node, value: "src", term_type: :blank_node},
+          reference_object_maps: [
+            %Mapping.ReferenceObjectMap{
+              relationship: :targets,
+              predicate_iri: "https://example.org/hasTarget",
+              parent_resource: AshR2RML.GrandExample.Organization,
+              metadata: %{
+                kind: :many_to_many,
+                through_logical_table: %Mapping.LogicalTable{table_name: "links"},
+                source_to_join: %Mapping.JoinCondition{child: "id", parent: "source_id"},
+                join_to_destination: %Mapping.JoinCondition{child: "target_id", parent: "id"}
+              }
+            }
+          ]
+        )
+
+      target =
+        base_resource(
+          ash_resource: AshR2RML.GrandExample.Organization,
+          logical_table: %Mapping.LogicalTable{table_name: "targets"},
+          class_iris: ["https://example.org/Target"],
+          subject_map: %Mapping.SubjectMap{strategy: :template, value: "https://example.org/t/{id}", term_type: :iri}
+        )
+
+      assert {:error, %Refusal{code: :UNSUPPORTED_TERM_TYPE} = refusal} =
+               AshR2RML.R2RML.render(%Mapping.Bundle{resources: [source, target]})
+
+      assert refusal.detail =~ "unsupported for many_to_many bridge"
+      assert refusal.evidence == %{strategy: :blank_node}
+    end
+  end
+
+  describe "REFUSED_INVALID_FEDERATION_ENVIRONMENT" do
+    @query "SELECT * WHERE { ?s ?p ?o }"
+
+    test "refuses a non-http scheme" do
+      assert {:error, %Refusal{code: :REFUSED_INVALID_FEDERATION_ENVIRONMENT} = refusal} =
+               AshR2RML.SPARQL.Protocol.query("ftp://example.org/sparql", @query)
+
+      assert refusal.detail =~ "http or https"
+    end
+
+    test "refuses an http URL with an empty host" do
+      assert {:error, %Refusal{code: :REFUSED_INVALID_FEDERATION_ENVIRONMENT}} =
+               AshR2RML.SPARQL.Protocol.query("http:///sparql", @query)
+    end
+  end
+
+  describe "REFUSED_UNPROVEN_EQUIVALENCE" do
+    test "Query.admit refuses a non-query term" do
+      assert {:error, %Refusal{code: :REFUSED_UNPROVEN_EQUIVALENCE} = refusal} =
+               AshR2RML.SPARQL.Query.admit(12_345)
+
+      assert refusal.detail =~ "expected SPARQL query text"
+    end
+
+    test "Query.admit refuses text that is not SPARQL" do
+      assert {:error, %Refusal{code: :REFUSED_UNPROVEN_EQUIVALENCE} = refusal} =
+               AshR2RML.SPARQL.Query.admit("this is definitely not sparql")
+
+      assert refusal.detail =~ "language admission"
+    end
+
+    test "Query.load_file refuses an unreadable path" do
+      path = Path.join(System.tmp_dir!(), "ash_r2rml_missing_#{System.unique_integer([:positive])}.rq")
+
+      assert {:error, %Refusal{code: :REFUSED_UNPROVEN_EQUIVALENCE} = refusal} =
+               AshR2RML.SPARQL.Query.load_file(path)
+
+      assert refusal.detail =~ "failed to read SPARQL file"
+    end
+
+    test "Local.query refuses a valid query over data SPARQL.ex cannot execute against" do
+      assert {:error, %Refusal{code: :REFUSED_UNPROVEN_EQUIVALENCE} = refusal} =
+               AshR2RML.SPARQL.Local.query(:not_rdf_data, "SELECT * WHERE { ?s ?p ?o }")
+
+      assert refusal.detail =~ "could not execute"
+    end
+
+    test "Mapping.validate refuses a relative inverse predicate" do
+      mapping =
+        base_resource(
+          reference_object_maps: [
+            %Mapping.ReferenceObjectMap{
+              relationship: :owner,
+              predicate_iri: "https://example.org/owner",
+              inverse_predicate: "relative-inverse",
+              parent_resource: :CoverageRes,
+              joins: [%Mapping.JoinCondition{child: "id", parent: "id"}]
+            }
+          ]
+        )
+
+      assert refusal_with(
+               refusals(Mapping.validate(mapping)),
+               :REFUSED_UNPROVEN_EQUIVALENCE,
+               "inverse predicate must be an absolute IRI"
+             )
+    end
+  end
+
+  describe "REFUSED_UNSUPPORTED_SPARQL_FEATURE" do
+    test "in-memory materialization refuses a constant subject strategy before reading any row" do
+      mapping =
+        base_resource(
+          ash_resource: PlainThing,
+          subject_map: %Mapping.SubjectMap{strategy: :constant, value: "https://example.org/only", term_type: :iri}
+        )
+
+      assert {:error, %Refusal{code: :REFUSED_UNSUPPORTED_SPARQL_FEATURE} = refusal} =
+               AshR2RML.OBDA.InMemory.materialize(PlainThing, mapping)
+
+      assert refusal.detail =~ "only supports :template and :column"
+      assert refusal.evidence == %{strategy: :constant}
+    end
+  end
+end
