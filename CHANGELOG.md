@@ -13,18 +13,52 @@ See [Conventional Commits](Https://conventionalcommits.org) for commit guideline
 
 ## v26.11.24 (2026-11-24)
 
+Zero-Java, zero-JDBC release. `AshR2RML.OBDA.InMemory` is the sole runtime OBDA backend.
+
 ### Breaking changes:
 * Stripped to the core: `r2rml`/`rdf` DSL, mapping IR, R2RML rendering, typed refusals, and OBDA
-  (`AshR2RML.OBDA.InMemory` as the sole runtime backend, `AshR2RML.SPARQL.*`).
-* Removed the Ontop/JDBC adapter (`AshR2RML.OBDA.Ontop`, `OntopConfig`, compliance catalog, live crowns,
-  docker harness, bench): the package ships zero Java and zero JDBC. Recoverable from commit `26f5f49`.
-  Added `test/zero_jdbc_guard_test.exs` and a field-policy denial test through `InMemory`.
+  (`AshR2RML.OBDA.InMemory`, `AshR2RML.SPARQL.*`).
+* Removed the Ontop/JDBC adapter (`AshR2RML.OBDA.Ontop`, `OntopConfig`, compliance catalog, live
+  crowns, docker harness, bench, CI `obda` job): the Hex tarball contains zero Java, JDBC, Ontop,
+  jar or Docker files. Recoverable from commit `26f5f49`.
 * Removed (recoverable from commit `5defc87`): ontology-first ingestion/admission/semantic types,
   ggen packs and runtime, GraphQL projection, Reactor steps/pipeline, OCEL telemetry, knowledge
   hooks, VKG, federation, DfCM, production admission, JSON-LD.
-* `AshR2RML.Compiler.compile/2` accepts Ash resources only; profile maps are no longer compiled.
+* `AshR2RML.Compiler.compile/2` accepts Ash resources (or domains) only; profile maps are no
+  longer compiled.
 * The `AshGraphql` auto-extension is no longer added by `AshR2RML.Resource`.
-* Removed deps: `ash_graphql`, `absinthe`, `json_ld`, `reactor`, `ash_state_machine`.
+* Removed deps: `ash_graphql`, `absinthe`, `json_ld`, `ash_state_machine`, `benchee`, `ex_check`.
+  `reactor` arrives through `ash`; `simple_sat` is test/dev only.
+
+### Features:
+* **`AshR2RML.Subject`**: `to_iri/2`, `from_iri/2` (strict unreserved percent-encoding),
+  `iri_only?/1`, `check_iri_only/1`; typed refusals for non-template and invalid terms.
+* **Domain compilation**: `AshR2RML.Compiler.compile/2` accepts an `Ash.Domain` and expands it to
+  its AshR2RML-mapped resources; `AshR2RML.Resource.Info.domain_resources/1`.
+* **`mix ash_r2rml.render`** task; `mix ash_r2rml.install` emits a valid starter block; DSL
+  `describe`/`examples` on entities; generated cheat sheet under `documentation/`.
+* **Datatypes**: `Ash.Type.get_type/1` resolution, `Ash.Type.NewType` unwrapping, `UUIDv7` and
+  `Module` mappings. `Ash.Type.Range` and unmapped types still refuse.
+* **SPARQL protocol client**: scheme/host validation, private-network guard
+  (`allow_private_network`), timeout, `:max_rows` bound (`REFUSED_RESOURCE_BOUND`).
+* **Safe introspection**: Postgres table info resolved dynamically, so non-Postgres resources and
+  consumers without `ash_postgres` compile and map without warnings.
+
+### Security:
+* `OBDA.InMemory` reads through `Ash.read/2` with `actor:`, `tenant:` and policies;
+  `authorize?: nil` is treated as `true`; `%Ash.ForbiddenField{}` values are omitted.
+* `sensitive?: true` attributes are refused/omitted everywhere they could leak, including subject
+  templates and join keys (`allow_sensitive` opt-out); options `allow_unauthorized`,
+  `require_authorizer`, `require_tenant`.
+* Refusal evidence no longer carries result rows.
+* SELECT rows are canonically sorted when the query has no `ORDER BY`.
+
+### Packaging & Release:
+* Version `26.11.24`. Release workflow runs format + tests, requires the tag on `main` ancestry,
+  serialises with a concurrency group, and gates on green CI check runs for the exact SHA.
+* `RELEASE_CHECKLIST.md` lists gates, the mutation court and accepted gaps.
+* Verification: 431 tests + 1 doctest, `mix dialyzer` clean (documented ignores),
+  `mix compile --warnings-as-errors`, tarball inspected for zero JDBC/Ontop/jar files.
 
 ## v26.11.11 (2026-11-11)
 
