@@ -372,8 +372,9 @@ knowledge hooks, VKG, federation, DfCM and production admission.
 Named gaps:
 
 - `Ash.Type.Range` has no R2RML datatype mapping yet (`UNSUPPORTED_ASH_TYPE`).
-- The live Postgres/Ontop crown scripts were removed with the ontology-first ingestion they
-  depended on; live OBDA verification is UNVERIFIED until they are re-authored Ash-first.
+- Live OBDA is exercised by `test/integration/obda_crown.exs` (Ash InMemory + Ontop CLI + Ontop endpoint
+  vs PostgreSQL) and `ontop_compliance_crown.exs` (30 Ontop 5.5.0 protocol probes incl. GeoSPARQL);
+  both need Docker, `xaas-db` and `ontop/ontop:5.5.0` (`MIX_ENV=test mix run <script>`).
 
 Never treat this README, `AGENTS.md`, or `CHANGELOG.md` as proof a capability is wired end to
 end — the real evidence is the cited test file and its actual passing run.
