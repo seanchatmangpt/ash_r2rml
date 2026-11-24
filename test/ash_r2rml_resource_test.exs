@@ -4,6 +4,7 @@
 
 defmodule AshR2RML.ResourceTest.Organization do
   use Ash.Resource,
+    domain: nil,
     data_layer: Ash.DataLayer.Ets,
     extensions: [AshR2RML.Resource]
 
@@ -27,6 +28,7 @@ end
 
 defmodule AshR2RML.ResourceTest.Account do
   use Ash.Resource,
+    domain: nil,
     data_layer: Ash.DataLayer.Ets,
     extensions: [AshR2RML.Resource]
 

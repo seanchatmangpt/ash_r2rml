@@ -9,7 +9,7 @@ defmodule AshR2RML.OBDA.InMemory do
   A SQL-rewriting engine has no analogue for `Ash.DataLayer.Ets` (no SQL surface at all)
   and would bypass Ash policies, field redaction and tenant scoping. Instead this module
   takes the honest path: it **materializes** the real rows of one or more Ash
-  resources -- via a real `Ash.read!/2`, with no data-layer gate of its own -- into a
+  resources -- via a real `Ash.read/2` on an `Ash.Query.for_read/4` query, with no data-layer gate of its own -- into a
   real `RDF.Graph` using the canonical mapping IR (`AshR2RML.Mapping.Resource`, the
   same IR the R2RML renderer consumes), then executes the query with the
   already-existing `AshR2RML.SPARQL.Local` engine (`SPARQL.ex`, full SPARQL
@@ -82,8 +82,9 @@ defmodule AshR2RML.OBDA.InMemory do
   Materializes real rows read from `ash_resource` (via a real Ash read action)
   into an `RDF.Graph` shaped by `mapping_resource`.
 
-  `opts` is passed through to `Ash.read!/2` verbatim (e.g. `domain:`, `actor:`) --
-  minus `:allow_sensitive`, this module's own option (see moduledoc) -- so this
+  `opts` supplies the read's `:actor`, `:tenant`, `:authorize?`, `:context` and `:domain`
+  (taken into `Ash.Query.for_read/4`; `:action` selects the read action, default the
+  primary read) -- `:allow_sensitive` is this module's own option (see moduledoc) -- so this
   always executes a real Ash action against the real data layer -- never a
   fabricated row set. `allow_sensitive: true` opts into materializing attributes
   marked `sensitive?: true`; the default (`false`) refuses instead. The
@@ -100,7 +101,7 @@ defmodule AshR2RML.OBDA.InMemory do
   triples for any `reference_object_maps` whose `parent_resource` is also present in
   `specs` -- this is what lets one SPARQL query join across resources.
 
-  `opts` applies uniformly to every resource's `Ash.read!/2` call (e.g. a shared
+  `opts` applies uniformly to every resource's `Ash.read/2` call (e.g. a shared
   `domain:`/`actor:`), minus `:allow_sensitive` (see `materialize/3`); pass distinct
   options per resource by reading each resource's rows yourself and preferring
   `query/4`'s single-resource form instead if that's needed.
@@ -117,6 +118,7 @@ defmodule AshR2RML.OBDA.InMemory do
     allow_sensitive? = Keyword.get(opts, :allow_sensitive, false)
     previous_graph = Keyword.get(opts, :previous_graph)
     read_opts = opts |> Keyword.delete(:allow_sensitive) |> Keyword.delete(:previous_graph)
+    # guard options (:allow_unauthorized, :require_*) are consumed and stripped in read_rows/2
 
     admitted_specs =
       Enum.map(specs, fn {ash_resource, mapping_resource} ->
@@ -164,9 +166,22 @@ defmodule AshR2RML.OBDA.InMemory do
   def query_many(specs, sparql, read_opts \\ []) when is_list(specs) and is_binary(sparql) do
     with {:ok, graph} <- materialize_many(specs, read_opts),
          {:ok, observation} <- Local.query(graph, sparql) do
+      observation = canonical_order(observation, sparql)
       {:ok, %{observation | metadata: Map.put(observation.metadata, :engine, :in_memory_ets)}}
     end
   end
+
+  # PRD PR-06: without ORDER BY, SELECT row order is unspecified; sort canonically so output
+  # is independent of data-layer scan order. With ORDER BY the engine's order is preserved.
+  defp canonical_order(%Observation{result_kind: :bindings, rows: rows} = observation, sparql) do
+    if Regex.match?(~r/\bORDER\s+BY\b/i, sparql) do
+      observation
+    else
+      %{observation | rows: Enum.sort_by(rows, fn row -> row |> Enum.to_list() |> Enum.sort() end)}
+    end
+  end
+
+  defp canonical_order(observation, _sparql), do: observation
 
   defp rows_for(ash_resource, %Resource{} = mapping_resource, read_opts) do
     case mapping_resource.subject_map do
@@ -180,20 +195,95 @@ defmodule AshR2RML.OBDA.InMemory do
          )}
 
       _subject_map ->
-        try do
-          {:ok, ash_resource |> Ash.read!(read_opts) |> Enum.map(&Map.from_struct/1)}
-        rescue
-          exception ->
-            {:error,
-             Refusal.new(
-               :REFUSED_UNSUPPORTED_SPARQL_FEATURE,
-               ash_resource,
-               "fail-closed: could not read the real Ash resource for materialization (#{inspect(exception.__struct__)}, e.g. forbidden by policy)",
-               %{exception: Exception.message(exception)}
-             )}
-        end
+        read_rows(ash_resource, read_opts)
     end
   end
+
+  # Result-tuple read path: every Ash error class (Forbidden, Invalid, Unknown, ...) is a
+  # fail-closed refusal; the rescue is only for programmer errors (e.g. no primary read
+  # action, malformed options) raised before Ash can return a tuple.
+  defp read_rows(ash_resource, read_opts) do
+    {guard_opts, read_opts} =
+      Keyword.split(read_opts, [:allow_unauthorized, :require_authorizer, :require_tenant])
+
+    read_opts =
+      Keyword.update(read_opts, :authorize?, true, fn
+        nil -> true
+        value -> value
+      end)
+
+    with :ok <- check_read_guards(ash_resource, guard_opts, read_opts) do
+      do_read_rows(ash_resource, read_opts)
+    end
+  end
+
+  defp check_read_guards(ash_resource, guard_opts, read_opts) do
+    cond do
+      read_opts[:authorize?] == false and guard_opts[:allow_unauthorized] != true ->
+        guard_refusal(ash_resource, "authorize?: false requires allow_unauthorized: true")
+
+      guard_opts[:require_authorizer] == true and
+          Ash.Policy.Authorizer not in Ash.Resource.Info.authorizers(ash_resource) ->
+        guard_refusal(ash_resource, "require_authorizer: true but resource has no Ash.Policy.Authorizer")
+
+      guard_opts[:require_tenant] == true and Ash.Resource.Info.multitenancy_strategy(ash_resource) != nil and
+          is_nil(read_opts[:tenant]) ->
+        guard_refusal(ash_resource, "require_tenant: true but no :tenant given for multitenant resource")
+
+      true ->
+        :ok
+    end
+  end
+
+  defp guard_refusal(ash_resource, message), do: {:error, read_refusal(ash_resource, message, %{})}
+
+  defp do_read_rows(ash_resource, read_opts) do
+    action = Keyword.get_lazy(read_opts, :action, fn -> Ash.Resource.Info.primary_action!(ash_resource, :read).name end)
+
+    query =
+      Ash.Query.for_read(
+        ash_resource,
+        action,
+        %{},
+        Keyword.take(read_opts, [:actor, :tenant, :authorize?, :context, :domain])
+      )
+
+    case Ash.read(query, Keyword.take(read_opts, [:actor, :tenant, :authorize?, :domain])) do
+      {:ok, rows} when is_list(rows) ->
+        {:ok, Enum.map(rows, &Map.from_struct/1)}
+
+      {:ok, other} ->
+        {:error,
+         read_refusal(ash_resource, "unexpected non-list read result", %{
+           result_type: if(is_struct(other), do: inspect(other.__struct__), else: "non-struct")
+         })}
+
+      {:error, error} ->
+        class = if is_exception(error), do: error.__struct__, else: error
+
+        {:error,
+         read_refusal(
+           ash_resource,
+           "fail-closed: could not read the real Ash resource for materialization (#{inspect(class)}, e.g. forbidden by policy)",
+           %{error_class: inspect(class), exception: error_message(error)}
+         )}
+    end
+  rescue
+    exception in [ArgumentError, RuntimeError, KeyError] ->
+      {:error,
+       read_refusal(
+         ash_resource,
+         "fail-closed: could not read the real Ash resource for materialization (#{inspect(exception.__struct__)})",
+         %{error_class: inspect(exception.__struct__), exception: Exception.message(exception)}
+       )}
+  end
+
+  defp read_refusal(ash_resource, message, evidence) do
+    Refusal.new(:REFUSED_UNSUPPORTED_SPARQL_FEATURE, ash_resource, message, evidence)
+  end
+
+  defp error_message(error) when is_exception(error), do: Exception.message(error)
+  defp error_message(error), do: inspect(error)
 
   # Returns `{:ok, graph}` | `{:error, refusal}` -- a `:join_table` reference object map
   # (see `add_reference_triples/4`) surfaces as a real refusal now, so every caller between

@@ -76,6 +76,11 @@ defmodule AshR2RML.Resource do
 
   @class %Spark.Dsl.Entity{
     name: :class,
+    describe: "Declares one or more rdf:type class IRIs asserted for every subject of this resource.",
+    examples: [
+      ~s|class "http://xmlns.com/foaf/0.1/Person"|,
+      ~s|class ["http://xmlns.com/foaf/0.1/Person", "http://schema.org/Person"]|
+    ],
     args: [:iri],
     target: AshR2RML.Dsl.Class,
     identifier: :iri,
@@ -84,6 +89,12 @@ defmodule AshR2RML.Resource do
 
   @subject %Spark.Dsl.Entity{
     name: :subject,
+    describe:
+      "Defines how subject terms are generated: exactly one of template, column, or constant (blank_node term type may omit all).",
+    examples: [
+      ~s|subject template: "http://example.com/person/{id}"|,
+      ~s|subject term_type: :blank_node|
+    ],
     target: AshR2RML.Dsl.Subject,
     schema: [
       template: [type: :string],
@@ -95,6 +106,11 @@ defmodule AshR2RML.Resource do
 
   @property %Spark.Dsl.Entity{
     name: :property,
+    describe: "Maps an Ash attribute to a predicate-object map with the given predicate IRI.",
+    examples: [
+      ~s|property :name, "http://xmlns.com/foaf/0.1/name"|,
+      ~s|property :age, "http://xmlns.com/foaf/0.1/age", datatype: "http://www.w3.org/2001/XMLSchema#integer"|
+    ],
     args: [:attribute, :predicate_iri],
     target: AshR2RML.Dsl.Property,
     identifier: :attribute,
@@ -112,6 +128,11 @@ defmodule AshR2RML.Resource do
 
   @reference %Spark.Dsl.Entity{
     name: :reference,
+    describe: "Maps an Ash relationship to a referencing object map linking subjects via a predicate IRI.",
+    examples: [
+      ~s|reference :company, "http://example.com/worksFor"|,
+      ~s|reference :posts, "http://example.com/authored", direction: :incoming|
+    ],
     args: [:relationship, :predicate_iri],
     target: AshR2RML.Dsl.Reference,
     identifier: :relationship,
@@ -126,6 +147,11 @@ defmodule AshR2RML.Resource do
 
   @graph %Spark.Dsl.Entity{
     name: :graph,
+    describe: "Assigns generated triples to a named graph IRI, scoped to the whole resource or to the subject map.",
+    examples: [
+      ~s|graph "http://example.com/graph/people"|,
+      ~s|graph "http://example.com/graph/people", scope: :subject|
+    ],
     args: [:iri],
     target: AshR2RML.Dsl.Graph,
     identifier: :iri,
@@ -137,6 +163,11 @@ defmodule AshR2RML.Resource do
 
   @sparql_query %Spark.Dsl.Entity{
     name: :query,
+    describe: "Declares a named SPARQL query (select, construct, ask, or describe) compiled with the resource.",
+    examples: [
+      ~s|query :all_people, form: :select, select: [:s]|,
+      ~s|query :any_person, form: :ask|
+    ],
     args: [:name],
     target: AshR2RML.Dsl.SparqlQuery,
     identifier: :name,
@@ -151,6 +182,15 @@ defmodule AshR2RML.Resource do
   @r2rml %Spark.Dsl.Section{
     name: :r2rml,
     describe: "Semantic mapping metadata normalized into AshR2RML.Mapping",
+    examples: [
+      """
+      r2rml do
+        class "http://xmlns.com/foaf/0.1/Person"
+        subject template: "http://example.com/person/{id}"
+        property :name, "http://xmlns.com/foaf/0.1/name"
+      end
+      """
+    ],
     schema: [
       table_name: [type: :string],
       sql_query: [type: :string],
@@ -163,6 +203,13 @@ defmodule AshR2RML.Resource do
   @sparql %Spark.Dsl.Section{
     name: :sparql,
     describe: "Declarative SPARQL query definitions compiled with the resource",
+    examples: [
+      """
+      sparql do
+        query :all_people, form: :select, select: [:s]
+      end
+      """
+    ],
     entities: [@sparql_query]
   }
 
@@ -549,6 +596,14 @@ defmodule AshR2RML.Resource.Info do
       {:ok, mapping} -> mapping
       {:error, refusal} -> raise ArgumentError, "#{refusal.code}: #{refusal.detail}"
     end
+  end
+
+  @doc "Resources of an Ash domain that carry the AshR2RML extension."
+  @spec domain_resources(module()) :: [module()]
+  def domain_resources(domain) do
+    domain
+    |> Ash.Domain.Info.resources()
+    |> Enum.filter(&(AshR2RML in Spark.extensions(&1)))
   end
 
   def mapped?(resource) do

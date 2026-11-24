@@ -14,19 +14,10 @@ defmodule AshR2RML.DataLayer do
   @doc "Identifies which Ash data layer backs a resource: `:postgres`, `:ets`, or `:unknown`."
   @spec backend(module()) :: :postgres | :ets | :unknown
   def backend(resource) when is_atom(resource) do
-    cond do
-      not Code.ensure_loaded?(Ash.Resource.Info) ->
-        :unknown
-
-      not function_exported?(Ash.Resource.Info, :data_layer, 1) ->
-        :unknown
-
-      true ->
-        case Ash.Resource.Info.data_layer(resource) do
-          AshPostgres.DataLayer -> :postgres
-          Ash.DataLayer.Ets -> :ets
-          _other -> :unknown
-        end
+    case Ash.Resource.Info.data_layer(resource) do
+      AshPostgres.DataLayer -> :postgres
+      Ash.DataLayer.Ets -> :ets
+      _other -> :unknown
     end
   rescue
     _ -> :unknown

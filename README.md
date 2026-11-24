@@ -365,6 +365,20 @@ the core: the `r2rml`/`rdf` DSL, the mapping IR, R2RML rendering, a typed refusa
 one runtime OBDA backend (`AshR2RML.OBDA.InMemory`: Ash-mediated `Ash.read/2` with `actor:`/`tenant:`
 over any Ash data layer) plus a read-only HTTP SPARQL protocol client. Zero Java, zero JDBC.
 
+Current surface:
+
+- `AshR2RML.Compiler.compile/2` accepts a resource, a list, or an `Ash.Domain` (expanded to the
+  domain's resources carrying the extension).
+- `mix ash_r2rml.render MyApp.Person MyApp.Domain` renders R2RML Turtle for resources or domains.
+- `AshR2RML.Subject.to_iri/2` and `from_iri/2` convert between records/keys and subject IRIs;
+  `Subject.iri_only?/1` reports whether a mapping yields only IRI subjects (no blank nodes).
+- `OBDA.InMemory` reads run with `authorize?: true` by default. Weakening is explicit and refused
+  otherwise: `authorize?: false` needs `allow_unauthorized: true`; `require_authorizer: true`
+  refuses resources without `Ash.Policy.Authorizer`; `require_tenant: true` refuses multitenant
+  reads without `:tenant`.
+- SELECT results without `ORDER BY` are returned in canonical row order, so output is deterministic.
+- `SPARQL.Protocol.query/3` refuses private-network endpoints unless `allow_private_network: true`.
+
 Removed in v26.11.24 and recoverable from git history (commit `5defc87`): ontology-first
 ingestion and semantic types, ggen packs, GraphQL projection, Reactor sagas, OCEL telemetry,
 knowledge hooks, VKG, federation, DfCM and production admission.

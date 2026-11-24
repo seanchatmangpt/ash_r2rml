@@ -61,11 +61,30 @@ File.write!("priv/r2rml/application.ttl", ttl)
 
 Generated R2RML is a projection. Do not hand-edit it when the owning Ash resource can regenerate it.
 
-## OBDA engine
+## SPARQL runtime
 
-AshR2RML generates mappings but does not execute SPARQL. Configure a compatible R2RML/OBDA engine separately and point it at:
+`AshR2RML.OBDA.InMemory` is the only runtime backend. It reads through Ash (authorization on by default) and runs SPARQL in-process:
 
-1. the same relational database used by the Ash application; and
-2. the generated R2RML mapping.
+```elixir
+mapping = AshR2RML.Resource.Info.mapping!(MyApp.Person)
+{:ok, obs} = AshR2RML.OBDA.InMemory.query(MyApp.Person, mapping, sparql, actor: actor, tenant: tenant)
+```
 
-The intended topology is one persisted subject with multiple query surfaces, not synchronized databases.
+`authorize?: false` needs `allow_unauthorized: true`; `sensitive?: true` attributes need `allow_sensitive: true`. See [obda.md](obda.md). No Ontop or JDBC engine is shipped.
+
+## Subject IRIs
+
+```elixir
+{:ok, iri} = AshR2RML.Subject.to_iri(MyApp.Person, id: "abc")
+{:ok, %{id: "abc"}} = AshR2RML.Subject.from_iri(MyApp.Person, iri)
+```
+
+## Syncing these rules into your project
+
+Consumers pull this package's usage rules into their `AGENTS.md`/`CLAUDE.md` with the `usage_rules` package:
+
+```bash
+mix usage_rules.sync AGENTS.md --all --inline usage_rules:all --link-to-folder deps
+```
+
+Or run `mix usage_rules.sync` with your configured `usage_rules` options in `mix.exs`; re-run after upgrading `ash_r2rml`.

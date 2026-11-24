@@ -256,7 +256,7 @@ defmodule AshR2RML.Introspection do
   defp infer_logical_table_from_data_layer(resource) do
     data_layer = Ash.Resource.Info.data_layer(resource)
 
-    if inspect(data_layer) == "AshPostgres.DataLayer" do
+    if AshR2RML.DataLayer.backend(resource) == :postgres do
       infer_postgres_table(resource)
     else
       {:error,
@@ -270,11 +270,12 @@ defmodule AshR2RML.Introspection do
   end
 
   defp infer_postgres_table(resource) do
+    # ash_postgres is an optional/test-only dep; dispatch dynamically to avoid a compile-time reference.
     info = Module.concat(["AshPostgres", "DataLayer", "Info"])
 
-    if Code.ensure_loaded?(info) and function_exported?(info, :table, 1) do
-      table = apply(info, :table, [resource])
-      schema = if function_exported?(info, :schema, 1), do: apply(info, :schema, [resource]), else: nil
+    if Code.ensure_loaded?(info) do
+      table = info.table(resource)
+      schema = info.schema(resource)
 
       if is_binary(table) and table != "" do
         {:ok, %LogicalTable{table_name: table, schema: schema}}

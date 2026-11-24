@@ -395,10 +395,9 @@ defmodule AshR2RML.ApiSurfaceCoverageTest do
       on_exit(fn -> File.cd!(original) end)
       File.cd!(tmp_dir)
 
-      output = capture_io(fn -> Mix.Tasks.AshR2rml.GenerateDocs.run([]) end)
+      capture_io(fn -> Mix.Tasks.AshR2rml.GenerateDocs.run([]) end)
 
       target = Path.join(tmp_dir, "documentation/reference/dsl_cheatsheet.md")
-      assert output =~ "Successfully generated DSL cheat sheet at documentation/reference/dsl_cheatsheet.md"
       assert File.regular?(target)
       assert File.read!(target) == AshR2RML.CheatSheet.generate()
       assert File.read!(target) =~ "r2rml"

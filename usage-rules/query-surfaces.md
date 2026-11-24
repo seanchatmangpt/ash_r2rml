@@ -14,12 +14,12 @@ The relational database remains directly queryable with SQL for operations, anal
 
 ## SPARQL
 
-SPARQL is executed by a compatible OBDA/R2RML engine against the generated mapping. AshR2RML itself does not parse or optimize SPARQL.
+SPARQL is executed by `AshR2RML.OBDA.InMemory.query/4` (or `query_many/3`) over a graph materialized from a real `Ash.read/2`. Actor, tenant, and `authorize?` (default `true`) apply. No SQL-rewriting engine is shipped.
 
 ```text
-Ash query ───────────────┐
-SQL query ───────────────┼──► same relational subject
-SPARQL → OBDA → SQL ─────┘
+Ash query ───────────────────┐
+SQL query ───────────────────┼──► same persisted subject
+SPARQL → InMemory → Ash.read ┘
 ```
 
 ## Semantic equivalence
@@ -36,7 +36,7 @@ Do not pretend a runtime-only calculation is available to SPARQL unless an expli
 
 Union/intersection/other Ash query features remain Ash/data-layer concerns. They do not require special R2RML syntax merely because the application can express them.
 
-R2RML describes the virtual graph; SPARQL algebra is handled by the OBDA engine.
+R2RML describes the virtual graph; SPARQL algebra is handled by the InMemory backend's SPARQL engine.
 
 ## Verification
 

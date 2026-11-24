@@ -15,5 +15,15 @@
   # Runtime witness (v26.9.25): Local.query(graph, "SELECT ?s WHERE { ?s ?p ?o }")
   # returns {:ok, %Observation{}}; the in-memory OBDA suites
   # (test/obda_in_memory_*_test.exs) exercise this exact {:ok, observation} arm.
-  {"lib/ash_r2rml/obda_in_memory.ex", :pattern_match, {166, 16}}
+  {"lib/ash_r2rml/obda_in_memory.ex", :pattern_match, {168, 16}},
+  # Same inference cascades: because Local.query/3 is inferred as error-only, the success-arm
+  # helpers (canonical_order/2, read_rows result clauses) are reported unreachable. All of them
+  # execute in test/obda_in_memory_*, test/inmemory_canonical_order_test.exs.
+  {"lib/ash_r2rml/obda_in_memory.ex", :unused_fun, {176, 8}},
+  {"lib/ash_r2rml/obda_in_memory.ex", :pattern_match_cov, 258},
+  {"lib/ash_r2rml/obda_in_memory.ex", :pattern_match_cov, 262},
+  {"lib/ash_r2rml/obda_in_memory.ex", :pattern_match, {262, 69}},
+  # Third-party macro expansion attributed to line 1 (compile-time boolean arm), as for resource.ex.
+  {"lib/ash_r2rml/obda_in_memory.ex", :pattern_match, 1},
+  {"lib/ash_r2rml/datatype_registry.ex", :pattern_match, 1}
 ]

@@ -176,9 +176,8 @@ defmodule AshR2RML.Compiler do
   end
 
   def compile_resources(resources) do
-    resources = List.wrap(resources)
-
-    with {:ok, mappings} <- do_closure(resources, [], []) do
+    with {:ok, resources} <- expand_domains(List.wrap(resources)),
+         {:ok, mappings} <- do_closure(resources, [], []) do
       bundle = %AshR2RML.Mapping.Bundle{resources: mappings} |> AshR2RML.Mapping.normalize()
 
       case AshR2RML.Mapping.validate(bundle) do
@@ -188,6 +187,38 @@ defmodule AshR2RML.Compiler do
       end
     end
   end
+
+  defp expand_domains(items) do
+    Enum.reduce_while(items, {:ok, []}, fn item, {:ok, acc} ->
+      if domain?(item) do
+        case AshR2RML.Resource.Info.domain_resources(item) do
+          [] ->
+            {:halt,
+             {:error,
+              Refusal.new(
+                :REFUSED_MISSING_SUBJECT_MAP,
+                item,
+                "domain #{inspect(item)} has no resources carrying the AshR2RML extension"
+              )}}
+
+          mapped ->
+            {:cont, {:ok, acc ++ mapped}}
+        end
+      else
+        {:cont, {:ok, acc ++ [item]}}
+      end
+    end)
+    |> case do
+      {:ok, list} -> {:ok, Enum.uniq(list)}
+      error -> error
+    end
+  end
+
+  defp domain?(m) when is_atom(m) do
+    Code.ensure_loaded?(m) and function_exported?(m, :spark_is, 0) and m.spark_is() == Ash.Domain
+  end
+
+  defp domain?(_), do: false
 
   defp do_closure([], _seen, acc), do: {:ok, Enum.reverse(acc)}
 

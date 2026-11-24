@@ -134,6 +134,46 @@ end
   `:postgres`); `:ets` skips SQL DDL rendering (`Ash.DataLayer.Ets` needs none) without
   blocking compilation.
 
+### Subject module contract
+
+`AshR2RML.Subject` is pure and template-only. `to_iri/2` percent-encodes attribute values
+(`URI.encode/2` with `URI.char_unreserved?/1`, byte-identical to `OBDA.InMemory`) into the
+subject template; `from_iri/2` inverts it and refuses unless the captured values re-encode to
+the same IRI. `iri_only?/1` / `check_iri_only/1` admit only `:iri` subjects with no
+`:blank_node` term map. Non-template strategies and non-invertible templates refuse (typed
+`%AshR2RML.Refusal{}`, e.g. `:UNSUPPORTED_TERM_TYPE`).
+
+### Domain-level compile
+
+`AshR2RML.Compiler.compile_resources/1` (and `compile/2`) accept `Ash.Domain` modules mixed with
+resources. A domain expands to its resources carrying the AshR2RML extension (deduplicated); a
+domain with none refuses `REFUSED_MISSING_SUBJECT_MAP`.
+
+### OBDA.InMemory option contract
+
+Read options `:actor`, `:tenant`, `:authorize?`, `:context`, `:domain`, `:action` flow to
+`Ash.read`. `authorize?` defaults to `true`. Guard options are consumed before the read and
+fail closed with a typed refusal:
+
+- `allow_unauthorized: true` is required to pass `authorize?: false`.
+- `require_authorizer: true` refuses a resource without `Ash.Policy.Authorizer`.
+- `require_tenant: true` refuses a multitenant resource read without `:tenant`.
+
+`allow_sensitive` and `previous_graph` are separate materialization options.
+
+### Canonical ordering
+
+`query/4` and `query_many/3` sort `SELECT` rows canonically when the query has no `ORDER BY`
+(independent of data-layer scan order); with `ORDER BY` the engine order is preserved. Result
+hashes use `AshR2RML.SPARQL.Result.hash_rows/1` (multiset-normalized, deterministic term
+encoding, SHA-256 hex).
+
+### SPARQL.Protocol private-network guard
+
+`AshR2RML.SPARQL.Protocol.query/3` accepts only `http`/`https` endpoints with a host, and
+refuses private-network hosts with `REFUSED_INVALID_FEDERATION_ENVIRONMENT` unless
+`allow_private_network: true` (default `false`). Other options: `:timeout`, `:max_rows`.
+
 ### Typed refusal codes
 
 `REFUSED_INVALID_CLASS_IRI`, `REFUSED_MISSING_SUBJECT_MAP`, `REFUSED_NON_UNIQUE_SEMANTIC_IDENTITY`,

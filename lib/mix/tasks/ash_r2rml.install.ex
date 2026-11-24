@@ -75,6 +75,29 @@ if Code.ensure_loaded?(Igniter) do
       end
     end
 
+    @doc false
+    # Minimal valid starter block: table name is the snake_case plural of the module's
+    # last segment; class IRI uses a placeholder base marked TODO; the subject template
+    # assumes an `id` primary key.
+    @spec starter_block(module()) :: String.t()
+    def starter_block(target_module) do
+      last = target_module |> Module.split() |> List.last()
+      table = Macro.underscore(last) <> "s"
+
+      """
+      r2rml do
+        # TODO: replace the placeholder base IRI https://example.com/ns# with your real namespace
+        # and `{id}` with your resource's primary key attribute.
+        table_name "#{table}"
+        class "https://example.com/ns##{last}"
+
+        subject do
+          template "https://example.com/ns##{table}/{id}"
+        end
+      end
+      """
+    end
+
     # Adds a minimal, real starter `r2rml do ... end` block right after the target
     # module's `use Ash.Resource, ...` call, so it compiles immediately after install
     # rather than needing hand-authored DSL content.
@@ -93,10 +116,7 @@ if Code.ensure_loaded?(Igniter) do
               {:ok,
                Igniter.Code.Common.add_code(
                  use_zipper,
-                 """
-                 r2rml do
-                 end
-                 """,
+                 starter_block(target_module),
                  placement: :after
                )}
 
@@ -115,6 +135,11 @@ else
 
     @impl Mix.Task
     def run(_args) do
+      Mix.shell().error("""
+      Igniter is not available in this project, so automatic installation cannot run.
+      Recommended: mix igniter.install ash_r2rml
+      """)
+
       Mix.shell().info("""
       AshR2RML manual installation steps:
 

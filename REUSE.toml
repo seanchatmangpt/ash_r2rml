@@ -33,7 +33,8 @@ path = [
   ".elixir-budget.toml",
   ".qme/**",
   ".sjira/**",
-  "test/type_override_contract_test.exs"
+  "test/type_override_contract_test.exs",
+  "documentation/**"
 ]
 precedence = "aggregate"
 SPDX-FileCopyrightText = "2026 ash_r2rml contributors <https://github.com/seanchatmangpt/ash_r2rml/graphs/contributors>"

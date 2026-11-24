@@ -35,13 +35,39 @@ defmodule AshR2RML.Security do
   """
   @spec sanitize_mapping(module(), Resource.t()) :: Resource.t()
   def sanitize_mapping(ash_resource, %Resource{} = mapping) when is_atom(ash_resource) do
-    if AshR2RML.DataLayer.backend(ash_resource) == :postgres do
-      ash_resource
-      |> unenforceable_attributes(mapping)
-      |> then(&remove_attributes(mapping, &1, :field_policy_excluded_attributes))
-    else
-      mapping
-    end
+    mapping =
+      if AshR2RML.DataLayer.backend(ash_resource) == :postgres do
+        ash_resource
+        |> unenforceable_attributes(mapping)
+        |> then(&remove_attributes(mapping, &1, :field_policy_excluded_attributes))
+      else
+        mapping
+      end
+
+    ash_resource
+    |> sensitive_mapped_attributes(mapping)
+    |> then(&remove_attributes(mapping, &1, :sensitive_excluded_attributes))
+  end
+
+  @doc """
+  Returns mapped attributes marked `sensitive?: true` on `ash_resource`. Fails closed: if
+  attribute resolution raises, every mapped attribute is treated as sensitive.
+  """
+  @spec sensitive_mapped_attributes(module(), Resource.t()) :: [atom()]
+  def sensitive_mapped_attributes(ash_resource, %Resource{predicate_object_maps: predicate_object_maps}) do
+    attrs =
+      predicate_object_maps
+      |> Enum.map(& &1.attribute)
+      |> Enum.reject(&is_nil/1)
+      |> Enum.uniq()
+
+    Enum.filter(attrs, fn attribute ->
+      try do
+        match?(%{sensitive?: true}, Ash.Resource.Info.attribute(ash_resource, attribute))
+      rescue
+        _ -> true
+      end
+    end)
   end
 
   @doc """

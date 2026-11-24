@@ -58,20 +58,37 @@ defmodule AshR2RML.MixProject do
       extras: [
         {"README.md", title: "Home"},
         {"LICENSES/MIT.md", title: "License"},
-        "CHANGELOG.md"
+        "CHANGELOG.md",
+        {"documentation/reference/dsl_cheatsheet.md", title: "DSL Cheatsheet"}
       ],
       groups_for_extras: [
+        Reference: [
+          "documentation/reference/dsl_cheatsheet.md"
+        ],
         "About AshR2RML": [
           "CHANGELOG.md"
         ]
       ],
       groups_for_modules: [
-        AshR2RML: [
+        "Core API": [
           AshR2RML,
           AshR2RML.Resource,
+          AshR2RML.Resource.Info,
           AshR2RML.Compiler,
+          AshR2RML.CompilationReceipt,
+          AshR2RML.Refusal,
+          AshR2RML.Subject,
+          AshR2RML.Type,
+          AshR2RML.R2RML
+        ],
+        "Mapping IR": [
           AshR2RML.Mapping,
-          AshR2RML.OBDA
+          ~r/^AshR2RML\.Mapping\./
+        ],
+        OBDA: [
+          ~r/^AshR2RML\.OBDA\./,
+          ~r/^AshR2RML\.SPARQL\./,
+          AshR2RML.Security
         ],
         Internals: ~r/.*/
       ]
@@ -132,7 +149,9 @@ defmodule AshR2RML.MixProject do
       sobelow: "sobelow --skip",
       credo: "credo --strict",
       "spark.formatter": "spark.formatter --extensions AshR2RML.Resource",
-      "spark.cheat_sheets": "spark.cheat_sheets --extensions AshR2RML.Resource"
+      "spark.cheat_sheets": "spark.cheat_sheets --extensions AshR2RML.Resource",
+      # Bare names resolve to the two aliases above, which carry --extensions.
+      "ash_r2rml.codegen": ["spark.formatter", "spark.cheat_sheets"]
     ]
   end
 end

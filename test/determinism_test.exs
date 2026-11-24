@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MIT
 
 defmodule AshR2RML.DeterminismTest.A do
-  use Ash.Resource, data_layer: Ash.DataLayer.Ets, extensions: [AshR2RML.Resource]
+  use Ash.Resource, domain: nil, data_layer: Ash.DataLayer.Ets, extensions: [AshR2RML.Resource]
 
   attributes do
     uuid_primary_key :id
@@ -23,7 +23,7 @@ defmodule AshR2RML.DeterminismTest.A do
 end
 
 defmodule AshR2RML.DeterminismTest.B do
-  use Ash.Resource, data_layer: Ash.DataLayer.Ets, extensions: [AshR2RML.Resource]
+  use Ash.Resource, domain: nil, data_layer: Ash.DataLayer.Ets, extensions: [AshR2RML.Resource]
 
   attributes do
     uuid_primary_key :id
@@ -48,7 +48,7 @@ defmodule AshR2RML.DeterminismTest.B do
 end
 
 defmodule AshR2RML.DeterminismTest.C do
-  use Ash.Resource, data_layer: Ash.DataLayer.Ets, extensions: [AshR2RML.Resource]
+  use Ash.Resource, domain: nil, data_layer: Ash.DataLayer.Ets, extensions: [AshR2RML.Resource]
 
   attributes do
     uuid_primary_key :id

@@ -28,7 +28,7 @@ Ash.Resource + semantic metadata
        Ash / SQL / SPARQL
 ```
 
-The RDF graph is normally virtual. A compatible OBDA engine rewrites SPARQL into SQL against the same relational database used by the Ash application.
+The RDF graph is virtual. `AshR2RML.OBDA.InMemory` is the only runtime backend: it materializes rows read through a real `Ash.read/2` into an `RDF.Graph` and runs SPARQL over it in-process. No SQL-rewriting engine is shipped.
 
 ## Rules by concern
 
@@ -136,9 +136,15 @@ Do not confuse syntactically valid Turtle with a proven end-to-end virtual RDF g
 
 ## OBDA
 
-AshR2RML does not implement SPARQL-to-SQL rewriting. A compatible external OBDA/R2RML engine owns that boundary.
+`AshR2RML.OBDA.InMemory` (`query/4`, `query_many/3`, `materialize/3`, `materialize_many/2`) is the sole runtime backend. Any Ash data layer works; there is no JDBC or Java component (Ontop and JDBC are not shipped).
 
-The crown integration proves that a subject written/read through Ash is exposed with the same semantic identity, values, and relationships through SPARQL over generated R2RML.
+Reads are Ash-authorized by default: `authorize?: true` is applied unless you pass otherwise; pass `:actor` and `:tenant` as needed. Opt-ins are explicit:
+
+- `authorize?: false` is refused unless paired with `allow_unauthorized: true`;
+- `sensitive?: true` attributes are refused unless `allow_sensitive: true`;
+- `require_authorizer: true` and `require_tenant: true` add fail-closed guards.
+
+Use `AshR2RML.Subject.to_iri/2` and `from_iri/2` to convert between key values and template subject IRIs (template strategy only; typed refusal otherwise).
 
 ## Typed failures
 
@@ -170,8 +176,8 @@ pure mapping tests
 → R2RML render tests
 → independent Turtle parse
 → deterministic regeneration
-→ real relational integration
-→ real OBDA/SPARQL integration
+→ real Ash data-layer integration
+→ InMemory SPARQL integration
 ```
 
 A lower checkpoint can be `PARTIAL_ALIVE`. `ALIVE` requires the exact claimed external boundary to execute.

@@ -36,7 +36,9 @@ defmodule AshR2RML.Datatype.Registry do
     geo_wkt: {@ogc_geo <> "wktLiteral", :geometry},
     vector: {@xsd <> "string", :vector},
     array: {@xsd <> "string", :array},
-    duration: {@xsd <> "duration", :duration}
+    duration: {@xsd <> "duration", :duration},
+    uuid_v7: {@xsd <> "string", :uuid},
+    module: {@xsd <> "string", :text}
   }
 
   @ash_type_modules %{
@@ -57,7 +59,9 @@ defmodule AshR2RML.Datatype.Registry do
     "Elixir.AshGeo.Geometry" => :geo_wkt,
     "Elixir.AshGeo.Point" => :geo_wkt,
     "Elixir.Ash.Type.Vector" => :vector,
-    "Elixir.Ash.Type.Duration" => :duration
+    "Elixir.Ash.Type.Duration" => :duration,
+    "Elixir.Ash.Type.UUIDv7" => :uuid_v7,
+    "Elixir.Ash.Type.Module" => :module
   }
 
   @spec resolve(term(), String.t() | nil, term() | nil) :: {:ok, Datatype.t()} | {:error, Refusal.t()}
@@ -180,11 +184,30 @@ defmodule AshR2RML.Datatype.Registry do
     end
   end
 
-  defp normalize_ash_type(type) when is_atom(type) do
-    if Map.has_key?(@builtins, type), do: type, else: Map.get(@ash_type_modules, Atom.to_string(type), type)
+  defp normalize_ash_type(type), do: normalize_ash_type(type, 0)
+
+  defp normalize_ash_type(type, depth) when is_atom(type) and depth < 8 do
+    if Map.has_key?(@builtins, type) do
+      type
+    else
+      resolved = Ash.Type.get_type(type)
+
+      case Map.fetch(@ash_type_modules, Atom.to_string(resolved)) do
+        {:ok, normalized} ->
+          normalized
+
+        :error ->
+          if new_type?(resolved), do: normalize_ash_type(resolved.subtype_of(), depth + 1), else: type
+      end
+    end
   end
 
-  defp normalize_ash_type(type), do: type
+  defp normalize_ash_type(type, _depth), do: type
+
+  defp new_type?(module) do
+    is_atom(module) and not is_nil(module) and Code.ensure_loaded?(module) and
+      function_exported?(module, :subtype_of, 0) and Ash.Type.NewType.new_type?(module)
+  end
 
   defp absolute_iri?(value) do
     case URI.parse(value) do

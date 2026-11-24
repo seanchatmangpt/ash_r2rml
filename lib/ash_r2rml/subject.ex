@@ -73,6 +73,62 @@ defmodule AshR2RML.Subject do
     end
   end
 
+  @doc """
+  Pure admission predicate: `true` only when the subject map term type is `:iri` and no
+  predicate/object map or reference object map uses a `:blank_node` term type.
+  """
+  @spec iri_only?(source()) :: boolean()
+  def iri_only?(source), do: check_iri_only(source) == :ok
+
+  @doc """
+  Like `iri_only?/1` but returns `{:error, %AshR2RML.Refusal{code: :UNSUPPORTED_TERM_TYPE}}`
+  naming the offending term map. Unresolvable resources return the resolution refusal
+  (same shape `to_iri/2` returns).
+  """
+  @spec check_iri_only(source()) :: :ok | {:error, Refusal.t()}
+  def check_iri_only(source) do
+    with {:ok, %MappingResource{} = mapping} <- resolve(source) do
+      case blank_node_site(mapping) do
+        nil ->
+          :ok
+
+        {where, evidence} ->
+          {:error,
+           refuse(
+             mapping,
+             :UNSUPPORTED_TERM_TYPE,
+             "blank-node term type configured on #{where}; wire-level admission is IRI-only",
+             evidence
+           )}
+      end
+    end
+  end
+
+  defp resolve(%MappingResource{} = m), do: {:ok, m}
+  defp resolve(resource) when is_atom(resource), do: AshR2RML.Resource.Info.mapping_result(resource)
+
+  defp blank_node_site(%MappingResource{} = m) do
+    cond do
+      subject_blank?(m.subject_map) ->
+        {"subject map", %{term_type: m.subject_map && m.subject_map.term_type}}
+
+      pom = Enum.find(m.predicate_object_maps, &(object_term(&1) == :blank_node)) ->
+        {"object map", %{predicate_iri: pom.predicate_iri, term_type: :blank_node}}
+
+      rom = Enum.find(m.reference_object_maps, &(Map.get(&1, :term_type) == :blank_node)) ->
+        {"reference object map", %{predicate_iri: rom.predicate_iri, term_type: :blank_node}}
+
+      true ->
+        nil
+    end
+  end
+
+  defp subject_blank?(%SubjectMap{term_type: :iri}), do: false
+  defp subject_blank?(_), do: true
+
+  defp object_term(%{object_map: %{term_type: t}}), do: t
+  defp object_term(_), do: nil
+
   # -- mapping resolution ---------------------------------------------------------------
 
   defp template(%MappingResource{subject_map: %SubjectMap{strategy: :template, value: t}} = m)
