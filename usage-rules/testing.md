@@ -88,26 +88,6 @@ SPARQL
 
 Compare normalized semantic IRIs, literal values, and relationships between Ash-visible state and SPARQL-visible virtual RDF.
 
-## Ontology-first integration
-
-The ontology-first suite adds the generation leg:
-
-```text
-RDF/OWL + SHACL
-       ↓
-      ggen
-       ↓
-generated Ash.Resource
-       ↓
-Postgres
-       ↓
-R2RML
-       ↓
-SPARQL
-```
-
-Tests must include invalid shapes proving fail-closed behavior before generated files are written.
-
 ## Required falsifiers
 
 Maintain tests for:
@@ -119,7 +99,7 @@ Maintain tests for:
 - ambiguous joins are refused;
 - physical table/module rename does not alter semantic identity unless explicitly configured;
 - predicate renames are explicit semantic changes;
-- repeated ggen runs are deterministic;
+- repeated compilation of one resource is deterministic;
 - R2RML parses independently;
 - SPARQL and Ash observe the same admitted subject.
 

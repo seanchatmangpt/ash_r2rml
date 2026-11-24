@@ -6,7 +6,7 @@ defmodule AshR2RML.MixProject do
   @moduledoc false
   use Mix.Project
 
-  @version "26.11.17"
+  @version "26.11.24"
   @name "AshR2RML"
   @description "W3C R2RML and RDF semantic mapping compiler for Ash Framework"
   @github_url "https://github.com/seanchatmangpt/ash_r2rml"
@@ -58,7 +58,6 @@ defmodule AshR2RML.MixProject do
       extras: [
         {"README.md", title: "Home"},
         {"LICENSES/MIT.md", title: "License"},
-        {"ash_r2rml.livemd", title: "AshR2RML Livebook"},
         "CHANGELOG.md"
       ],
       groups_for_extras: [
@@ -75,20 +74,8 @@ defmodule AshR2RML.MixProject do
           AshR2RML.Resource,
           AshR2RML.Compiler,
           AshR2RML.Mapping,
-          AshR2RML.Ggen,
-          AshR2RML.Ingestion,
-          AshR2RML.OBDA,
-          AshR2RML.Policy,
-          AshR2RML.Provenance
+          AshR2RML.OBDA
         ],
-        "GraphQL projection": [
-          AshR2RML.Graphql,
-          AshR2RML.Graphql.Info,
-          AshR2RML.Graphql.Schema
-        ],
-        "Virtual Knowledge Graph": ~r/AshR2RML\.VKG/,
-        Reactor: ~r/AshR2RML\.Reactor/,
-        Telemetry: ~r/AshR2RML\.Telemetry/,
         Internals: ~r/.*/
       ]
     ]
@@ -100,8 +87,7 @@ defmodule AshR2RML.MixProject do
         "AshR2RML contributors"
       ],
       licenses: ["MIT"],
-      files:
-        ~w(lib .formatter.exs mix.exs AGENTS.md usage-rules.md usage-rules README* LICENSE* CHANGELOG* ash_r2rml.livemd priv),
+      files: ~w(lib .formatter.exs mix.exs AGENTS.md usage-rules.md usage-rules README* LICENSE* CHANGELOG* priv),
       links: %{
         "GitHub" => @github_url,
         "Changelog" => "#{@github_url}/blob/main/CHANGELOG.md"
@@ -121,8 +107,6 @@ defmodule AshR2RML.MixProject do
     [
       {:ash, "~> 3.0 and >= 3.28.0"},
       {:ash_postgres, "~> 2.0", only: [:test]},
-      {:ash_graphql, "~> 1.10", optional: true},
-      {:absinthe, "~> 1.7", optional: true},
       {:ash_json_api, "~> 1.7", only: [:test]},
       {:ash_csv, "~> 0.9.8", only: [:test]},
       {:ash_cubdb, "~> 0.6.2", only: [:test]},
@@ -132,12 +116,9 @@ defmodule AshR2RML.MixProject do
       {:rdf, "~> 3.0"},
       {:sparql, "~> 0.3.12"},
       {:sparql_client, "~> 0.5.1"},
-      {:json_ld, "~> 1.0.1"},
       {:jason, "~> 1.4"},
       {:telemetry, "~> 1.0"},
       {:igniter, ">= 0.6.29 and < 1.0.0-0", [env: :prod, hex: "igniter", repo: "hexpm", optional: true]},
-      {:reactor, ">= 0.9.0", optional: true},
-      {:ash_state_machine, "~> 0.2.12", only: [:dev, :test]},
       {:simple_sat, ">= 0.0.0", only: [:dev, :test]},
       {:ex_doc, "~> 0.37", only: [:dev, :test], runtime: false},
       {:ex_check, "~> 0.12", only: [:dev, :test]},

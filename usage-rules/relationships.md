@@ -81,12 +81,11 @@ Refuse when:
 - the destination resource has no usable subject map;
 - join metadata is ambiguous;
 - source/destination attributes cannot be resolved;
-- the active data layer does not expose a lawful relational projection;
-- an ontology-first shape remains ambiguous about storage/cardinality.
+- the active data layer does not expose a lawful relational projection.
 
 ## Cardinality
 
-R2RML itself describes mapping, not all SHACL cardinality semantics. AshR2RML preserves Ash's actual relationship shape and, in ontology-first workflows, ggen uses SHACL to select the Ash/relational projection before R2RML compilation.
+R2RML itself describes mapping, not all SHACL cardinality semantics. AshR2RML preserves Ash's actual relationship shape and.
 
 Do not claim that `rr:RefObjectMap` alone enforces `sh:minCount` or `sh:maxCount`.
 

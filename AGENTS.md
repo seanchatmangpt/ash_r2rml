@@ -9,17 +9,17 @@ This contract governs the repository unless a deeper `AGENTS.md` narrows a subtr
 
 ## Product invariant
 
-AshR2RML is the W3C R2RML/RDF semantic-mapping and DfCM type-compiler layer for Ash Framework. It is not an `Ash.DataLayer`, graph database, triplestore, proprietary query engine, or replacement persistence layer.
+AshR2RML is the W3C R2RML/RDF semantic-mapping layer for Ash Framework. It is not an `Ash.DataLayer`, graph database, triplestore, proprietary query engine, or replacement persistence layer.
 
-Ash resource metadata, explicit semantic annotations, and ontology-first profiles must normalize into one deterministic mapping IR before verification/rendering. Ash-first and ontology-first workflows must converge on the same admitted semantic subject.
+Ash resource metadata and explicit semantic annotations must normalize into one deterministic mapping IR before verification/rendering.
 
-Ownership remains explicit: Ash owns resource/action/domain semantics; relational and other Ash data layers own persistence; AshR2RML owns semantic metadata, introspection, compile-time validation, normalized IR, R2RML rendering, and semantic type compilation; Ontop/OBDA owns virtual graph projection and SPARQL→SQL rewriting; `AshR2RML.OBDA.InMemory` owns in-process RDF materialization/SPARQL execution over real Ash reads from any supported Ash data layer; Ash.Reactor owns saga/DAG execution and rollback; OCEL telemetry owns event-stream/trace reconstruction. Do not blur these boundaries.
+Ownership remains explicit: Ash owns resource/action/domain semantics; relational and other Ash data layers own persistence; AshR2RML owns semantic metadata, introspection, compile-time validation, normalized IR, and R2RML rendering; Ontop/OBDA owns virtual graph projection and SPARQL→SQL rewriting; `AshR2RML.OBDA.InMemory` owns in-process RDF materialization/SPARQL execution over real Ash reads from any supported Ash data layer; Do not blur these boundaries.
 
 ## Preserve → Fence → Calculus
 
 Resolve repo/ref/base to an exact commit and read applicable root+nested doctrine, README/docs, `mix.exs`, lockfile, CI, release workflow, generators, and test layout. Preserve public DSL/API, normalized IR, semantic identity, datatype law, correspondence, typed refusals, generated/manual ownership, and reversible alternatives. Apply Chesterton's fence before removing an existing boundary. One failed edge is topology, not graph failure.
 
-`A = μ(O*)`; `R = receipt(A)`. Separate `SELECT`, `CONSTRUCT`, `DO`. Model/planner/generator/proof/hook output has no ambient execution authority. Hooks manufacture intents, never actuate. Consequential execution uses the repository's admitted Ash/Reactor/runtime boundary and must be receipted.
+`A = μ(O*)`; `R = receipt(A)`. Separate `SELECT`, `CONSTRUCT`, `DO`. Model/planner/generator/proof/hook output has no ambient execution authority. Consequential execution uses the repository's admitted Ash/runtime boundary and must be receipted.
 
 ## Evidence / standing
 
@@ -35,10 +35,6 @@ Datatype conversion must be explicit and lossless. Unknown Ash types must not si
 
 The concrete correspondence table and code-level reference for the above live in [Concrete Reference](#concrete-reference) below — this section states the law; that section names the exact modules/functions that implement it.
 
-## Reactor / generated surfaces
-
-Preserve native Ash.Reactor step contracts, dependency order/concurrency semantics, middleware telemetry, and strict reverse rollback where the live implementation requires them. Generated artifacts are projections: edit their owning ontology/profile/IR/schema/template/generator rather than hand-editing outputs.
-
 ## Query backend security
 
 Semantic publication has its own authority boundary. **Readable by an Ash process is not equivalent to admitted for RDF publication.** The governing invariant is `RDF disclosure ⊆ explicitly admitted Ash attribute disclosure`.
@@ -47,17 +43,13 @@ Semantic publication has its own authority boundary. **Readable by an Ash proces
 
 Ontop connects to `AshPostgres.DataLayer` directly over JDBC with no Ash actor context, so `AshR2RML.Security.sanitize_mapping/2` (wired into `AshR2RML.Compiler.compile_resources/1`) strips any R2RML-mapped attribute that carries an explicit `field_policy` from the mapping *before* it can be rendered or handed to Ontop — the exclusion is recorded in `mapping.metadata[:field_policy_excluded_attributes]` for auditability. This is a structural exclusion, not a refusal gate: it never blocks compilation, and it deliberately does not attempt to distinguish an unconditional `authorize_if always()` policy from a genuinely conditional one.
 
-## Federation
-
-`AshR2RML.Federation` (`lib/ash_r2rml/federation.ex`, `test/federation_test.exs`) is deterministic-artifact-identity substrate across named environments, not a deployment. Proves: `compile_for_environments/2` compiles the SAME admitted profile independently per admitted `Environment` and asserts byte-identical generated-artifact sha256 across environments sharing `compiler_version` + `admitted_ontology_sha256` — mechanically checked by hash equality, with real divergence (a mismatched `admitted_ontology_sha256`) named in the receipt, not averaged away. Does NOT prove: multi-tenant deployment, a network federation protocol, or any real customer environment — every "environment" is an in-process identity tuple compiled sequentially in one BEAM node.
-
 ## Work / verification
 
-Follow `parse → orient → resolve → materialize → read doctrine → inspect → admit/refuse → diagnose/repair → construct → actuate → receipt → replay → standing`. Prefer the existing lawful path and smallest coherent diff. No fabricated evidence, weakened tests, acceptance mocks for real DB/OBDA/Reactor claims, unrelated refactors, or unresolved production placeholders.
+Follow `parse → orient → resolve → materialize → read doctrine → inspect → admit/refuse → diagnose/repair → construct → actuate → receipt → replay → standing`. Prefer the existing lawful path and smallest coherent diff. No fabricated evidence, weakened tests, acceptance mocks for real DB/OBDA claims, unrelated refactors, or unresolved production placeholders.
 
-Acceptance precedence: exact user behavior/command → live documented repository command → narrowest equivalent. Discover the current ladder from `mix.exs`, tests, CI, and release workflow at the admitted SHA rather than freezing it here. Preserve the intended progression across formatting/compilation, pure IR tests, adversarial/refusal tests, enterprise/policy cases, live OBDA integration (both Ontop+Postgres and in-process `AshR2RML.OBDA.InMemory`), Reactor rollback, package build, and release gates when those surfaces exist. CI supplements local execution; it is not truth.
+Acceptance precedence: exact user behavior/command → live documented repository command → narrowest equivalent. Discover the current ladder from `mix.exs`, tests, CI, and release workflow at the admitted SHA rather than freezing it here. Preserve the intended progression across formatting/compilation, pure IR tests, adversarial/refusal tests, enterprise/policy cases, live OBDA integration (both Ontop+Postgres and in-process `AshR2RML.OBDA.InMemory`), package build, and release gates when those surfaces exist. CI supplements local execution; it is not truth.
 
-As of this writing that ladder is: `mix format --check-formatted` → `mix compile --warnings-as-errors` → `mix test test/unit/` → `mix test test/adversarial/ test/negative/` → `mix test test/fortune5/` → `mix test test/adversarial/ontop_postgres_test.exs` (live Ontop 5.5 OBDA over Postgres) → `mix test test/adversarial/reactor_saga_test.exs` → `mix hex.build` → GitHub Actions `v*` tags trigger CalVer publication to Hex.pm (`.github/workflows/release.yaml`). Re-derive this from the repository rather than trusting it once it goes stale.
+As of this writing that ladder is: `mix format --check-formatted` → `mix compile --warnings-as-errors` → `mix test test/unit/` → `mix test test/adversarial/ test/negative/` → `mix test test/fortune5/` → `mix test test/adversarial/ontop_postgres_test.exs` (live Ontop 5.5 OBDA over Postgres) → `mix hex.build` → GitHub Actions `v*` tags trigger CalVer publication to Hex.pm (`.github/workflows/release.yaml`). Re-derive this from the repository rather than trusting it once it goes stale.
 
 ## GitHub / receipt
 
@@ -74,27 +66,16 @@ per "live tree evidence outranks stale prose" above.
 ### Architecture at a glance
 
 ```text
-Ash.Resource + Semantic Metadata → AshR2RML.Mapping (IR) → Relational DB + R2RML (W3C Turtle)
-                                                          → Ontop OBDA (Postgres) | AshR2RML.OBDA.InMemory (Ash read)
-
-Ontology-first: RDF/OWL/SKOS/QUDT + Profile/SHACL → AshR2RML.SemanticTypes (DfCM Compiler)
-                → generated Ash.Type/Ash.Resource → AshR2RML.Mapping (IR) → W3C R2RML Turtle
+Ash.Resource + r2rml/rdf DSL → AshR2RML.Mapping (IR) → Relational DB + R2RML (W3C Turtle)
+                                                     → Ontop OBDA (Postgres) | AshR2RML.OBDA.InMemory (Ash read)
 ```
 
 All compilation surfaces converge on: `AshR2RML.Mapping.{Resource, SubjectMap,
-PredicateObjectMap, ReferenceObjectMap, JoinCondition, Datatype, GraphMap}`,
-`AshR2RML.SemanticType{, .Plan}`.
+PredicateObjectMap, ReferenceObjectMap, JoinCondition, Datatype, GraphMap}`.
 
-**Naming note**: `AshR2RML.SemanticIR` (`lib/ash_r2rml/semantic_ir.ex`) is the real
-ontology-first admitted compilation object — `ontology_hash`/`profile_hash`/`shacl_hash`
-plus `Identity`/`Attribute`/`Relationship`/`Action`/`Policy`/`Resource` submodules —
-sitting **upstream** of `AshR2RML.Mapping` in the ontology-first path shown above
-(`RDF/OWL/... → SemanticIR → generated Ash.Resource → AshR2RML.Mapping (IR) → projections`).
-It is not a synonym for `AshR2RML.Mapping`; the two are distinct, both-real stages of one
-pipeline. Anyone reading external material that calls "SemanticIR" the single canonical
-intermediate representation for the whole `Ash → projections` pipeline should read that as
-this two-stage reality: `AshR2RML.SemanticIR` for the ontology-first admitted object,
-`AshR2RML.Mapping` for the Ash-first/general mapping IR every compilation surface converges on.
+Scope (v26.11.24): ontology-first ingestion, ggen packs, GraphQL, Reactor, OCEL telemetry,
+knowledge hooks, VKG, federation, DfCM and production admission were removed; recover them from
+commit `5defc87` if needed.
 
 ### Core semantic correspondences
 
@@ -167,77 +148,13 @@ Execution and resource-bound codes: `REFUSED_OBDA_EXECUTION` (the Ontop/OBDA eng
 returned an unusable result), `REFUSED_RESOURCE_BOUND` (a request, row or size bound was exceeded;
 fail closed, never truncate silently).
 
-VKG codes (`lib/ash_r2rml/vkg/**`, all observe-only; see `usage-rules/vkg.md`):
-`REFUSED_VKG_MANIFEST` (source descriptor/manifest malformed or unreadable),
-`REFUSED_VKG_CONTRACT_SHAPE` (contract fails the federation-contract shape),
-`REFUSED_VKG_CONTRACT_IDENTITY` (contract identity, digest or exact-source binding mismatch),
-`REFUSED_VKG_SOURCE_IDENTITY` (source identity tuple malformed or not admitted),
-`REFUSED_VKG_SOURCE_DRIFT` (observed source no longer matches the admitted digest),
-`REFUSED_VKG_REGISTRY_AMBIGUOUS` (subject/source lookup is not unique),
-`REFUSED_VKG_QUERY_SCOPE` (unknown/malformed contract ids or request),
-`REFUSED_VKG_QUERY_PLAN` (plan or plan options malformed, plan digest mismatch, or plan not bound to the admitted catalog),
-`REFUSED_VKG_CAPABILITY` (requested capability is not declared by the contract/manifest),
-`REFUSED_VKG_COMPATIBILITY` (engine/contract compatibility not established),
-`REFUSED_VKG_EXECUTION` (bounded execution failed or engine returned a malformed shape),
-`REFUSED_VKG_REPLAY` (receipt/result/replay verification or receipt signature check failed),
-`REFUSED_VKG_AUTHORITY_ESCALATION` (anything above `:NONE` authority, i.e. any attempt at DO).
-
-The closure test `test/vkg/v26_9_28_docs_test.exs` greps `lib/ash_r2rml/vkg` for `REFUSED_*` atoms
-and fails if one is missing from `AshR2RML.Refusal.code()` or from this section.
-
-### Virtual Knowledge Graph (VKG) — observe-only
-
-`AshR2RML.VKG` (`lib/ash_r2rml/vkg.ex`, `lib/ash_r2rml/vkg/**`, data in `priv/vkg/**`, tests in
-`test/vkg/**`) is observe-only exact-source federation of Ontop-backed views:
-manifest → admitted catalog → deterministic plan → bounded execution → provenance-bearing result →
-receipt → replay verification. Normalize to the contract/plan IR first; verify (source identity,
-digests, shapes) second; execute third. Authority ceiling is `:NONE`: no DO, no source writes.
-It is **not** network federation and **not** `AshR2RML.Federation` (the in-process determinism
-substrate above). Failures are typed `REFUSED_VKG_*`. Engine execution uses the existing Ontop
-adapter; tests use `test/support/vkg_case.ex` fake engines only for engine-shape probes.
-
 ### Benchmarks and explanatory docs
 
 Real, reproducible benchmark numbers (compilation scaling, `AshR2RML.OBDA.InMemory` vs
 Ontop+Postgres query latency) live in `bench/RESULTS.md`, generated by
-`bench/compilation_and_rendering.exs` and `bench/obda_query_latency.exs`. No graph database
+`bench/obda_query_latency.exs`. No graph database
 or engine outside AshR2RML's own supported stack (Ash, `Ash.DataLayer.Ets`, `AshPostgres`,
-Ontop) is ever benchmarked — see `bench/README.md`. `documentation/topics/why-ashr2rml.md`
-explains the product positioning grounded in those numbers.
-
-### Knowledge hooks
-
-`AshR2RML.KnowledgeHooks` admits a read-only predicate over the graph, evaluates it, and
-constructs a downstream `Intent` — it never actuates (`A = μ(O*)` boundary above). Eight
-predicate types are supported today, each with `admit/2` compile-time validation and
-`evaluate/2` runtime execution:
-
-| Type | What it observes | Typed refusal on malformed input |
-|---|---|---|
-| `:ask` | SPARQL `ASK` query truth value | `REFUSED_UNPROVEN_EQUIVALENCE` |
-| `:result_delta` | Change between successive `SELECT` result sets | `REFUSED_UNPROVEN_EQUIVALENCE` |
-| `:external_trigger` | An externally-supplied receipt (no in-repo query) | `REFUSED_UNPROVEN_EQUIVALENCE` |
-| `:shacl` | SHACL shape conformance for one or more focus nodes | `REFUSED_INVALID_SHACL_SHAPES_GRAPH` |
-| `:threshold` | A bound SPARQL variable compared against a numeric bound (`:gt`/`:gte`/`:lt`/`:lte`/`:eq`) | `REFUSED_INVALID_BOUND_PREDICATE` |
-| `:count` | Row count of a `SELECT` query compared against a numeric bound | `REFUSED_UNSUPPORTED_SPARQL_FEATURE` (non-`SELECT` form) |
-| `:temporal_window` | Every extracted `time_field` value in a `SELECT` result set compared against a caller-supplied `evaluated_at` over a `{unit, comparator, bound}` window | admission: malformed window/non-`SELECT` form is Blocked; evaluation without a real `evaluated_at`: `REFUSED_MISSING_EVALUATION_TIME` |
-| `:datalog` | A single non-recursive Datalog rule (`head(Vars) :- (S,P,O), ...`) joined by nested-loop substitution over `RDF.Data.statements/1` | `REFUSED_INVALID_DATALOG_RULE` (malformed, recursive, or unsafe) |
-
-`:threshold` and `:count` both admission-refuse an unsupported `comparator` atom with
-`REFUSED_INVALID_BOUND_PREDICATE`; `:shacl` refuses a shapes graph that fails to parse or an
-empty focus set with `REFUSED_INVALID_SHACL_SHAPES_GRAPH`. `:temporal_window` never falls back
-to an internal wall-clock read (no `DateTime.utcnow()`/`System.os_time()` inside the module) —
-`evaluated_at` must be supplied as a real `%DateTime{}` in `evaluate/2` opts, or the evaluation
-is refused rather than silently defaulting to "now." `:datalog` is a deliberate hand-written
-scoped subset (`AshR2RML.KnowledgeHook.Datalog`): single rule only, no recursion, no negation,
-no aggregation, no stratification — `deps/rdf` ships no Datalog engine and a full external
-Datalog dependency was left as a future scope decision, not adopted unilaterally.
-
-Real test coverage for all 8 predicate types (conforming/violating/malformed cases per type,
-real `RDF.Graph`/`RDF.Turtle` fixtures, real local-RDF SPARQL execution, zero mocks) lives in
-`test/knowledge_hooks_shacl_threshold_count_test.exs`,
-`test/knowledge_hooks_temporal_window_test.exs` (6 cases), and
-`test/knowledge_hooks_datalog_test.exs` (8 cases).
+Ontop) is ever benchmarked — see `bench/README.md`.
 
 ### Standing vocabulary
 

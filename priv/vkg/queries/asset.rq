@@ -1,7 +1,0 @@
-# stable VKG view: Asset
-SELECT ?subject ?id WHERE {
-  GRAPH <urn:graph:asset> {
-    ?subject <https://schema.org/identifier> ?id .
-  }
-}
-ORDER BY ?subject

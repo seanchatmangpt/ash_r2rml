@@ -59,7 +59,7 @@ resources = [MyApp.Person]
 File.write!("priv/r2rml/application.ttl", ttl)
 ```
 
-Generated R2RML is a projection. Do not hand-edit it when the owning Ash resource or ontology-first generator can regenerate it.
+Generated R2RML is a projection. Do not hand-edit it when the owning Ash resource can regenerate it.
 
 ## OBDA engine
 
@@ -69,19 +69,3 @@ AshR2RML generates mappings but does not execute SPARQL. Configure a compatible 
 2. the generated R2RML mapping.
 
 The intended topology is one persisted subject with multiple query surfaces, not synchronized databases.
-
-## Ontology-first projects
-
-Ontology-first consumers use the shipped ggen pack as a development-time manufacturer:
-
-```text
-ontology/profile + SHACL
-        ↓
-       ggen
-        ↓
-generated Ash resources
-        ↓
-     AshR2RML
-```
-
-ggen is not required merely to execute a normal Ash application using already-generated resources.

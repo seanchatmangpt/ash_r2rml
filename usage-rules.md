@@ -36,7 +36,6 @@ The RDF graph is normally virtual. A compatible OBDA engine rewrites SPARQL into
 |---|---|
 | Installation and runtime boundary | [setup.md](usage-rules/setup.md) |
 | Public Spark/RDF DSL | [dsl.md](usage-rules/dsl.md) |
-| Normalized compiler representation | [semantic-ir.md](usage-rules/semantic-ir.md) |
 | RDF subject identity | [identities.md](usage-rules/identities.md) |
 | Ash relationships → RDF object properties | [relationships.md](usage-rules/relationships.md) |
 | Ash/RDF datatype correspondence | [datatypes.md](usage-rules/datatypes.md) |
@@ -45,9 +44,6 @@ The RDF graph is normally virtual. A compatible OBDA engine rewrites SPARQL into
 | R2RML rendering/conformance | [r2rml.md](usage-rules/r2rml.md) |
 | Ash/SQL/SPARQL query boundaries | [query-surfaces.md](usage-rules/query-surfaces.md) |
 | Virtual RDF / OBDA boundary | [obda.md](usage-rules/obda.md) |
-| Ontology-first compilation | [ontology-first.md](usage-rules/ontology-first.md) |
-| Observe-only virtual knowledge graph federation | [vkg.md](usage-rules/vkg.md) |
-| ggen manufacturing | [ggen.md](usage-rules/ggen.md) |
 | Ash actions/mutation boundary | [actions.md](usage-rules/actions.md) |
 | Verification and semantic round trips | [testing.md](usage-rules/testing.md) |
 
@@ -138,34 +134,6 @@ Render standards-valid Turtle. Parse generated output with an independent RDF pa
 
 Do not confuse syntactically valid Turtle with a proven end-to-end virtual RDF graph.
 
-## Ontology-first generation
-
-Ontology-first applications use:
-
-```text
-RDF/OWL
-   ↓
-application profile
-   ↓
-SHACL operational shapes
-   ↓
-ggen
-   ↓
-generated Ash.Resource
-   ↓
-AshR2RML.Mapping
-```
-
-SHACL supplies operational closure. Arbitrary OWL is not deterministically compiled directly into SQL.
-
-If constraints do not select one lawful Ash/relational projection, generation fails closed.
-
-## ggen
-
-ggen is the manufacturer, not the request-time runtime.
-
-Generated Ash/R2RML surfaces are projections owned by ontology/profile/shapes, SPARQL gates/queries, and templates. Fix source authority and regenerate rather than hand-editing outputs.
-
 ## OBDA
 
 AshR2RML does not implement SPARQL-to-SQL rewriting. A compatible external OBDA/R2RML engine owns that boundary.
@@ -204,7 +172,6 @@ pure mapping tests
 → deterministic regeneration
 → real relational integration
 → real OBDA/SPARQL integration
-→ ontology-first ggen round trip
 ```
 
 A lower checkpoint can be `PARTIAL_ALIVE`. `ALIVE` requires the exact claimed external boundary to execute.

@@ -15,5 +15,5 @@
   # Runtime witness (v26.9.25): Local.query(graph, "SELECT ?s WHERE { ?s ?p ?o }")
   # returns {:ok, %Observation{}}; the in-memory OBDA suites
   # (test/obda_in_memory_*_test.exs) exercise this exact {:ok, observation} arm.
-  {"lib/ash_r2rml/obda_in_memory.ex", :pattern_match, {152, 16}}
+  {"lib/ash_r2rml/obda_in_memory.ex", :pattern_match, {169, 16}}
 ]

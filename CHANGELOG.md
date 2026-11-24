@@ -11,6 +11,18 @@ See [Conventional Commits](Https://conventionalcommits.org) for commit guideline
 
 <!-- changelog -->
 
+## v26.11.24 (2026-11-24)
+
+### Breaking changes:
+* Stripped to the core: `r2rml`/`rdf` DSL, mapping IR, R2RML rendering, typed refusals, and OBDA
+  (`AshR2RML.OBDA.InMemory`, `AshR2RML.OBDA.Ontop`, `AshR2RML.SPARQL.*`).
+* Removed (recoverable from commit `5defc87`): ontology-first ingestion/admission/semantic types,
+  ggen packs and runtime, GraphQL projection, Reactor steps/pipeline, OCEL telemetry, knowledge
+  hooks, VKG, federation, DfCM, production admission, JSON-LD.
+* `AshR2RML.Compiler.compile/2` accepts Ash resources only; profile maps are no longer compiled.
+* The `AshGraphql` auto-extension is no longer added by `AshR2RML.Resource`.
+* Removed deps: `ash_graphql`, `absinthe`, `json_ld`, `reactor`, `ash_state_machine`.
+
 ## v26.11.11 (2026-11-11)
 
 ### Features:

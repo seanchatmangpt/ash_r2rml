@@ -6,8 +6,8 @@ defmodule AshR2RML do
   @moduledoc """
   Semantic mapping compiler between Ash resources and W3C R2RML.
 
-  AshR2RML is not an Ash data layer and never owns persistence. Ash-first and
-  ontology-first inputs converge on `AshR2RML.Mapping.Bundle`; R2RML is then a
+  AshR2RML is not an Ash data layer and never owns persistence. Ash resources
+  compile to `AshR2RML.Mapping.Bundle`; R2RML is then a
   deterministic projection of that normalized IR. RDF serialization and SPARQL
   execution remain explicit boundary choices rather than alternate sources of
   truth.
@@ -28,117 +28,21 @@ defmodule AshR2RML do
     ]
   }
 
-  # Auto-projection: see `AshR2RML.Resource`'s identical attribute. `AshR2RML` is
-  # the consumer-facing extension in every real fixture, so the same
-  # `add_extensions` expansion must apply here or "declare `AshR2RML` and get a
-  # read-only GraphQL projection" does not hold.
-  @auto_graphql_extensions (if Code.ensure_loaded?(AshGraphql.Resource) do
-                              [AshR2RML.Graphql, AshGraphql.Resource]
-                            else
-                              []
-                            end)
-
   use Spark.Dsl.Extension,
     sections: [@r2rml],
     transformers: [
       AshR2RML.PersistMapping
     ],
-    verifiers: [AshR2RML.VerifyMapping],
-    add_extensions: @auto_graphql_extensions
+    verifiers: [AshR2RML.VerifyMapping]
 
   @doc "Compile one Ash resource into its normalized semantic mapping."
   defdelegate mapping(resource), to: AshR2RML.Resource.Info
 
-  @doc "Compile one or more Ash resources or profile map into a closed bundle."
-  defdelegate compile(resources_or_profile), to: AshR2RML.Compiler, as: :compile
-
-  @doc """
-  Compile an admitted profile into a manufactured ggen bundle.
-
-  Protocol projections are compiler switches rather than design surfaces. For
-  example, `graphql: true` emits the canonical read-only semantic GraphQL
-  projection; `graphql: false` (the default) emits none. Custom application
-  GraphQL belongs in `ash_graphql` rather than this semantic compiler.
-  """
-  def compile_bundle(profile, opts \\ []), do: AshR2RML.Ggen.compile_bundle(profile, opts)
-
-  @doc """
-  Compile API-adjacent projections from one admitted semantic profile.
-
-  The canonical GraphQL path remains read-only and zero-configuration; enabling
-  it does not add `AshGraphql.Resource` to generated Ash resources or grant any
-  mutation authority.
-  """
-  def compile_api_bundle(profile, opts \\ []), do: AshR2RML.Ggen.compile_api_bundle(profile, opts)
-
-  @doc "Emit ontology, SHACL, and R2RML TTL for cloud ggen directly from Ash resources."
-  defdelegate compile_ash_ttl_bundle(resources_or_bundle), to: AshR2RML.Ggen
+  @doc "Compile one or more Ash resources into a closed bundle."
+  defdelegate compile(resources), to: AshR2RML.Compiler, as: :compile
 
   @doc "Inspect normalized AshR2RML resource mapping."
   defdelegate mapping_result(resource), to: AshR2RML.Resource.Info
-
-  @doc "Parse RDF/Turtle + SHACL into the normalized closed ontology-first profile."
-  def ingest_turtle(turtle, opts \\ []), do: AshR2RML.Ingestion.from_turtle(turtle, opts)
-
-  @doc "Compile RDF/Turtle + SHACL into the same canonical mapping bundle as Ash-first resources."
-  def compile_turtle(turtle, opts \\ []), do: AshR2RML.Ingestion.compile_turtle(turtle, opts)
-
-  @doc "Compile RDF/Turtle + SHACL directly into the deterministic ggen bundle."
-  def compile_turtle_bundle(turtle, opts \\ []), do: AshR2RML.Ggen.compile_turtle_bundle(turtle, opts)
-
-  @doc "Parse JSON-LD 1.1 + SHACL into the normalized closed ontology-first profile."
-  def ingest_jsonld(jsonld, opts \\ []), do: AshR2RML.JSONLD.ingest(jsonld, opts)
-
-  @doc "Compile JSON-LD 1.1 + SHACL into the same canonical mapping bundle as Turtle and Ash-first resources."
-  def compile_jsonld(jsonld, opts \\ []), do: AshR2RML.JSONLD.compile(jsonld, opts)
-
-  @doc "Compile JSON-LD 1.1 + SHACL directly into the deterministic ggen bundle."
-  def compile_jsonld_bundle(jsonld, opts \\ []), do: AshR2RML.Ggen.compile_jsonld_bundle(jsonld, opts)
-
-  @doc "Admit and identify a SPARQL query without executing it."
-  defdelegate admit_sparql(query), to: AshR2RML.SPARQL.Query, as: :admit
-
-  @doc "Load and admit a SPARQL .rq query file from disk."
-  defdelegate load_sparql_file(path), to: AshR2RML.SPARQL.Query, as: :load_file
-
-  @doc "Explore all supplied lawful SPARQL execution candidates without prematurely selecting among them."
-  def plan_sparql(query, opts \\ []), do: AshR2RML.SPARQL.explore(query, opts)
-
-  @doc "Execute an explicitly selected or uniquely forced SPARQL execution plan."
-  defdelegate execute_sparql(plan), to: AshR2RML.SPARQL, as: :execute
-
-  @doc "Admit normalized Knowledge Hook definitions into a construct-only plan."
-  def admit_knowledge_hooks(definitions, opts \\ []),
-    do: AshR2RML.KnowledgeHooks.admit(definitions, opts)
-
-  @doc "Parse canonical AshR2RML, GitVan, or KNHK Knowledge Hook Turtle into a construct-only plan."
-  def ingest_knowledge_hooks_turtle(turtle, opts \\ []),
-    do: AshR2RML.KnowledgeHook.Ingestion.from_turtle(turtle, opts)
-
-  @doc "Evaluate admitted Knowledge Hooks and construct unauthorized intents for matches."
-  def evaluate_knowledge_hooks(plan, opts \\ []),
-    do: AshR2RML.KnowledgeHooks.evaluate(plan, opts)
-
-  @doc "Compile an admitted Knowledge Hook plan to canonical content-addressed hook IR."
-  def compile_knowledge_hook_specs(plan), do: AshR2RML.KnowledgeHook.Spec.from_plan(plan)
-
-  @doc "Deterministically order canonical Knowledge Hook specs by explicit dependencies."
-  def schedule_knowledge_hook_specs(specs), do: AshR2RML.KnowledgeHook.Scheduler.schedule(specs)
-
-  @doc "Project a constructed Knowledge Hook intent to a typed inert downstream target."
-  def project_knowledge_hook_target(intent), do: AshR2RML.KnowledgeHook.Target.from_intent(intent)
-
-  @doc "Evaluate cognition-to-reflex promotion evidence without granting actuation authority."
-  def evaluate_knowledge_hook_promotion(candidate, evidence, opts \\ []),
-    do: AshR2RML.KnowledgeHook.Promotion.evaluate(candidate, evidence, opts)
-
-  @doc "Manufacture a deterministic ggen path/content bundle for admitted Knowledge Hooks."
-  def compile_knowledge_hooks_bundle(plan_or_definitions, opts \\ []),
-    do: AshR2RML.Ggen.KnowledgeHooks.compile(plan_or_definitions, opts)
-
-  @doc "Parse canonical/legacy Knowledge Hook Turtle and manufacture its deterministic ggen path/content bundle."
-  def compile_knowledge_hooks_turtle_bundle(turtle, opts \\ []),
-    do: AshR2RML.Ggen.KnowledgeHooks.compile_turtle(turtle, opts)
 
   @doc "Render standards-oriented R2RML Turtle from a bundle or Ash resource set."
   defdelegate render(resources_or_bundle), to: AshR2RML.R2RML
@@ -146,53 +50,21 @@ defmodule AshR2RML do
   @doc "Render standards-oriented R2RML Turtle from a bundle or Ash resource set."
   defdelegate render_r2rml(resources_or_bundle), to: AshR2RML.R2RML, as: :render
 
-  @doc "Render SHACL shapes graph from a bundle or Ash resource set."
-  defdelegate render_shacl(resources_or_bundle), to: AshR2RML.SHACL, as: :render
-
-  @doc "Return the default evidence-bounded production quality profile."
-  defdelegate production_profile(), to: AshR2RML.Production, as: :default_profile
-
-  @doc "Return the reversible production design space without selecting a candidate."
-  defdelegate production_design_space(), to: AshR2RML.Production, as: :design_space
-
-  @doc "Lazily enumerate bounded production candidates."
-  def production_candidates(opts \\ []) do
-    AshR2RML.DfCM.enumerate(AshR2RML.Production.design_space(), opts)
-  end
-
-  @doc "Admit technical production evidence for an exact semantic subject."
-  def production_admit(subject_sha256, evidence \\ [], profile \\ AshR2RML.Production.default_profile()) do
-    AshR2RML.Production.admit(profile, subject_sha256, evidence)
-  end
-
-  @doc "Construct the dynamic production graph consumed by the repo-level ggen workspace."
-  def compile_production(resources_or_bundle, opts \\ []) do
-    AshR2RML.Ggen.Production.compile(resources_or_bundle, opts)
-  end
-
-  @doc "Validate and return compilation receipt for resources or profile."
-  def validate(resources_or_profile) do
-    case AshR2RML.Compiler.compile(resources_or_profile) do
-      {:ok, %AshR2RML.Compilation{receipt: receipt}} ->
-        receipt
-
-      {:error, %AshR2RML.Compilation{receipt: receipt}} ->
-        receipt
-
+  @doc "Validate and return compilation receipt for resources."
+  def validate(resources) do
+    case AshR2RML.Compiler.compile(resources) do
       {:ok, %AshR2RML.Mapping.Bundle{} = bundle} ->
         {:ok, r2rml} = AshR2RML.R2RML.render(bundle)
-        {:ok, shacl} = AshR2RML.SHACL.render(bundle)
 
         %AshR2RML.CompilationReceipt{
           status: :PARTIAL_ALIVE,
           standing: :constructed_not_actuated,
           mapping_sha256: AshR2RML.Compiler.sha256(bundle),
           r2rml_sha256: AshR2RML.Compiler.sha256(r2rml),
-          shacl_sha256: AshR2RML.Compiler.sha256(shacl),
           query_parity: :UNKNOWN,
           cutover_authority: :UNAUTHORIZED,
           classes_admitted: length(bundle.resources),
-          executed: [:canonical_mapping_ir, :r2rml_render, :shacl_render],
+          executed: [:canonical_mapping_ir, :r2rml_render],
           verified: [:canonical_mapping_ir_projection],
           blocked: [:sparql_sql_behavioral_parity, :cutover_authority],
           refusals: []

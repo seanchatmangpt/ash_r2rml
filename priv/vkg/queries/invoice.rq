@@ -1,7 +1,0 @@
-# stable VKG view: Invoice
-SELECT ?subject ?id WHERE {
-  GRAPH <urn:graph:invoice> {
-    ?subject <https://schema.org/identifier> ?id .
-  }
-}
-ORDER BY ?subject

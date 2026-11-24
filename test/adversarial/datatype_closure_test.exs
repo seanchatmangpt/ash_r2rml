@@ -227,16 +227,6 @@ defmodule AshR2RML.Adversarial.DatatypeClosureTest do
       assert ttl =~ "rr:predicate <http://purl.org/dc/terms/modified>"
     end
 
-    test "renders SHACL shapes graph preserving nullable vs non-nullable and datatypes" do
-      assert {:ok, shacl} = AshR2RML.render_shacl([ComprehensiveEntity])
-
-      assert shacl =~ "sh:NodeShape"
-      assert shacl =~ "sh:targetClass <https://example.org/ontology/ComprehensiveEntity>"
-      assert shacl =~ "sh:path <http://xmlns.com/foaf/0.1/name>"
-      assert shacl =~ "sh:minCount 1"
-      assert shacl =~ "sh:datatype <http://www.w3.org/2001/XMLSchema#string>"
-    end
-
     test "preserves Ash calculation and default semantics on resource without interfering with R2RML" do
       # Ash calculation is accessible via Ash.Resource.Info
       calculations = Ash.Resource.Info.calculations(ComprehensiveEntity)

@@ -7,7 +7,7 @@ SPDX-License-Identifier: MIT
 
 # AshR2RML
 
-**Ontology-first semantic mappings for Ash. Keep PostgreSQL relational; expose the same admitted subject as RDF.**
+**Semantic mappings for Ash. Keep PostgreSQL relational; expose the same admitted subject as RDF.**
 
 AshR2RML is an Ash extension that compiles Ash resources and relationships into standards-valid W3C R2RML mappings. It lets an Ash application persist through its normal data layer—typically AshPostgres—while exposing the same relational state as a virtual RDF graph through any compatible OBDA/R2RML engine.
 
@@ -43,25 +43,17 @@ A conventional semantic integration often starts too late:
 application schema → database tables → retrofit RDF mapping
 ```
 
-AshR2RML supports both that pragmatic direction and an ontology-first direction:
+AshR2RML starts from the Ash resource instead: the resource declares its semantics once, and the R2RML mapping is compiled from it.
 
 ```text
-RDF/OWL + SHACL
-       │
-       ▼
-      ggen
-       │
-       ▼
-generated Ash resources
-       │
-       ▼
- AshR2RML.Mapping
-    ╱        ╲
-   ▼          ▼
-AshPostgres  R2RML
+Ash.Resource + r2rml/rdf DSL
+            │
+            ▼
+     AshR2RML.Mapping (IR)
+        ╱          ╲
+       ▼            ▼
+ AshPostgres      R2RML → OBDA engine
 ```
-
-Both routes converge on the same semantic mapping intermediate representation.
 
 That gives an application three lawful query surfaces over one admitted subject:
 
@@ -283,72 +275,6 @@ This representation is deliberately close to R2RML terminology. It is inspectabl
 }
 ```
 
-## Ontology-first Ash with ggen
-
-AshR2RML ships a ggen pack for generating ordinary Ash resources from an admitted RDF/SHACL application profile.
-
-The source of truth is the ontology/profile, not the generated Elixir:
-
-```text
-public ontology / application ontology
-               │
-               ▼
-          SHACL shapes
-               │
-               ▼
-             ggen
-               │
-               ▼
-       generated Ash.Resource
-               │
-               ▼
-         AshR2RML.Mapping
-               │
-               ▼
-             R2RML
-```
-
-Example shape:
-
-```turtle
-ex:PersonShape
-    a sh:NodeShape ;
-    sh:targetClass foaf:Person ;
-    r2ml:ashModule "MyApp.Person" ;
-    r2ml:table "people" ;
-    r2ml:subjectTemplate "https://example.org/people/{id}" ;
-    sh:property [
-        sh:path foaf:name ;
-        sh:datatype xsd:string ;
-        sh:minCount 1 ;
-        sh:maxCount 1
-    ] .
-```
-
-The pack deterministically manufactures the corresponding Ash resource and semantic annotations. Generated resources are projections and should not be hand-edited.
-
-See [Ontology-first generation](documentation/how_to/ontology_first.livemd).
-
-## SHACL as the operational closure boundary
-
-AshR2RML does not claim that arbitrary OWL can be deterministically compiled into a relational schema.
-
-OWL describes open-world semantics. Ash resources and relational schemas need operationally closed decisions about cardinality, datatype, identity, and storage.
-
-For ontology-first generation, SHACL supplies that closure:
-
-```text
-OWL/RDFS vocabulary
-      ↓
-application profile
-      ↓
-SHACL operational shapes
-      ↓
-ggen compilation
-```
-
-If the shape does not provide enough information to choose one lawful Ash/relational projection, generation fails with a typed refusal.
-
 ## Typed refusals
 
 AshR2RML fails closed at semantic boundaries. Representative failures include:
@@ -368,31 +294,6 @@ UNSUPPORTED_ASH_TYPE
 ```
 
 The exact Elixir error is a typed AshR2RML/Spark error. No mapping path silently drops a resource, attribute, relationship, or identity.
-
-## Knowledge hooks
-
-`AshR2RML.KnowledgeHooks` admits a read-only predicate over the graph, evaluates it against
-real data, and constructs a downstream `Intent` — hooks manufacture intents, they never
-actuate. Six predicate types are supported:
-
-```text
-:ask               — SPARQL ASK query truth value
-:result_delta      — change between successive SELECT result sets
-:external_trigger  — an externally-supplied receipt (no in-repo query)
-:shacl             — SHACL shape conformance for one or more focus nodes
-:threshold         — a bound SPARQL variable compared against a numeric bound
-:count             — row count of a SELECT query compared against a numeric bound
-```
-
-`:shacl`, `:threshold`, and `:count` each fail closed at admission time on malformed input
-(an unparseable shapes graph or empty focus set, an unsupported comparator atom, or a
-non-`SELECT` query form, respectively) — see `AGENTS.md`'s "Knowledge hooks" section for the
-exact refusal codes.
-
-Two predicate types are explicitly open, not-yet-designed extensions: `:temporal_window`
-(windowed evaluation over a time range) and `:datalog` (a predicate expressed as Datalog
-rules). Neither has admission rules, evaluation semantics, or a receipt shape defined yet —
-this is a named gap, not an oversight.
 
 ## Virtual RDF, not RDF synchronization
 
@@ -437,22 +338,6 @@ AshR2RML follows this correspondence:
 
 R2RML should name and expose relationships the relational model already preserves. It should not repair a semantically impoverished schema.
 
-## Deterministic generation
-
-The ontology-first pack follows the ggen model:
-
-```text
-ontology + shapes + queries + templates
-             │
-             ▼
-          ggen sync
-             │
-             ▼
-      deterministic artifacts
-```
-
-A semantic change should require one authoritative edit and zero manual synchronization across generated Ash and R2RML projections.
-
 ## Verification model
 
 AshR2RML treats compile success as a checkpoint, not the crown.
@@ -473,95 +358,22 @@ SPARQL
 
 The semantic identity and required relationships returned through SPARQL must match the subject visible through Ash.
 
-Ontology-first generation adds the upstream leg:
-
-```text
-RDF/SHACL
-   ↓
-ggen
-   ↓
-Ash
-   ↓
-Postgres
-   ↓
-R2RML
-   ↓
-SPARQL
-```
-
-## Virtual Knowledge Graph (observe-only)
-
-`AshR2RML.VKG` (`lib/ash_r2rml/vkg/**`, data in `priv/vkg`) federates Ontop-backed views by exact
-source identity: manifest, admitted catalog, deterministic plan, bounded execution, provenance-bearing
-result, receipt, replay verification. Failures are typed `REFUSED_VKG_*` refusals.
-
-**Authority ceiling:** observe-only (`authority: :NONE`). No DO, no source writes. It is not network
-federation and it is not `AshR2RML.Federation` (the in-process determinism substrate below). See
-`usage-rules/vkg.md`.
-
-## Federation
-
-`AshR2RML.Federation` (`lib/ash_r2rml/federation.ex`) is real, mechanically
-checkable determinism substrate: `admit_environment/1` admits a named
-environment identity (`name`, `compiler_version`, `admitted_ontology_sha256`)
-or refuses a malformed one; `compile_for_environments/2` compiles the SAME
-admitted semantic profile independently, once per admitted environment, and
-returns a `FederationReceipt` asserting whether the generated artifact
-identity (a sha256 over the compiled Ash/Ecto/DDL/R2RML/SHACL output) is
-byte-identical across every environment that shares compiler+ontology
-identity — "same input, same compiler identity, same artifact identity,"
-checked by hash equality, not narrative.
-
-**What this proves:** deterministic artifact identity is verifiable across
-independently-configured environments — compile the same profile N times, in
-N differently-named environment configs, and get back N byte-identical
-generated artifacts (or, when an environment's admitted ontology identity
-diverges, a receipt that names exactly which environment diverged instead of
-silently averaging it away). `test/federation_test.exs` compiles a real
-profile across 3 named environments and asserts this for real, then mutates
-one environment's `admitted_ontology_sha256` and asserts the receipt reports
-`all_identical?: false` and names the diverging environment.
-
-**What this does NOT prove:** no real multi-tenant deployment, no network
-federation protocol, no actual Fortune 500 customer environment. Every
-"environment" here is an in-process identity tuple compiled sequentially in
-one BEAM node — there is no runtime, no cluster, no customer infrastructure
-behind it. This module is the determinism substrate a federation claim would
-need, not the claim itself.
-
-## Knowledge hooks
-
-`AshR2RML.KnowledgeHooks` (`documentation/how_to/knowledge_hooks.md`) admits a read-only
-predicate over the RDF graph, evaluates it, and constructs a downstream `Intent` with
-`authority: :UNAUTHORIZED` — it never actuates. **PARTIAL_ALIVE**: 8 predicate types are real
-and tested end-to-end (`:ask`, `:result_delta`, `:external_trigger`, `:shacl`, `:threshold`,
-`:count`, `:temporal_window`, `:datalog`), each with typed admission refusals and zero-mock
-Chicago-style tests over real `RDF.Graph`/`RDF.Turtle` fixtures. `:datalog` is a deliberately
-scoped hand-written single-rule evaluator (no recursion/negation/aggregation/stratification),
-not a general Datalog engine — a real, named gap if broader Datalog semantics are ever needed.
-GitVan v4 and KNHK Turtle vocabularies are recognized on import.
-
 ## Status
 
-This repository is **PARTIAL_ALIVE**, not a finished product. Real, verified capability:
-R2RML compilation from Ash resources (relational + join-derived reference object maps),
-two in-repo OBDA execution backends (`AshR2RML.OBDA.InMemory` over `Ash.DataLayer.Ets`,
-`AshR2RML.OBDA.Ontop` over `AshPostgres`+Ontop+JDBC), a typed refusal vocabulary (14 mapping
-refusal codes plus 4 knowledge-hook refusal codes), auto-projected GraphQL over the same
-admitted subject, 8 knowledge-hook predicate types, and an in-process `AshR2RML.Federation`
-determinism substrate (byte-identical artifact hashing across N named environment configs
-compiled sequentially in one BEAM node).
+This repository is **PARTIAL_ALIVE**, not a finished product. As of v26.11.24 it is stripped to
+the core: the `r2rml`/`rdf` DSL, the mapping IR, R2RML rendering, a typed refusal vocabulary, and
+two OBDA backends (`AshR2RML.OBDA.InMemory` over any Ash data layer, `AshR2RML.OBDA.Ontop` over
+`AshPostgres` + Ontop + JDBC, plus a read-only SPARQL protocol client).
 
-Named gaps, stated honestly rather than glossed over:
+Removed in v26.11.24 and recoverable from git history (commit `5defc87`): ontology-first
+ingestion and semantic types, ggen packs, GraphQL projection, Reactor sagas, OCEL telemetry,
+knowledge hooks, VKG, federation, DfCM and production admission.
 
-- `AshR2RML.Federation` proves deterministic artifact identity across in-process environment
-  configs — it does **not** implement network federation, multi-tenant deployment, or run
-  against any real Fortune 500 or other customer environment.
-- `Ash.Type.Range` has no R2RML datatype mapping yet (parameterized-type rendering path not
-  built; `UNSUPPORTED_ASH_TYPE`).
-- `:datalog` knowledge hooks support one non-recursive rule only, by design.
-- Live-Postgres/Ontop adversarial tests depend on a running local Postgres+Ontop stack and are
-  not run in every environment; see `test/adversarial/`.
+Named gaps:
+
+- `Ash.Type.Range` has no R2RML datatype mapping yet (`UNSUPPORTED_ASH_TYPE`).
+- The live Postgres/Ontop crown scripts were removed with the ontology-first ingestion they
+  depended on; live OBDA verification is UNVERIFIED until they are re-authored Ash-first.
 
 Never treat this README, `AGENTS.md`, or `CHANGELOG.md` as proof a capability is wired end to
 end — the real evidence is the cited test file and its actual passing run.
@@ -577,19 +389,7 @@ AshR2RML deliberately does not:
 - invent missing relationship or identity information;
 - make generated ontology facts executable with ambient authority.
 
-## Documentation
-
-- [Architecture](documentation/topics/architecture.md)
-- [Ash-first mapping](documentation/how_to/ash_first.livemd)
-- [Ontology-first generation](documentation/how_to/ontology_first.livemd)
-- [Managing relational schema and R2RML](documentation/how_to/managing_schema.livemd)
-- [Knowledge hooks](documentation/how_to/knowledge_hooks.md)
-- [Palantir/Kudzu migration demonstration](documentation/topics/palantir_kudzu_migration.md)
-- [Usage rules](usage-rules.md)
-
 ## Development
-
-AshR2RML uses ggen to manufacture generated semantic compiler surfaces. Generated artifacts are projections; change their owning ontology/query/template and regenerate rather than hand-editing them.
 
 The repository's `AGENTS.md` is the authoritative contributor contract.
 

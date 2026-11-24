@@ -65,12 +65,6 @@ defmodule AshR2RML.Dsl.Graph do
   defstruct [:iri, :__identifier__, :__spark_metadata__, scope: :resource]
 end
 
-defmodule AshR2RML.Dsl.KnowledgeHook do
-  @moduledoc false
-  @enforce_keys [:module]
-  defstruct [:module, :__identifier__, :__spark_metadata__]
-end
-
 defmodule AshR2RML.Resource do
   @moduledoc """
   Spark extension for Ash-first semantic mapping.
@@ -174,26 +168,13 @@ defmodule AshR2RML.Resource do
 
   def section, do: @r2rml
 
-  # Auto-projection: declaring `AshR2RML.Resource` alone is the whole surface for
-  # a read-only GraphQL projection. `Spark`'s `add_extensions` expansion is a
-  # single pass (`Spark.Dsl.expand_modules/3`, deps/spark/lib/spark/dsl.ex:335),
-  # so `AshGraphql.Resource` is named here explicitly rather than relying on
-  # `AshR2RML.Graphql`'s own `add_extensions`. `ash_graphql` is an optional dep,
-  # so the list is empty when it is not loaded.
-  @auto_graphql_extensions (if Code.ensure_loaded?(AshGraphql.Resource) do
-                              [AshR2RML.Graphql, AshGraphql.Resource]
-                            else
-                              []
-                            end)
-
   use Spark.Dsl.Extension,
     sections: [@r2rml, @sparql],
     transformers: [
       AshR2RML.Resource.Persist
     ],
     verifiers: [AshR2RML.Resource.Verify],
-    single_extension_kinds: [:ash_r2rml],
-    add_extensions: @auto_graphql_extensions
+    single_extension_kinds: [:ash_r2rml]
 end
 
 defmodule AshR2RML.Resource.Persist do

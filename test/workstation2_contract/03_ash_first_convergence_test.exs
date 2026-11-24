@@ -5,6 +5,6 @@ defmodule AshR2RML.WS2.AshFirstConvergenceTest do
 
   test "Ash-first workflow converges on admitted semantic subject" do
     c = File.read!("AGENTS.md")
-    assert c =~ "Ash-first and ontology-first workflows must converge on the same admitted semantic subject"
+    assert c =~ "must normalize into one deterministic mapping IR before verification/rendering"
   end
 end
