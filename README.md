@@ -362,8 +362,8 @@ The semantic identity and required relationships returned through SPARQL must ma
 
 This repository is **PARTIAL_ALIVE**, not a finished product. As of v26.11.24 it is stripped to
 the core: the `r2rml`/`rdf` DSL, the mapping IR, R2RML rendering, a typed refusal vocabulary, and
-two OBDA backends (`AshR2RML.OBDA.InMemory` over any Ash data layer, `AshR2RML.OBDA.Ontop` over
-`AshPostgres` + Ontop + JDBC, plus a read-only SPARQL protocol client).
+one runtime OBDA backend (`AshR2RML.OBDA.InMemory`: Ash-mediated `Ash.read/2` with `actor:`/`tenant:`
+over any Ash data layer) plus a read-only HTTP SPARQL protocol client. Zero Java, zero JDBC.
 
 Removed in v26.11.24 and recoverable from git history (commit `5defc87`): ontology-first
 ingestion and semantic types, ggen packs, GraphQL projection, Reactor sagas, OCEL telemetry,
@@ -372,9 +372,10 @@ knowledge hooks, VKG, federation, DfCM and production admission.
 Named gaps:
 
 - `Ash.Type.Range` has no R2RML datatype mapping yet (`UNSUPPORTED_ASH_TYPE`).
-- Live OBDA is exercised by `test/integration/obda_crown.exs` (Ash InMemory + Ontop CLI + Ontop endpoint
-  vs PostgreSQL) and `ontop_compliance_crown.exs` (30 Ontop 5.5.0 protocol probes incl. GeoSPARQL);
-  both need Docker, `xaas-db` and `ontop/ontop:5.5.0` (`MIX_ENV=test mix run <script>`).
+- OBDA verification against an external SPARQL-to-SQL engine is UNVERIFIED by design: the Ontop/JDBC
+  adapter and its live crowns were removed in v26.11.24 (recoverable from commit `26f5f49`). Evidence
+  is the in-process `InMemory` and `SPARQL.Local` suites, including field-policy denial
+  (`test/obda_in_memory_field_policy_denial_test.exs`) and the zero-JDBC guard (`test/zero_jdbc_guard_test.exs`).
 
 Never treat this README, `AGENTS.md`, or `CHANGELOG.md` as proof a capability is wired end to
 end — the real evidence is the cited test file and its actual passing run.

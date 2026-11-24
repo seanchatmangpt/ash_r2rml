@@ -10,7 +10,7 @@ defmodule AshR2RML.RDF.GraphAlgebra do
   (`~/gno/lib/gno/changeset/helper.ex`), stripped of everything that requires a
   live, queryable triple store (Gno's `EffectiveChangeset.Query` SPARQL-CONSTRUCT
   diff-against-store algorithm). AshR2RML has no such store to diff against --
-  Ontop is virtual OBDA over Postgres, never a materialized graph -- so this
+  OBDA is virtual over Ash reads, never a persisted triple store -- so this
   module only keeps the store-independent, purely functional half of that
   pattern: combining and subtracting `RDF.Graph.t()` values already held in
   memory (e.g. two successive renders of the same mapping's R2RML Turtle, or two

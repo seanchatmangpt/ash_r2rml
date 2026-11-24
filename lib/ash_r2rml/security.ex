@@ -8,8 +8,8 @@ defmodule AshR2RML.Security do
 
   Two independently observed authority gaps are closed here instead of being left to callers:
 
-  * Ash field policies are enforceable on Ash-mediated reads but not by Ontop's direct JDBC
-    path. `sanitize_mapping/2` therefore removes field-policy-protected predicate maps from
+  * Ash field policies are enforceable on Ash-mediated reads but not by an external engine that
+    reads the database directly. `sanitize_mapping/2` therefore removes field-policy-protected predicate maps from
     AshPostgres-backed mappings before R2RML rendering.
   * Ash extensions may replace an admitted attribute with a calculation under the same public
     name. `ash_cloak` does exactly this: the plaintext field becomes a decryption calculation
@@ -31,7 +31,7 @@ defmodule AshR2RML.Security do
   Returns `mapping` unchanged unless `ash_resource` is `AshPostgres.DataLayer`-backed with
   R2RML-mapped attributes that also carry an explicit `field_policy`. Such attributes are
   removed and recorded in `mapping.metadata[:field_policy_excluded_attributes]` because
-  Ontop/JDBC has no Ash actor with which to enforce the policy.
+  a direct database reader has no Ash actor with which to enforce the policy.
   """
   @spec sanitize_mapping(module(), Resource.t()) :: Resource.t()
   def sanitize_mapping(ash_resource, %Resource{} = mapping) when is_atom(ash_resource) do

@@ -4,13 +4,11 @@
 
 defmodule AshR2RML.OBDA.InMemory do
   @moduledoc """
-  In-process OBDA counterpart to `AshR2RML.OBDA.Ontop`, for any Ash data layer Ontop
-  cannot reach.
+  In-process OBDA backend for any Ash data layer.
 
-  Ontop rewrites SPARQL to SQL against a JDBC-connected relational database; that
-  has no analogue for `Ash.DataLayer.Ets` (no SQL surface at all) or, in fact, any
-  non-JDBC-reachable Ash data layer. Instead of faking Ontop, this module takes the
-  opposite, honest path: it **materializes** the real rows of one or more Ash
+  A SQL-rewriting engine has no analogue for `Ash.DataLayer.Ets` (no SQL surface at all)
+  and would bypass Ash policies, field redaction and tenant scoping. Instead this module
+  takes the honest path: it **materializes** the real rows of one or more Ash
   resources -- via a real `Ash.read!/2`, with no data-layer gate of its own -- into a
   real `RDF.Graph` using the canonical mapping IR (`AshR2RML.Mapping.Resource`, the
   same IR the R2RML renderer consumes), then executes the query with the
@@ -36,7 +34,7 @@ defmodule AshR2RML.OBDA.InMemory do
   relationship triples resolved from each resource's `reference_object_maps` against the
   other resources in the same call -- so one SPARQL query can traverse a real Ash
   relationship (e.g. `Person -[memberOf]-> Organization`) the same way it would through
-  Ontop's SQL join.
+  a SQL join.
 
   Materialization intentionally supports what R2RML's own admitted correspondence
   table supports: template/column subject maps, datatype-property predicate-object
@@ -148,7 +146,7 @@ defmodule AshR2RML.OBDA.InMemory do
   @doc """
   Materializes `ash_resource`/`mapping_resource` and executes `sparql` against the
   resulting real RDF graph, returning an `Observation` shaped identically to the
-  observations `AshR2RML.OBDA.Ontop` and `AshR2RML.SPARQL.Local` already produce so
+  observations `AshR2RML.SPARQL.Local` already produces so
   it composes with `AshR2RML.SPARQL.Differential.compare/3`.
   """
   @spec query(module(), Resource.t(), String.t(), keyword()) ::
@@ -262,12 +260,12 @@ defmodule AshR2RML.OBDA.InMemory do
   # containing `>`) can terminate the IRI early in the serialized Turtle and splice arbitrary
   # extra triples into the document.
   #
-  # Confirmed against a live Ontop + PostgreSQL stack that this is exactly what a compliant
-  # R2RML engine does *not* do: Ontop's own `rr:template` substitution percent-encodes the
+  # Confirmed against a live external R2RML engine that this is exactly what a compliant
+  # engine does *not* do: its `rr:template` substitution percent-encodes the
   # substituted value (`>` -> `%3E`, space -> `%20`, `:`/`/` -> `%3A`/`%2F`, RFC 3986
   # unreserved characters left literal) rather than rejecting the row. This mirrors that
   # behavior with `URI.char_unreserved?/1` so a malicious value is neutralized *and the row is
-  # preserved* -- matching Ontop's projection instead of only failing safe. The static
+  # preserved* -- matching that projection instead of only failing safe. The static
   # (author-written) portion of the template is never encoded, only the substituted value.
   defp substitute_template(template, row) do
     Regex.replace(~r/\{([a-zA-Z0-9_]+)\}/, template, fn _whole, field ->

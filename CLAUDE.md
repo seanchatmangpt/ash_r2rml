@@ -8,7 +8,7 @@ Full architecture, DSL, semantic-correspondence table, and refusal vocabulary li
 `Ash.DataLayer`; it compiles Ash resource metadata + semantic annotations into a normalized
 mapping IR (`AshR2RML.Mapping.*`), then renders that IR to standards-valid W3C R2RML Turtle and
 native `Ash.Type` representations. `AshPostgres` (or other data layers) still owns persistence;
-Ontop owns SPARQL-to-SQL OBDA rewriting. **Normalize to IR first, verify second, render third** —
+`AshR2RML.OBDA.InMemory` (Ash-mediated reads, no JDBC) is the sole runtime OBDA backend. **Normalize to IR first, verify second, render third** —
 never generate R2RML Turtle directly from ad-hoc resource introspection.
 
 v26.11.24 is stripped to the DSL, mapping IR, R2RML rendering and OBDA; earlier surfaces
@@ -40,7 +40,6 @@ mix spark.cheat_sheets --extensions AshR2RML.Resource
 mix test test/unit/                                    # pure unit / mapping IR
 mix test test/adversarial/ test/negative/               # adversarial closure & refusal suites
 mix test test/fortune5/                                 # enterprise / ODRL policy suites
-mix test test/adversarial/ontop_postgres_test.exs        # live Ontop OBDA SPARQL (needs Ontop+Postgres)
 
 # Single test file / single test
 mix test test/public_mapping_test.exs

@@ -135,7 +135,7 @@ defmodule AshR2RML.Parity do
   # A SPARQL binding row can express "this variable has no value here" two
   # observably different ways depending on the execution surface: the local
   # in-process engine (`AshR2RML.SPARQL.Local`) simply omits the key from the
-  # solution map, while an external CSV-emitting OBDA engine (Ontop) must
+  # solution map, while an external CSV-emitting OBDA engine must
   # still print every header column and renders an unbound variable as an
   # empty cell (`""`) — the SPARQL 1.1 CSV results format itself cannot
   # distinguish "unbound" from "bound to the empty string" (that ambiguity is

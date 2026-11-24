@@ -15,7 +15,10 @@ See [Conventional Commits](Https://conventionalcommits.org) for commit guideline
 
 ### Breaking changes:
 * Stripped to the core: `r2rml`/`rdf` DSL, mapping IR, R2RML rendering, typed refusals, and OBDA
-  (`AshR2RML.OBDA.InMemory`, `AshR2RML.OBDA.Ontop`, `AshR2RML.SPARQL.*`).
+  (`AshR2RML.OBDA.InMemory` as the sole runtime backend, `AshR2RML.SPARQL.*`).
+* Removed the Ontop/JDBC adapter (`AshR2RML.OBDA.Ontop`, `OntopConfig`, compliance catalog, live crowns,
+  docker harness, bench): the package ships zero Java and zero JDBC. Recoverable from commit `26f5f49`.
+  Added `test/zero_jdbc_guard_test.exs` and a field-policy denial test through `InMemory`.
 * Removed (recoverable from commit `5defc87`): ontology-first ingestion/admission/semantic types,
   ggen packs and runtime, GraphQL projection, Reactor steps/pipeline, OCEL telemetry, knowledge
   hooks, VKG, federation, DfCM, production admission, JSON-LD.

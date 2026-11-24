@@ -14,7 +14,7 @@ defmodule AshR2RML.Mapping.Changeset do
   everything that assumes a live, queryable triple store: Gno's changeset is
   ultimately applied to and diffed against a running SPARQL store via
   `Gno.EffectiveChangeset.Query`'s SPARQL-CONSTRUCT algorithm. AshR2RML never
-  has such a store -- Ontop is virtual OBDA over Postgres, not a materialized
+  has such a store -- a virtual OBDA engine is not a materialized
   graph -- so this module keeps only the store-independent half: the action
   vocabulary (`add`/`update`/`replace`/`remove`), its mutual-exclusion
   validation rules, and inversion, all as pure `RDF.Graph` transformations.

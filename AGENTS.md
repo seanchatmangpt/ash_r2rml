@@ -13,7 +13,7 @@ AshR2RML is the W3C R2RML/RDF semantic-mapping layer for Ash Framework. It is no
 
 Ash resource metadata and explicit semantic annotations must normalize into one deterministic mapping IR before verification/rendering.
 
-Ownership remains explicit: Ash owns resource/action/domain semantics; relational and other Ash data layers own persistence; AshR2RML owns semantic metadata, introspection, compile-time validation, normalized IR, and R2RML rendering; Ontop/OBDA owns virtual graph projection and SPARQL→SQL rewriting; `AshR2RML.OBDA.InMemory` owns in-process RDF materialization/SPARQL execution over real Ash reads from any supported Ash data layer; Do not blur these boundaries.
+Ownership remains explicit: Ash owns resource/action/domain semantics; relational and other Ash data layers own persistence; AshR2RML owns semantic metadata, introspection, compile-time validation, normalized IR, and R2RML rendering; `AshR2RML.OBDA.InMemory` owns in-process RDF materialization/SPARQL execution over real Ash reads from any supported Ash data layer; Do not blur these boundaries.
 
 ## Preserve → Fence → Calculus
 
@@ -41,15 +41,15 @@ Semantic publication has its own authority boundary. **Readable by an Ash proces
 
 `AshR2RML.OBDA.InMemory` is Ash-mediated (`Ash.read!/2`), so denied fields (`%Ash.ForbiddenField{}`) are omitted and row-derived IRIs are validated or percent-encoded. That is necessary but not sufficient: an Ash extension can replace an admitted attribute with a derived field that an ordinary read loads automatically. `ash_cloak` is the observed falsifier — it replaces a cloaked attribute with a sensitive decrypting calculation under the same public name, and `decrypt_by_default` causes ordinary reads to carry plaintext. Therefore `AshR2RML.Security.sanitize_in_memory_mapping/2` is an obligatory pre-materialization admission transform. Any mapped scalar name that no longer resolves through `Ash.Resource.Info.attribute/2` is removed before graph construction and recorded in `mapping.metadata[:in_memory_non_attribute_excluded_attributes]`. Calculations, aggregates, or extension-manufactured fields have no ambient RDF-publication authority merely because their values are loaded into the record struct.
 
-Ontop connects to `AshPostgres.DataLayer` directly over JDBC with no Ash actor context, so `AshR2RML.Security.sanitize_mapping/2` (wired into `AshR2RML.Compiler.compile_resources/1`) strips any R2RML-mapped attribute that carries an explicit `field_policy` from the mapping *before* it can be rendered or handed to Ontop — the exclusion is recorded in `mapping.metadata[:field_policy_excluded_attributes]` for auditability. This is a structural exclusion, not a refusal gate: it never blocks compilation, and it deliberately does not attempt to distinguish an unconditional `authorize_if always()` policy from a genuinely conditional one.
+`AshR2RML.Security.sanitize_mapping/2` (wired into `AshR2RML.Compiler.compile_resources/1`) strips any R2RML-mapped attribute that carries an explicit `field_policy` from the mapping *before* it can be rendered — the exclusion is recorded in `mapping.metadata[:field_policy_excluded_attributes]` for auditability. This is a structural exclusion, not a refusal gate: it never blocks compilation, and it deliberately does not attempt to distinguish an unconditional `authorize_if always()` policy from a genuinely conditional one.
 
 ## Work / verification
 
 Follow `parse → orient → resolve → materialize → read doctrine → inspect → admit/refuse → diagnose/repair → construct → actuate → receipt → replay → standing`. Prefer the existing lawful path and smallest coherent diff. No fabricated evidence, weakened tests, acceptance mocks for real DB/OBDA claims, unrelated refactors, or unresolved production placeholders.
 
-Acceptance precedence: exact user behavior/command → live documented repository command → narrowest equivalent. Discover the current ladder from `mix.exs`, tests, CI, and release workflow at the admitted SHA rather than freezing it here. Preserve the intended progression across formatting/compilation, pure IR tests, adversarial/refusal tests, enterprise/policy cases, live OBDA integration (both Ontop+Postgres and in-process `AshR2RML.OBDA.InMemory`), package build, and release gates when those surfaces exist. CI supplements local execution; it is not truth.
+Acceptance precedence: exact user behavior/command → live documented repository command → narrowest equivalent. Discover the current ladder from `mix.exs`, tests, CI, and release workflow at the admitted SHA rather than freezing it here. Preserve the intended progression across formatting/compilation, pure IR tests, adversarial/refusal tests, enterprise/policy cases, OBDA integration (in-process `AshR2RML.OBDA.InMemory`; no JDBC), package build, and release gates when those surfaces exist. CI supplements local execution; it is not truth.
 
-As of this writing that ladder is: `mix format --check-formatted` → `mix compile --warnings-as-errors` → `mix test test/unit/` → `mix test test/adversarial/ test/negative/` → `mix test test/fortune5/` → `mix test test/adversarial/ontop_postgres_test.exs` (live Ontop 5.5 OBDA over Postgres) → `mix hex.build` → GitHub Actions `v*` tags trigger CalVer publication to Hex.pm (`.github/workflows/release.yaml`). Re-derive this from the repository rather than trusting it once it goes stale.
+As of this writing that ladder is: `mix format --check-formatted` → `mix compile --warnings-as-errors` → `mix test test/unit/` → `mix test test/adversarial/ test/negative/` → `mix test test/fortune5/` → `mix hex.build` → GitHub Actions `v*` tags trigger CalVer publication to Hex.pm (`.github/workflows/release.yaml`). Re-derive this from the repository rather than trusting it once it goes stale.
 
 ## GitHub / receipt
 
@@ -67,7 +67,7 @@ per "live tree evidence outranks stale prose" above.
 
 ```text
 Ash.Resource + r2rml/rdf DSL → AshR2RML.Mapping (IR) → Relational DB + R2RML (W3C Turtle)
-                                                     → Ontop OBDA (Postgres) | AshR2RML.OBDA.InMemory (Ash read)
+                                                     → AshR2RML.OBDA.InMemory (Ash read, actor/tenant)
 ```
 
 All compilation surfaces converge on: `AshR2RML.Mapping.{Resource, SubjectMap,
@@ -128,9 +128,8 @@ end
   Supports `materialize_many/2`/`query_many/3` for cross-resource joins via `reference_object_maps`,
   including composite-key (multi-column) `rr:joinCondition`s; a `:join_table` many-to-many shape is an explicit typed refusal, not a silent omission.
   `allow_sensitive: true` opts into materializing `sensitive?: true` attributes; the default refuses instead.
-- **`AshR2RML.OBDA.Ontop`** executes the rendered R2RML mapping against `AshPostgres.DataLayer`
-  via the Ontop CLI over JDBC. See "Query backend security" above for the security asymmetry
-  between these two surfaces.
+- **Zero JDBC**: the Ontop/JDBC adapter was removed in v26.11.24 (recoverable from `26f5f49`);
+  `test/zero_jdbc_guard_test.exs` enforces it.
 - **`AshR2RML.Compiler.compile/2`** accepts `storage_backend: :postgres | :ets` (default
   `:postgres`); `:ets` skips SQL DDL rendering (`Ash.DataLayer.Ets` needs none) without
   blocking compilation.
@@ -144,18 +143,6 @@ end
 `REFUSED_SEMANTIC_TYPE_ASH_MISMATCH`, `REFUSED_SEMANTIC_TYPE_REQUIRES_RESOURCE_PROJECTION`,
 `REFUSED_SEMANTIC_ROUND_TRIP`, `REFUSED_UNSUPPORTED_SPARQL_FEATURE`.
 
-Execution and resource-bound codes: `REFUSED_OBDA_EXECUTION` (the Ontop/OBDA engine failed or
+Execution and resource-bound codes: `REFUSED_OBDA_EXECUTION` (the OBDA engine failed or
 returned an unusable result), `REFUSED_RESOURCE_BOUND` (a request, row or size bound was exceeded;
 fail closed, never truncate silently).
-
-### Benchmarks and explanatory docs
-
-Real, reproducible benchmark numbers (compilation scaling, `AshR2RML.OBDA.InMemory` vs
-Ontop+Postgres query latency) live in `bench/RESULTS.md`, generated by
-`bench/obda_query_latency.exs`. No graph database
-or engine outside AshR2RML's own supported stack (Ash, `Ash.DataLayer.Ets`, `AshPostgres`,
-Ontop) is ever benchmarked — see `bench/README.md`.
-
-### Standing vocabulary
-
-`UNKNOWN`, `PARTIAL_ALIVE`, `ALIVE`, `BLOCKED`, `BUILD_BROKEN`, `UNSUPPORTED`, `REFUSED_<TYPE>`.
