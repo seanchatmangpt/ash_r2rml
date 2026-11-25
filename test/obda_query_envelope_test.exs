@@ -74,7 +74,6 @@ defmodule AshR2RML.OBDAQueryEnvelopeTest do
 
   setup do
     Ash.DataLayer.Ets.stop(Person)
-    on_exit(fn -> Ash.DataLayer.Ets.stop(Person) end)
     :ok
   end
 

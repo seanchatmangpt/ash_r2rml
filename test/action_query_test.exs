@@ -87,7 +87,6 @@ defmodule AshR2RML.ActionQueryTest do
 
   setup do
     Ash.DataLayer.Ets.stop(Thing)
-    on_exit(fn -> Ash.DataLayer.Ets.stop(Thing) end)
     :ok
   end
 

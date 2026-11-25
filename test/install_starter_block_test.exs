@@ -26,7 +26,7 @@ defmodule AshR2RML.InstallStarterBlockTest do
           @path => """
           defmodule AshR2RML.InstallStarterBlockTest.InstalledPost do
             use Ash.Resource,
-              domain: AshR2RML.InstallStarterBlockTest.Domain,
+              domain: nil,
               data_layer: Ash.DataLayer.Ets
 
             actions do
