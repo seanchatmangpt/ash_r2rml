@@ -24,6 +24,7 @@ defmodule AshR2RML.Red2PaginatedOffsetTest do
 
   defmodule OffsetReq do
     use Ash.Resource,
+      primary_read_warning?: false,
       domain: AshR2RML.Red2PaginatedOffsetTest.Domain,
       data_layer: Ash.DataLayer.Ets
 
@@ -53,6 +54,7 @@ defmodule AshR2RML.Red2PaginatedOffsetTest do
 
   defmodule KeysetReq do
     use Ash.Resource,
+      primary_read_warning?: false,
       domain: AshR2RML.Red2PaginatedOffsetTest.Domain,
       data_layer: Ash.DataLayer.Ets
 

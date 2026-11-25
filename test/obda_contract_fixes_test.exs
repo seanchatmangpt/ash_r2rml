@@ -155,8 +155,12 @@ defmodule AshR2RML.OBDAContractFixesTest do
       test "#{key}: #{inspect(bad)} is refused with a typed refusal" do
         opts = [{:domain, Domain}, {unquote(key), unquote(bad)}]
 
-        assert {:error, %Error{code: :REFUSED_INVALID_OPTION}} =
+        assert {:error, %Error{code: :REFUSED_INVALID_OPTION, details: details}} =
                  OBDA.query(title_specs(), select(@title_pred), opts)
+
+        # The OBDA envelope itself validates the bound (the worker would also refuse
+        # timeout_ms / max_heap_words later, with a different detail shape).
+        assert details.subject == "option #{unquote(key)}"
       end
     end
 

@@ -10,5 +10,6 @@
 [
   {"lib/ash_r2rml/obda_in_memory.ex", :pattern_match},
   {"lib/ash_r2rml/obda_in_memory.ex", :pattern_match_cov},
-  {"lib/ash_r2rml/action/query.ex", :pattern_match}
+  {"lib/ash_r2rml/action/query.ex", :pattern_match},
+  {"lib/ash_r2rml/sparql/local.ex", :pattern_match_cov}
 ]

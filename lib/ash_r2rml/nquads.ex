@@ -66,32 +66,18 @@ defmodule AshR2RML.NQuads do
   Like `serialize/2` but returns the sorted, de-duplicated lines (without newlines).
 
   Option `:max` bounds the number of input quads; over it the call is refused with
-  `:REFUSED_RESOURCE_BOUND` before any line is built. Default: unbounded.
+  `:REFUSED_RESOURCE_BOUND` before any line is built. Default: 1_000_000 items and 64 MiB (`:max`, `:max_bytes`; `:infinity` opts out).
   """
   @spec lines([quad()], keyword()) :: {:ok, [String.t()]} | {:error, Refusal.t()}
   def lines(quads, opts \\ []) when is_list(quads) and is_list(opts) do
-    with :ok <- check_bound(quads, Keyword.get(opts, :max)),
+    with :ok <- check_bound(quads, opts),
          {:ok, acc} <- collect_lines(quads) do
       {:ok, acc |> Enum.uniq() |> Enum.sort()}
     end
   end
 
-  defp check_bound(_quads, nil), do: :ok
-
-  defp check_bound(quads, max) when is_integer(max) and max >= 0 do
-    count = length(quads)
-
-    if count > max do
-      {:error,
-       Refusal.new(
-         :REFUSED_RESOURCE_BOUND,
-         :nquads,
-         "quad count #{count} exceeds max #{max}",
-         %{count: count, max: max}
-       )}
-    else
-      :ok
-    end
+  defp check_bound(quads, opts) do
+    AshR2RML.MaterializationBound.check(:nquads, "quad", length(quads), quads, opts)
   end
 
   defp collect_lines(quads) do

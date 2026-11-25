@@ -160,7 +160,11 @@ defmodule AshR2RML.OBDA.InMemory do
 
         {{:ok, dataset}, %RDF.Graph{} = old_graph} ->
           graph = union_graph(dataset)
-          {:ok, %{graph: graph, delta: AshR2RML.Delta.diff(old_graph, graph)}}
+
+          case AshR2RML.Delta.diff(old_graph, graph) do
+            {:error, refusal} -> {:error, refusal}
+            delta -> {:ok, %{graph: graph, delta: delta}}
+          end
 
         {{:error, refusal}, _} ->
           {:error, refusal}

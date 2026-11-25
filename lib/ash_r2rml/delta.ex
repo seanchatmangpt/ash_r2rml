@@ -111,10 +111,8 @@ defmodule AshR2RML.Delta do
   """
   @spec diff(RDF.Graph.t(), RDF.Graph.t(), keyword()) :: t() | {:error, AshR2RML.Refusal.t()}
   def diff(%RDF.Graph{} = old_graph, %RDF.Graph{} = new_graph, opts \\ []) when is_list(opts) do
-    max = Keyword.get(opts, :max)
-
-    with :ok <- check_bound(old_graph, max),
-         :ok <- check_bound(new_graph, max) do
+    with :ok <- check_bound(old_graph, opts),
+         :ok <- check_bound(new_graph, opts) do
       old_set = triple_set(old_graph)
       new_set = triple_set(new_graph)
 
@@ -127,22 +125,14 @@ defmodule AshR2RML.Delta do
     end
   end
 
-  defp check_bound(_graph, nil), do: :ok
-
-  defp check_bound(%RDF.Graph{} = graph, max) when is_integer(max) and max >= 0 do
-    count = RDF.Graph.triple_count(graph)
-
-    if count > max do
-      {:error,
-       AshR2RML.Refusal.new(
-         :REFUSED_RESOURCE_BOUND,
-         :delta,
-         "triple count #{count} exceeds max #{max}",
-         %{count: count, max: max}
-       )}
-    else
-      :ok
-    end
+  defp check_bound(%RDF.Graph{} = graph, opts) do
+    AshR2RML.MaterializationBound.check(
+      :delta,
+      "triple",
+      RDF.Graph.triple_count(graph),
+      graph,
+      opts
+    )
   end
 
   @doc """
@@ -152,7 +142,7 @@ defmodule AshR2RML.Delta do
   """
   @spec root_digest(RDF.Graph.t(), keyword()) :: String.t() | {:error, AshR2RML.Refusal.t()}
   def root_digest(%RDF.Graph{} = graph, opts \\ []) when is_list(opts) do
-    with :ok <- check_bound(graph, Keyword.get(opts, :max)) do
+    with :ok <- check_bound(graph, opts) do
       {:ok, ntriples} = RDF.NTriples.Encoder.encode(graph, sort: true)
       "sha256:" <> Base.encode16(:crypto.hash(:sha256, ntriples), case: :lower)
     end

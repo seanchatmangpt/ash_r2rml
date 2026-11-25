@@ -89,6 +89,7 @@ defmodule AshR2RML.Red2InmemoryPerfTest do
 
   defmodule Paged do
     use Ash.Resource,
+      primary_read_warning?: false,
       domain: AshR2RML.Red2InmemoryPerfTest.Domain,
       data_layer: Ash.DataLayer.Ets
 
@@ -101,7 +102,7 @@ defmodule AshR2RML.Red2InmemoryPerfTest do
 
       read :read do
         primary?(true)
-        pagination(offset?: true, required?: true, default_limit: 50, max_page_size: 50)
+        pagination(offset?: true, required?: true, default_limit: 500, max_page_size: 500)
         prepare(build(sort: [key: :asc]))
       end
     end
@@ -114,6 +115,7 @@ defmodule AshR2RML.Red2InmemoryPerfTest do
 
   defmodule Counted do
     use Ash.Resource,
+      primary_read_warning?: false,
       domain: AshR2RML.Red2InmemoryPerfTest.Domain,
       data_layer: Ash.DataLayer.Ets
 

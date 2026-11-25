@@ -34,6 +34,7 @@ defmodule AshR2RML.RedBoundsWorkerTest do
 
   defmodule Exploder do
     use Ash.Resource,
+      primary_read_warning?: false,
       domain: AshR2RML.RedBoundsWorkerTest.Domain,
       data_layer: Ash.DataLayer.Ets
 

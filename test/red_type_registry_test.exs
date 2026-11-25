@@ -26,7 +26,9 @@ defmodule AshR2RML.RedTypeRegistryTest do
     def cast_stored(v, _), do: {:ok, v}
     @impl Ash.Type
     def dump_to_native(v, _), do: {:ok, v}
+    @impl AshR2RML.Type
     def to_rdf_lexical(v), do: to_string(v)
+    @impl AshR2RML.Type
     def from_rdf_lexical(v), do: {:ok, v}
   end
 
@@ -42,7 +44,9 @@ defmodule AshR2RML.RedTypeRegistryTest do
     def cast_stored(v, _), do: {:ok, v}
     @impl Ash.Type
     def dump_to_native(v, _), do: {:ok, v}
+    @impl AshR2RML.Type
     def to_rdf_lexical(v), do: to_string(v)
+    @impl AshR2RML.Type
     def from_rdf_lexical(v), do: {:ok, v}
   end
 

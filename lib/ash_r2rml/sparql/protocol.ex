@@ -391,7 +391,7 @@ defmodule AshR2RML.SPARQL.Protocol do
 
     with :ok <- validate_max_rows(endpoint, max_rows),
          {:ok, admitted} <- Query.admit(query),
-         {:ok, result_kind, rows} <- fetch(admitted, endpoint, opts, client_fun),
+         {:ok, result_kind, rows} <- fetch(admitted, endpoint, opts, client_fun, max_rows),
          {:ok, result_kind, rows} <-
            Result.bound({:ok, result_kind, rows}, endpoint, max_rows) do
       {:ok,
@@ -426,7 +426,7 @@ defmodule AshR2RML.SPARQL.Protocol do
   # The client call and response normalization run in a heap-capped, monitored
   # worker (remote response parsing is isolated from the caller). Only transport
   # and parse boundary exceptions are refused; anything else is re-raised here.
-  defp fetch(admitted, endpoint, opts, client_fun) do
+  defp fetch(admitted, endpoint, opts, client_fun, max_rows) do
     timeout =
       case Keyword.get(opts, :timeout, @default_timeout_ms) do
         t when is_integer(t) and t > 0 -> t
@@ -435,7 +435,7 @@ defmodule AshR2RML.SPARQL.Protocol do
 
     worker_opts = [timeout_ms: timeout + @worker_grace_ms, max_heap_words: @max_heap_words]
 
-    case Worker.call(fn -> call_client(admitted, endpoint, opts, client_fun) end, worker_opts) do
+    case Worker.call(fn -> call_client(admitted, endpoint, opts, client_fun, max_rows) end, worker_opts) do
       {:ok, {:boundary_error, exception}} ->
         {:error,
          Refusal.new(
@@ -462,10 +462,17 @@ defmodule AshR2RML.SPARQL.Protocol do
     end
   end
 
-  defp call_client(admitted, endpoint, opts, client_fun) do
+  # The row bound is enforced here, inside the worker, so an oversized result is refused
+  # before it is copied across the process boundary into the caller's heap.
+  defp call_client(admitted, endpoint, opts, client_fun, max_rows) do
     case client_fun.(admitted.parsed, endpoint, opts) do
-      {:ok, result} -> Result.normalize(result)
-      other -> other
+      {:ok, result} ->
+        with {:ok, kind, rows} <- Result.normalize(result) do
+          Result.bound({:ok, kind, rows}, endpoint, max_rows)
+        end
+
+      other ->
+        other
     end
   rescue
     exception in [Tesla.Error, Elixir.SPARQL.Client.HTTPError, ArgumentError, RuntimeError] ->

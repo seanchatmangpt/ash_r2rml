@@ -25,6 +25,9 @@ Items marked UNVERIFIED have source present but no test run by the docs lane.
 * Unsupported `ORDER BY` expressions are refused instead of silently left unsorted.
 * `QueryBuilder.build_ash_query/3` and `pushdown_query/4` return `{:ok, query} | {:error, _}`.
 * ETS resources with an explicit `ets do table ... end` infer their logical table.
+* `Parity`, `Delta` and `NQuads` refuse oversized input by default (1,000,000 items, 64 MiB;
+  `:max`, `:max_bytes`, `:infinity` opt-out). `SPARQL.Local` and `SPARQL.Protocol` apply the row
+  bound inside the worker. `Resource.Persist` runs after every non-AshR2RML transformer.
 * Known gaps: Credo not clean; no external OBDA engine verified; SSRF DNS-rebind window in
   `SPARQL.Protocol`; `max_heap_size` does not bound refc binaries.
 

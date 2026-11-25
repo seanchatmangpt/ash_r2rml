@@ -37,12 +37,15 @@ defmodule AshR2RML.SPARQL.Local do
     ]
 
     with {:ok, admitted} <- Query.admit(query) do
-      case Worker.call(fn -> execute(data, admitted) end, worker_opts) do
+      case Worker.call(fn -> execute_bounded(data, admitted, max_rows) end, worker_opts) do
         {:ok, {:boundary_error, exception}} ->
           {:error, execution_refusal(admitted, exception)}
 
+        {:ok, {:bound_refused, refusal}} ->
+          {:error, refusal}
+
         {:ok, normalized} ->
-          observe(admitted, normalized, max_rows)
+          observe(admitted, normalized)
 
         {:raised, kind, reason, stacktrace} ->
           :erlang.raise(kind, reason, stacktrace)
@@ -50,6 +53,20 @@ defmodule AshR2RML.SPARQL.Local do
         {:error, %AshR2RML.Error{code: code, message: message}} ->
           {:error, bound_refusal(admitted, code, message)}
       end
+    end
+  end
+
+  # Result.bound runs in the worker so an oversized result never crosses the process boundary.
+  defp execute_bounded(data, admitted, max_rows) do
+    case execute(data, admitted) do
+      {:boundary_error, _} = boundary ->
+        boundary
+
+      normalized ->
+        case Result.bound(normalized, :local_sparql_execution, max_rows) do
+          {:ok, kind, rows} -> {:ok, kind, rows}
+          {:error, refusal} -> {:bound_refused, refusal}
+        end
     end
   end
 
@@ -63,8 +80,8 @@ defmodule AshR2RML.SPARQL.Local do
       {:boundary_error, exception}
   end
 
-  defp observe(admitted, normalized, max_rows) do
-    with {:ok, result_kind, rows} <- Result.bound(normalized, :local_sparql_execution, max_rows) do
+  defp observe(admitted, {:ok, result_kind, rows}) do
+    with {:ok, result_kind, rows} <- {:ok, result_kind, rows} do
       {:ok,
        %Observation{
          strategy: :local_rdf,

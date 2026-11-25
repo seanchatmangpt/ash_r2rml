@@ -77,35 +77,21 @@ defmodule AshR2RML.Parity do
   `metadata` keys may be atoms or strings. `verified?` is true when the normalized
   multisets are equal; `observed?` follows the rule in the moduledoc. Option `:max`
   bounds each side's row count; over it the call returns
-  `{:error, %AshR2RML.Refusal{code: :REFUSED_RESOURCE_BOUND}}`. Default: unbounded.
+  `{:error, %AshR2RML.Refusal{code: :REFUSED_RESOURCE_BOUND}}`. Default: 1_000_000 items and 64 MiB (`:max`, `:max_bytes`; `:infinity` opts out).
   """
   @spec compare(:sparql_sql, term(), list(), list(), map(), keyword()) ::
           ParityReceipt.t() | {:error, AshR2RML.Refusal.t()}
   def compare(kind, subject, left_rows, right_rows, metadata \\ %{}, opts \\ [])
       when kind == :sparql_sql and is_list(left_rows) and is_list(right_rows) and
              is_list(opts) do
-    with :ok <- check_bound(left_rows, :left, Keyword.get(opts, :max)),
-         :ok <- check_bound(right_rows, :right, Keyword.get(opts, :max)) do
+    with :ok <- check_bound(left_rows, :left, opts),
+         :ok <- check_bound(right_rows, :right, opts) do
       do_compare(kind, subject, left_rows, right_rows, metadata)
     end
   end
 
-  defp check_bound(_rows, _side, nil), do: :ok
-
-  defp check_bound(rows, side, max) when is_integer(max) and max >= 0 do
-    count = length(rows)
-
-    if count > max do
-      {:error,
-       AshR2RML.Refusal.new(
-         :REFUSED_RESOURCE_BOUND,
-         :parity,
-         "#{side} row count #{count} exceeds max #{max}",
-         %{side: side, count: count, max: max}
-       )}
-    else
-      :ok
-    end
+  defp check_bound(rows, side, opts) do
+    AshR2RML.MaterializationBound.check(:parity, "#{side} row", length(rows), rows, opts)
   end
 
   defp do_compare(kind, subject, left_rows, right_rows, metadata) do
