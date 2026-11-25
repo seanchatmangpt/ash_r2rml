@@ -228,7 +228,7 @@ mutate M13c "endpoint host vet skipped (private hosts always admitted)" \
 
 mutate M13d "federated Result.bound max_rows guard disabled" \
   "$PROTOCOL" test/sparql_result_parity_test.exs \
-  's/Result\.bound\(\{:ok, result_kind, rows\}, endpoint, max_rows\)/Result.bound({:ok, result_kind, rows}, endpoint, max_rows * 1_000_000)/'
+  's/Result\.bound\(\{:ok, (result_kind|kind), rows\}, endpoint, max_rows\)/Result.bound({:ok, $1, rows}, endpoint, max_rows * 1_000_000)/'
 
 # M14: fail-closed refusals (endpoint userinfo/fragment/query, unresolved DNS, triple budget).
 mutate M14a "endpoint userinfo/fragment/query refusal clause never matches" \
