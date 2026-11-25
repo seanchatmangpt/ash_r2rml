@@ -109,8 +109,8 @@ EOF
 
 # M1: sensitive/forbidden-field omission. Forbidden or sensitive data must be omitted/refused.
 mutate M1a "field-policy omission (readable/1 leaks ForbiddenField)" \
-  "$IN_MEMORY" test/obda_in_memory_field_policy_denial_test.exs \
-  's/^(\s*)defp readable\(%Ash\.ForbiddenField\{\}\), do: nil/$1defp readable(%Ash.ForbiddenField{}), do: "MUTANT-LEAK"/'
+  "lib/ash_r2rml/obda_in_memory/iri_template.ex" test/obda_in_memory_field_policy_denial_test.exs \
+  's/^(\s*)def readable\(%Ash\.ForbiddenField\{\}\), do: nil/$1def readable(%Ash.ForbiddenField{}), do: "MUTANT-LEAK"/'
 
 mutate M1b "sensitive_attribute?/2 always false (sensitive attribute materialized)" \
   "$IN_MEMORY" test/obda_in_memory_sensitive_coverage_test.exs \
