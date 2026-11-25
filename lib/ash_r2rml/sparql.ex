@@ -81,13 +81,19 @@ defmodule AshR2RML.SPARQL.Query do
            )}
       end
     rescue
-      exception ->
+      exception in [
+        ArgumentError,
+        FunctionClauseError,
+        MatchError,
+        RuntimeError,
+        Protocol.UndefinedError
+      ] ->
         {:error,
          Refusal.new(
            :REFUSED_UNPROVEN_EQUIVALENCE,
            :sparql_query,
            "SPARQL.ex raised during language admission",
-           %{reason: Exception.message(exception)}
+           %{reason: Exception.message(exception), exception: inspect(exception.__struct__)}
          )}
     end
   end
@@ -199,13 +205,13 @@ defmodule AshR2RML.SPARQL.Result do
       rows = data |> RDF.Data.statements() |> Enum.map(&normalize_statement/1)
       {:ok, :rdf, rows}
     rescue
-      _ ->
+      exception in [ArgumentError, FunctionClauseError, Protocol.UndefinedError] ->
         {:error,
          Refusal.new(
            :REFUSED_UNPROVEN_EQUIVALENCE,
            :sparql_result,
            "unsupported SPARQL result shape",
-           %{result: inspect(data)}
+           %{result: inspect(data), exception: inspect(exception.__struct__)}
          )}
     end
   end

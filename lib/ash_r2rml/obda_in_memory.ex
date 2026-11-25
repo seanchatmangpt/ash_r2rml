@@ -1259,14 +1259,21 @@ defmodule AshR2RML.OBDA.InMemory do
   defp substitute_field(%SubjectMap{strategy: :template, value: template}, field, value) do
     placeholder = "{#{field}}"
 
-    if String.contains?(template, placeholder) do
-      String.replace(template, placeholder, percent_encode_iri_value(to_string(value)))
+    with true <- String.contains?(template, placeholder),
+         {:ok, lex} <- lexical(value) do
+      String.replace(template, placeholder, percent_encode_iri_value(lex))
     else
-      nil
+      _ -> nil
     end
   end
 
-  defp substitute_field(%SubjectMap{strategy: :column}, _field, value), do: to_string(value)
+  defp substitute_field(%SubjectMap{strategy: :column}, _field, value) do
+    case lexical(value) do
+      {:ok, lex} -> lex
+      :error -> nil
+    end
+  end
+
   defp substitute_field(_subject_map, _field, _value), do: nil
 
   # The mapping's declared datatype wins: typed literals are what make numeric/temporal FILTERs and
@@ -1337,5 +1344,10 @@ defmodule AshR2RML.OBDA.InMemory do
   defp value_kind(_value), do: "term"
 
   defp safe_atom(value) when is_atom(value), do: value
-  defp safe_atom(value) when is_binary(value), do: String.to_existing_atom(value)
+
+  defp safe_atom(value) when is_binary(value) do
+    String.to_existing_atom(value)
+  rescue
+    ArgumentError -> nil
+  end
 end
