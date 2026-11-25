@@ -2,7 +2,6 @@
 #
 # SPDX-License-Identifier: MIT
 
-
 defmodule AshR2RML.RefactorW12OrderAnchorTest do
   use ExUnit.Case, async: true
 
