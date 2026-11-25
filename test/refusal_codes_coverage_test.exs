@@ -113,8 +113,12 @@ defmodule AshR2RML.RefusalCodesCoverageTest do
     )
   end
 
-  defp refusals({:error, list}) when is_list(list), do: list
-  defp refusals({:error, %Refusal{} = r}), do: [r]
+  defp refusals(result), do: flatten_refusals(result)
+
+  defp flatten_refusals(%Refusal{} = r), do: [r]
+  defp flatten_refusals(t) when is_tuple(t), do: t |> Tuple.to_list() |> flatten_refusals()
+  defp flatten_refusals(l) when is_list(l), do: Enum.flat_map(l, &flatten_refusals/1)
+  defp flatten_refusals(_), do: []
 
   defp refusal_with(list, code, substring) do
     Enum.find(list, fn r -> r.code == code and String.contains?(r.detail, substring) end)

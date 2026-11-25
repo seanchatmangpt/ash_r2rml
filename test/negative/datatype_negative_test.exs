@@ -19,10 +19,12 @@ defmodule AshR2RML.Negative.DatatypeNegativeTest do
     # Arbitrary module that does NOT implement Ash.Type or AshR2RML.Type
   end
 
-  defp extract_refusals({:error, refusals}) when is_list(refusals), do: refusals
-  defp extract_refusals({:error, %Refusal{} = refusal}), do: [refusal]
-  defp extract_refusals(refusals) when is_list(refusals), do: refusals
-  defp extract_refusals(_), do: []
+  defp extract_refusals(result), do: flatten_refusals(result)
+
+  defp flatten_refusals(%Refusal{} = r), do: [r]
+  defp flatten_refusals(t) when is_tuple(t), do: t |> Tuple.to_list() |> flatten_refusals()
+  defp flatten_refusals(l) when is_list(l), do: Enum.flat_map(l, &flatten_refusals/1)
+  defp flatten_refusals(_), do: []
 
   describe "UNSUPPORTED_ASH_TYPE" do
     test "refuses to resolve an unknown custom struct type" do
