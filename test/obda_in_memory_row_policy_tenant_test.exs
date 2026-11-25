@@ -75,7 +75,7 @@ defmodule AshR2RML.OBDA.InMemoryRowPolicyTenantTest do
     end
   end
 
-  @title_pred "https://example.org/title"
+  @title_pred "https://schema.org/name"
   @string "http://www.w3.org/2001/XMLSchema#string"
 
   defp mapping(resource, table, template) do
@@ -100,8 +100,8 @@ defmodule AshR2RML.OBDA.InMemoryRowPolicyTenantTest do
     }
   end
 
-  defp note_mapping, do: mapping(Note, "notes", "https://example.org/notes/{title}")
-  defp tenant_mapping, do: mapping(TenantNote, "tenant_notes", "https://example.org/tnotes/{title}")
+  defp note_mapping, do: mapping(Note, "notes", "urn:uuid:{title}")
+  defp tenant_mapping, do: mapping(TenantNote, "tenant_notes", "urn:uuid:{title}")
 
   @select "SELECT ?s ?t WHERE { ?s <#{@title_pred}> ?t }"
 
@@ -139,10 +139,10 @@ defmodule AshR2RML.OBDA.InMemoryRowPolicyTenantTest do
     test "each actor sees exactly the rows its policy admits" do
       assert {:ok, alice} = InMemory.query(Note, note_mapping(), @select, domain: Domain, actor: %{name: "alice"})
 
-      assert subjects(alice) == ["https://example.org/notes/alpha", "https://example.org/notes/beta"]
+      assert subjects(alice) == ["urn:uuid:alpha", "urn:uuid:beta"]
 
       assert {:ok, bob} = InMemory.query(Note, note_mapping(), @select, domain: Domain, actor: %{name: "bob"})
-      assert subjects(bob) == ["https://example.org/notes/gamma"]
+      assert subjects(bob) == ["urn:uuid:gamma"]
     end
 
     test "an actor owning no rows gets zero bindings" do
@@ -155,13 +155,13 @@ defmodule AshR2RML.OBDA.InMemoryRowPolicyTenantTest do
       assert {:ok, control} =
                InMemory.query(Note, note_mapping(), @select, domain: Domain, actor: %{name: "bob"})
 
-      assert subjects(control) == ["https://example.org/notes/gamma"]
+      assert subjects(control) == ["urn:uuid:gamma"]
     end
 
     test "materialize graph for alice contains only alice's subjects" do
       assert {:ok, graph} = InMemory.materialize(Note, note_mapping(), domain: Domain, actor: %{name: "alice"})
 
-      assert subjects_of_graph(graph) == ["https://example.org/notes/alpha", "https://example.org/notes/beta"]
+      assert subjects_of_graph(graph) == ["urn:uuid:alpha", "urn:uuid:beta"]
     end
   end
 
@@ -178,26 +178,25 @@ defmodule AshR2RML.OBDA.InMemoryRowPolicyTenantTest do
 
     test "tenant A sees only A's triples, tenant B only B's (query)" do
       assert {:ok, a} = InMemory.query(TenantNote, tenant_mapping(), @select, domain: Domain, tenant: "A")
-      assert subjects(a) == ["https://example.org/tnotes/a1", "https://example.org/tnotes/a2"]
+      assert subjects(a) == ["urn:uuid:a1", "urn:uuid:a2"]
 
       assert {:ok, b} = InMemory.query(TenantNote, tenant_mapping(), @select, domain: Domain, tenant: "B")
-      assert subjects(b) == ["https://example.org/tnotes/b1"]
+      assert subjects(b) == ["urn:uuid:b1"]
     end
 
     test "materialize scopes the graph per tenant" do
       assert {:ok, graph_a} = InMemory.materialize(TenantNote, tenant_mapping(), domain: Domain, tenant: "A")
-      assert subjects_of_graph(graph_a) == ["https://example.org/tnotes/a1", "https://example.org/tnotes/a2"]
+      assert subjects_of_graph(graph_a) == ["urn:uuid:a1", "urn:uuid:a2"]
 
       assert {:ok, graph_b} = InMemory.materialize(TenantNote, tenant_mapping(), domain: Domain, tenant: "B")
-      assert subjects_of_graph(graph_b) == ["https://example.org/tnotes/b1"]
+      assert subjects_of_graph(graph_b) == ["urn:uuid:b1"]
     end
 
     test "no tenant is refused fail-closed (Ash raises TenantRequired; InMemory rescues into a refusal)" do
-      assert {:error, %AshR2RML.Refusal{code: :REFUSED_UNSUPPORTED_SPARQL_FEATURE, subject: TenantNote} = refusal} =
+      assert {:error, %AshR2RML.Error{code: :REFUSED_MISSING_TENANT, resource: TenantNote} = error} =
                InMemory.query(TenantNote, tenant_mapping(), @select, domain: Domain)
 
-      assert refusal.detail =~ "fail-closed"
-      assert refusal.evidence.error_class =~ "Invalid"
+      assert error.details.error_class =~ "Invalid"
     end
   end
 end

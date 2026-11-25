@@ -42,7 +42,7 @@ defmodule AshR2RML.OBDA.InMemoryCanonicalOrderTest do
     end
   end
 
-  @pred "https://example.org/name"
+  @pred "http://schema.org/name"
   @string "http://www.w3.org/2001/XMLSchema#string"
   @names ["mango", "zebra", "apple", "kiwi", "banana"]
 
@@ -50,7 +50,7 @@ defmodule AshR2RML.OBDA.InMemoryCanonicalOrderTest do
     %Resource{
       ash_resource: Item,
       logical_table: %LogicalTable{table_name: "items"},
-      subject_map: %SubjectMap{strategy: :template, value: "https://example.org/i/{name}", term_type: :iri},
+      subject_map: %SubjectMap{strategy: :template, value: "urn:uuid:{name}", term_type: :iri},
       class_iris: [],
       predicate_object_maps: [
         %PredicateObjectMap{

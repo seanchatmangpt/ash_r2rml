@@ -123,7 +123,7 @@ defmodule AshR2RML.Fortune5.SagaOrchestrator.Steps.ProvisionGreenNodeStep do
       {:ok,
        %{
          status: :green_provisioned,
-         green_endpoint: "https://green-cluster.fortune5.internal/v2",
+         green_endpoint: "https://schema.org/green-cluster-v2",
          replicas: 4,
          cluster_id: arguments[:cluster_id]
        }}
@@ -414,7 +414,7 @@ end
 
 defmodule AshR2RML.Fortune5.SagaOrchestrator.Steps.RolloutDualAuthStep do
   @moduledoc """
-  Saga Step: Enables dual-authentication mode accepting both legacy and newly generated keys.
+  Saga Step: Enables dual-authentication mode accepting both prior and newly generated keys.
   """
   use Reactor.Step
   alias AshR2RML.Fortune5.SagaOrchestrator.ExecutionRecorder
@@ -490,7 +490,7 @@ end
 
 defmodule AshR2RML.Fortune5.SagaOrchestrator.Steps.RevokeOldKeysStep do
   @moduledoc """
-  Saga Step: Formally revokes legacy keys from the authorization registry.
+  Saga Step: Formally revokes prior keys from the authorization registry.
   """
   use Reactor.Step
   alias AshR2RML.Fortune5.SagaOrchestrator.ExecutionRecorder
@@ -502,11 +502,11 @@ defmodule AshR2RML.Fortune5.SagaOrchestrator.Steps.RevokeOldKeysStep do
     ExecutionRecorder.record({:run, :revoke_old_keys, arguments})
 
     if fault in [:revoke_old_keys, "revoke_old_keys"] do
-      {:error, {:injected_fault, :revoke_old_keys, "Legacy key revocation transaction aborted"}}
+      {:error, {:injected_fault, :revoke_old_keys, "Prior key revocation transaction aborted"}}
     else
       {:ok,
        %{
-         revocation_status: :legacy_keys_revoked,
+         revocation_status: :prior_keys_revoked,
          revoked_key_id: arguments[:old_key_id],
          active_key_id: arguments[:new_key_info][:key_id],
          completed_at: System.system_time(:millisecond)
@@ -623,8 +623,8 @@ defmodule AshR2RML.Fortune5.SagaOrchestrator.CredentialRotationReactor do
   1. Generate new KMS asymmetric key pair and secret token.
   2. Roll out dual-authentication policy to auth gateways.
   3. Execute synthetic validation probes using newly issued credentials.
-  4. Revoke and archive legacy credentials.
-  Compensates/Rolls back to legacy single-auth key state on validation failure.
+  4. Revoke and archive prior credentials.
+  Compensates/Rolls back to prior single-auth key state on validation failure.
   """
   use Reactor
 

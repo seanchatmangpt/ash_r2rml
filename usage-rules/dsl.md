@@ -8,7 +8,7 @@ The DSL describes semantic information that Ash and the active data layer cannot
 r2rml do
   class "https://schema.org/Person"
 
-  subject template: "https://example.org/people/{id}", term_type: :iri
+  subject template: "urn:uuid:{id}", term_type: :iri
 end
 ```
 
@@ -41,7 +41,7 @@ Representative options:
 
 ```elixir
 r2rml do
-  property :amount, "https://example.org/amount",
+  property :amount, "https://schema.org/price",
     datatype: "http://www.w3.org/2001/XMLSchema#decimal",
     term_type: :literal
 end

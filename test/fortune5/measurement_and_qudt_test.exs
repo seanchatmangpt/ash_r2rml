@@ -8,10 +8,10 @@ defmodule AshR2RML.Fortune5.MeasurementAndQUDTTest do
 
   Exercises:
   1. Strict QUDT (Quantities, Units, Dimensions and Data Types) ontology bindings:
-     - `unit:MilliSEC` (http://qudt.org/vocab/unit/MilliSEC)
-     - `unit:PERCENT` (http://qudt.org/vocab/unit/PERCENT)
-     - `unit:MegaBYTE` (http://qudt.org/vocab/unit/MegaBYTE)
-     - `unit:NUM-PER-SEC` (http://qudt.org/vocab/unit/NUM-PER-SEC)
+     - `unit:MilliSEC` (https://schema.org/Millisecond)
+     - `unit:PERCENT` (https://schema.org/Percent)
+     - `unit:MegaBYTE` (https://schema.org/Megabyte)
+     - `unit:NUM-PER-SEC` (https://schema.org/RequestsPerSecond)
   2. Custom Ash scalar types implementing `AshR2RML.Type` behaviour with QUDT datatypes.
   3. Explicit datatype resolution through `AshR2RML.Datatype.Registry`.
   4. R2RML PredicateObjectMap generation with explicit `rr:datatype` pointing to QUDT units.
@@ -30,7 +30,7 @@ defmodule AshR2RML.Fortune5.MeasurementAndQUDTTest do
 
   defmodule QudtMilliSeconds do
     use Ash.Type
-    use AshR2RML.Type, xsd_datatype: "http://qudt.org/vocab/unit/MilliSEC"
+    use AshR2RML.Type, xsd_datatype: "https://schema.org/Millisecond"
 
     @impl Ash.Type
     def storage_type(_), do: :decimal
@@ -57,7 +57,7 @@ defmodule AshR2RML.Fortune5.MeasurementAndQUDTTest do
 
   defmodule QudtPercentage do
     use Ash.Type
-    use AshR2RML.Type, xsd_datatype: "http://qudt.org/vocab/unit/PERCENT"
+    use AshR2RML.Type, xsd_datatype: "https://schema.org/Percent"
 
     @impl Ash.Type
     def storage_type(_), do: :float
@@ -134,25 +134,19 @@ defmodule AshR2RML.Fortune5.MeasurementAndQUDTTest do
 
     r2rml do
       table_name("apm_latency_metrics")
-      class("https://telemetry.fortune5.com/ontology/LatencyMetric")
+      class("https://schema.org/LatencyMetric")
 
       subject do
-        template("https://telemetry.fortune5.com/services/{service_name}/latency/{metric_window}")
+        template("urn:uuid:{service_name}/latency/{metric_window}")
       end
 
-      property(:service_name, "https://telemetry.fortune5.com/ontology/serviceName")
+      property(:service_name, "https://schema.org/serviceName")
 
-      property(:p50_latency_ms, "https://telemetry.fortune5.com/ontology/p50Latency",
-        datatype: "http://qudt.org/vocab/unit/MilliSEC"
-      )
+      property(:p50_latency_ms, "https://schema.org/p50Latency", datatype: "https://schema.org/Millisecond")
 
-      property(:p90_latency_ms, "https://telemetry.fortune5.com/ontology/p90Latency",
-        datatype: "http://qudt.org/vocab/unit/MilliSEC"
-      )
+      property(:p90_latency_ms, "https://schema.org/p90Latency", datatype: "https://schema.org/Millisecond")
 
-      property(:p99_latency_ms, "https://telemetry.fortune5.com/ontology/p99Latency",
-        datatype: "http://qudt.org/vocab/unit/MilliSEC"
-      )
+      property(:p99_latency_ms, "https://schema.org/p99Latency", datatype: "https://schema.org/Millisecond")
     end
   end
 
@@ -181,21 +175,19 @@ defmodule AshR2RML.Fortune5.MeasurementAndQUDTTest do
 
     r2rml do
       table_name("apm_throughput_metrics")
-      class("https://telemetry.fortune5.com/ontology/ThroughputMetric")
+      class("https://schema.org/ThroughputMetric")
 
       subject do
-        template("https://telemetry.fortune5.com/services/{service_name}/throughput")
+        template("urn:uuid:{service_name}/throughput")
       end
 
-      property(:service_name, "https://telemetry.fortune5.com/ontology/serviceName")
+      property(:service_name, "https://schema.org/serviceName")
 
-      property(:requests_per_sec, "https://telemetry.fortune5.com/ontology/requestsPerSecond",
-        datatype: "http://qudt.org/vocab/unit/NUM-PER-SEC"
+      property(:requests_per_sec, "https://schema.org/requestsPerSecond",
+        datatype: "https://schema.org/RequestsPerSecond"
       )
 
-      property(:bandwidth_mb, "https://telemetry.fortune5.com/ontology/bandwidthRate",
-        datatype: "http://qudt.org/vocab/unit/MegaBYTE"
-      )
+      property(:bandwidth_mb, "https://schema.org/bandwidthRate", datatype: "https://schema.org/Megabyte")
     end
   end
 
@@ -227,21 +219,17 @@ defmodule AshR2RML.Fortune5.MeasurementAndQUDTTest do
 
     r2rml do
       table_name("apm_slo_metrics")
-      class("https://telemetry.fortune5.com/ontology/SLOAvailabilityMetric")
+      class("https://schema.org/SLOAvailabilityMetric")
 
       subject do
-        template("https://telemetry.fortune5.com/services/{service_name}/slo")
+        template("urn:uuid:{service_name}/slo")
       end
 
-      property(:service_name, "https://telemetry.fortune5.com/ontology/serviceName")
+      property(:service_name, "https://schema.org/serviceName")
 
-      property(:uptime_pct, "https://telemetry.fortune5.com/ontology/uptimePercentage",
-        datatype: "http://qudt.org/vocab/unit/PERCENT"
-      )
+      property(:uptime_pct, "https://schema.org/uptimePercentage", datatype: "https://schema.org/Percent")
 
-      property(:error_budget_pct, "https://telemetry.fortune5.com/ontology/errorBudgetRemaining",
-        datatype: "http://qudt.org/vocab/unit/PERCENT"
-      )
+      property(:error_budget_pct, "https://schema.org/errorBudgetRemaining", datatype: "https://schema.org/Percent")
     end
   end
 
@@ -252,18 +240,18 @@ defmodule AshR2RML.Fortune5.MeasurementAndQUDTTest do
   describe "1. QUDT Custom Ash.Type & Datatype Registry Resolutions" do
     test "resolves custom Ash.Type implementing AshR2RML.Type behaviour to QUDT datatypes" do
       assert {:ok, dt_ms} = DatatypeRegistry.resolve(QudtMilliSeconds)
-      assert dt_ms.rdf_datatype == "http://qudt.org/vocab/unit/MilliSEC"
+      assert dt_ms.rdf_datatype == "https://schema.org/Millisecond"
 
       assert {:ok, dt_pct} = DatatypeRegistry.resolve(QudtPercentage)
-      assert dt_pct.rdf_datatype == "http://qudt.org/vocab/unit/PERCENT"
+      assert dt_pct.rdf_datatype == "https://schema.org/Percent"
     end
 
     test "resolves explicit QUDT datatype overrides on standard scalar types" do
-      assert {:ok, dt_rps} = DatatypeRegistry.resolve(:decimal, "http://qudt.org/vocab/unit/NUM-PER-SEC")
-      assert dt_rps.rdf_datatype == "http://qudt.org/vocab/unit/NUM-PER-SEC"
+      assert {:ok, dt_rps} = DatatypeRegistry.resolve(:decimal, "https://schema.org/RequestsPerSecond")
+      assert dt_rps.rdf_datatype == "https://schema.org/RequestsPerSecond"
 
-      assert {:ok, dt_mb} = DatatypeRegistry.resolve(:decimal, "http://qudt.org/vocab/unit/MegaBYTE")
-      assert dt_mb.rdf_datatype == "http://qudt.org/vocab/unit/MegaBYTE"
+      assert {:ok, dt_mb} = DatatypeRegistry.resolve(:decimal, "https://schema.org/Megabyte")
+      assert dt_mb.rdf_datatype == "https://schema.org/Megabyte"
     end
   end
 
@@ -309,20 +297,20 @@ defmodule AshR2RML.Fortune5.MeasurementAndQUDTTest do
       # 1. Verify LatencyMetric IR
       {:ok, latency_map} = AshR2RML.Resource.Info.mapping_result(LatencyMetric)
       p50_map = Enum.find(latency_map.predicate_object_maps, &(&1.attribute == :p50_latency_ms))
-      assert p50_map.object_map.datatype.rdf_datatype == "http://qudt.org/vocab/unit/MilliSEC"
+      assert p50_map.object_map.datatype.rdf_datatype == "https://schema.org/Millisecond"
 
       # 2. Verify ThroughputMetric IR
       {:ok, tp_map} = AshR2RML.Resource.Info.mapping_result(ThroughputMetric)
       rps_map = Enum.find(tp_map.predicate_object_maps, &(&1.attribute == :requests_per_sec))
-      assert rps_map.object_map.datatype.rdf_datatype == "http://qudt.org/vocab/unit/NUM-PER-SEC"
+      assert rps_map.object_map.datatype.rdf_datatype == "https://schema.org/RequestsPerSecond"
 
       bw_map = Enum.find(tp_map.predicate_object_maps, &(&1.attribute == :bandwidth_mb))
-      assert bw_map.object_map.datatype.rdf_datatype == "http://qudt.org/vocab/unit/MegaBYTE"
+      assert bw_map.object_map.datatype.rdf_datatype == "https://schema.org/Megabyte"
 
       # 3. Verify SLOAvailabilityMetric IR
       {:ok, slo_map} = AshR2RML.Resource.Info.mapping_result(SLOAvailabilityMetric)
       uptime_map = Enum.find(slo_map.predicate_object_maps, &(&1.attribute == :uptime_pct))
-      assert uptime_map.object_map.datatype.rdf_datatype == "http://qudt.org/vocab/unit/PERCENT"
+      assert uptime_map.object_map.datatype.rdf_datatype == "https://schema.org/Percent"
     end
 
     test "renders R2RML Turtle with exact QUDT rr:datatype annotations" do
@@ -333,10 +321,10 @@ defmodule AshR2RML.Fortune5.MeasurementAndQUDTTest do
       assert is_binary(turtle)
 
       # Verify QUDT datatypes rendered in Turtle
-      assert String.contains?(turtle, "rr:datatype <http://qudt.org/vocab/unit/MilliSEC>")
-      assert String.contains?(turtle, "rr:datatype <http://qudt.org/vocab/unit/PERCENT>")
-      assert String.contains?(turtle, "rr:datatype <http://qudt.org/vocab/unit/NUM-PER-SEC>")
-      assert String.contains?(turtle, "rr:datatype <http://qudt.org/vocab/unit/MegaBYTE>")
+      assert String.contains?(turtle, "rr:datatype <https://schema.org/Millisecond>")
+      assert String.contains?(turtle, "rr:datatype <https://schema.org/Percent>")
+      assert String.contains?(turtle, "rr:datatype <https://schema.org/RequestsPerSecond>")
+      assert String.contains?(turtle, "rr:datatype <https://schema.org/Megabyte>")
 
       # Verify logical tables and subject templates
       assert String.contains?(turtle, "rr:tableName \"apm_latency_metrics\"")

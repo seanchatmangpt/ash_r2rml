@@ -34,12 +34,12 @@ defmodule AshR2RML.TypeOverrideContractTest do
   end
 
   test "IRI semantic kinds decode through the same overridable lexical contract" do
-    assert {:ok, {:iri_value, "https://example.test/resource"}} =
-             AshR2RML.Type.decode(IriType, {:iri, "https://example.test/resource"})
+    assert {:ok, {:iri_value, "https://schema.org/Thing"}} =
+             AshR2RML.Type.decode(IriType, {:iri, "https://schema.org/Thing"})
   end
 
   test "literal semantic kinds refuse IRI terms instead of relying on impossible branches" do
     assert {:error, :rdf_term_kind_mismatch} =
-             AshR2RML.Type.decode(LiteralType, {:iri, "https://example.test/resource"})
+             AshR2RML.Type.decode(LiteralType, {:iri, "https://schema.org/Thing"})
   end
 end

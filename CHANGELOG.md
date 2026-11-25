@@ -11,6 +11,51 @@ See [Conventional Commits](Https://conventionalcommits.org) for commit guideline
 
 <!-- changelog -->
 
+## Unreleased
+
+Version stays v26.11.24; everything below is unreleased and read from the code on disk.
+Items marked UNVERIFIED have source present but no test run by the docs lane.
+
+### Features:
+* Named graphs: `graph "iri"` (resource scope) and `graph "iri", scope: :subject` in the `r2rml`
+  section compile to constant `GraphMap`s. `AshR2RML.NQuads.serialize/1` emits canonical N-Quads
+  (sorted bytewise, deduplicated, `\n`-terminated, blank nodes refused with
+  `REFUSED_INVALID_TERM_MAP`). `AshR2RML.OBDA.Result.quads/1` returns the canonical quad view.
+* Money composites: `AshR2RML.Money.project/2` projects a `Decimal` or Money-shaped struct to a
+  `monetary_amount_class/0` node with an `xsd:decimal` amount (never a float) and an ISO 4217
+  currency IRI. AshMoney/ex_money are optional (recognized by struct shape). Other values refuse
+  with `REFUSED_UNMAPPED_DATATYPE`. DSL wiring of money attributes: UNVERIFIED.
+* Temporal intervals: `temporal start_attribute: ..., end_attribute: ...` projects to
+  `time:hasBeginning` / `time:hasEnd` as `xsd:dateTime`. Date-only types refuse with
+  `REFUSED_INVALID_TERM_MAP`; `Ash.Type.Range` attributes refuse with `UNSUPPORTED_ASH_TYPE`
+  (declare separate start/end attributes instead).
+* AshCloak enclave guard: `AshR2RML.Security` detects `cloak` attributes by Spark introspection
+  (no `ash_cloak` dependency) and refuses plaintext projection. A cloaked attribute is admitted
+  only as an opaque `urn:sha256:` pointer; subject, graph, object-template and reference-join
+  maps touching it refuse.
+* Strict domain mode: `use Ash.Domain, extensions: [AshR2RML.Domain]` with
+  `r2rml_domain do strict? true end` rejects blank-node subject maps and class, predicate or
+  graph IRIs outside `allowed_iri_prefixes` (default `AshR2RML.Domain.default_allowed_prefixes/0`).
+  Non-strict domains are unchanged.
+
+### Packaging & docs:
+* Hex package now ships `ash_r2rml.install` and `ash_r2rml.render` (only `generate_docs` is
+  excluded); `test/hex_package_test.exs` asserts the file list. Execution of that test: UNVERIFIED.
+* `ash_r2rml.install` targets `~> 26.11`, uses non-bang `find_and_update_module/3`, and its
+  templates use only public IRIs. `ash_r2rml.render` compiles (not `app.start`), parses args with
+  `OptionParser`, and resolves modules without minting atoms. Compile and run: UNVERIFIED.
+* The `sobelow --skip` alias was removed. Docs use the single `AshR2RML.Resource` extension and
+  public namespaces only.
+
+### Frozen handoff contract (downstream `ash_graphlaw` / `ash_affidavit`):
+* Deterministic R2RML: the same resources render byte-identical Turtle.
+* Canonical N-Quads: `AshR2RML.NQuads` output is invariant under input order.
+* Invertible subject codec: `AshR2RML.Subject.to_iri/2` and `from_iri/2` invert exactly or refuse
+  (`REFUSED_MISSING_SUBJECT_KEY`, `REFUSED_INVALID_SUBJECT_IRI`, `REFUSED_NON_INVERTIBLE_TEMPLATE`).
+* Result envelope digest: SHA-256 over `frame(r2rml_ttl) <> frame(sparql) <> frame(bindings)`,
+  `frame(b) = <<byte_size(b)::unsigned-big-64>> <> b`, bindings via
+  `:erlang.term_to_binary(rows, [:deterministic])`; see `AshR2RML.OBDA.Result`.
+
 ## v26.11.24 (2026-11-24)
 
 Zero-Java, zero-JDBC release with bounded, Ash-mediated OBDA. `AshR2RML.OBDA.InMemory` is the sole

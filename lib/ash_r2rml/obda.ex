@@ -130,26 +130,41 @@ defmodule AshR2RML.OBDA do
     )
   end
 
-  defp classify(%{__struct__: mod} = reason) do
+  @doc false
+  # Classifies a real Ash/Splode error, recursing into nested `.errors`, so Forbidden and
+  # TenantRequired survive wrapping in `Ash.Error.Forbidden`/`Ash.Error.Invalid` classes.
+  @spec classify(term()) :: {atom(), module() | nil}
+  def classify(%{__struct__: _} = reason) do
     resource = resource_of(reason)
 
     cond do
       forbidden?(reason) -> {:REFUSED_UNAUTHORIZED, resource}
-      mod == Ash.Error.Invalid.TenantRequired -> {:REFUSED_MISSING_TENANT, resource}
+      tenant_required?(reason) -> {:REFUSED_MISSING_TENANT, resource}
       true -> {:REFUSED_READ_FAILED, resource}
     end
   end
 
-  defp classify(_reason), do: {:REFUSED_READ_FAILED, nil}
+  def classify(_reason), do: {:REFUSED_READ_FAILED, nil}
 
   defp forbidden?(%{__struct__: mod} = reason) do
-    mod |> Module.split() |> Enum.member?("Forbidden") or
-      (is_list(Map.get(reason, :errors)) and Enum.any?(reason.errors, &forbidden?/1))
+    mod |> Module.split() |> Enum.member?("Forbidden") or nested?(reason, &forbidden?/1)
   rescue
     _ -> false
   end
 
   defp forbidden?(_), do: false
+
+  defp tenant_required?(%{__struct__: mod} = reason),
+    do: mod == Ash.Error.Invalid.TenantRequired or nested?(reason, &tenant_required?/1)
+
+  defp tenant_required?(_), do: false
+
+  defp nested?(reason, predicate) do
+    case Map.get(reason, :errors) do
+      errors when is_list(errors) -> Enum.any?(errors, predicate)
+      _ -> false
+    end
+  end
 
   defp resource_of(reason) do
     case Map.get(reason, :resource) do
@@ -225,8 +240,40 @@ defmodule AshR2RML.OBDA do
          :ok <- Modifiers.check(sparql),
          {:ok, specs} <- resolve_specs(source),
          {:ok, readable, pruned} <- preflight(specs, opts),
-         {:ok, graph, ttl, observation} <- run_with_pushdown(readable, specs, sparql, opts) do
-      {:ok, envelope(observation, graph, pruned, ttl, sparql, started)}
+         {:ok, counts, ttl, observation, quad_graph} <- run_query(readable, specs, sparql, opts) do
+      {:ok, envelope(observation, counts, pruned, ttl, sparql, started, quad_graph)}
+    end
+  end
+
+  # GRAPH queries run against the materialized dataset (named graphs); everything else keeps the
+  # union-graph pipeline with optional pushdown.
+  defp run_query(readable, specs, sparql, opts) do
+    case InMemory.GraphQuery.plan(sparql) do
+      :none ->
+        with {:ok, graph, ttl, observation} <- run_with_pushdown(readable, specs, sparql, opts) do
+          counts = %{
+            rows_read: graph |> RDF.Graph.subjects() |> Enum.count(),
+            triples_emitted: RDF.Graph.triple_count(graph)
+          }
+
+          {:ok, counts, ttl, observation, nil}
+        end
+
+      {:ok, plan} ->
+        run_dataset(readable, specs, sparql, opts, plan)
+
+      {:error, message, evidence} ->
+        {:error, refusal(:graph_pattern, message, evidence)}
+    end
+  end
+
+  defp run_dataset(readable, specs, sparql, opts, plan) do
+    {result, stats} = InMemory.query_with_stats(readable, sparql, materialize_opts(opts, specs, sparql, nil))
+
+    with {:ok, observation} <- result,
+         {:ok, ttl} <- AshR2RML.R2RML.render(%Bundle{resources: Enum.map(specs, &elem(&1, 1))}) do
+      quad_graph = if plan.kind == :iri, do: to_string(plan.iri)
+      {:ok, Map.take(stats, [:rows_read, :triples_emitted]), ttl, observation, quad_graph}
     end
   end
 
@@ -266,11 +313,17 @@ defmodule AshR2RML.OBDA do
         run_pipeline(readable, specs, sparql, opts, nil)
 
       %Pushdown{} = pushdown ->
-        with {:ok, graph, _ttl, observation} = ok <- run_pipeline(readable, specs, sparql, opts, pushdown),
-             :ok <- QueryBuilder.verify(pushdown, graph, length(observation.rows)) do
-          ok
-        else
-          _ -> run_pipeline(readable, specs, sparql, opts, nil)
+        # Refusals/errors from the pushed-down run are final (no second read); only a failed
+        # post-read verification re-runs the unchanged full path.
+        case run_pipeline(readable, specs, sparql, opts, pushdown) do
+          {:ok, graph, _ttl, observation} = ok ->
+            case QueryBuilder.verify(pushdown, graph, length(observation.rows)) do
+              :ok -> ok
+              _mismatch -> run_pipeline(readable, specs, sparql, opts, nil)
+            end
+
+          {:error, _} = error ->
+            error
         end
     end
   end
@@ -333,7 +386,7 @@ defmodule AshR2RML.OBDA do
     end
   end
 
-  defp envelope(observation, graph, pruned, ttl, sparql, started) do
+  defp envelope(observation, counts, pruned, ttl, sparql, started, quad_graph) do
     rows = canonical_rows(observation, sparql)
 
     {bindings, triples} =
@@ -342,9 +395,11 @@ defmodule AshR2RML.OBDA do
         _ -> {rows, []}
       end
 
+    quads = Enum.map(triples, &Map.put_new(&1, "graph", quad_graph))
+
     stats = %{
-      rows_read: graph |> RDF.Graph.subjects() |> Enum.count(),
-      triples_emitted: RDF.Graph.triple_count(graph),
+      rows_read: counts.rows_read,
+      triples_emitted: counts.triples_emitted,
       duration_us: System.convert_time_unit(System.monotonic_time() - started, :native, :microsecond),
       resources_pruned_by_policy: pruned
     }
@@ -352,6 +407,7 @@ defmodule AshR2RML.OBDA do
     %Result{
       bindings: bindings,
       triples: triples,
+      quads: quads,
       kind: observation.result_kind,
       stats: stats,
       digest: Result.digest(ttl, sparql, rows)

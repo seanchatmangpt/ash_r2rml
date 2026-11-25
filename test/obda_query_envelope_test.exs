@@ -44,15 +44,15 @@ defmodule AshR2RML.OBDAQueryEnvelopeTest do
     end
   end
 
-  @ex "https://ex.org/"
+  @ex "urn:uuid:"
   @name "https://schema.org/name"
 
   defp mapping do
     %Resource{
       ash_resource: Person,
       logical_table: %LogicalTable{table_name: "person"},
-      subject_map: %SubjectMap{strategy: :template, value: @ex <> "person/{pid}"},
-      class_iris: [@ex <> "Person"],
+      subject_map: %SubjectMap{strategy: :template, value: @ex <> "person-{pid}"},
+      class_iris: ["https://schema.org/Person"],
       identities: [[:pid]],
       predicate_object_maps: [
         %PredicateObjectMap{
@@ -125,7 +125,7 @@ defmodule AshR2RML.OBDAQueryEnvelopeTest do
     assert result.bindings == []
 
     assert result.triples == [
-             %{"subject" => @ex <> "person/p1", "predicate" => @name, "object" => "Ann"}
+             %{"subject" => @ex <> "person-p1", "predicate" => @name, "object" => "Ann"}
            ]
   end
 

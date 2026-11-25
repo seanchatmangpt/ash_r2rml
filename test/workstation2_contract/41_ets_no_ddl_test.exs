@@ -20,10 +20,10 @@ defmodule AshR2RML.WS2.EtsNoDdlTest do
 
     r2rml do
       table_name("ws2_gadgets")
-      class("https://example.test/ontology/Gadget")
+      class("https://schema.org/Gadget")
 
       subject do
-        template("https://example.test/ws2/gadget/{id}")
+        template("urn:uuid:{id}")
       end
 
       property(:label, "http://www.w3.org/2000/01/rdf-schema#label")

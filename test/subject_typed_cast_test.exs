@@ -46,7 +46,7 @@ defmodule AshR2RML.SubjectTypedCastTest do
     end
   end
 
-  @ex "http://ex.org/"
+  @ex "urn:uuid:"
   @uuid "0b1f6c3e-8d52-4a37-9c11-6a2e5d0f7b44"
 
   defp mapping(template) do

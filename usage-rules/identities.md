@@ -8,7 +8,7 @@ Every resource emitted as an RDF subject requires a deterministic subject map. C
 
 ```elixir
 r2rml do
-  subject template: "https://example.org/orders/{tenant_id}/{id}", term_type: :iri
+  subject template: "urn:uuid:{tenant_id}-{id}", term_type: :iri
 end
 ```
 

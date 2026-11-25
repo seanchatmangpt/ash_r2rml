@@ -60,8 +60,13 @@ defmodule AshR2RML.Parity do
   attached to `AshR2RML.CompilationReceipt`.
 
   `:session_sha256` binds the result comparison to the exact DfCM semantic
-  session. Legacy callers may omit it, but strict DfCM witness admission will
+  session. Callers may omit it, but strict DfCM witness admission will
   refuse an unbound receipt for crown/cutover standing.
+
+  Empty-string cells are collapsed to "unbound" only for rows declared as CSV via the
+  `:left_csv_rows` / `:right_csv_rows` metadata flags. All other rows keep `""` as a bound value.
+  A receipt is `observed?: true` only when `metadata.observed?` is `true` and both observation
+  hashes are present.
   """
 
   alias AshR2RML.ParityReceipt
@@ -69,8 +74,8 @@ defmodule AshR2RML.Parity do
   @spec compare(:sparql_sql, term(), list(), list(), map()) :: ParityReceipt.t()
   def compare(kind, subject, left_rows, right_rows, metadata \\ %{})
       when kind == :sparql_sql and is_list(left_rows) and is_list(right_rows) do
-    left = normalize_multiset(left_rows)
-    right = normalize_multiset(right_rows)
+    left = normalize_multiset(left_rows, csv?: get(metadata, :left_csv_rows) == true)
+    right = normalize_multiset(right_rows, csv?: get(metadata, :right_csv_rows) == true)
     left_hash = sha256(left)
     right_hash = sha256(right)
     left_observation_sha256 = get(metadata, :left_observation_sha256)
@@ -120,17 +125,21 @@ defmodule AshR2RML.Parity do
   end
 
   @doc "Normalize an unordered result multiset while preserving duplicate cardinality."
-  def normalize_multiset(rows) do
+  def normalize_multiset(rows, opts \\ []) do
+    csv? = Keyword.get(opts, :csv?, false) == true
+
     rows
-    |> Enum.map(&canonical/1)
+    |> Enum.map(&canonical(&1, csv?))
     |> Enum.sort_by(&:erlang.term_to_binary(&1, [:deterministic]))
   end
 
-  defp canonical(%Decimal{} = decimal), do: Decimal.to_string(decimal, :normal)
-  defp canonical(%DateTime{} = datetime), do: DateTime.to_iso8601(datetime)
-  defp canonical(%NaiveDateTime{} = datetime), do: NaiveDateTime.to_iso8601(datetime)
-  defp canonical(%Date{} = date), do: Date.to_iso8601(date)
-  defp canonical(%_{} = struct), do: struct |> Map.from_struct() |> canonical()
+  defp canonical(value), do: canonical(value, false)
+
+  defp canonical(%Decimal{} = decimal, _csv?), do: Decimal.to_string(decimal, :normal)
+  defp canonical(%DateTime{} = datetime, _csv?), do: DateTime.to_iso8601(datetime)
+  defp canonical(%NaiveDateTime{} = datetime, _csv?), do: NaiveDateTime.to_iso8601(datetime)
+  defp canonical(%Date{} = date, _csv?), do: Date.to_iso8601(date)
+  defp canonical(%_{} = struct, csv?), do: struct |> Map.from_struct() |> canonical(csv?)
 
   # A SPARQL binding row can express "this variable has no value here" two
   # observably different ways depending on the execution surface: the local
@@ -138,23 +147,25 @@ defmodule AshR2RML.Parity do
   # solution map, while a CSV-emitting result surface must
   # still print every header column and renders an unbound variable as an
   # empty cell (`""`) — the SPARQL 1.1 CSV results format itself cannot
-  # distinguish "unbound" from "bound to the empty string" (that ambiguity is
-  # inherent to the format, not a bug in either engine). Comparing the two
-  # raw shapes byte-for-bit produced spurious parity mismatches on any
-  # `OPTIONAL` pattern whose variable went unbound for some row. Drop
-  # empty-string-valued keys before hashing so both representations collapse
-  # to the same canonical shape.
-  defp canonical(map) when is_map(map) do
+  # distinguish "unbound" from "bound to the empty string". For rows declared
+  # CSV (`csv?`), drop empty-string-valued keys so both representations
+  # collapse to the same canonical shape. Non-CSV rows keep `""` as a value.
+  defp canonical(map, csv?) when is_map(map) do
     map
-    |> Enum.reject(fn {_key, value} -> value == "" end)
-    |> Enum.map(fn {key, value} -> {to_string(key), canonical(value)} end)
+    |> Enum.reject(fn {_key, value} -> csv? and value == "" end)
+    |> Enum.map(fn {key, value} -> {to_string(key), canonical(value, csv?)} end)
     |> Enum.sort_by(&elem(&1, 0))
   end
 
-  defp canonical(list) when is_list(list), do: Enum.map(list, &canonical/1)
-  defp canonical(tuple) when is_tuple(tuple), do: tuple |> Tuple.to_list() |> Enum.map(&canonical/1)
-  defp canonical(value) when is_atom(value) and value not in [true, false, nil], do: Atom.to_string(value)
-  defp canonical(value), do: value
+  defp canonical(list, csv?) when is_list(list), do: Enum.map(list, &canonical(&1, csv?))
+
+  defp canonical(tuple, csv?) when is_tuple(tuple),
+    do: tuple |> Tuple.to_list() |> Enum.map(&canonical(&1, csv?))
+
+  defp canonical(value, _csv?) when is_atom(value) and value not in [true, false, nil],
+    do: Atom.to_string(value)
+
+  defp canonical(value, _csv?), do: value
 
   defp present_hash?(value), do: is_binary(value) and value != ""
 

@@ -43,7 +43,7 @@ defmodule AshR2RML.Adversarial.RelationshipClosureTest do
       class("https://schema.org/Corporation")
 
       subject do
-        template("https://example.org/company/{id}")
+        template("urn:uuid:{id}")
       end
 
       property(:name, "http://xmlns.com/foaf/0.1/name")
@@ -92,13 +92,13 @@ defmodule AshR2RML.Adversarial.RelationshipClosureTest do
       class("https://schema.org/Person")
 
       subject do
-        template("https://example.org/employee/{id}")
+        template("urn:uuid:{id}")
       end
 
       property(:name, "http://xmlns.com/foaf/0.1/name")
       reference(:company, "https://schema.org/worksFor")
-      reference(:badge, "https://example.org/ontology/hasBadge")
-      reference(:tasks, "https://example.org/ontology/assignedTask")
+      reference(:badge, "https://schema.org/hasCredential")
+      reference(:tasks, "https://schema.org/knows")
     end
   end
 
@@ -129,14 +129,14 @@ defmodule AshR2RML.Adversarial.RelationshipClosureTest do
 
     r2rml do
       table_name("badges")
-      class("https://example.org/ontology/SecurityBadge")
+      class("https://schema.org/Thing")
 
       subject do
-        template("https://example.org/badge/{id}")
+        template("urn:uuid:{id}")
       end
 
-      property(:badge_number, "https://example.org/ontology/badgeNumber")
-      reference(:employee, "https://example.org/ontology/badgeHolder")
+      property(:badge_number, "https://schema.org/identifier")
+      reference(:employee, "https://schema.org/member")
     end
   end
 
@@ -166,14 +166,14 @@ defmodule AshR2RML.Adversarial.RelationshipClosureTest do
 
     r2rml do
       table_name("tasks")
-      class("https://example.org/ontology/Task")
+      class("https://schema.org/Thing")
 
       subject do
-        template("https://example.org/task/{id}")
+        template("urn:uuid:{id}")
       end
 
-      property(:title, "http://purl.org/dc/elements/1.1/title")
-      reference(:assignee, "https://example.org/ontology/assignedTo")
+      property(:title, "http://purl.org/dc/terms/title")
+      reference(:assignee, "https://schema.org/agent")
     end
   end
 
@@ -197,7 +197,7 @@ defmodule AshR2RML.Adversarial.RelationshipClosureTest do
       class("https://schema.org/Patient")
 
       subject do
-        template("https://example.org/patient/{id}")
+        template("urn:uuid:{id}")
       end
 
       property(:name, "http://xmlns.com/foaf/0.1/name")
@@ -225,7 +225,7 @@ defmodule AshR2RML.Adversarial.RelationshipClosureTest do
       class("https://schema.org/MedicalAppointment")
 
       subject do
-        template("https://example.org/appointment/{id}")
+        template("urn:uuid:{id}")
       end
     end
   end
@@ -262,11 +262,11 @@ defmodule AshR2RML.Adversarial.RelationshipClosureTest do
       class("https://schema.org/Physician")
 
       subject do
-        template("https://example.org/doctor/{id}")
+        template("urn:uuid:{id}")
       end
 
       property(:name, "http://xmlns.com/foaf/0.1/name")
-      reference(:patients, "https://example.org/ontology/caresFor")
+      reference(:patients, "https://schema.org/patient")
     end
   end
 
@@ -285,7 +285,7 @@ defmodule AshR2RML.Adversarial.RelationshipClosureTest do
       ref = Enum.find(mapping.reference_object_maps, &(&1.relationship == :badge))
 
       assert ref.parent_resource == Badge
-      assert ref.predicate_iri == "https://example.org/ontology/hasBadge"
+      assert ref.predicate_iri == "https://schema.org/hasCredential"
       assert [%Mapping.JoinCondition{child: "id", parent: "employee_id"}] = ref.joins
     end
 
@@ -294,7 +294,7 @@ defmodule AshR2RML.Adversarial.RelationshipClosureTest do
       ref = Enum.find(mapping.reference_object_maps, &(&1.relationship == :tasks))
 
       assert ref.parent_resource == Task
-      assert ref.predicate_iri == "https://example.org/ontology/assignedTask"
+      assert ref.predicate_iri == "https://schema.org/knows"
       assert [%Mapping.JoinCondition{child: "id", parent: "assignee_id"}] = ref.joins
     end
 
@@ -338,14 +338,14 @@ defmodule AshR2RML.Adversarial.RelationshipClosureTest do
       unmapped_res = %Mapping.Resource{
         ash_resource: :IsolatedCaller,
         logical_table: %Mapping.LogicalTable{table_name: "callers"},
-        class_iris: ["https://example.org/Caller"],
-        subject_map: %Mapping.SubjectMap{strategy: :template, value: "https://example.org/c/{id}", term_type: :iri},
+        class_iris: ["https://schema.org/Thing"],
+        subject_map: %Mapping.SubjectMap{strategy: :template, value: "urn:uuid:{id}", term_type: :iri},
         identities: [[:id]],
         metadata: %{attribute_columns: %{id: "id"}},
         reference_object_maps: [
           %Mapping.ReferenceObjectMap{
             relationship: :target_rel,
-            predicate_iri: "https://example.org/hasTarget",
+            predicate_iri: "https://schema.org/knows",
             parent_resource: :NonExistentTargetResource,
             joins: [%Mapping.JoinCondition{child: "target_id", parent: "id"}]
           }
@@ -361,8 +361,8 @@ defmodule AshR2RML.Adversarial.RelationshipClosureTest do
       bad_ref_res = %Mapping.Resource{
         ash_resource: :ResourceWithBadPredicate,
         logical_table: %Mapping.LogicalTable{table_name: "table_a"},
-        class_iris: ["https://example.org/ClassA"],
-        subject_map: %Mapping.SubjectMap{strategy: :template, value: "https://example.org/a/{id}", term_type: :iri},
+        class_iris: ["https://schema.org/Thing"],
+        subject_map: %Mapping.SubjectMap{strategy: :template, value: "urn:uuid:{id}", term_type: :iri},
         identities: [[:id]],
         metadata: %{attribute_columns: %{id: "id"}},
         reference_object_maps: [
@@ -383,14 +383,14 @@ defmodule AshR2RML.Adversarial.RelationshipClosureTest do
       source_res = %Mapping.Resource{
         ash_resource: :SourceRes,
         logical_table: %Mapping.LogicalTable{table_name: "source_table"},
-        class_iris: ["https://example.org/Source"],
-        subject_map: %Mapping.SubjectMap{strategy: :template, value: "https://example.org/s/{id}", term_type: :iri},
+        class_iris: ["https://schema.org/Thing"],
+        subject_map: %Mapping.SubjectMap{strategy: :template, value: "urn:uuid:{id}", term_type: :iri},
         identities: [[:id]],
         metadata: %{attribute_columns: %{id: "id"}},
         reference_object_maps: [
           %Mapping.ReferenceObjectMap{
             relationship: :unstable_target,
-            predicate_iri: "https://example.org/linksTo",
+            predicate_iri: "https://schema.org/knows",
             parent_resource: :TargetRes,
             joins: [%Mapping.JoinCondition{child: "target_id", parent: "id"}]
           }
@@ -400,10 +400,10 @@ defmodule AshR2RML.Adversarial.RelationshipClosureTest do
       target_without_id = %Mapping.Resource{
         ash_resource: :TargetRes,
         logical_table: %Mapping.LogicalTable{table_name: "target_table"},
-        class_iris: ["https://example.org/Target"],
+        class_iris: ["https://schema.org/Thing"],
         subject_map: %Mapping.SubjectMap{
           strategy: :template,
-          value: "https://example.org/t/{non_key_attr}",
+          value: "urn:uuid:{non_key_attr}",
           term_type: :iri
         },
         identities: [[:id]],
@@ -419,14 +419,14 @@ defmodule AshR2RML.Adversarial.RelationshipClosureTest do
       invalid_join_res = %Mapping.Resource{
         ash_resource: :InvalidJoinRes,
         logical_table: %Mapping.LogicalTable{table_name: "valid_table"},
-        class_iris: ["https://example.org/Class"],
-        subject_map: %Mapping.SubjectMap{strategy: :template, value: "https://example.org/i/{id}", term_type: :iri},
+        class_iris: ["https://schema.org/Thing"],
+        subject_map: %Mapping.SubjectMap{strategy: :template, value: "urn:uuid:{id}", term_type: :iri},
         identities: [[:id]],
         metadata: %{attribute_columns: %{id: "id"}},
         reference_object_maps: [
           %Mapping.ReferenceObjectMap{
             relationship: :broken_rel,
-            predicate_iri: "https://example.org/brokenRel",
+            predicate_iri: "https://schema.org/knows",
             parent_resource: :InvalidJoinRes,
             joins: [%Mapping.JoinCondition{child: "", parent: "id"}]
           }

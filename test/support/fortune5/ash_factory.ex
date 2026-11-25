@@ -292,24 +292,18 @@ defmodule AshR2RML.Fortune5.CloudRegion do
     domain: AshR2RML.Fortune5.Domain,
     data_layer: Ash.DataLayer.Ets,
     authorizers: [Ash.Policy.Authorizer],
-    extensions: [AshR2RML]
+    extensions: [AshR2RML.Resource]
 
   r2rml do
-    class_iri("https://schema.org/Place")
-    subject_template("https://cloud.fortune5.com/regions/{id}")
     table_name("fortune5_cloud_regions")
-
-    attribute_mappings([
-      {:name, "https://schema.org/name"},
-      {:code, "https://schema.org/identifier"},
-      {:datacenter_location, "https://schema.org/address"},
-      {:status, "https://schema.org/status"}
-    ])
-
-    relationship_mappings([
-      {:clusters, "https://w3id.org/fortune5/ontology#hasCluster"},
-      {:payment_gateways, "https://w3id.org/fortune5/ontology#hostsPaymentGateway"}
-    ])
+    class("https://schema.org/Place")
+    subject(template: "urn:uuid:{id}")
+    property(:name, "https://schema.org/name")
+    property(:code, "https://schema.org/identifier")
+    property(:datacenter_location, "https://schema.org/address")
+    property(:status, "https://schema.org/status")
+    reference(:clusters, "https://schema.org/hasCluster")
+    reference(:payment_gateways, "https://schema.org/hostsPaymentGateway")
   end
 
   attributes do
@@ -372,25 +366,19 @@ defmodule AshR2RML.Fortune5.Cluster do
     domain: AshR2RML.Fortune5.Domain,
     data_layer: Ash.DataLayer.Ets,
     authorizers: [Ash.Policy.Authorizer],
-    extensions: [AshR2RML]
+    extensions: [AshR2RML.Resource]
 
   r2rml do
-    class_iri("https://schema.org/ComputeCluster")
-    subject_template("https://cloud.fortune5.com/clusters/{id}")
     table_name("fortune5_clusters")
-
-    attribute_mappings([
-      {:name, "https://schema.org/name"},
-      {:ip_range, "https://w3id.org/fortune5/ontology#ipRange"},
-      {:criticality, "https://w3id.org/fortune5/ontology#criticalityLevel"},
-      {:node_count, "https://schema.org/numberOfItems"}
-    ])
-
-    relationship_mappings([
-      {:cloud_region, "https://w3id.org/fortune5/ontology#inRegion"},
-      {:service_instances, "https://w3id.org/fortune5/ontology#hostsService"},
-      {:deployment_plans, "https://w3id.org/fortune5/ontology#targetedByPlan"}
-    ])
+    class("https://schema.org/ComputeCluster")
+    subject(template: "urn:uuid:{id}")
+    property(:name, "https://schema.org/name")
+    property(:ip_range, "https://schema.org/ipRange")
+    property(:criticality, "https://schema.org/criticalityLevel")
+    property(:node_count, "https://schema.org/numberOfItems")
+    reference(:cloud_region, "https://schema.org/inRegion")
+    reference(:service_instances, "https://schema.org/hostsService")
+    reference(:deployment_plans, "https://schema.org/targetedByPlan")
   end
 
   attributes do
@@ -445,26 +433,20 @@ defmodule AshR2RML.Fortune5.ServiceInstance do
     domain: AshR2RML.Fortune5.Domain,
     data_layer: Ash.DataLayer.Ets,
     authorizers: [Ash.Policy.Authorizer],
-    extensions: [AshR2RML]
+    extensions: [AshR2RML.Resource]
 
   r2rml do
-    class_iri("https://schema.org/SoftwareApplication")
-    subject_template("https://cloud.fortune5.com/services/{id}")
     table_name("fortune5_service_instances")
-
-    attribute_mappings([
-      {:name, "https://schema.org/name"},
-      {:version, "https://schema.org/softwareVersion"},
-      {:endpoint_url, "https://schema.org/url"},
-      {:status, "https://schema.org/status"},
-      {:error_budget, "https://w3id.org/fortune5/ontology#errorBudget"}
-    ])
-
-    relationship_mappings([
-      {:cluster, "https://w3id.org/fortune5/ontology#runsOnCluster"},
-      {:incident_tickets, "https://w3id.org/fortune5/ontology#hasIncident"},
-      {:deployment_plan_services, "https://w3id.org/fortune5/ontology#hasPlanMapping"}
-    ])
+    class("https://schema.org/SoftwareApplication")
+    subject(template: "urn:uuid:{id}")
+    property(:name, "https://schema.org/name")
+    property(:version, "https://schema.org/softwareVersion")
+    property(:endpoint_url, "https://schema.org/url")
+    property(:status, "https://schema.org/status")
+    property(:error_budget, "https://schema.org/errorBudget")
+    reference(:cluster, "https://schema.org/runsOnCluster")
+    reference(:incident_tickets, "https://schema.org/hasIncident")
+    reference(:deployment_plan_services, "https://schema.org/hasPlanMapping")
   end
 
   attributes do
@@ -556,26 +538,20 @@ defmodule AshR2RML.Fortune5.PaymentGateway do
     domain: AshR2RML.Fortune5.Domain,
     data_layer: Ash.DataLayer.Ets,
     authorizers: [Ash.Policy.Authorizer],
-    extensions: [AshR2RML]
+    extensions: [AshR2RML.Resource]
 
   r2rml do
-    class_iri("https://schema.org/FinancialService")
-    subject_template("https://finance.fortune5.com/gateways/{id}")
     table_name("fortune5_payment_gateways")
-
-    attribute_mappings([
-      {:name, "https://schema.org/name"},
-      {:provider, "https://schema.org/provider"},
-      {:api_endpoint, "https://schema.org/serviceUrl"},
-      {:secret_key, "https://w3id.org/fortune5/ontology#apiKeySecret"},
-      {:criticality, "https://w3id.org/fortune5/ontology#criticalityLevel"},
-      {:status, "https://schema.org/status"}
-    ])
-
-    relationship_mappings([
-      {:cloud_region, "https://w3id.org/fortune5/ontology#locatedInRegion"},
-      {:ledger_accounts, "https://w3id.org/fortune5/ontology#managesAccount"}
-    ])
+    class("https://schema.org/FinancialService")
+    subject(template: "urn:uuid:{id}")
+    property(:name, "https://schema.org/name")
+    property(:provider, "https://schema.org/provider")
+    property(:api_endpoint, "https://schema.org/serviceUrl")
+    property(:secret_key, "https://schema.org/apiKeySecret")
+    property(:criticality, "https://schema.org/criticalityLevel")
+    property(:status, "https://schema.org/status")
+    reference(:cloud_region, "https://schema.org/locatedInRegion")
+    reference(:ledger_accounts, "https://schema.org/managesAccount")
   end
 
   attributes do
@@ -638,25 +614,19 @@ defmodule AshR2RML.Fortune5.LedgerAccount do
     domain: AshR2RML.Fortune5.Domain,
     data_layer: Ash.DataLayer.Ets,
     authorizers: [Ash.Policy.Authorizer],
-    extensions: [AshR2RML]
+    extensions: [AshR2RML.Resource]
 
   r2rml do
-    class_iri("https://schema.org/BankAccount")
-    subject_template("https://finance.fortune5.com/accounts/{id}")
     table_name("fortune5_ledger_accounts")
-
-    attribute_mappings([
-      {:account_number, "https://schema.org/identifier"},
-      {:balance, "https://schema.org/amount"},
-      {:currency, "https://schema.org/currency"},
-      {:risk_score, "https://w3id.org/fortune5/ontology#riskAssessmentScore"},
-      {:status, "https://schema.org/status"}
-    ])
-
-    relationship_mappings([
-      {:payment_gateway, "https://w3id.org/fortune5/ontology#clearedByGateway"},
-      {:credential_grants, "https://w3id.org/fortune5/ontology#hasCredential"}
-    ])
+    class("https://schema.org/BankAccount")
+    subject(template: "urn:uuid:{id}")
+    property(:account_number, "https://schema.org/identifier")
+    property(:balance, "https://schema.org/amount")
+    property(:currency, "https://schema.org/currency")
+    property(:risk_score, "https://schema.org/riskAssessmentScore")
+    property(:status, "https://schema.org/status")
+    reference(:payment_gateway, "https://schema.org/clearedByGateway")
+    reference(:credential_grants, "https://schema.org/hasCredential")
   end
 
   attributes do
@@ -722,25 +692,19 @@ defmodule AshR2RML.Fortune5.DeploymentPlan do
     domain: AshR2RML.Fortune5.Domain,
     data_layer: Ash.DataLayer.Ets,
     authorizers: [Ash.Policy.Authorizer],
-    extensions: [AshR2RML]
+    extensions: [AshR2RML.Resource]
 
   r2rml do
-    class_iri("https://schema.org/Plan")
-    subject_template("https://deploy.fortune5.com/plans/{id}")
     table_name("fortune5_deployment_plans")
-
-    attribute_mappings([
-      {:plan_code, "https://schema.org/identifier"},
-      {:target_version, "https://schema.org/softwareVersion"},
-      {:strategy, "https://w3id.org/fortune5/ontology#deploymentStrategy"},
-      {:status, "https://schema.org/status"},
-      {:budget_limit, "https://schema.org/budget"}
-    ])
-
-    relationship_mappings([
-      {:cluster, "https://w3id.org/fortune5/ontology#deploysToCluster"},
-      {:deployment_plan_services, "https://w3id.org/fortune5/ontology#hasServiceMapping"}
-    ])
+    class("https://schema.org/Plan")
+    subject(template: "urn:uuid:{id}")
+    property(:plan_code, "https://schema.org/identifier")
+    property(:target_version, "https://schema.org/softwareVersion")
+    property(:strategy, "https://schema.org/deploymentStrategy")
+    property(:status, "https://schema.org/status")
+    property(:budget_limit, "https://schema.org/budget")
+    reference(:cluster, "https://schema.org/deploysToCluster")
+    reference(:deployment_plan_services, "https://schema.org/hasServiceMapping")
   end
 
   attributes do
@@ -816,21 +780,15 @@ defmodule AshR2RML.Fortune5.DeploymentPlanService do
     domain: AshR2RML.Fortune5.Domain,
     data_layer: Ash.DataLayer.Ets,
     authorizers: [Ash.Policy.Authorizer],
-    extensions: [AshR2RML]
+    extensions: [AshR2RML.Resource]
 
   r2rml do
-    class_iri("https://schema.org/Action")
-    subject_template("https://deploy.fortune5.com/plan_services/{id}")
     table_name("fortune5_deployment_plan_services")
-
-    attribute_mappings([
-      {:traffic_weight, "https://w3id.org/fortune5/ontology#trafficWeight"}
-    ])
-
-    relationship_mappings([
-      {:deployment_plan, "https://w3id.org/fortune5/ontology#partOfPlan"},
-      {:service_instance, "https://w3id.org/fortune5/ontology#targetsService"}
-    ])
+    class("https://schema.org/Action")
+    subject(template: "urn:uuid:{id}")
+    property(:traffic_weight, "https://schema.org/trafficWeight")
+    reference(:deployment_plan, "https://schema.org/partOfPlan")
+    reference(:service_instance, "https://schema.org/targetsService")
   end
 
   attributes do
@@ -879,24 +837,18 @@ defmodule AshR2RML.Fortune5.IncidentTicket do
     domain: AshR2RML.Fortune5.Domain,
     data_layer: Ash.DataLayer.Ets,
     authorizers: [Ash.Policy.Authorizer],
-    extensions: [AshR2RML]
+    extensions: [AshR2RML.Resource]
 
   r2rml do
-    class_iri("https://schema.org/Ticket")
-    subject_template("https://ops.fortune5.com/incidents/{id}")
     table_name("fortune5_incident_tickets")
-
-    attribute_mappings([
-      {:ticket_number, "https://schema.org/identifier"},
-      {:severity, "https://w3id.org/fortune5/ontology#severityLevel"},
-      {:description, "https://schema.org/description"},
-      {:status, "https://schema.org/status"},
-      {:confidential_notes, "https://w3id.org/fortune5/ontology#confidentialOpsLog"}
-    ])
-
-    relationship_mappings([
-      {:service_instance, "https://w3id.org/fortune5/ontology#affectsService"}
-    ])
+    class("https://schema.org/Ticket")
+    subject(template: "urn:uuid:{id}")
+    property(:ticket_number, "https://schema.org/identifier")
+    property(:severity, "https://schema.org/severityLevel")
+    property(:description, "https://schema.org/description")
+    property(:status, "https://schema.org/status")
+    property(:confidential_notes, "https://schema.org/confidentialOpsLog")
+    reference(:service_instance, "https://schema.org/affectsService")
   end
 
   attributes do
@@ -967,24 +919,18 @@ defmodule AshR2RML.Fortune5.CredentialGrant do
     domain: AshR2RML.Fortune5.Domain,
     data_layer: Ash.DataLayer.Ets,
     authorizers: [Ash.Policy.Authorizer],
-    extensions: [AshR2RML]
+    extensions: [AshR2RML.Resource]
 
   r2rml do
-    class_iri("http://www.w3.org/ns/odrl/2/Permission")
-    subject_template("https://auth.fortune5.com/grants/{id}")
     table_name("fortune5_credential_grants")
-
-    attribute_mappings([
-      {:grantee_id, "http://www.w3.org/ns/odrl/2/assignee"},
-      {:role, "http://www.w3.org/ns/odrl/2/duty"},
-      {:token_hash, "https://w3id.org/fortune5/ontology#tokenSignature"},
-      {:active, "https://schema.org/active"},
-      {:odrl_action, "http://www.w3.org/ns/odrl/2/action"}
-    ])
-
-    relationship_mappings([
-      {:ledger_account, "http://www.w3.org/ns/odrl/2/target"}
-    ])
+    class("http://www.w3.org/ns/odrl/2/Permission")
+    subject(template: "urn:uuid:{id}")
+    property(:grantee_id, "http://www.w3.org/ns/odrl/2/assignee")
+    property(:role, "http://www.w3.org/ns/odrl/2/duty")
+    property(:token_hash, "https://schema.org/tokenSignature")
+    property(:active, "https://schema.org/active")
+    property(:odrl_action, "http://www.w3.org/ns/odrl/2/action")
+    reference(:ledger_account, "http://www.w3.org/ns/odrl/2/target")
   end
 
   attributes do
@@ -1144,7 +1090,7 @@ defmodule AshR2RML.Fortune5.AshFactory do
       |> Ash.Changeset.for_create(:create, %{
         name: "billing-api",
         version: "2.4.1",
-        endpoint_url: "https://billing.fortune5.internal/v2",
+        endpoint_url: "https://schema.org/billing-v2",
         status: :running,
         error_budget: Decimal.new("99.999"),
         cluster_id: cluster.id
@@ -1156,7 +1102,7 @@ defmodule AshR2RML.Fortune5.AshFactory do
       |> Ash.Changeset.for_create(:create, %{
         name: "auth-gateway",
         version: "3.1.0",
-        endpoint_url: "https://auth.fortune5.internal/v1",
+        endpoint_url: "https://schema.org/auth-v1",
         status: :running,
         error_budget: Decimal.new("99.995"),
         cluster_id: cluster.id
@@ -1169,7 +1115,7 @@ defmodule AshR2RML.Fortune5.AshFactory do
       |> Ash.Changeset.for_create(:create, %{
         name: "Global High-Throughput Clearing Gateway",
         provider: "InternalClearHouse",
-        api_endpoint: "https://clearing.fortune5.internal/api",
+        api_endpoint: "https://schema.org/clearing-api",
         secret_key: "sec_live_984f7281bc09a32",
         criticality: :mission_critical,
         status: :active,

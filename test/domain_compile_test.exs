@@ -27,13 +27,13 @@ defmodule AshR2RML.DomainCompileTest.Person do
   use Ash.Resource,
     domain: AshR2RML.DomainCompileTest.Domain,
     data_layer: Ash.DataLayer.Ets,
-    extensions: [AshR2RML]
+    extensions: [AshR2RML.Resource]
 
   r2rml do
-    class_iri("https://schema.org/Person")
-    subject_template("https://schema.org/Person/{id}")
     table_name("dc_people")
-    attribute_mappings([{:name, "https://schema.org/name"}])
+    class("https://schema.org/Person")
+    subject(template: "urn:uuid:{id}")
+    property(:name, "https://schema.org/name")
   end
 
   actions do
@@ -51,13 +51,13 @@ defmodule AshR2RML.DomainCompileTest.Org do
   use Ash.Resource,
     domain: AshR2RML.DomainCompileTest.Domain,
     data_layer: Ash.DataLayer.Ets,
-    extensions: [AshR2RML]
+    extensions: [AshR2RML.Resource]
 
   r2rml do
-    class_iri("https://schema.org/Organization")
-    subject_template("https://schema.org/Organization/{id}")
     table_name("dc_orgs")
-    attribute_mappings([{:name, "https://schema.org/name"}])
+    class("https://schema.org/Organization")
+    subject(template: "urn:uuid:{id}")
+    property(:name, "https://schema.org/name")
   end
 
   actions do
@@ -90,7 +90,7 @@ defmodule AshR2RML.DomainCompileTest.ViaResourceExt do
   r2rml do
     table_name("dc_via_res")
     class "https://schema.org/Thing"
-    subject template: "https://schema.org/Thing/{id}"
+    subject template: "urn:uuid:{id}"
     property :name, "https://schema.org/name"
   end
 

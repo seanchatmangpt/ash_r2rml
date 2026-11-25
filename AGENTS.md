@@ -43,6 +43,12 @@ Semantic publication has its own authority boundary. **Readable by an Ash proces
 
 `AshR2RML.Security.sanitize_mapping/2` (wired into `AshR2RML.Compiler.compile_resources/1`) exists so that rendered R2RML does not leak field-policy-gated attributes: rendered R2RML is consumed by readers that bypass Ash and have no actor with which to enforce a `field_policy`. For `AshPostgres.DataLayer`-backed resources it strips any R2RML-mapped attribute that carries an explicit `field_policy` before rendering, recording the exclusion in `mapping.metadata[:field_policy_excluded_attributes]`. For every data layer it also strips mapped attributes marked `sensitive?: true` (`mapping.metadata[:sensitive_excluded_attributes]`). This is a structural exclusion, not a refusal gate: it never blocks compilation, and it deliberately does not attempt to distinguish an unconditional `authorize_if always()` policy from a genuinely conditional one.
 
+## Unreleased handoff contract (frozen for ash_graphlaw / ash_affidavit)
+
+Do not change without a CHANGELOG "Unreleased" entry: deterministic R2RML Turtle, canonical
+N-Quads (`AshR2RML.NQuads`), invertible subject codec (`AshR2RML.Subject`), and the
+`AshR2RML.OBDA.Result` digest framing (length-prefixed r2rml, sparql, bindings).
+
 ## Work / verification
 
 Follow `parse → orient → resolve → materialize → read doctrine → inspect → admit/refuse → diagnose/repair → construct → actuate → receipt → replay → standing`. Prefer the existing lawful path and smallest coherent diff. No fabricated evidence, weakened tests, acceptance mocks for real DB/OBDA claims, unrelated refactors, or unresolved production placeholders.
@@ -94,12 +100,12 @@ commit `5defc87` if needed.
 
 ```elixir
 defmodule MyApp.Person do
-  use Ash.Resource, extensions: [AshR2RML]
+  use Ash.Resource, extensions: [AshR2RML.Resource]
 
   r2rml do
     class "https://schema.org/Person"
     subject do
-      template "https://example.org/people/{id}"
+      template "urn:uuid:{id}"
       term_type :iri
     end
   end

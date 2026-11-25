@@ -7,20 +7,32 @@ defmodule AshR2RML.ParityTest do
 
   test "parity comparison is multiset-based and independent of row/key ordering" do
     left = [
-      %{"resource" => "urn:r:2", "account" => "urn:a:1"},
-      %{"resource" => "urn:r:1", "account" => "urn:a:1"}
+      %{
+        "resource" => "urn:uuid:00000000-0000-4000-8000-000000000002",
+        "account" => "urn:uuid:00000000-0000-4000-8000-000000000011"
+      },
+      %{
+        "resource" => "urn:uuid:00000000-0000-4000-8000-000000000001",
+        "account" => "urn:uuid:00000000-0000-4000-8000-000000000011"
+      }
     ]
 
     right = [
-      %{account: "urn:a:1", resource: "urn:r:1"},
-      %{resource: "urn:r:2", account: "urn:a:1"}
+      %{
+        account: "urn:uuid:00000000-0000-4000-8000-000000000011",
+        resource: "urn:uuid:00000000-0000-4000-8000-000000000001"
+      },
+      %{
+        resource: "urn:uuid:00000000-0000-4000-8000-000000000002",
+        account: "urn:uuid:00000000-0000-4000-8000-000000000011"
+      }
     ]
 
     receipt =
       AshR2RML.Parity.compare(:sparql_sql, "cloud:belongsToAccount", left, right, %{
         fixture_sha256: "fixture",
         mapping_sha256: "mapping",
-        left_query: "SELECT ?resource ?account WHERE { ?resource <urn:belongsToAccount> ?account }",
+        left_query: "SELECT ?resource ?account WHERE { ?resource <https://schema.org/memberOf> ?account }",
         right_query: "SELECT resource, account FROM resources"
       })
 

@@ -36,6 +36,10 @@ defmodule AshR2RML.Security do
   """
   @spec sanitize_mapping(module(), Resource.t()) :: Resource.t()
   def sanitize_mapping(ash_resource, %Resource{} = mapping) when is_atom(ash_resource) do
+    # Plain-column cloaked projections are dropped here; every other cloaked dependency is
+    # refused by check_encrypted_projection/2.
+    mapping = remove_cloaked_poms(ash_resource, mapping)
+
     # Only Ash-mediated in-memory (:ets) reads can enforce field policies; every other layer,
     # including :unknown (fail closed), is read directly by an external R2RML engine.
     mapping =
@@ -60,6 +64,153 @@ defmodule AshR2RML.Security do
   """
   @spec check_protected_dependencies(module(), Resource.t()) :: :ok | {:error, AshR2RML.Refusal.t()}
   def check_protected_dependencies(ash_resource, %Resource{} = mapping) when is_atom(ash_resource) do
+    with :ok <- check_encrypted_projection(ash_resource, mapping) do
+      check_sensitive_dependencies(ash_resource, mapping)
+    end
+  end
+
+  @doc """
+  Names of attributes encrypted by AshCloak on `ash_resource`, detected by Spark introspection
+  of the `cloak` DSL section (`attributes`), with no compile-time or runtime dependency on
+  `ash_cloak`. Returns `[]` for resources without the extension; `cloaked_column?/2` fails
+  closed (treats every column as cloaked) when introspection itself errors; this function
+  raises `ArgumentError` in that case rather than reporting an empty (permissive) list.
+  """
+  @spec cloaked_attributes(module()) :: [atom()]
+  def cloaked_attributes(ash_resource) when is_atom(ash_resource) do
+    case cloaked_attributes_result(ash_resource) do
+      {:ok, names} ->
+        names
+
+      :error ->
+        raise ArgumentError,
+              "cloak introspection failed for #{inspect(ash_resource)}; refusing to assume no cloaked attributes"
+    end
+  end
+
+  defp cloaked_attributes_result(ash_resource) do
+    case Spark.Dsl.Extension.get_opt(ash_resource, [:cloak], :attributes, []) do
+      names when is_list(names) -> {:ok, Enum.filter(names, &is_atom/1)}
+      _ -> :error
+    end
+  rescue
+    _ -> :error
+  end
+
+  # Column names (attribute names and `source` renames) that hold plaintext or ciphertext.
+  defp cloaked_names(ash_resource, attrs) do
+    Enum.flat_map(attrs, fn attr ->
+      encrypted = String.to_atom("encrypted_" <> to_string(attr))
+
+      [attr, encrypted]
+      |> Enum.flat_map(fn name ->
+        case Ash.Resource.Info.attribute(ash_resource, name) do
+          %{source: source} when not is_nil(source) -> [name, source]
+          _ -> [name]
+        end
+      end)
+      |> Enum.map(&to_string/1)
+    end)
+  end
+
+  @doc """
+  True when `column` names a cloaked attribute of `ash_resource`, its `encrypted_<name>`
+  ciphertext companion, or the `source` rename of either. Fails closed (true) when cloak
+  introspection errors.
+  """
+  @spec cloaked_column?(module(), String.t() | atom()) :: boolean()
+  def cloaked_column?(ash_resource, column) do
+    case cloaked_attributes_result(ash_resource) do
+      {:ok, attrs} -> to_string(column) in cloaked_names(ash_resource, attrs)
+      :error -> true
+    end
+  rescue
+    _ -> true
+  end
+
+  @doc """
+  True for an opaque enclave pointer term map: an IRI constant object map whose value is
+  `urn:sha256:<64 lowercase hex>`. Templates are never pointers.
+  """
+  @spec enclave_pointer?(module(), struct()) :: boolean()
+  def enclave_pointer?(_ash_resource, %{strategy: :constant, term_type: :iri, value: value}) when is_binary(value) do
+    Regex.match?(~r/\Aurn:sha256:[0-9a-f]{64}\z/, value)
+  end
+
+  def enclave_pointer?(_ash_resource, _object_map), do: false
+
+  # Predicate maps that project a cloaked column as a plain column are dropped (not refused).
+  defp cloak_plain_column?(ash_resource, pom) do
+    not enclave_pointer?(ash_resource, pom.object_map) and
+      pom.object_map.strategy == :column and
+      (cloaked_column?(ash_resource, pom.object_map.value) or
+         (not is_nil(pom.attribute) and cloaked_column?(ash_resource, pom.attribute)))
+  end
+
+  defp remove_cloaked_poms(ash_resource, %Resource{predicate_object_maps: poms} = mapping) do
+    {dropped, kept} = Enum.split_with(poms, &cloak_plain_column?(ash_resource, &1))
+
+    case dropped do
+      [] ->
+        mapping
+
+      _ ->
+        names = dropped |> Enum.map(&(&1.attribute || &1.object_map.value)) |> Enum.uniq()
+        %{mapping | predicate_object_maps: kept, metadata: Map.put(mapping.metadata, :cloak_excluded_attributes, names)}
+    end
+  end
+
+  @doc """
+  Refuses plaintext projection of AshCloak-encrypted attributes. Predicate-object maps over a
+  cloaked attribute are admitted only as an opaque `urn:sha256:` enclave pointer; subject maps,
+  graph maps, object term maps and reference joins (child or parent) that touch a cloaked
+  attribute or its ciphertext column are always refused with
+  `:REFUSED_ENCRYPTED_ATTRIBUTE_PROJECTION`.
+  """
+  @spec check_encrypted_projection(module(), Resource.t()) :: :ok | {:error, AshR2RML.Refusal.t()}
+  def check_encrypted_projection(ash_resource, %Resource{} = mapping) when is_atom(ash_resource) do
+    properties =
+      for pom <- mapping.predicate_object_maps,
+          not enclave_pointer?(ash_resource, pom.object_map),
+          field <- [pom.attribute | object_fields(pom.object_map)],
+          not is_nil(field) do
+        {"property", field}
+      end
+
+    others =
+      Enum.map(subject_fields(mapping.subject_map), &{"subject", &1}) ++
+        Enum.map(Enum.flat_map(all_graph_maps(mapping), &graph_fields/1), &{"graph", &1}) ++
+        Enum.map(Enum.flat_map(mapping.reference_object_maps, &child_columns/1), &{"join", &1})
+
+    own = Enum.find(properties ++ others, fn {_, f} -> cloaked_column?(ash_resource, f) end)
+
+    parent =
+      for ref <- mapping.reference_object_maps,
+          is_atom(ref.parent_resource) and not is_nil(ref.parent_resource),
+          join <- ref.joins || [],
+          cloaked_column?(ref.parent_resource, join.parent) do
+        {"join", join.parent}
+      end
+
+    case own || List.first(parent) do
+      nil ->
+        :ok
+
+      {where, field} ->
+        {:error,
+         AshR2RML.Refusal.new(
+           :REFUSED_ENCRYPTED_ATTRIBUTE_PROJECTION,
+           mapping.ash_resource,
+           "encrypted attribute #{inspect(to_string(field))} cannot be projected in plaintext as a #{where}; " <>
+             "map it as an opaque urn:sha256: enclave pointer",
+           %{field: to_string(field), where: where}
+         )}
+    end
+  end
+
+  defp child_columns(ref), do: for(join <- ref.joins || [], do: join.child)
+
+  defp check_sensitive_dependencies(ash_resource, mapping) do
     own =
       [{"subject map", subject_fields(mapping.subject_map)}] ++
         [{"graph map", Enum.flat_map(all_graph_maps(mapping), &graph_fields/1)}] ++
@@ -120,27 +271,30 @@ defmodule AshR2RML.Security do
   defp object_fields(%{strategy: :template, value: value}) when is_binary(value), do: template_columns(value)
   defp object_fields(_), do: []
 
+  # The single placeholder scanner for subject, graph and object templates.
   defp template_columns(template) do
     ~r/\{([^{}]+)\}/ |> Regex.scan(template, capture: :all_but_first) |> List.flatten()
   end
 
-  # Unresolvable columns are not protected attributes; a raising lookup fails closed.
-  defp protected_column?(resource, column) do
+  # Resolves a column or placeholder name to attributes by attribute name or `source` rename.
+  defp resolve_attributes(resource, column) do
     name = to_string(column)
 
     resource
     |> Ash.Resource.Info.attributes()
-    |> Enum.find(fn attr ->
+    |> Enum.filter(fn attr ->
       to_string(attr.name) == name or (not is_nil(attr.source) and to_string(attr.source) == name)
     end)
-    |> case do
-      nil ->
-        false
+  end
 
-      attr ->
-        attr.sensitive? == true or
-          (AshR2RML.DataLayer.backend(resource) != :ets and field_policy_protected?(resource, attr.name))
-    end
+  # Unresolvable columns are not protected attributes; a raising lookup fails closed.
+  defp protected_column?(resource, column) do
+    resource
+    |> resolve_attributes(column)
+    |> Enum.any?(fn attr ->
+      attr.sensitive? == true or
+        (AshR2RML.DataLayer.backend(resource) != :ets and field_policy_protected?(resource, attr.name))
+    end)
   rescue
     _ -> true
   end
@@ -177,33 +331,100 @@ defmodule AshR2RML.Security do
   """
   @spec sanitize_in_memory_mapping(module(), Resource.t()) :: Resource.t()
   def sanitize_in_memory_mapping(ash_resource, %Resource{} = mapping) when is_atom(ash_resource) do
-    ash_resource
-    |> non_attribute_mapped_fields(mapping)
-    |> then(&remove_attributes(mapping, &1, :in_memory_non_attribute_excluded_attributes))
-    |> sanitize_subject_map(ash_resource)
-    |> sanitize_reference_object_maps(ash_resource)
+    # Protected-attribute refusal is typed and honors `allow_sensitive` in
+    # `AshR2RML.OBDA.InMemory` (check_spec_sensitive); this transform only rejects
+    # non-attribute subject fields, so it must not pre-empt that decision.
+    case admit_in_memory_mapping(ash_resource, mapping, allow_sensitive: true) do
+      {:ok, admitted} ->
+        admitted
+
+      {:error, %AshR2RML.Refusal{code: code, detail: detail}} ->
+        raise ArgumentError, "#{code}: #{detail}"
+    end
   end
 
-  # Subject map columns/template fields that are not real attributes are replaced by a
-  # constant-free blank-node subject; the offending names are recorded in metadata.
-  defp sanitize_subject_map(%Resource{subject_map: subject_map} = mapping, ash_resource) do
-    bad =
-      subject_map
-      |> subject_fields()
-      |> Enum.reject(&attribute_column?(ash_resource, &1))
+  @doc """
+  Typed admission for `AshR2RML.OBDA.InMemory`: refuses (instead of rewriting) a subject map
+  whose placeholder or column is not a real, non-cloaked Ash attribute, and a subject map or
+  graph map that reads a protected attribute (`sensitive?: true`, resolved by attribute name
+  or `source`). Otherwise returns the mapping with non-attribute predicate maps, graph maps
+  and reference joins stripped.
+  """
+  @spec admit_in_memory_mapping(module(), Resource.t(), keyword()) ::
+          {:ok, Resource.t()} | {:error, AshR2RML.Refusal.t()}
+  def admit_in_memory_mapping(ash_resource, %Resource{} = mapping, opts \\ []) when is_atom(ash_resource) do
+    allow_sensitive? = Keyword.get(opts, :allow_sensitive, false) == true
 
-    case bad do
-      [] ->
-        mapping
+    with :ok <- check_in_memory_subject(ash_resource, mapping, allow_sensitive?),
+         :ok <- check_in_memory_graph_sensitivity(ash_resource, mapping, allow_sensitive?) do
+      {:ok,
+       ash_resource
+       |> non_attribute_mapped_fields(mapping)
+       |> then(&remove_attributes(mapping, &1, :in_memory_non_attribute_excluded_attributes))
+       |> sanitize_graph_maps(ash_resource)
+       |> sanitize_reference_object_maps(ash_resource)}
+    end
+  end
 
-      _ ->
-        stripped = %{subject_map | strategy: :blank_node, value: "excluded", term_type: :blank_node}
+  defp check_in_memory_graph_sensitivity(_ash_resource, _mapping, true), do: :ok
 
-        %{
-          mapping
-          | subject_map: stripped,
-            metadata: Map.put(mapping.metadata, :in_memory_non_attribute_subject_fields, Enum.uniq(bad))
-        }
+  defp check_in_memory_graph_sensitivity(ash_resource, mapping, false) do
+    mapping
+    |> all_graph_maps()
+    |> Enum.flat_map(&graph_fields/1)
+    |> Enum.find(&protected_column?(ash_resource, &1))
+    |> case do
+      nil -> :ok
+      field -> refuse_field(mapping, field, "graph map")
+    end
+  end
+
+  defp check_in_memory_subject(ash_resource, mapping, allow_sensitive?) do
+    fields = subject_fields(mapping.subject_map)
+
+    case Enum.find(
+           fields,
+           &(not attribute_column?(ash_resource, &1) or (not allow_sensitive? and protected_column?(ash_resource, &1)))
+         ) do
+      nil -> :ok
+      field -> refuse_field(mapping, field, "subject map")
+    end
+  end
+
+  defp refuse_field(mapping, field, where) do
+    {:error,
+     AshR2RML.Refusal.new(
+       :REFUSED_SENSITIVE_ATTRIBUTE_MATERIALIZATION,
+       mapping.ash_resource,
+       "field #{inspect(to_string(field))} is not an admitted public attribute and cannot be used in the #{where} of an in-memory mapping",
+       %{field: to_string(field), where: where}
+     )}
+  end
+
+  # Graph maps reading a non-attribute or cloaked column are removed at every level.
+  defp sanitize_graph_maps(%Resource{} = mapping, ash_resource) do
+    ok? = fn gm -> gm |> graph_fields() |> Enum.all?(&attribute_column?(ash_resource, &1)) end
+    keep = fn maps -> Enum.filter(maps, ok?) end
+    total = length(all_graph_maps(mapping))
+
+    stripped = %{
+      mapping
+      | graph_maps: keep.(mapping.graph_maps),
+        subject_map: %{mapping.subject_map | graph_maps: keep.(mapping.subject_map.graph_maps)},
+        predicate_object_maps:
+          Enum.map(mapping.predicate_object_maps, fn pom ->
+            %{
+              pom
+              | graph_maps: keep.(pom.graph_maps),
+                object_map: %{pom.object_map | graph_maps: keep.(pom.object_map.graph_maps)}
+            }
+          end),
+        reference_object_maps: Enum.map(mapping.reference_object_maps, &%{&1 | graph_maps: keep.(&1.graph_maps)})
+    }
+
+    case total - length(all_graph_maps(stripped)) do
+      0 -> mapping
+      n -> %{stripped | metadata: Map.put(stripped.metadata, :in_memory_graph_maps_excluded, n)}
     end
   end
 
@@ -234,21 +455,15 @@ defmodule AshR2RML.Security do
 
   defp subject_fields(%{strategy: :column, value: value}), do: [value]
 
-  defp subject_fields(%{strategy: :template, value: value}) when is_binary(value) do
-    ~r/\{([^}]+)\}/ |> Regex.scan(value, capture: :all_but_first) |> List.flatten()
-  end
+  defp subject_fields(%{strategy: strategy, value: value})
+       when strategy in [:template, :blank_node] and is_binary(value),
+       do: template_columns(value)
 
   defp subject_fields(_), do: []
 
   # Fail closed: any resolution error means the column is not admitted.
   defp attribute_column?(ash_resource, column) do
-    name = to_string(column)
-
-    ash_resource
-    |> Ash.Resource.Info.attributes()
-    |> Enum.any?(fn attr ->
-      to_string(attr.name) == name or (not is_nil(attr.source) and to_string(attr.source) == name)
-    end)
+    not cloaked_column?(ash_resource, column) and resolve_attributes(ash_resource, column) != []
   rescue
     _ -> false
   end

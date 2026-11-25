@@ -31,7 +31,7 @@ defmodule AshR2RML.Adversarial.DatatypeClosureTest do
     use Ash.Type
 
     use AshR2RML.Type,
-      xsd_datatype: "https://example.org/ontology/MonetaryAmount"
+      xsd_datatype: "http://www.w3.org/2001/XMLSchema#normalizedString"
 
     @impl Ash.Type
     def storage_type(_), do: :decimal
@@ -116,21 +116,21 @@ defmodule AshR2RML.Adversarial.DatatypeClosureTest do
 
     r2rml do
       table_name("comprehensive_entities")
-      class("https://example.org/ontology/ComprehensiveEntity")
+      class("https://schema.org/Thing")
 
       subject do
-        template("https://example.org/entities/{id}")
+        template("urn:uuid:{id}")
       end
 
       property(:name, "http://xmlns.com/foaf/0.1/name")
-      property(:view_count, "https://example.org/ontology/viewCount")
-      property(:price, "https://example.org/ontology/price")
-      property(:is_active, "https://example.org/ontology/isActive")
-      property(:published_at, "https://example.org/ontology/publishedAt")
-      property(:scheduled_at, "https://example.org/ontology/scheduledAt")
-      property(:status, "https://example.org/ontology/status")
-      property(:priority, "https://example.org/ontology/priority")
-      property(:budget, "https://example.org/ontology/budget")
+      property(:view_count, "https://schema.org/interactionCount")
+      property(:price, "https://schema.org/price")
+      property(:is_active, "https://schema.org/isAccessibleForFree")
+      property(:published_at, "https://schema.org/datePublished")
+      property(:scheduled_at, "https://schema.org/startDate")
+      property(:status, "https://schema.org/creativeWorkStatus")
+      property(:priority, "https://schema.org/position")
+      property(:budget, "https://schema.org/budget")
       property(:inserted_at, "http://purl.org/dc/terms/created")
       property(:updated_at, "http://purl.org/dc/terms/modified")
     end
@@ -164,7 +164,7 @@ defmodule AshR2RML.Adversarial.DatatypeClosureTest do
 
     test "resolves custom Ash.Type implementing AshR2RML.Type behaviour" do
       assert {:ok, dt} = Registry.resolve(MonetaryAmount)
-      assert dt.rdf_datatype == "https://example.org/ontology/MonetaryAmount"
+      assert dt.rdf_datatype == "http://www.w3.org/2001/XMLSchema#normalizedString"
       assert Registry.supported?(MonetaryAmount) == true
     end
   end
@@ -203,7 +203,7 @@ defmodule AshR2RML.Adversarial.DatatypeClosureTest do
       assert prop_map[:scheduled_at].object_map.datatype.rdf_datatype == "http://www.w3.org/2001/XMLSchema#dateTime"
       assert prop_map[:status].object_map.datatype.rdf_datatype == "http://www.w3.org/2001/XMLSchema#string"
       assert prop_map[:priority].object_map.datatype.rdf_datatype == "http://www.w3.org/2001/XMLSchema#string"
-      assert prop_map[:budget].object_map.datatype.rdf_datatype == "https://example.org/ontology/MonetaryAmount"
+      assert prop_map[:budget].object_map.datatype.rdf_datatype == "http://www.w3.org/2001/XMLSchema#normalizedString"
       assert prop_map[:inserted_at].object_map.datatype.rdf_datatype == "http://www.w3.org/2001/XMLSchema#dateTime"
       assert prop_map[:updated_at].object_map.datatype.rdf_datatype == "http://www.w3.org/2001/XMLSchema#dateTime"
     end
@@ -213,16 +213,16 @@ defmodule AshR2RML.Adversarial.DatatypeClosureTest do
 
       assert ttl =~ "rr:predicate <http://xmlns.com/foaf/0.1/name>"
       assert ttl =~ "rr:datatype <http://www.w3.org/2001/XMLSchema#string>"
-      assert ttl =~ "rr:predicate <https://example.org/ontology/viewCount>"
+      assert ttl =~ "rr:predicate <https://schema.org/interactionCount>"
       assert ttl =~ "rr:datatype <http://www.w3.org/2001/XMLSchema#integer>"
-      assert ttl =~ "rr:predicate <https://example.org/ontology/price>"
+      assert ttl =~ "rr:predicate <https://schema.org/price>"
       assert ttl =~ "rr:datatype <http://www.w3.org/2001/XMLSchema#decimal>"
-      assert ttl =~ "rr:predicate <https://example.org/ontology/isActive>"
+      assert ttl =~ "rr:predicate <https://schema.org/isAccessibleForFree>"
       assert ttl =~ "rr:datatype <http://www.w3.org/2001/XMLSchema#boolean>"
-      assert ttl =~ "rr:predicate <https://example.org/ontology/publishedAt>"
+      assert ttl =~ "rr:predicate <https://schema.org/datePublished>"
       assert ttl =~ "rr:datatype <http://www.w3.org/2001/XMLSchema#dateTime>"
-      assert ttl =~ "rr:predicate <https://example.org/ontology/budget>"
-      assert ttl =~ "rr:datatype <https://example.org/ontology/MonetaryAmount>"
+      assert ttl =~ "rr:predicate <https://schema.org/budget>"
+      assert ttl =~ "rr:datatype <http://www.w3.org/2001/XMLSchema#normalizedString>"
       assert ttl =~ "rr:predicate <http://purl.org/dc/terms/created>"
       assert ttl =~ "rr:predicate <http://purl.org/dc/terms/modified>"
     end

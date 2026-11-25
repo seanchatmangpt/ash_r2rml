@@ -25,9 +25,9 @@ defmodule AshR2RML.DataLayerContract do
 
   alias AshR2RML.Mapping.{Datatype, ObjectMap, PredicateObjectMap}
   alias AshR2RML.OBDA.InMemory
-  alias AshR2RML.Refusal
+  alias AshR2RML.Error
 
-  @ex "https://example.org/contract/"
+  @ex "https://schema.org/"
   @xsd_string "http://www.w3.org/2001/XMLSchema#string"
 
   @preds %{
@@ -71,10 +71,10 @@ defmodule AshR2RML.DataLayerContract do
   def class_iri(:person), do: @ex <> "Person"
 
   @doc "Subject IRI prefix for organizations."
-  def org_subject_prefix, do: @ex <> "org/"
+  def org_subject_prefix, do: "urn:uuid:org/"
 
   @doc "Subject IRI prefix for people."
-  def person_subject_prefix, do: @ex <> "person/"
+  def person_subject_prefix, do: "urn:uuid:"
 
   @doc "Seed organizations as `{tenant, code, name, internal_tax_id}`."
   def orgs, do: @orgs
@@ -204,22 +204,22 @@ defmodule AshR2RML.DataLayerContract do
   refusal discloses nothing, so it normalizes to `[]` (Ash may deny a read by filtering or by
   forbidding it; both mean no subject is published).
   """
-  @spec visible({:ok, struct()} | {:error, Refusal.t()}) :: [map()]
+  @spec visible({:ok, struct()} | {:error, Error.t()}) :: [map()]
   def visible({:ok, observation}) do
     observation.rows
     |> Enum.map(fn row -> Map.new(row, fn {k, v} -> {k, norm(v)} end) end)
     |> Enum.sort_by(&inspect/1)
   end
 
-  def visible({:error, %Refusal{}}), do: []
+  def visible({:error, %Error{}}), do: []
 
   @doc """
   Like `visible/1` but keeps refusal and empty-ok distinct: `{:ok, sorted_rows}` or
   `{:error, refusal_code}`.
   """
-  @spec visible_shape({:ok, struct()} | {:error, Refusal.t()}) :: {:ok, [map()]} | {:error, atom()}
+  @spec visible_shape({:ok, struct()} | {:error, Error.t()}) :: {:ok, [map()]} | {:error, atom()}
   def visible_shape({:ok, _} = ok), do: {:ok, visible(ok)}
-  def visible_shape({:error, %Refusal{code: code}}), do: {:error, code}
+  def visible_shape({:error, %Error{code: code}}), do: {:error, code}
 
   @doc """
   Result rows exactly as emitted (term-normalized, NOT re-sorted), so tests can observe the
@@ -306,19 +306,16 @@ defmodule AshR2RML.DataLayerContract do
         use Ash.Resource,
           domain: unquote(domain),
           data_layer: unquote(data_layer),
-          extensions: [AshR2RML]
+          extensions: [AshR2RML.Resource]
 
         unquote(layer_dsl(kind, repo, "contract_organizations"))
 
         r2rml do
-          class_iri(unquote(class_iri(:org)))
-          subject_template(unquote(org_subject_prefix() <> "{tenant_id}/{code}"))
           table_name("contract_organizations")
-
-          attribute_mappings([
-            {:code, unquote(pred(:org_code))},
-            {:name, unquote(pred(:org_name))}
-          ])
+          class(unquote(class_iri(:org)))
+          subject(template: unquote(org_subject_prefix() <> "{tenant_id}/{code}"))
+          property(:code, unquote(pred(:org_code)))
+          property(:name, unquote(pred(:org_name)))
         end
 
         multitenancy do
@@ -348,24 +345,21 @@ defmodule AshR2RML.DataLayerContract do
           domain: unquote(domain),
           data_layer: unquote(data_layer),
           authorizers: [Ash.Policy.Authorizer],
-          extensions: [AshR2RML]
+          extensions: [AshR2RML.Resource]
 
         unquote(layer_dsl(kind, repo, "contract_people"))
 
         r2rml do
-          class_iri(unquote(class_iri(:person)))
-          subject_template(unquote(person_subject_prefix() <> "{id}"))
           table_name("contract_people")
-
-          attribute_mappings([
-            {:name, unquote(pred(:name))},
-            {:age, unquote(pred(:age))},
-            {:active, unquote(pred(:active))},
-            {:score, unquote(pred(:score))},
-            {:born_on, unquote(pred(:born_on))},
-            {:joined_at, unquote(pred(:joined_at))},
-            {:secret_note, unquote(pred(:secret_note))}
-          ])
+          class(unquote(class_iri(:person)))
+          subject(template: unquote(person_subject_prefix() <> "{id}"))
+          property(:name, unquote(pred(:name)))
+          property(:age, unquote(pred(:age)))
+          property(:active, unquote(pred(:active)))
+          property(:score, unquote(pred(:score)))
+          property(:born_on, unquote(pred(:born_on)))
+          property(:joined_at, unquote(pred(:joined_at)))
+          property(:secret_note, unquote(pred(:secret_note)))
         end
 
         multitenancy do
@@ -564,7 +558,8 @@ defmodule AshR2RML.DataLayerContract.Cases do
       end
 
       test "a multitenant read without a tenant is refused, never widened" do
-        assert {:error, %Refusal{}} = C.run(unquote(layer), :org, C.org_sparql())
+        assert {:error, %AshR2RML.Error{code: :REFUSED_MISSING_TENANT}} =
+                 C.run(unquote(layer), :org, C.org_sparql())
       end
 
       test "person tenant isolation holds for every admitted role" do

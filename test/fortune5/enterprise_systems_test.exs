@@ -61,16 +61,16 @@ defmodule AshR2RML.Fortune5.EnterpriseSystemsTest do
 
     r2rml do
       table_name("enterprise_cost_centers")
-      class("https://enterprise.fortune5.com/ontology/CostCenter")
+      class("https://schema.org/CostCenter")
 
       subject do
-        template("https://enterprise.fortune5.com/tenants/{tenant_id}/cost-centers/{code}")
+        template("urn:uuid:{tenant_id}/cost-centers/{code}")
       end
 
       property(:name, "http://xmlns.com/foaf/0.1/name")
-      property(:budget_allocated, "https://enterprise.fortune5.com/ontology/budgetAllocated")
-      property(:headcount, "https://enterprise.fortune5.com/ontology/headcount")
-      property(:active, "https://enterprise.fortune5.com/ontology/isActive")
+      property(:budget_allocated, "https://schema.org/budgetAllocated")
+      property(:headcount, "https://schema.org/headcount")
+      property(:active, "https://schema.org/isActive")
     end
   end
 
@@ -127,19 +127,19 @@ defmodule AshR2RML.Fortune5.EnterpriseSystemsTest do
 
     r2rml do
       table_name("general_ledgers")
-      class("https://enterprise.fortune5.com/ontology/GeneralLedger")
+      class("https://schema.org/GeneralLedger")
 
       subject do
-        template("https://enterprise.fortune5.com/tenants/{tenant_id}/ledgers/{ledger_code}/{fiscal_year}")
+        template("urn:uuid:{tenant_id}/ledgers/{ledger_code}/{fiscal_year}")
       end
 
-      property(:tenant_id, "https://enterprise.fortune5.com/ontology/tenantId")
-      property(:ledger_code, "https://enterprise.fortune5.com/ontology/ledgerCode")
-      property(:currency, "https://enterprise.fortune5.com/ontology/currencyCode")
-      property(:revenue, "https://enterprise.fortune5.com/ontology/totalRevenue")
-      property(:opex, "https://enterprise.fortune5.com/ontology/operatingExpense")
-      property(:cogs, "https://enterprise.fortune5.com/ontology/costOfGoodsSold")
-      reference(:cost_center, "https://enterprise.fortune5.com/ontology/belongsToCostCenter")
+      property(:tenant_id, "https://schema.org/tenantId")
+      property(:ledger_code, "https://schema.org/ledgerCode")
+      property(:currency, "https://schema.org/currencyCode")
+      property(:revenue, "https://schema.org/totalRevenue")
+      property(:opex, "https://schema.org/operatingExpense")
+      property(:cogs, "https://schema.org/costOfGoodsSold")
+      reference(:cost_center, "https://schema.org/belongsToCostCenter")
     end
   end
 
@@ -175,18 +175,18 @@ defmodule AshR2RML.Fortune5.EnterpriseSystemsTest do
 
     r2rml do
       table_name("journal_entries")
-      class("https://enterprise.fortune5.com/ontology/JournalEntry")
+      class("https://schema.org/JournalEntry")
 
       subject do
-        template("https://enterprise.fortune5.com/entries/{id}")
+        template("urn:uuid:{id}")
       end
 
-      property(:entry_number, "https://enterprise.fortune5.com/ontology/entryNumber")
-      property(:debit_amount, "https://enterprise.fortune5.com/ontology/debitAmount")
-      property(:credit_amount, "https://enterprise.fortune5.com/ontology/creditAmount")
-      property(:description, "http://purl.org/dc/elements/1.1/description")
-      property(:posted_at, "https://enterprise.fortune5.com/ontology/postedTimestamp")
-      reference(:general_ledger, "https://enterprise.fortune5.com/ontology/inLedger")
+      property(:entry_number, "https://schema.org/entryNumber")
+      property(:debit_amount, "https://schema.org/debitAmount")
+      property(:credit_amount, "https://schema.org/creditAmount")
+      property(:description, "http://purl.org/dc/terms/description")
+      property(:posted_at, "https://schema.org/postedTimestamp")
+      reference(:general_ledger, "https://schema.org/inLedger")
     end
   end
 
@@ -220,16 +220,16 @@ defmodule AshR2RML.Fortune5.EnterpriseSystemsTest do
 
     r2rml do
       table_name("enterprise_accounts")
-      class("https://enterprise.fortune5.com/ontology/EnterpriseAccount")
+      class("https://schema.org/EnterpriseAccount")
 
       subject do
-        template("https://enterprise.fortune5.com/accounts/{account_number}")
+        template("urn:uuid:{account_number}")
       end
 
-      property(:account_number, "https://enterprise.fortune5.com/ontology/accountNumber")
-      property(:account_type, "https://enterprise.fortune5.com/ontology/accountType")
-      property(:balance, "https://enterprise.fortune5.com/ontology/accountBalance")
-      property(:risk_score, "https://enterprise.fortune5.com/ontology/riskScore")
+      property(:account_number, "https://schema.org/accountNumber")
+      property(:account_type, "https://schema.org/accountType")
+      property(:balance, "https://schema.org/accountBalance")
+      property(:risk_score, "https://schema.org/riskScore")
     end
   end
 
@@ -336,18 +336,18 @@ defmodule AshR2RML.Fortune5.EnterpriseSystemsTest do
       assert {:ok, %Bundle{resources: [res]}} = AshR2RML.compile(CostCenter)
       assert res.ash_resource == CostCenter
       assert res.logical_table.table_name == "enterprise_cost_centers"
-      assert res.class_iris == ["https://enterprise.fortune5.com/ontology/CostCenter"]
+      assert res.class_iris == ["https://schema.org/CostCenter"]
 
       # Verify subject map uses composite natural key template
       assert res.subject_map.strategy == :template
-      assert res.subject_map.value == "https://enterprise.fortune5.com/tenants/{tenant_id}/cost-centers/{code}"
+      assert res.subject_map.value == "urn:uuid:{tenant_id}/cost-centers/{code}"
 
       # Verify predicate-object maps
       predicates = Enum.map(res.predicate_object_maps, & &1.predicate_iri)
       assert "http://xmlns.com/foaf/0.1/name" in predicates
-      assert "https://enterprise.fortune5.com/ontology/budgetAllocated" in predicates
-      assert "https://enterprise.fortune5.com/ontology/headcount" in predicates
-      assert "https://enterprise.fortune5.com/ontology/isActive" in predicates
+      assert "https://schema.org/budgetAllocated" in predicates
+      assert "https://schema.org/headcount" in predicates
+      assert "https://schema.org/isActive" in predicates
     end
 
     test "compiles GeneralLedger mapping with 3-part composite identity, calculation, and reference" do
@@ -356,12 +356,12 @@ defmodule AshR2RML.Fortune5.EnterpriseSystemsTest do
 
       # 3-part composite template
       assert gl_mapping.subject_map.value ==
-               "https://enterprise.fortune5.com/tenants/{tenant_id}/ledgers/{ledger_code}/{fiscal_year}"
+               "urn:uuid:{tenant_id}/ledgers/{ledger_code}/{fiscal_year}"
 
       # Reference object map to CostCenter
       [ref] = gl_mapping.reference_object_maps
       assert ref.relationship == :cost_center
-      assert ref.predicate_iri == "https://enterprise.fortune5.com/ontology/belongsToCostCenter"
+      assert ref.predicate_iri == "https://schema.org/belongsToCostCenter"
       assert ref.parent_resource == CostCenter
       assert [%JoinCondition{child: "cost_center_id", parent: "id"}] = ref.joins
 

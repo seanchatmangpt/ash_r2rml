@@ -27,6 +27,7 @@ defmodule AshR2RML.Refusal do
           | :UNSUPPORTED_ASH_TYPE
           | :REFUSED_UNSUPPORTED_SPARQL_FEATURE
           | :REFUSED_SENSITIVE_ATTRIBUTE_MATERIALIZATION
+          | :REFUSED_ENCRYPTED_ATTRIBUTE_PROJECTION
           | :REFUSED_NON_LITERAL_DATATYPE
           | :REFUSED_CHANGESET_CONFLICT
           | :REFUSED_MANIFEST_GENERATION
@@ -300,7 +301,7 @@ defmodule AshR2RML.Mapping do
       |> then(&:crypto.hash(:sha256, &1))
       |> Base.encode16(case: :lower)
 
-    "urn:ash-r2ml:triples-map:" <> digest
+    "urn:sha256:" <> digest
   end
 
   @spec template_fields(String.t()) :: [String.t()]
@@ -865,9 +866,4 @@ end
 defmodule AshR2RML.RelationshipMapping do
   @moduledoc false
   defstruct [:relationship, :predicate_iri, :destination, :child_column, :parent_column]
-end
-
-defmodule AshR2RML.LegacyMapping do
-  @moduledoc false
-  defstruct [:resource, :class_iri, :subject_template, :logical_table, :graph_iri, attributes: [], relationships: []]
 end

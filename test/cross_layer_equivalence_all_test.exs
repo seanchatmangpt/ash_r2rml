@@ -140,7 +140,7 @@ defmodule AshR2RML.CrossLayerEquivalenceAllTest do
 
     assert length(ref.bindings) == @rows
 
-    row = Enum.find(ref.bindings, &(&1["s"] == "https://ex.org/person/p7"))
+    row = Enum.find(ref.bindings, &(&1["s"] == "urn:uuid:p7"))
     assert row["n"] == "Person 7"
     assert to_string(row["a"]) == "7"
     assert is_binary(ref.digest)

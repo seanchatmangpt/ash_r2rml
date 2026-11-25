@@ -40,8 +40,11 @@ defmodule AshR2RML.DataLayer do
       function_exported?(resource, :ash_postgres_table, 0) ->
         to_string(resource.ash_postgres_table())
 
-      Code.ensure_loaded?(AshPostgres.DataLayer) and function_exported?(AshPostgres.DataLayer, :table, 1) ->
-        to_string(apply(AshPostgres.DataLayer, :table, [resource]))
+      postgres_info?(:table) ->
+        case apply(AshPostgres.DataLayer.Info, :table, [resource]) do
+          nil -> generic_table_name(resource)
+          table -> to_string(table)
+        end
 
       true ->
         generic_table_name(resource)
@@ -76,16 +79,24 @@ defmodule AshR2RML.DataLayer do
   def schema_name(resource) when is_atom(resource) do
     cond do
       function_exported?(resource, :ash_postgres_schema, 0) ->
-        to_string(resource.ash_postgres_schema())
+        schema_string(resource.ash_postgres_schema())
 
-      Code.ensure_loaded?(AshPostgres.DataLayer) and function_exported?(AshPostgres.DataLayer, :schema, 1) ->
-        to_string(apply(AshPostgres.DataLayer, :schema, [resource]))
+      postgres_info?(:schema) ->
+        schema_string(apply(AshPostgres.DataLayer.Info, :schema, [resource]))
 
       true ->
         nil
     end
   rescue
     _ -> nil
+  end
+
+  defp schema_string(nil), do: nil
+  defp schema_string(""), do: nil
+  defp schema_string(schema), do: to_string(schema)
+
+  defp postgres_info?(fun) do
+    Code.ensure_loaded?(AshPostgres.DataLayer.Info) and function_exported?(AshPostgres.DataLayer.Info, fun, 1)
   end
 
   @doc "Infers relationship join child and parent column names from Ash relationship metadata."

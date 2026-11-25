@@ -548,13 +548,17 @@ defmodule AshR2RML.R2RML do
   defp pom_graph_suffix(values), do: "; " <> Enum.join(values, "; ")
 
   defp bridge_id(resource, reference, direction) do
-    payload =
+    <<a::32, b::16, _::4, c::12, _::2, d::14, e::48, _rest::binary>> =
       {AshR2RML.Mapping.mapping_identity(resource), reference.relationship, reference.predicate_iri, direction}
       |> :erlang.term_to_binary([:deterministic])
       |> then(&:crypto.hash(:sha256, &1))
-      |> Base.encode16(case: :lower)
 
-    "urn:ash-r2ml:bridge:" <> payload
+    # Deterministic name-based UUID (version 5 layout, variant 10) derived from the sha256 digest.
+    <<hex::binary-size(32)>> =
+      Base.encode16(<<a::32, b::16, 5::4, c::12, 2::2, d::14, e::48>>, case: :lower)
+
+    <<p1::binary-size(8), p2::binary-size(4), p3::binary-size(4), p4::binary-size(4), p5::binary-size(12)>> = hex
+    "urn:uuid:" <> Enum.join([p1, p2, p3, p4, p5], "-")
   end
 
   defp literal(value) do

@@ -45,7 +45,7 @@ defmodule AshR2RML.ObdaObjectMapsAndTripleClampTest do
     end
   end
 
-  @ex "https://ex.org/"
+  @ex "urn:uuid:"
   @name "https://schema.org/name"
   @member "https://schema.org/memberOf"
 
@@ -53,8 +53,8 @@ defmodule AshR2RML.ObdaObjectMapsAndTripleClampTest do
     %Resource{
       ash_resource: Item,
       logical_table: %LogicalTable{table_name: "items"},
-      subject_map: %SubjectMap{strategy: :template, value: @ex <> "item/{key}"},
-      class_iris: [@ex <> "Item"],
+      subject_map: %SubjectMap{strategy: :template, value: @ex <> "item-{key}"},
+      class_iris: ["https://schema.org/Thing"],
       identities: [[:key]],
       predicate_object_maps:
         [
@@ -85,7 +85,7 @@ defmodule AshR2RML.ObdaObjectMapsAndTripleClampTest do
     pom = %PredicateObjectMap{
       attribute: :oid,
       predicate_iri: @member,
-      object_map: %ObjectMap{strategy: :template, value: @ex <> "org/{oid}", term_type: :iri}
+      object_map: %ObjectMap{strategy: :template, value: @ex <> "org-{oid}", term_type: :iri}
     }
 
     assert {:ok, graph} = InMemory.materialize(Item, mapping([pom]), domain: Dom)
@@ -98,14 +98,14 @@ defmodule AshR2RML.ObdaObjectMapsAndTripleClampTest do
 
     assert length(objects) == 50
     assert Enum.all?(objects, &match?(%RDF.IRI{}, &1))
-    assert RDF.iri(@ex <> "org/o7") in objects
+    assert RDF.iri(@ex <> "org-o7") in objects
   end
 
   test "a literal-typed template object map is a typed refusal, not a silent literal" do
     pom = %PredicateObjectMap{
       attribute: :oid,
       predicate_iri: @member,
-      object_map: %ObjectMap{strategy: :template, value: @ex <> "org/{oid}", term_type: :literal}
+      object_map: %ObjectMap{strategy: :template, value: @ex <> "org-{oid}", term_type: :literal}
     }
 
     assert {:error, %Refusal{code: :UNSUPPORTED_TERM_TYPE}} = InMemory.materialize(Item, mapping([pom]), domain: Dom)
@@ -152,7 +152,7 @@ defmodule AshR2RML.ObdaObjectMapsAndTripleClampTest do
     pom = %PredicateObjectMap{
       attribute: :oid,
       predicate_iri: @member,
-      object_map: %ObjectMap{strategy: :template, value: @ex <> "org/{not_an_attribute}", term_type: :iri}
+      object_map: %ObjectMap{strategy: :template, value: @ex <> "org-{not_an_attribute}", term_type: :iri}
     }
 
     assert {:error, %Refusal{code: :REFUSED_SENSITIVE_ATTRIBUTE_MATERIALIZATION}} =

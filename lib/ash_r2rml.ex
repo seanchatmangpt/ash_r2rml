@@ -7,33 +7,17 @@ defmodule AshR2RML do
   Semantic mapping compiler between Ash resources and W3C R2RML.
 
   AshR2RML is not an Ash data layer and never owns persistence. Ash resources
-  compile to `AshR2RML.Mapping.Bundle`; R2RML is then a
-  deterministic projection of that normalized IR. RDF serialization and SPARQL
-  execution remain explicit boundary choices rather than alternate sources of
-  truth.
+  declare their mapping through the `AshR2RML.Resource` Spark extension (and
+  optionally `AshR2RML.Domain`); that DSL compiles to `AshR2RML.Mapping.Bundle`,
+  and R2RML is a deterministic projection of that normalized IR. RDF
+  serialization and SPARQL execution remain explicit boundary choices rather
+  than alternate sources of truth.
+
+  This module is the thin public API only; it is not a Spark extension.
   """
 
-  @r2rml %Spark.Dsl.Section{
-    name: :r2rml,
-    describe: "W3C R2RML mapping metadata for an Ash resource",
-    schema: [
-      class_iri: [type: :string, required: true],
-      subject_template: [type: :string, required: true],
-      table_name: [type: :string, required: false],
-      sql_query: [type: :string, required: false],
-      graph_iri: [type: :string, required: false],
-      attribute_mappings: [type: {:list, {:tuple, [:atom, :string]}}, required: false, default: []],
-      typed_attribute_mappings: [type: {:list, {:tuple, [:atom, :string, :string]}}, required: false, default: []],
-      relationship_mappings: [type: {:list, {:tuple, [:atom, :string]}}, required: false, default: []]
-    ]
-  }
-
-  use Spark.Dsl.Extension,
-    sections: [@r2rml],
-    transformers: [
-      AshR2RML.PersistMapping
-    ],
-    verifiers: [AshR2RML.VerifyMapping]
+  alias AshR2RML.{Compiler, CompilationReceipt, Refusal}
+  alias AshR2RML.Mapping.Bundle
 
   @doc "Compile one Ash resource into its normalized semantic mapping."
   defdelegate mapping(resource), to: AshR2RML.Resource.Info
@@ -50,28 +34,32 @@ defmodule AshR2RML do
   @doc "Render standards-oriented R2RML Turtle from a bundle or Ash resource set."
   defdelegate render_r2rml(resources_or_bundle), to: AshR2RML.R2RML, as: :render
 
-  @doc "Validate and return compilation receipt for resources."
+  @doc """
+  Validate resources and return a compilation receipt.
+
+  Both compilation and rendering refusals become a `:REFUSED` receipt carrying
+  the typed `AshR2RML.Refusal`; nothing is raised.
+  """
+  @spec validate(term()) :: CompilationReceipt.t()
   def validate(resources) do
-    case AshR2RML.Compiler.compile(resources) do
-      {:ok, %AshR2RML.Mapping.Bundle{} = bundle} ->
-        {:ok, r2rml} = AshR2RML.R2RML.render(bundle)
-
-        %AshR2RML.CompilationReceipt{
-          status: :PARTIAL_ALIVE,
-          standing: :constructed_not_actuated,
-          mapping_sha256: AshR2RML.Compiler.sha256(bundle),
-          r2rml_sha256: AshR2RML.Compiler.sha256(r2rml),
-          query_parity: :UNKNOWN,
-          cutover_authority: :UNAUTHORIZED,
-          classes_admitted: length(bundle.resources),
-          executed: [:canonical_mapping_ir, :r2rml_render],
-          verified: [:canonical_mapping_ir_projection],
-          blocked: [:sparql_sql_behavioral_parity, :cutover_authority],
-          refusals: []
-        }
-
-      {:error, %AshR2RML.Refusal{} = refusal} ->
-        %AshR2RML.CompilationReceipt{
+    with {:ok, %Bundle{} = bundle} <- Compiler.compile(resources),
+         {:ok, r2rml} <- AshR2RML.R2RML.render(bundle) do
+      %CompilationReceipt{
+        status: :PARTIAL_ALIVE,
+        standing: :constructed_not_actuated,
+        mapping_sha256: Compiler.sha256(bundle),
+        r2rml_sha256: Compiler.sha256(r2rml),
+        query_parity: :UNKNOWN,
+        cutover_authority: :UNAUTHORIZED,
+        classes_admitted: length(bundle.resources),
+        executed: [:canonical_mapping_ir, :r2rml_render],
+        verified: [:canonical_mapping_ir_projection],
+        blocked: [:sparql_sql_behavioral_parity, :cutover_authority],
+        refusals: []
+      }
+    else
+      {:error, %Refusal{} = refusal} ->
+        %CompilationReceipt{
           status: :REFUSED,
           standing: :no_cutover,
           refusals: [refusal]

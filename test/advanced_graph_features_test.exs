@@ -21,7 +21,7 @@ defmodule AshR2RML.AdvancedGraphFeaturesTest do
       class(["https://schema.org/Organization", "https://schema.org/Corporation"])
 
       subject do
-        template("https://example.org/organizations/{id}")
+        template("urn:uuid:{id}")
       end
 
       property(:name, "https://schema.org/name")
@@ -48,7 +48,7 @@ defmodule AshR2RML.AdvancedGraphFeaturesTest do
       class("https://schema.org/Person")
 
       subject do
-        template("https://example.org/people/{id}")
+        template("urn:uuid:{id}")
       end
 
       property(:name, "https://schema.org/name")

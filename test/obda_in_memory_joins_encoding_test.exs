@@ -156,11 +156,12 @@ defmodule AshR2RML.OBDAInMemoryJoinsEncodingTest do
     end
   end
 
-  @ex "https://ex.org/"
+  @ex "urn:uuid:"
+  @schema "https://schema.org/"
   @rdf_type "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
   @name "https://schema.org/name"
   @member_of "https://schema.org/memberOf"
-  @ships_from "https://ex.org/shipsFrom"
+  @ships_from "https://schema.org/fromLocation"
 
   # -- builders ---------------------------------------------------------------
 
@@ -183,7 +184,7 @@ defmodule AshR2RML.OBDAInMemoryJoinsEncodingTest do
     }
   end
 
-  defp org_mapping, do: mapping(Org, @ex <> "org/{code}", @ex <> "Org", [pom(:name, @name)])
+  defp org_mapping, do: mapping(Org, @ex <> "org-{code}", @schema <> "Organization", [pom(:name, @name)])
 
   defp person_mapping do
     ref = %ReferenceObjectMap{
@@ -193,10 +194,10 @@ defmodule AshR2RML.OBDAInMemoryJoinsEncodingTest do
       joins: [%JoinCondition{child: "org_code", parent: "code"}]
     }
 
-    mapping(Person, @ex <> "person/{pid}", @ex <> "Person", [pom(:name, @name)], [ref])
+    mapping(Person, @ex <> "person-{pid}", @schema <> "Person", [pom(:name, @name)], [ref])
   end
 
-  defp warehouse_mapping, do: mapping(Warehouse, @ex <> "wh/{region}/{code}", @ex <> "Warehouse", [])
+  defp warehouse_mapping, do: mapping(Warehouse, @ex <> "wh-{region}-{code}", @schema <> "Place", [])
 
   defp shipment_mapping do
     ref = %ReferenceObjectMap{
@@ -209,11 +210,11 @@ defmodule AshR2RML.OBDAInMemoryJoinsEncodingTest do
       ]
     }
 
-    mapping(Shipment, @ex <> "shipment/{sid}", @ex <> "Shipment", [], [ref])
+    mapping(Shipment, @ex <> "shipment-{sid}", @schema <> "ParcelDelivery", [], [ref])
   end
 
-  defp item_mapping(template \\ @ex <> "item/{slug}"),
-    do: mapping(Item, template, @ex <> "Item", [pom(:name, @name)])
+  defp item_mapping(template \\ @ex <> "item-{slug}"),
+    do: mapping(Item, template, @schema <> "Thing", [pom(:name, @name)])
 
   defp create!(resource, attrs) do
     resource
@@ -223,7 +224,7 @@ defmodule AshR2RML.OBDAInMemoryJoinsEncodingTest do
 
   defp triples({:ok, %RDF.Graph{} = graph}), do: graph |> RDF.Graph.triples() |> MapSet.new()
 
-  defp t(s, p, o) when is_binary(o) and binary_part(o, 0, 4) == "http",
+  defp t(s, p, o) when is_binary(o) and binary_part(o, 0, 4) in ["http", "urn:"],
     do: {RDF.iri(s), RDF.iri(p), RDF.iri(o)}
 
   defp t(s, p, o), do: {RDF.iri(s), RDF.iri(p), RDF.literal(o)}
@@ -251,8 +252,8 @@ defmodule AshR2RML.OBDAInMemoryJoinsEncodingTest do
              InMemory.query_many([{Person, person_mapping()}, {Org, org_mapping()}], sparql, domain: Dom)
 
     assert Enum.sort_by(obs.rows, & &1["person"]) == [
-             %{"person" => @ex <> "person/p1", "org" => @ex <> "org/acme", "orgname" => "Acme"},
-             %{"person" => @ex <> "person/p2", "org" => @ex <> "org/globex", "orgname" => "Globex"}
+             %{"person" => @ex <> "person-p1", "org" => @ex <> "org-acme", "orgname" => "Acme"},
+             %{"person" => @ex <> "person-p2", "org" => @ex <> "org-globex", "orgname" => "Globex"}
            ]
   end
 
@@ -260,7 +261,7 @@ defmodule AshR2RML.OBDAInMemoryJoinsEncodingTest do
     create!(Person, %{pid: "p1", name: "Ann", org_code: "acme"})
 
     assert triples(InMemory.materialize(Person, person_mapping(), domain: Dom)) ==
-             MapSet.new([ty(@ex <> "person/p1", @ex <> "Person"), lit(@ex <> "person/p1", @name, "Ann")])
+             MapSet.new([ty(@ex <> "person-p1", @schema <> "Person"), lit(@ex <> "person-p1", @name, "Ann")])
   end
 
   # -- materialize_many -------------------------------------------------------
@@ -271,11 +272,11 @@ defmodule AshR2RML.OBDAInMemoryJoinsEncodingTest do
 
     assert triples(InMemory.materialize_many([{Org, org_mapping()}, {Person, person_mapping()}], domain: Dom)) ==
              MapSet.new([
-               ty(@ex <> "org/acme", @ex <> "Org"),
-               lit(@ex <> "org/acme", @name, "Acme"),
-               ty(@ex <> "person/p1", @ex <> "Person"),
-               lit(@ex <> "person/p1", @name, "Ann"),
-               t(@ex <> "person/p1", @member_of, @ex <> "org/acme")
+               ty(@ex <> "org-acme", @schema <> "Organization"),
+               lit(@ex <> "org-acme", @name, "Acme"),
+               ty(@ex <> "person-p1", @schema <> "Person"),
+               lit(@ex <> "person-p1", @name, "Ann"),
+               t(@ex <> "person-p1", @member_of, @ex <> "org-acme")
              ])
   end
 
@@ -294,8 +295,8 @@ defmodule AshR2RML.OBDAInMemoryJoinsEncodingTest do
     assert {:ok, obs} = InMemory.query_many(specs, sparql, domain: Dom)
 
     assert Enum.sort_by(obs.rows, & &1["s"]) == [
-             %{"s" => @ex <> "shipment/s1", "w" => @ex <> "wh/emea/w1"},
-             %{"s" => @ex <> "shipment/s2", "w" => @ex <> "wh/apac/w1"}
+             %{"s" => @ex <> "shipment-s1", "w" => @ex <> "wh-emea-w1"},
+             %{"s" => @ex <> "shipment-s2", "w" => @ex <> "wh-apac-w1"}
            ]
   end
 
@@ -307,7 +308,7 @@ defmodule AshR2RML.OBDAInMemoryJoinsEncodingTest do
     create!(Item, %{slug: "a#b", name: "hash"})
     create!(Item, %{slug: "café", name: "unicode"})
 
-    base = @ex <> "item/"
+    base = @ex <> "item-"
 
     assert triples(InMemory.materialize(Item, item_mapping(), domain: Dom)) ==
              MapSet.new(
@@ -317,7 +318,7 @@ defmodule AshR2RML.OBDAInMemoryJoinsEncodingTest do
                      {base <> "a%23b", "hash"},
                      {base <> "caf%C3%A9", "unicode"}
                    ],
-                   triple <- [ty(iri, @ex <> "Item"), lit(iri, @name, name)],
+                   triple <- [ty(iri, @schema <> "Thing"), lit(iri, @name, name)],
                    do: triple
              )
   end
@@ -329,7 +330,7 @@ defmodule AshR2RML.OBDAInMemoryJoinsEncodingTest do
 
     assert triples(InMemory.materialize(Item, mapping, domain: Dom)) ==
              MapSet.new([
-               ty(@ex <> "static/path#frag-x%20y", @ex <> "Item"),
+               ty(@ex <> "static/path#frag-x%20y", @schema <> "Thing"),
                lit(@ex <> "static/path#frag-x%20y", @name, "n")
              ])
   end
@@ -343,8 +344,8 @@ defmodule AshR2RML.OBDAInMemoryJoinsEncodingTest do
         InMemory.materialize_many([{Shipment, shipment_mapping()}, {Warehouse, warehouse_mapping()}], domain: Dom)
       )
 
-    assert t(@ex <> "shipment/s1", @ships_from, @ex <> "wh/eu%20west/w%2F1") in graph
-    assert ty(@ex <> "wh/eu%20west/w%2F1", @ex <> "Warehouse") in graph
+    assert t(@ex <> "shipment-s1", @ships_from, @ex <> "wh-eu%20west-w%2F1") in graph
+    assert ty(@ex <> "wh-eu%20west-w%2F1", @schema <> "Place") in graph
   end
 
   # -- nil handling -----------------------------------------------------------
@@ -353,7 +354,7 @@ defmodule AshR2RML.OBDAInMemoryJoinsEncodingTest do
     create!(Item, %{slug: "k", name: nil})
 
     assert triples(InMemory.materialize(Item, item_mapping(), domain: Dom)) ==
-             MapSet.new([ty(@ex <> "item/k", @ex <> "Item")])
+             MapSet.new([ty(@ex <> "item-k", @schema <> "Thing")])
   end
 
   test "subject template with nil field omits the whole row, other rows survive" do
@@ -361,7 +362,7 @@ defmodule AshR2RML.OBDAInMemoryJoinsEncodingTest do
     create!(Item, %{slug: "ok", name: "real"})
 
     assert triples(InMemory.materialize(Item, item_mapping(), domain: Dom)) ==
-             MapSet.new([ty(@ex <> "item/ok", @ex <> "Item"), lit(@ex <> "item/ok", @name, "real")])
+             MapSet.new([ty(@ex <> "item-ok", @schema <> "Thing"), lit(@ex <> "item-ok", @name, "real")])
   end
 
   # -- empty dataset ----------------------------------------------------------

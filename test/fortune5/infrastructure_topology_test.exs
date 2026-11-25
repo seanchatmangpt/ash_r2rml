@@ -68,15 +68,15 @@ defmodule AshR2RML.Fortune5.InfrastructureTopologyTest do
 
     r2rml do
       table_name("infra_cloud_regions")
-      class("https://infra.fortune5.com/ontology/CloudRegion")
+      class("https://schema.org/CloudRegion")
 
       subject do
-        template("https://infra.fortune5.com/regions/{region_code}")
+        template("urn:uuid:{region_code}")
       end
 
-      property(:region_code, "https://infra.fortune5.com/ontology/regionCode")
-      property(:datacenter_location, "https://infra.fortune5.com/ontology/datacenterLocation")
-      property(:active, "https://infra.fortune5.com/ontology/isActive")
+      property(:region_code, "https://schema.org/regionCode")
+      property(:datacenter_location, "https://schema.org/datacenterLocation")
+      property(:active, "https://schema.org/isActive")
     end
   end
 
@@ -116,15 +116,15 @@ defmodule AshR2RML.Fortune5.InfrastructureTopologyTest do
 
     r2rml do
       table_name("infra_compute_clusters")
-      class("https://infra.fortune5.com/ontology/ComputeCluster")
+      class("https://schema.org/ComputeCluster")
 
       subject do
-        template("https://infra.fortune5.com/clusters/{id}")
+        template("urn:uuid:{id}")
       end
 
-      property(:cluster_name, "https://infra.fortune5.com/ontology/clusterName")
-      property(:orchestrator_type, "https://infra.fortune5.com/ontology/orchestratorType")
-      reference(:region, "https://infra.fortune5.com/ontology/locatedInRegion")
+      property(:cluster_name, "https://schema.org/clusterName")
+      property(:orchestrator_type, "https://schema.org/orchestratorType")
+      reference(:region, "https://schema.org/locatedInRegion")
     end
   end
 
@@ -171,17 +171,17 @@ defmodule AshR2RML.Fortune5.InfrastructureTopologyTest do
 
     r2rml do
       table_name("infra_host_nodes")
-      class("https://infra.fortune5.com/ontology/HostNode")
+      class("https://schema.org/HostNode")
 
       subject do
-        template("https://infra.fortune5.com/hosts/{hostname}")
+        template("urn:uuid:{hostname}")
       end
 
-      property(:hostname, "https://infra.fortune5.com/ontology/hostName")
-      property(:ip_address, "https://infra.fortune5.com/ontology/ipAddress")
-      property(:cpu_cores, "https://infra.fortune5.com/ontology/cpuCores")
-      property(:memory_gb, "https://infra.fortune5.com/ontology/memoryGigabytes")
-      reference(:cluster, "https://infra.fortune5.com/ontology/memberOfCluster")
+      property(:hostname, "https://schema.org/hostName")
+      property(:ip_address, "https://schema.org/ipAddress")
+      property(:cpu_cores, "https://schema.org/cpuCores")
+      property(:memory_gb, "https://schema.org/memoryGigabytes")
+      reference(:cluster, "https://schema.org/memberOfCluster")
     end
   end
 
@@ -222,16 +222,16 @@ defmodule AshR2RML.Fortune5.InfrastructureTopologyTest do
 
     r2rml do
       table_name("infra_database_instances")
-      class("https://infra.fortune5.com/ontology/DatabaseInstance")
+      class("https://schema.org/DatabaseInstance")
 
       subject do
-        template("https://infra.fortune5.com/databases/{id}")
+        template("urn:uuid:{id}")
       end
 
-      property(:instance_name, "https://infra.fortune5.com/ontology/instanceName")
-      property(:engine, "https://infra.fortune5.com/ontology/engine")
-      property(:port, "https://infra.fortune5.com/ontology/port")
-      reference(:host, "https://infra.fortune5.com/ontology/runsOnHost")
+      property(:instance_name, "https://schema.org/instanceName")
+      property(:engine, "https://schema.org/engine")
+      property(:port, "https://schema.org/port")
+      reference(:host, "https://schema.org/runsOnHost")
     end
   end
 
@@ -266,16 +266,16 @@ defmodule AshR2RML.Fortune5.InfrastructureTopologyTest do
 
     r2rml do
       table_name("infra_database_replicas")
-      class("https://infra.fortune5.com/ontology/DatabaseReplica")
+      class("https://schema.org/DatabaseReplica")
 
       subject do
-        template("https://infra.fortune5.com/replicas/{id}")
+        template("urn:uuid:{id}")
       end
 
-      property(:replica_identifier, "https://infra.fortune5.com/ontology/replicaIdentifier")
-      property(:replica_type, "https://infra.fortune5.com/ontology/replicaType")
-      property(:lag_ms, "https://infra.fortune5.com/ontology/replicationLagMs")
-      reference(:primary_instance, "https://infra.fortune5.com/ontology/replicatesPrimary")
+      property(:replica_identifier, "https://schema.org/replicaIdentifier")
+      property(:replica_type, "https://schema.org/replicaType")
+      property(:lag_ms, "https://schema.org/replicationLagMs")
+      reference(:primary_instance, "https://schema.org/replicatesPrimary")
     end
   end
 
@@ -362,7 +362,7 @@ defmodule AshR2RML.Fortune5.InfrastructureTopologyTest do
 
       [ref] = db_mapping.reference_object_maps
       assert ref.relationship == :host
-      assert ref.predicate_iri == "https://infra.fortune5.com/ontology/runsOnHost"
+      assert ref.predicate_iri == "https://schema.org/runsOnHost"
       assert ref.parent_resource == HostNode
       assert [%JoinCondition{child: "host_id", parent: "id"}] = ref.joins
     end

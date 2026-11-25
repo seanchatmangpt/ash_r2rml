@@ -44,7 +44,7 @@ defmodule AshR2RML.SubjectBlankNodePolicyTest do
     end
   end
 
-  @ex "http://ex.org/"
+  @ex "http://xmlns.com/foaf/0.1/"
 
   defp mapping(subject_map, extra \\ []) do
     struct!(
@@ -58,7 +58,7 @@ defmodule AshR2RML.SubjectBlankNodePolicyTest do
     )
   end
 
-  defp template, do: %SubjectMap{strategy: :template, value: @ex <> "p/{id}"}
+  defp template, do: %SubjectMap{strategy: :template, value: "urn:uuid:{id}"}
 
   defp pom(term_type) do
     %PredicateObjectMap{

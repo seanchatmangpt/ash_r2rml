@@ -66,7 +66,7 @@ defmodule AshR2RML.CapabilityProbeTest do
       %Resource{
         ash_resource: resource,
         logical_table: %AshR2RML.Mapping.LogicalTable{table_name: "t"},
-        subject_map: %AshR2RML.Mapping.SubjectMap{strategy: :template, value: "https://ex.org/t/{id}"}
+        subject_map: %AshR2RML.Mapping.SubjectMap{strategy: :template, value: "urn:uuid:{id}"}
       }
     end
 

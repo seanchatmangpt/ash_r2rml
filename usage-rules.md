@@ -47,7 +47,7 @@ The RDF graph is virtual. `AshR2RML.OBDA.InMemory` is the only runtime backend: 
 | Ash actions/mutation boundary | [actions.md](usage-rules/actions.md) |
 | Verification and semantic round trips | [testing.md](usage-rules/testing.md) |
 
-Legacy donor-era filenames remain only as compatibility tombstones and must not be treated as active AshR2RML features.
+Graph traversal, combination queries, and atomics are not AshR2RML features; the single `r2rml`/`rdf` DSL above is the whole public surface.
 
 ## Resource configuration
 
@@ -68,7 +68,7 @@ defmodule MyApp.Person do
   r2rml do
     class "https://schema.org/Person"
 
-    subject template: "https://example.org/people/{id}", term_type: :iri
+    subject template: "urn:uuid:{id}", term_type: :iri
 
     property :name, "http://xmlns.com/foaf/0.1/name"
   end

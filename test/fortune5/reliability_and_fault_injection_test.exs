@@ -99,15 +99,15 @@ defmodule AshR2RML.Fortune5.ReliabilityAndFaultInjectionTest do
 
     r2rml do
       table_name("enterprise_vault_balances")
-      class("https://enterprise.fortune5.com/ontology/VaultBalance")
+      class("https://schema.org/VaultBalance")
 
       subject do
-        template("https://enterprise.fortune5.com/vaults/{vault_code}")
+        template("urn:uuid:{vault_code}")
       end
 
-      property(:vault_code, "https://enterprise.fortune5.com/ontology/vaultCode")
-      property(:available_balance, "https://enterprise.fortune5.com/ontology/availableBalance")
-      property(:locked, "https://enterprise.fortune5.com/ontology/isLocked")
+      property(:vault_code, "https://schema.org/vaultCode")
+      property(:available_balance, "https://schema.org/availableBalance")
+      property(:locked, "https://schema.org/isLocked")
     end
   end
 
@@ -121,7 +121,7 @@ defmodule AshR2RML.Fortune5.ReliabilityAndFaultInjectionTest do
         ash_resource: :InvalidClassRes,
         logical_table: %LogicalTable{table_name: "test_table"},
         class_iris: ["not_a_valid_absolute_iri"],
-        subject_map: %SubjectMap{strategy: :template, value: "https://example.com/items/{id}", term_type: :iri},
+        subject_map: %SubjectMap{strategy: :template, value: "urn:uuid:{id}", term_type: :iri},
         identities: [[:id]],
         metadata: %{attribute_columns: %{id: "id"}}
       }
@@ -134,7 +134,7 @@ defmodule AshR2RML.Fortune5.ReliabilityAndFaultInjectionTest do
       missing_sub_res = %Resource{
         ash_resource: :MissingSubRes,
         logical_table: %LogicalTable{table_name: "test_table"},
-        class_iris: ["https://example.com/ontology/ValidClass"],
+        class_iris: ["https://schema.org/Thing"],
         subject_map: %SubjectMap{strategy: :template, value: "", term_type: :iri},
         identities: [[:id]],
         metadata: %{attribute_columns: %{id: "id"}}
@@ -148,10 +148,10 @@ defmodule AshR2RML.Fortune5.ReliabilityAndFaultInjectionTest do
       non_unique_res = %Resource{
         ash_resource: :NonUniqueRes,
         logical_table: %LogicalTable{table_name: "test_table"},
-        class_iris: ["https://example.com/ontology/ValidClass"],
+        class_iris: ["https://schema.org/Thing"],
         subject_map: %SubjectMap{
           strategy: :template,
-          value: "https://example.com/items/{unindexed_tag}",
+          value: "urn:uuid:{unindexed_tag}",
           term_type: :iri
         },
         identities: [[:id]],
@@ -174,14 +174,14 @@ defmodule AshR2RML.Fortune5.ReliabilityAndFaultInjectionTest do
       source_res = %Resource{
         ash_resource: :Order,
         logical_table: %LogicalTable{table_name: "orders"},
-        class_iris: ["https://example.com/Order"],
-        subject_map: %SubjectMap{strategy: :template, value: "https://example.com/orders/{id}", term_type: :iri},
+        class_iris: ["https://schema.org/Order"],
+        subject_map: %SubjectMap{strategy: :template, value: "urn:uuid:{id}", term_type: :iri},
         identities: [[:id]],
         metadata: %{attribute_columns: %{id: "id", customer_id: "customer_id"}},
         reference_object_maps: [
           %ReferenceObjectMap{
             relationship: :customer,
-            predicate_iri: "https://example.com/hasCustomer",
+            predicate_iri: "https://schema.org/customer",
             parent_resource: :UnmappedCustomer,
             joins: [%JoinCondition{child: "customer_id", parent: "id"}]
           }
@@ -197,8 +197,8 @@ defmodule AshR2RML.Fortune5.ReliabilityAndFaultInjectionTest do
       bad_pred_res = %Resource{
         ash_resource: :Item,
         logical_table: %LogicalTable{table_name: "items"},
-        class_iris: ["https://example.com/Item"],
-        subject_map: %SubjectMap{strategy: :template, value: "https://example.com/items/{id}", term_type: :iri},
+        class_iris: ["https://schema.org/Thing"],
+        subject_map: %SubjectMap{strategy: :template, value: "urn:uuid:{id}", term_type: :iri},
         identities: [[:id]],
         metadata: %{attribute_columns: %{id: "id"}},
         reference_object_maps: [
@@ -219,14 +219,14 @@ defmodule AshR2RML.Fortune5.ReliabilityAndFaultInjectionTest do
       bad_join_res = %Resource{
         ash_resource: :Payment,
         logical_table: %LogicalTable{table_name: "payments"},
-        class_iris: ["https://example.com/Payment"],
-        subject_map: %SubjectMap{strategy: :template, value: "https://example.com/payments/{id}", term_type: :iri},
+        class_iris: ["https://schema.org/Thing"],
+        subject_map: %SubjectMap{strategy: :template, value: "urn:uuid:{id}", term_type: :iri},
         identities: [[:id]],
         metadata: %{attribute_columns: %{id: "id"}},
         reference_object_maps: [
           %ReferenceObjectMap{
             relationship: :invoice,
-            predicate_iri: "https://example.com/forInvoice",
+            predicate_iri: "https://schema.org/referencesOrder",
             parent_resource: :Payment,
             joins: [%JoinCondition{child: "", parent: "id"}]
           }
@@ -241,14 +241,14 @@ defmodule AshR2RML.Fortune5.ReliabilityAndFaultInjectionTest do
       source_res = %Resource{
         ash_resource: :Trade,
         logical_table: %LogicalTable{table_name: "trades"},
-        class_iris: ["https://example.com/Trade"],
-        subject_map: %SubjectMap{strategy: :template, value: "https://example.com/trades/{id}", term_type: :iri},
+        class_iris: ["https://schema.org/Thing"],
+        subject_map: %SubjectMap{strategy: :template, value: "urn:uuid:{id}", term_type: :iri},
         identities: [[:id]],
         metadata: %{attribute_columns: %{id: "id"}},
         reference_object_maps: [
           %ReferenceObjectMap{
             relationship: :instrument,
-            predicate_iri: "https://example.com/tradedInstrument",
+            predicate_iri: "https://schema.org/about",
             parent_resource: :Instrument,
             joins: [%JoinCondition{child: "instrument_code", parent: "id"}]
           }
@@ -258,10 +258,10 @@ defmodule AshR2RML.Fortune5.ReliabilityAndFaultInjectionTest do
       target_without_valid_id = %Resource{
         ash_resource: :Instrument,
         logical_table: %LogicalTable{table_name: "instruments"},
-        class_iris: ["https://example.com/Instrument"],
+        class_iris: ["https://schema.org/Thing"],
         subject_map: %SubjectMap{
           strategy: :template,
-          value: "https://example.com/instruments/{unindexed_symbol}",
+          value: "urn:uuid:{unindexed_symbol}",
           term_type: :iri
         },
         identities: [[:id]],

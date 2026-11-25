@@ -21,16 +21,13 @@ defmodule AshR2RML.NonPostgresResourceTest do
     use Ash.Resource,
       domain: AshR2RML.NonPostgresResourceTest.Domain,
       data_layer: Ash.DataLayer.Ets,
-      extensions: [AshR2RML]
+      extensions: [AshR2RML.Resource]
 
     r2rml do
-      class_iri("https://example.org/Widget")
-      subject_template("https://example.org/Widget/{id}")
       table_name("np_widgets")
-
-      attribute_mappings([
-        {:label, "https://example.org/label"}
-      ])
+      class("https://schema.org/Thing")
+      subject(template: "urn:uuid:{id}")
+      property(:label, "https://schema.org/name")
     end
 
     actions do
@@ -55,9 +52,9 @@ defmodule AshR2RML.NonPostgresResourceTest do
   test "R2RML.render emits the exact expected fragments" do
     assert {:ok, ttl} = AshR2RML.R2RML.render(Widget)
     assert ttl =~ ~s(rr:tableName "np_widgets")
-    assert ttl =~ "rr:class <https://example.org/Widget>"
-    assert ttl =~ ~s(rr:template "https://example.org/Widget/{id}")
-    assert ttl =~ "rr:predicate <https://example.org/label>"
+    assert ttl =~ "rr:class <https://schema.org/Thing>"
+    assert ttl =~ ~s(rr:template "urn:uuid:{id}")
+    assert ttl =~ "rr:predicate <https://schema.org/name>"
     assert ttl =~ "#AshR2RML_NonPostgresResourceTest_Widget> a rr:TriplesMap"
   end
 
@@ -73,11 +70,11 @@ defmodule AshR2RML.NonPostgresResourceTest do
              AshR2RML.OBDA.InMemory.query(
                Widget,
                mapping,
-               "SELECT ?s ?l WHERE { ?s a <https://example.org/Widget> ; <https://example.org/label> ?l . }",
+               "SELECT ?s ?l WHERE { ?s a <https://schema.org/Thing> ; <https://schema.org/name> ?l . }",
                domain: Domain
              )
 
-    assert observation.rows == [%{"s" => "https://example.org/Widget/#{w.id}", "l" => "gear"}]
+    assert observation.rows == [%{"s" => "urn:uuid:#{w.id}", "l" => "gear"}]
   end
 
   test "ash_postgres is a test-only dependency, never a runtime requirement" do

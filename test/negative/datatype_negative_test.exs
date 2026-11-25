@@ -44,13 +44,13 @@ defmodule AshR2RML.Negative.DatatypeNegativeTest do
         logical_table: %Mapping.LogicalTable{table_name: "items"},
         subject_map: %Mapping.SubjectMap{
           strategy: :template,
-          value: "https://example.org/items/{id}",
+          value: "urn:uuid:{id}",
           term_type: :iri
         },
-        class_iris: ["https://example.org/ontology/Item"],
+        class_iris: ["https://schema.org/Thing"],
         predicate_object_maps: [
           %Mapping.PredicateObjectMap{
-            predicate_iri: "https://example.org/ontology/unmappedProp",
+            predicate_iri: "https://schema.org/name",
             object_map: %Mapping.ObjectMap{
               strategy: :column,
               value: "raw_payload",

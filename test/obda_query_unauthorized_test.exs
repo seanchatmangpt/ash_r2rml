@@ -167,9 +167,9 @@ defmodule AshR2RML.OBDAQueryUnauthorizedTest do
     end
   end
 
-  @title_pred "https://example.org/title"
-  @secret_pred "https://example.org/secret"
-  @token_pred "https://example.org/token"
+  @title_pred "https://schema.org/name"
+  @secret_pred "https://schema.org/description"
+  @token_pred "https://schema.org/identifier"
   @string "http://www.w3.org/2001/XMLSchema#string"
 
   defp pom(attribute, predicate) do
@@ -189,7 +189,7 @@ defmodule AshR2RML.OBDAQueryUnauthorizedTest do
       ash_resource: resource,
       logical_table: %LogicalTable{table_name: table},
       subject_map: %SubjectMap{strategy: :template, value: template, term_type: :iri},
-      class_iris: ["https://example.org/Thing"],
+      class_iris: ["https://schema.org/Thing"],
       predicate_object_maps: poms,
       identities: [[:title]],
       metadata: %{source: :obda_query_unauthorized_test}
@@ -234,15 +234,15 @@ defmodule AshR2RML.OBDAQueryUnauthorizedTest do
     end
 
     test "permitted actor reads both rows (positive control)" do
-      specs = spec(Gated, "gated", "https://example.org/gated/{title}", title: @title_pred)
+      specs = spec(Gated, "gated", "urn:uuid:{title}", title: @title_pred)
 
       assert {:ok, result} = OBDA.query(specs, select(@title_pred), domain: Domain, actor: %{role: :reader})
-      assert subjects(result) == ["https://example.org/gated/g1", "https://example.org/gated/g2"]
+      assert subjects(result) == ["urn:uuid:g1", "urn:uuid:g2"]
       assert result.stats.resources_pruned_by_policy == 0
     end
 
     test "denied actor gets zero rows, zero materialized subjects and one pruned resource" do
-      specs = spec(Gated, "gated", "https://example.org/gated/{title}", title: @title_pred)
+      specs = spec(Gated, "gated", "urn:uuid:{title}", title: @title_pred)
 
       assert {:ok, result} = OBDA.query(specs, select(@title_pred), domain: Domain, actor: %{role: :stranger})
       assert result.bindings == []
@@ -252,7 +252,7 @@ defmodule AshR2RML.OBDAQueryUnauthorizedTest do
     end
 
     test "nil actor is denied the same way" do
-      specs = spec(Gated, "gated", "https://example.org/gated/{title}", title: @title_pred)
+      specs = spec(Gated, "gated", "urn:uuid:{title}", title: @title_pred)
 
       assert {:ok, result} = OBDA.query(specs, select(@title_pred), domain: Domain)
       assert result.bindings == []
@@ -273,7 +273,7 @@ defmodule AshR2RML.OBDAQueryUnauthorizedTest do
     end
 
     defp fielded_specs do
-      spec(Fielded, "fielded", "https://example.org/fielded/{title}", title: @title_pred, secret: @secret_pred)
+      spec(Fielded, "fielded", "urn:uuid:{title}", title: @title_pred, secret: @secret_pred)
     end
 
     test "admin sees the field-policy-gated attribute (positive control)" do
@@ -288,7 +288,7 @@ defmodule AshR2RML.OBDAQueryUnauthorizedTest do
       assert secret.bindings == []
 
       assert {:ok, title} = OBDA.query(fielded_specs(), select(@title_pred), domain: Domain, actor: actor)
-      assert subjects(title) == ["https://example.org/fielded/f1", "https://example.org/fielded/f2"]
+      assert subjects(title) == ["urn:uuid:f1", "urn:uuid:f2"]
 
       # Only the two title triples were materialized: no triple carries the denied field.
       assert title.stats.triples_emitted == 4
@@ -309,7 +309,7 @@ defmodule AshR2RML.OBDAQueryUnauthorizedTest do
 
     test "mapped sensitive attribute is refused by default and no value is returned" do
       specs =
-        spec(Sensitive, "sensitive", "https://example.org/sens/{title}", title: @title_pred, token: @token_pred)
+        spec(Sensitive, "sensitive", "urn:uuid:{title}", title: @title_pred, token: @token_pred)
 
       assert {:error, error} = OBDA.query(specs, select(@token_pred), domain: Domain, actor: %{role: :any})
       assert error.code == :REFUSED_SENSITIVE_ATTRIBUTE_MATERIALIZATION
@@ -317,17 +317,17 @@ defmodule AshR2RML.OBDAQueryUnauthorizedTest do
     end
 
     test "unmapped sensitive attribute never appears in a query over the same resource" do
-      specs = spec(Sensitive, "sensitive", "https://example.org/sens/{title}", title: @title_pred)
+      specs = spec(Sensitive, "sensitive", "urn:uuid:{title}", title: @title_pred)
 
       assert {:ok, result} = OBDA.query(specs, select(@title_pred), domain: Domain, actor: %{role: :any})
-      assert subjects(result) == ["https://example.org/sens/t1"]
+      assert subjects(result) == ["urn:uuid:t1"]
       assert result.stats.triples_emitted == 2
       refute inspect(result) =~ "tok-abc-123"
     end
 
     test "allow_sensitive?: true is the only way the value is emitted (positive control)" do
       specs =
-        spec(Sensitive, "sensitive", "https://example.org/sens/{title}", title: @title_pred, token: @token_pred)
+        spec(Sensitive, "sensitive", "urn:uuid:{title}", title: @title_pred, token: @token_pred)
 
       assert {:ok, result} =
                OBDA.query(specs, select(@token_pred), domain: Domain, actor: %{role: :any}, allow_sensitive?: true)
@@ -347,17 +347,17 @@ defmodule AshR2RML.OBDAQueryUnauthorizedTest do
       :ok
     end
 
-    defp tenant_specs, do: spec(Tenanted, "tenanted", "https://example.org/tenanted/{title}", title: @title_pred)
+    defp tenant_specs, do: spec(Tenanted, "tenanted", "urn:uuid:{title}", title: @title_pred)
 
     test "tenant A sees only A rows and tenant B only B rows" do
       opts = [domain: Domain, actor: %{role: :any}]
 
       assert {:ok, a} = OBDA.query(tenant_specs(), select(@title_pred), [tenant: "A"] ++ opts)
-      assert subjects(a) == ["https://example.org/tenanted/a1", "https://example.org/tenanted/a2"]
+      assert subjects(a) == ["urn:uuid:a1", "urn:uuid:a2"]
       assert a.stats.triples_emitted == 4
 
       assert {:ok, b} = OBDA.query(tenant_specs(), select(@title_pred), [tenant: "B"] ++ opts)
-      assert subjects(b) == ["https://example.org/tenanted/b1"]
+      assert subjects(b) == ["urn:uuid:b1"]
       assert b.stats.triples_emitted == 2
     end
 

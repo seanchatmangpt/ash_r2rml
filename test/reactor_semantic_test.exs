@@ -52,7 +52,7 @@ defmodule AshR2RML.ReactorSemanticTest do
     end
   end
 
-  @title_pred "https://example.org/title"
+  @title_pred "http://purl.org/dc/terms/title"
   @string "http://www.w3.org/2001/XMLSchema#string"
   @select "SELECT ?s ?t WHERE { ?s <#{@title_pred}> ?t }"
 
@@ -62,7 +62,7 @@ defmodule AshR2RML.ReactorSemanticTest do
       logical_table: %LogicalTable{table_name: "entries"},
       subject_map: %SubjectMap{
         strategy: :template,
-        value: "https://example.org/entries/{title}",
+        value: "urn:uuid:{title}",
         term_type: :iri
       },
       class_iris: [],
@@ -184,8 +184,8 @@ defmodule AshR2RML.ReactorSemanticTest do
 
     assert_received {:observed,
                      [
-                       "https://example.org/entries/alpha",
-                       "https://example.org/entries/beta"
+                       "urn:uuid:alpha",
+                       "urn:uuid:beta"
                      ]}
 
     assert subjects("T") == []

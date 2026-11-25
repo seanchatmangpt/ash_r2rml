@@ -29,7 +29,7 @@ defmodule AshR2RML.Negative.ResourceNegativeTest do
         logical_table: %Mapping.LogicalTable{table_name: "items"},
         subject_map: %Mapping.SubjectMap{
           strategy: :template,
-          value: "https://example.org/items/{id}",
+          value: "urn:uuid:{id}",
           term_type: :iri
         },
         class_iris: ["relative/class/iri"]
@@ -45,7 +45,7 @@ defmodule AshR2RML.Negative.ResourceNegativeTest do
         logical_table: %Mapping.LogicalTable{table_name: "items"},
         subject_map: %Mapping.SubjectMap{
           strategy: :template,
-          value: "https://example.org/items/{id}",
+          value: "urn:uuid:{id}",
           term_type: :iri
         },
         class_iris: []
@@ -62,7 +62,7 @@ defmodule AshR2RML.Negative.ResourceNegativeTest do
         ash_resource: __MODULE__,
         logical_table: %Mapping.LogicalTable{table_name: "items"},
         subject_map: nil,
-        class_iris: ["https://example.org/ontology/Item"]
+        class_iris: ["https://schema.org/Thing"]
       }
 
       refusals = extract_refusals(Mapping.validate(mapping))
@@ -78,7 +78,7 @@ defmodule AshR2RML.Negative.ResourceNegativeTest do
           value: "",
           term_type: :iri
         },
-        class_iris: ["https://example.org/ontology/Item"]
+        class_iris: ["https://schema.org/Thing"]
       }
 
       refusals = extract_refusals(Mapping.validate(mapping))
@@ -93,10 +93,10 @@ defmodule AshR2RML.Negative.ResourceNegativeTest do
         logical_table: nil,
         subject_map: %Mapping.SubjectMap{
           strategy: :template,
-          value: "https://example.org/items/{id}",
+          value: "urn:uuid:{id}",
           term_type: :iri
         },
-        class_iris: ["https://example.org/ontology/Item"]
+        class_iris: ["https://schema.org/Thing"]
       }
 
       refusals = extract_refusals(Mapping.validate(mapping))
@@ -109,10 +109,10 @@ defmodule AshR2RML.Negative.ResourceNegativeTest do
         logical_table: %Mapping.LogicalTable{table_name: nil, sql_query: nil},
         subject_map: %Mapping.SubjectMap{
           strategy: :template,
-          value: "https://example.org/items/{id}",
+          value: "urn:uuid:{id}",
           term_type: :iri
         },
-        class_iris: ["https://example.org/ontology/Item"]
+        class_iris: ["https://schema.org/Thing"]
       }
 
       refusals = extract_refusals(Mapping.validate(mapping))
@@ -127,10 +127,10 @@ defmodule AshR2RML.Negative.ResourceNegativeTest do
         logical_table: %Mapping.LogicalTable{table_name: "items"},
         subject_map: %Mapping.SubjectMap{
           strategy: :template,
-          value: "https://example.org/items/{id}",
+          value: "urn:uuid:{id}",
           term_type: :iri
         },
-        class_iris: ["https://example.org/ontology/Item"],
+        class_iris: ["https://schema.org/Thing"],
         graph_maps: [
           %Mapping.GraphMap{strategy: :constant, value: "relative/graph/iri"}
         ]

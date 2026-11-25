@@ -23,9 +23,9 @@ defmodule AshR2RML.ResourceDslFixesTest do
 
     r2rml do
       table_name("fix_kids")
-      class("https://example.test/Kid")
+      class("http://xmlns.com/foaf/0.1/Person")
 
-      subject template: "https://example.test/kid/{id}"
+      subject template: "urn:uuid:{id}"
     end
   end
 
@@ -42,11 +42,11 @@ defmodule AshR2RML.ResourceDslFixesTest do
 
     r2rml do
       table_name("fix_owners")
-      class("https://example.test/Owner")
+      class("http://www.w3.org/ns/org#Organization")
 
-      subject template: "https://example.test/owner/{id}"
+      subject template: "urn:uuid:{id}"
 
-      reference(:kids, "https://example.test/hasKid")
+      reference(:kids, "http://www.w3.org/ns/org#hasMember")
     end
   end
 
@@ -60,11 +60,11 @@ defmodule AshR2RML.ResourceDslFixesTest do
 
     r2rml do
       table_name("fix_lang")
-      class("https://example.test/Lang")
+      class("https://schema.org/Thing")
 
-      subject template: "https://example.test/lang/{id}"
+      subject template: "urn:uuid:{id}"
 
-      property(:title, "https://example.test/title", language: "en")
+      property(:title, "http://purl.org/dc/terms/title", language: "en")
     end
   end
 
@@ -86,9 +86,9 @@ defmodule AshR2RML.ResourceDslFixesTest do
 
       r2rml do
         table_name("gen_#{n}")
-        class("https://example.test/Gen")
+        class("https://schema.org/Thing")
 
-        subject template: "https://example.test/gen/{id}"
+        subject template: "urn:uuid:{id}"
 
         #{property_line}
       end
@@ -112,7 +112,7 @@ defmodule AshR2RML.ResourceDslFixesTest do
     test "positive control: datatype alone compiles" do
       assert {:ok, mod} =
                compile_property(
-                 ~s|property(:title, "https://example.test/t", datatype: "http://www.w3.org/2001/XMLSchema#string")|
+                 ~s|property(:title, "http://purl.org/dc/terms/title", datatype: "http://www.w3.org/2001/XMLSchema#string")|
                )
 
       assert %ObjectMap{datatype: datatype} = hd(Info.mapping!(mod).predicate_object_maps).object_map
@@ -122,7 +122,7 @@ defmodule AshR2RML.ResourceDslFixesTest do
     test "constant + template" do
       assert {:error, message} =
                compile_property(
-                 ~s|property(:title, "https://example.test/t", constant: "a", template: "b/{title}", term_type: :iri)|
+                 ~s|property(:title, "http://purl.org/dc/terms/title", constant: "a", template: "b/{title}", term_type: :iri)|
                )
 
       assert message =~ "constant and template"
@@ -131,7 +131,7 @@ defmodule AshR2RML.ResourceDslFixesTest do
     test "language + datatype" do
       assert {:error, message} =
                compile_property(
-                 ~s|property(:title, "https://example.test/t", language: "en", datatype: "http://www.w3.org/2001/XMLSchema#string")|
+                 ~s|property(:title, "http://purl.org/dc/terms/title", language: "en", datatype: "http://www.w3.org/2001/XMLSchema#string")|
                )
 
       assert message =~ "language and datatype"
@@ -139,7 +139,9 @@ defmodule AshR2RML.ResourceDslFixesTest do
 
     test "language + language_column" do
       assert {:error, message} =
-               compile_property(~s|property(:title, "https://example.test/t", language: "en", language_column: :lang)|)
+               compile_property(
+                 ~s|property(:title, "http://purl.org/dc/terms/title", language: "en", language_column: :lang)|
+               )
 
       assert message =~ "language and language_column"
     end
@@ -148,7 +150,7 @@ defmodule AshR2RML.ResourceDslFixesTest do
       for tt <- [:iri, :blank_node] do
         assert {:error, message} =
                  compile_property(
-                   ~s|property(:title, "https://example.test/t", datatype: "http://www.w3.org/2001/XMLSchema#string", term_type: :#{tt})|
+                   ~s|property(:title, "http://purl.org/dc/terms/title", datatype: "http://www.w3.org/2001/XMLSchema#string", term_type: :#{tt})|
                  )
 
         assert message =~ "datatype with term_type #{tt}"

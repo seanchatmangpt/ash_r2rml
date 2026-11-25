@@ -112,12 +112,12 @@ defmodule AshR2RML.QueryBuilder.Modifiers do
   def check(sparql) when is_binary(sparql) do
     with :unparsed <- parse(sparql),
          tail when is_binary(tail) <- tail(sparql),
-         true <- Regex.match?(~r/\b(?:LIMIT|OFFSET)\b/i, tail) do
+         true <- Regex.match?(~r/\b(?:LIMIT|OFFSET|GROUP\s+BY|HAVING|VALUES)\b/i, tail) do
       {:error,
        AshR2RML.Refusal.new(
          :REFUSED_UNSUPPORTED_SPARQL_FEATURE,
-         "LIMIT/OFFSET",
-         "LIMIT/OFFSET combined with an unsupported solution-modifier tail (ORDER BY over an expression, GROUP BY, HAVING, VALUES) cannot be applied",
+         "LIMIT/OFFSET/GROUP BY/HAVING/VALUES",
+         "an unsupported solution-modifier tail (ORDER BY over an expression, GROUP BY, HAVING, VALUES) cannot be applied",
          %{tail: String.trim(tail)}
        )}
     else
@@ -326,8 +326,6 @@ defmodule AshR2RML.QueryBuilder.Lowering do
   @spec lower(String.t(), [{module(), Resource.t()}], keyword()) :: {:ok, Pushdown.t()} | :fallback
   def lower(sparql, specs, _opts \\ []) when is_binary(sparql) and is_list(specs) do
     do_lower(sparql, specs)
-  rescue
-    _ -> :fallback
   end
 
   defp do_lower(sparql, specs) do
@@ -790,7 +788,8 @@ defmodule AshR2RML.QueryBuilder do
   Builds the `%Ash.Query{}` for `plan` over `mapping.ash_resource`.
 
   Options: `:actor`, `:tenant`, `:domain`, `:action` (default: primary read), `:max_rows`
-  (default #{@default_max_rows}), `:authorize?` (default `true`).
+  (default #{@default_max_rows}), `:authorize?` (default `true`), `:row_cap` (optional extra
+  limit ceiling, see `triple_row_cap/2`; it only ever lowers the limit).
 
   Returns `{:error, %AshR2RML.Refusal{}}` (fail closed) for an unknown or sensitive attribute,
   an unknown relationship, a malformed filter, or a resource without a read action.
@@ -805,6 +804,7 @@ defmodule AshR2RML.QueryBuilder do
          :ok <- check_relationships(mapping, plan.needed_relationships),
          {:ok, filter_attrs} <- filter_attributes(mapping, plan.filter),
          :ok <- check_filterable(mapping, filter_attrs ++ Enum.map(plan.sort, &elem(&1, 0))),
+         :ok <- check_field_policy(mapping, filter_attrs ++ Enum.map(plan.sort, &elem(&1, 0))),
          {:ok, filter_expr} <- filter_expr(mapping, plan.filter) do
       select = select_attributes(mapping, plan)
       caps = Capability.probe(resource)
@@ -814,18 +814,45 @@ defmodule AshR2RML.QueryBuilder do
       window? =
         (plan.sort == [] or caps.sort) and (plan.offset in [nil, 0] or caps.offset)
 
+      # Without a window the plan limit is not pushed, but the row bound (max_rows / row_cap)
+      # still applies so an exceeded bound is detectable.
+      limit_value = if window?, do: plan.limit, else: nil
+
       resource
       |> Ash.Query.new()
-      |> maybe_tenant(opts[:tenant])
       |> Ash.Query.for_read(action, %{}, read_opts(opts))
       |> Ash.Query.select(select)
       |> maybe_load(plan.needed_relationships)
       |> maybe_filter(if(caps.filter, do: filter_expr))
       |> maybe_sort(if(window?, do: plan.sort, else: []))
       |> maybe_offset(if(window?, do: plan.offset))
-      |> maybe_limit(caps.limit and window?, effective_limit(plan.limit, max_rows))
+      |> maybe_limit(caps.limit, clamp_row_cap(effective_limit(limit_value, max_rows), opts[:row_cap]))
     end
   end
+
+  defp clamp_row_cap(limit, cap) when is_integer(cap) and cap > 0, do: min(limit, cap)
+  defp clamp_row_cap(limit, _cap), do: limit
+
+  @doc """
+  Smallest row count that provably exceeds a triple budget: every row emits at least
+  `min_per_row` triples, so `div(budget, min_per_row) + 1` rows cannot fit. `nil` when no
+  clamp is provable (`min_per_row` of 0 or a non-integer budget).
+
+  Pass the result as the `:row_cap` option of `build_ash_query/3` / `pushdown_query/4`; a read
+  returning `row_cap` rows is then a proof of `REFUSED_TRIPLE_LIMIT_EXCEEDED`.
+
+      iex> AshR2RML.QueryBuilder.triple_row_cap(100, 4)
+      26
+      iex> AshR2RML.QueryBuilder.triple_row_cap(100, 0)
+      nil
+      iex> AshR2RML.QueryBuilder.triple_row_cap(nil, 3)
+      nil
+  """
+  @spec triple_row_cap(integer() | nil, non_neg_integer()) :: pos_integer() | nil
+  def triple_row_cap(budget, min_per_row) when is_integer(budget) and is_integer(min_per_row) and min_per_row > 0,
+    do: div(max(budget, 0), min_per_row) + 1
+
+  def triple_row_cap(_budget, _min_per_row), do: nil
 
   defp maybe_limit(query, true, limit), do: Ash.Query.limit(query, limit)
   defp maybe_limit(query, false, _limit), do: query
@@ -870,9 +897,9 @@ defmodule AshR2RML.QueryBuilder do
   # -- options / action ------------------------------------------------------------------
 
   defp read_opts(opts) do
-    base = [authorize?: Keyword.get(opts, :authorize?, true)]
+    base = [authorize?: Keyword.get(opts, :authorize?) != false]
 
-    Enum.reduce([:actor, :tenant, :domain], base, fn key, acc ->
+    Enum.reduce([:actor, :tenant, :domain, :context, :scope], base, fn key, acc ->
       case Keyword.get(opts, key) do
         nil -> acc
         value -> [{key, value} | acc]
@@ -902,6 +929,24 @@ defmodule AshR2RML.QueryBuilder do
   defp check_attributes(mapping, names), do: check_each(mapping, names, &admit_attribute/2)
 
   defp check_filterable(mapping, names), do: check_each(mapping, names, &admit_attribute/2)
+
+  # A field-policy-gated attribute must never be filtered or sorted in the data layer: the
+  # surviving row set would be an oracle on the hidden value.
+  defp check_field_policy(%Resource{ash_resource: resource} = mapping, names) do
+    check_each(mapping, Enum.uniq(names), fn _mapping, name ->
+      if AshR2RML.Security.field_policy_protected?(resource, name) do
+        {:error,
+         refuse(
+           mapping,
+           :REFUSED_SENSITIVE_ATTRIBUTE_MATERIALIZATION,
+           "field-policy-protected attribute is not admitted for filter or sort",
+           %{attribute: name}
+         )}
+      else
+        :ok
+      end
+    end)
+  end
 
   defp check_each(mapping, names, fun) do
     Enum.reduce_while(names, :ok, fn name, :ok ->
@@ -983,9 +1028,6 @@ defmodule AshR2RML.QueryBuilder do
   defp subject_attributes(_), do: []
 
   # -- load / sort / paging --------------------------------------------------------------
-
-  defp maybe_tenant(query, nil), do: query
-  defp maybe_tenant(query, tenant), do: Ash.Query.set_tenant(query, tenant)
 
   defp maybe_load(query, []), do: query
   defp maybe_load(query, names), do: Ash.Query.load(query, Enum.uniq(names))

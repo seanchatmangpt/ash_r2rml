@@ -16,8 +16,8 @@ defmodule AshR2RML.OBDARefusalEvidenceRedactionTest do
 
   @policy_canary "POLICY-CANARY-XYZ"
   @secret_canary "SECRET-CANARY-XYZ"
-  @title_pred "https://example.org/title"
-  @secret_pred "https://example.org/secret"
+  @title_pred "https://schema.org/name"
+  @secret_pred "https://schema.org/description"
   @string "http://www.w3.org/2001/XMLSchema#string"
 
   defmodule Domain do
@@ -60,8 +60,8 @@ defmodule AshR2RML.OBDARefusalEvidenceRedactionTest do
     %Resource{
       ash_resource: Vault,
       logical_table: %LogicalTable{table_name: "vaults"},
-      subject_map: %SubjectMap{strategy: :template, value: "https://example.org/vaults/{id}", term_type: :iri},
-      class_iris: ["https://example.org/Vault"],
+      subject_map: %SubjectMap{strategy: :template, value: "urn:uuid:{id}", term_type: :iri},
+      class_iris: ["https://schema.org/Thing"],
       predicate_object_maps: [
         %PredicateObjectMap{
           attribute: :title,

@@ -30,7 +30,8 @@ defmodule AshR2RML.Error do
 
   @catalog %{
     REFUSED_INVALID_CLASS_IRI:
-      {"class IRI is not a valid absolute IRI", "set rdf class to an absolute IRI such as https://example.com/Thing"},
+      {"class IRI is not a valid absolute IRI",
+       "set rdf class to an absolute IRI such as http://xmlns.com/foaf/0.1/Person"},
     REFUSED_MISSING_SUBJECT_MAP:
       {"resource has no subject map", "declare a subject template or class in the r2rml block"},
     REFUSED_NON_UNIQUE_SEMANTIC_IDENTITY:
@@ -85,6 +86,8 @@ defmodule AshR2RML.Error do
       {"relationship target resource has no mapping", "add an r2rml block to the relationship destination resource"},
     REFUSED_SENSITIVE_ATTRIBUTE_MATERIALIZATION:
       {"sensitive attribute cannot be materialized", "remove the mapping or pass allow_sensitive?: true deliberately"},
+    REFUSED_ENCRYPTED_ATTRIBUTE_PROJECTION:
+      {"encrypted attribute cannot be projected in plaintext", "map it as an opaque urn:sha256: enclave pointer"},
     REFUSED_NON_LITERAL_DATATYPE:
       {"datatype cannot be a literal", "map the attribute as an IRI or use a literal-capable type"},
     REFUSED_CHANGESET_CONFLICT:
@@ -120,6 +123,8 @@ defmodule AshR2RML.Error do
   @doc "Builds an error. Options: `:resource`, `:field`, `:sparql_clause`, `:hint`, `:details`, `:message`."
   @spec new(atom(), keyword()) :: t()
   def new(code, opts \\ []) when is_atom(code) do
+    caller_message = opts[:message]
+
     err = %__MODULE__{
       code: code,
       resource: opts[:resource],
@@ -130,7 +135,9 @@ defmodule AshR2RML.Error do
       message: opts[:message]
     }
 
-    %{err | message: build_message(err)}
+    if is_binary(caller_message) and caller_message != "",
+      do: err,
+      else: %{err | message: build_message(err)}
   end
 
   @doc "Converts a `%AshR2RML.Refusal{}`; resource/field/clause come from subject and evidence."
@@ -152,13 +159,19 @@ defmodule AshR2RML.Error do
   def message(%__MODULE__{message: m}) when is_binary(m), do: m
   def message(%__MODULE__{} = e), do: build_message(e)
 
-  defp split_subject({resource, field}) when is_atom(resource) and not is_nil(resource),
-    do: {resource, field}
+  defp split_subject({resource, field}) when is_atom(resource) and not is_nil(resource) do
+    if resource?(resource), do: {resource, field}, else: {nil, nil}
+  end
 
-  defp split_subject(resource) when is_atom(resource) and not is_nil(resource),
-    do: {resource, nil}
+  defp split_subject(resource) when is_atom(resource) and not is_nil(resource) do
+    if resource?(resource), do: {resource, nil}, else: {nil, nil}
+  end
 
   defp split_subject(_), do: {nil, nil}
+
+  defp resource?(module) do
+    Code.ensure_loaded?(module) and Spark.Dsl.is?(module, Ash.Resource)
+  end
 
   defp default_hint(code) do
     case @catalog do

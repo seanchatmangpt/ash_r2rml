@@ -30,8 +30,8 @@ defmodule AshR2RML.ObdaPushdownModifiersTest do
   alias AshR2RML.QueryBuilder
   alias AshR2RML.QueryBuilder.Modifiers
 
-  @ex "https://ex.test/"
-  @s "https://schema.test/"
+  @ex "urn:uuid:"
+  @s "https://schema.org/"
   @xsd_string "http://www.w3.org/2001/XMLSchema#string"
   @total_subjects 35
 
@@ -132,8 +132,8 @@ defmodule AshR2RML.ObdaPushdownModifiersTest do
     %Resource{
       ash_resource: Team,
       logical_table: %LogicalTable{table_name: "team"},
-      subject_map: %SubjectMap{strategy: :template, value: @ex <> "team/{tcode}"},
-      class_iris: [@ex <> "Team"],
+      subject_map: %SubjectMap{strategy: :template, value: @ex <> "team-{tcode}"},
+      class_iris: [@s <> "Organization"],
       identities: [[:tcode]],
       predicate_object_maps: [pom(:title, "title", @string_dt)]
     }
@@ -143,8 +143,8 @@ defmodule AshR2RML.ObdaPushdownModifiersTest do
     %Resource{
       ash_resource: Emp,
       logical_table: %LogicalTable{table_name: "emp"},
-      subject_map: %SubjectMap{strategy: :template, value: @ex <> "emp/{code}"},
-      class_iris: [@ex <> "Emp"],
+      subject_map: %SubjectMap{strategy: :template, value: @ex <> "emp-{code}"},
+      class_iris: [@s <> "Person"],
       identities: [[:code]],
       predicate_object_maps: [pom(:name, "name", @string_dt), pom(:rank, "rank", @string_dt)],
       reference_object_maps: [
@@ -288,7 +288,7 @@ defmodule AshR2RML.ObdaPushdownModifiersTest do
     names
     |> Enum.with_index()
     |> Enum.reduce(RDF.Graph.new(), fn {name, i}, acc ->
-      RDF.Graph.add(acc, {RDF.iri(@ex <> "emp/e#{pad(i)}"), RDF.iri(@s <> "name"), literal.(name)})
+      RDF.Graph.add(acc, {RDF.iri(@ex <> "emp-e#{pad(i)}"), RDF.iri(@s <> "name"), literal.(name)})
     end)
   end
 

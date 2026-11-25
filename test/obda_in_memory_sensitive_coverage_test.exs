@@ -73,7 +73,7 @@ defmodule AshR2RML.OBDA.InMemorySensitiveCoverageTest do
   end
 
   test "sensitive attribute in subject template is refused" do
-    m = mapping(%SubjectMap{strategy: :template, value: "https://example.org/p/{ssn}"})
+    m = mapping(%SubjectMap{strategy: :template, value: "urn:uuid:{ssn}"})
     assert_refused(InMemory.materialize(Person, m, domain: Domain))
   end
 
@@ -85,22 +85,22 @@ defmodule AshR2RML.OBDA.InMemorySensitiveCoverageTest do
   test "sensitive attribute as join child column is refused" do
     ref = %ReferenceObjectMap{
       relationship: :boss,
-      predicate_iri: "https://example.org/boss",
+      predicate_iri: "https://schema.org/parent",
       parent_resource: Person,
       joins: [%JoinCondition{child: "boss_ssn", parent: "ssn"}]
     }
 
-    m = mapping(%SubjectMap{strategy: :template, value: "https://example.org/p/{id}"}, [ref])
+    m = mapping(%SubjectMap{strategy: :template, value: "urn:uuid:{id}"}, [ref])
     assert_refused(InMemory.materialize(Person, m, domain: Domain))
   end
 
   test "non-sensitive subject template materializes" do
-    m = mapping(%SubjectMap{strategy: :template, value: "https://example.org/p/{id}"})
+    m = mapping(%SubjectMap{strategy: :template, value: "urn:uuid:{id}"})
     assert {:ok, %RDF.Graph{}} = InMemory.materialize(Person, m, domain: Domain)
   end
 
   test "allow_sensitive: true admits the sensitive subject template" do
-    m = mapping(%SubjectMap{strategy: :template, value: "https://example.org/p/{ssn}"})
+    m = mapping(%SubjectMap{strategy: :template, value: "urn:uuid:{ssn}"})
 
     assert {:ok, graph} = InMemory.materialize(Person, m, domain: Domain, allow_sensitive: true)
     assert %RDF.Graph{} = graph

@@ -51,6 +51,7 @@ defmodule AshR2RML.Datatype.Registry do
     "Elixir.Ash.Type.Time" => :time,
     "Elixir.Ash.Type.UtcDatetime" => :utc_datetime,
     "Elixir.Ash.Type.UtcDatetimeUsec" => :utc_datetime_usec,
+    "Elixir.Ash.Type.DateTime" => :utc_datetime_usec,
     "Elixir.Ash.Type.NaiveDatetime" => :naive_datetime,
     "Elixir.Ash.Type.NaiveDatetimeUsec" => :naive_datetime_usec,
     "Elixir.Ash.Type.UUID" => :uuid,
@@ -64,10 +65,31 @@ defmodule AshR2RML.Datatype.Registry do
     "Elixir.Ash.Type.Module" => :module
   }
 
+  @max_unwrap_depth 16
+
   @spec resolve(term(), String.t() | nil, term() | nil) :: {:ok, Datatype.t()} | {:error, Refusal.t()}
-  def resolve(ash_type, rdf_override \\ nil, storage_override \\ nil) do
-    normalized = normalize_ash_type(ash_type)
-    semantic_contract = semantic_contract(ash_type)
+  def resolve(ash_type, rdf_override \\ nil, storage_override \\ nil)
+
+  def resolve({:array, inner} = ash_type, _rdf_override, _storage_override) do
+    {:error,
+     Refusal.new(
+       :UNSUPPORTED_ASH_TYPE,
+       ash_type,
+       "array-typed attributes have no single-column RDF literal mapping; map the elements through a dedicated relationship or an explicit datatype on a scalar attribute",
+       %{normalized_type: :array, inner_type: inner}
+     )}
+  end
+
+  def resolve(ash_type, rdf_override, storage_override) do
+    case unwrap_checked(ash_type) do
+      {:ok, base, _constraints} -> resolve_base(ash_type, base, rdf_override, storage_override)
+      {:error, %Refusal{}} = error -> error
+    end
+  end
+
+  defp resolve_base(ash_type, base, rdf_override, storage_override) do
+    normalized = normalize(base)
+    semantic_contract = semantic_contract(ash_type, base)
 
     cond do
       is_binary(rdf_override) and absolute_iri?(rdf_override) ->
@@ -105,12 +127,12 @@ defmodule AshR2RML.Datatype.Registry do
            %{semantic_kind: semantic_kind}
          )}
 
-      legacy_literal_type?(ash_type) ->
-        {:ok,
-         %Datatype{ash_type: ash_type, rdf_datatype: ash_type.xsd_datatype(), storage_type: storage_override || :text}}
-
-      enum_type?(ash_type) ->
+      enum_type?(base) ->
         {:ok, %Datatype{ash_type: ash_type, rdf_datatype: @xsd <> "string", storage_type: storage_override || :text}}
+
+      AshR2RML.Money.money_type?(base) ->
+        {:ok,
+         %Datatype{ash_type: ash_type, rdf_datatype: @xsd <> "decimal", storage_type: storage_override || :decimal}}
 
       Map.has_key?(@builtins, normalized) ->
         {rdf_datatype, storage} = Map.fetch!(@builtins, normalized)
@@ -128,40 +150,54 @@ defmodule AshR2RML.Datatype.Registry do
   end
 
   @spec supported?(term()) :: boolean()
-  def supported?(ash_type) do
-    case semantic_contract(ash_type) do
-      {:literal, datatype} when is_binary(datatype) ->
-        true
-
-      {:non_literal, _} ->
-        false
-
-      _ ->
-        legacy_literal_type?(ash_type) or enum_type?(ash_type) or Map.has_key?(@builtins, normalize_ash_type(ash_type))
-    end
-  end
+  def supported?(ash_type), do: match?({:ok, _}, resolve(ash_type))
 
   @doc """
   Recursively unwraps `Ash.Type.NewType` modules to their base type, merging
   constraints (outer constraints win over `subtype_constraints/0` of each layer).
 
   Returns `{base_type, constraints}`. Non-NewType input is returned unchanged.
+  Raises `ArgumentError` on a NewType cycle or excessive nesting; use
+  `unwrap_checked/2` for a typed refusal instead.
   """
   @spec unwrap(term(), keyword()) :: {term(), keyword()}
-  def unwrap(type, constraints \\ []), do: do_unwrap(type, constraints, 0)
-
-  defp do_unwrap(type, constraints, depth) when is_atom(type) and depth < 8 do
-    resolved = Ash.Type.get_type(type)
-
-    if new_type?(resolved) do
-      inner = Keyword.merge(subtype_constraints(resolved), constraints)
-      do_unwrap(resolved.subtype_of(), inner, depth + 1)
-    else
-      {resolved, constraints}
+  def unwrap(type, constraints \\ []) do
+    case unwrap_checked(type, constraints) do
+      {:ok, base, merged} -> {base, merged}
+      {:error, %Refusal{detail: detail}} -> raise ArgumentError, detail
     end
   end
 
-  defp do_unwrap(type, constraints, _depth), do: {type, constraints}
+  @doc """
+  Like `unwrap/2` but a NewType cycle (or nesting deeper than #{@max_unwrap_depth})
+  is a typed `UNSUPPORTED_ASH_TYPE` refusal.
+  """
+  @spec unwrap_checked(term(), keyword()) :: {:ok, term(), keyword()} | {:error, Refusal.t()}
+  def unwrap_checked(type, constraints \\ []), do: do_unwrap(type, constraints, [])
+
+  defp do_unwrap(type, constraints, seen) when is_atom(type) and not is_nil(type) do
+    resolved = Ash.Type.get_type(type)
+
+    cond do
+      not new_type?(resolved) ->
+        {:ok, resolved, constraints}
+
+      resolved in seen or length(seen) >= @max_unwrap_depth ->
+        {:error,
+         Refusal.new(
+           :UNSUPPORTED_ASH_TYPE,
+           type,
+           "NewType unwrapping cycles or nests deeper than #{@max_unwrap_depth} layers",
+           %{normalized_type: :newtype_cycle}
+         )}
+
+      true ->
+        inner = Keyword.merge(subtype_constraints(resolved), constraints)
+        do_unwrap(resolved.subtype_of(), inner, [resolved | seen])
+    end
+  end
+
+  defp do_unwrap(type, constraints, _seen), do: {:ok, type, constraints}
 
   defp subtype_constraints(module) do
     if function_exported?(module, :subtype_constraints, 0), do: module.subtype_constraints() || [], else: []
@@ -170,32 +206,32 @@ defmodule AshR2RML.Datatype.Registry do
   @spec builtin_contracts() :: map()
   def builtin_contracts, do: @builtins
 
-  defp semantic_contract(ash_type) when is_atom(ash_type) do
-    case AshR2RML.Type.contract(ash_type) do
+  # The declared type's own contract wins; otherwise the unwrapped base type's.
+  defp semantic_contract(ash_type, base) do
+    case contract_of(ash_type) do
+      :none -> contract_of(base)
+      found -> found
+    end
+  end
+
+  defp contract_of(type) when is_atom(type) and not is_nil(type) do
+    case AshR2RML.Type.contract(type) do
       {:ok, %{semantic_kind: :literal, datatype_iri: datatype}} -> {:literal, datatype}
       {:ok, %{semantic_kind: kind}} -> {:non_literal, kind}
       :error -> :none
     end
   end
 
-  defp semantic_contract(_), do: :none
+  defp contract_of(_), do: :none
 
   defp semantic_literal?({:literal, datatype}), do: is_binary(datatype) and absolute_iri?(datatype)
   defp semantic_literal?(_), do: false
 
   defp semantic_storage(ash_type) do
-    if is_atom(ash_type) and Code.ensure_loaded?(ash_type) and function_exported?(ash_type, :storage_type, 1) do
-      try do
-        ash_type.storage_type([])
-      rescue
-        _ -> nil
-      end
+    if is_atom(ash_type) and not is_nil(ash_type) and Code.ensure_loaded?(ash_type) and
+         function_exported?(ash_type, :storage_type, 1) do
+      ash_type.storage_type([])
     end
-  end
-
-  defp legacy_literal_type?(ash_type) do
-    is_atom(ash_type) and Code.ensure_loaded?(ash_type) and function_exported?(ash_type, :xsd_datatype, 0) and
-      is_binary(ash_type.xsd_datatype()) and absolute_iri?(ash_type.xsd_datatype())
   end
 
   defp enum_type?(ash_type) do
@@ -210,25 +246,16 @@ defmodule AshR2RML.Datatype.Registry do
     end
   end
 
-  defp normalize_ash_type(type), do: normalize_ash_type(type, 0)
-
-  defp normalize_ash_type(type, depth) when is_atom(type) and depth < 8 do
-    if Map.has_key?(@builtins, type) do
-      type
+  # `base` is already NewType-unwrapped and `Ash.Type.get_type/1`-resolved.
+  defp normalize(base) when is_atom(base) and not is_nil(base) do
+    if Map.has_key?(@builtins, base) do
+      base
     else
-      resolved = Ash.Type.get_type(type)
-
-      case Map.fetch(@ash_type_modules, Atom.to_string(resolved)) do
-        {:ok, normalized} ->
-          normalized
-
-        :error ->
-          if new_type?(resolved), do: normalize_ash_type(resolved.subtype_of(), depth + 1), else: type
-      end
+      Map.get(@ash_type_modules, Atom.to_string(base), base)
     end
   end
 
-  defp normalize_ash_type(type, _depth), do: type
+  defp normalize(base), do: base
 
   defp new_type?(module) do
     is_atom(module) and not is_nil(module) and Code.ensure_loaded?(module) and

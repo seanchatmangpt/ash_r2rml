@@ -132,7 +132,7 @@ defmodule AshR2RML.SPARQLPrivateNetworkTest do
                  Protocol.query("http://#{host}/sparql", @q)
       end
 
-      assert {:error, %Refusal{} = r} = Protocol.query("ftp://user:pw@example.org/x", @q)
+      assert {:error, %Refusal{} = r} = Protocol.query("ftp://user:pw@93.184.216.34/x", @q)
       refute inspect(r) =~ "user:pw"
     end
 

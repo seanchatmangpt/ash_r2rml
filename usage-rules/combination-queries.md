@@ -1,4 +1,4 @@
-# Legacy path: combination queries
+# Combination queries (not provided)
 
 AshR2RML does not execute Ash queries and does not provide a query-combination engine.
 

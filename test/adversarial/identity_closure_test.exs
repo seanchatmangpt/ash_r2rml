@@ -32,10 +32,10 @@ defmodule AshR2RML.Adversarial.IdentityClosureTest do
 
     r2rml do
       table_name("standard_uuids")
-      class("https://example.org/ontology/StandardItem")
+      class("http://schema.org/Thing")
 
       subject do
-        template("https://example.org/items/{id}")
+        template("urn:uuid:{id}")
       end
 
       property(:name, "http://xmlns.com/foaf/0.1/name")
@@ -56,13 +56,13 @@ defmodule AshR2RML.Adversarial.IdentityClosureTest do
 
     r2rml do
       table_name("custom_uuids")
-      class("https://example.org/ontology/CustomItem")
+      class("http://schema.org/Thing")
 
       subject do
-        template("https://example.org/custom-items/{item_uuid}")
+        template("urn:uuid:{item_uuid}")
       end
 
-      property(:title, "http://purl.org/dc/elements/1.1/title")
+      property(:title, "http://purl.org/dc/terms/title")
     end
   end
 
@@ -105,13 +105,13 @@ defmodule AshR2RML.Adversarial.IdentityClosureTest do
 
     r2rml do
       table_name("tenant_entries")
-      class("https://example.org/ontology/TenantEntry")
+      class("http://www.w3.org/ns/org#Organization")
 
       subject do
-        template("https://example.org/tenants/{tenant_id}/codes/{code}")
+        template("urn:sha256:{tenant_id}-{code}")
       end
 
-      property(:description, "http://purl.org/dc/elements/1.1/description")
+      property(:description, "http://purl.org/dc/terms/description")
     end
   end
 
@@ -137,13 +137,13 @@ defmodule AshR2RML.Adversarial.IdentityClosureTest do
 
     r2rml do
       table_name("articles")
-      class("https://example.org/ontology/Article")
+      class("http://schema.org/Thing")
 
       subject do
-        template("https://example.org/articles/{slug}")
+        template("urn:sha256:{slug}")
       end
 
-      property(:slug, "https://example.org/ontology/slug")
+      property(:slug, "http://www.w3.org/2004/02/skos/core#notation")
     end
   end
 
@@ -161,10 +161,10 @@ defmodule AshR2RML.Adversarial.IdentityClosureTest do
 
     r2rml do
       table_name("singletons")
-      class("https://example.org/ontology/SystemConfig")
+      class("http://schema.org/Thing")
 
       subject do
-        constant("https://example.org/system/global-config")
+        constant("urn:uuid:00000000-0000-0000-0000-000000000001")
       end
 
       property(:singleton_name, "http://xmlns.com/foaf/0.1/name")
@@ -185,13 +185,13 @@ defmodule AshR2RML.Adversarial.IdentityClosureTest do
 
     r2rml do
       table_name("anonymous_comments")
-      class("https://example.org/ontology/Comment")
+      class("http://schema.org/Thing")
 
       subject do
         term_type(:blank_node)
       end
 
-      property(:comment, "http://purl.org/dc/elements/1.1/description")
+      property(:comment, "http://purl.org/dc/terms/description")
     end
   end
 
@@ -210,10 +210,10 @@ defmodule AshR2RML.Adversarial.IdentityClosureTest do
 
     r2rml do
       table_name("departments")
-      class("https://example.org/ontology/Department")
+      class("http://www.w3.org/ns/org#Organization")
 
       subject do
-        template("https://example.org/org/{org_code}/dept/{dept_code}")
+        template("urn:sha256:{org_code}-{dept_code}")
       end
 
       property(:dept_name, "http://xmlns.com/foaf/0.1/name")
@@ -225,7 +225,7 @@ defmodule AshR2RML.Adversarial.IdentityClosureTest do
       mapping = AshR2RML.Resource.Info.mapping!(StandardUuidResource)
 
       assert mapping.subject_map.strategy == :template
-      assert mapping.subject_map.value == "https://example.org/items/{id}"
+      assert mapping.subject_map.value == "urn:uuid:{id}"
       assert mapping.identities == [[:id]]
       assert Mapping.stable_subject_identity?(mapping)
     end
@@ -234,7 +234,7 @@ defmodule AshR2RML.Adversarial.IdentityClosureTest do
       mapping = AshR2RML.Resource.Info.mapping!(CustomUuidKeyResource)
 
       assert mapping.subject_map.strategy == :template
-      assert mapping.subject_map.value == "https://example.org/custom-items/{item_uuid}"
+      assert mapping.subject_map.value == "urn:uuid:{item_uuid}"
       assert mapping.identities == [[:item_uuid]]
       assert Mapping.stable_subject_identity?(mapping)
     end
@@ -243,7 +243,7 @@ defmodule AshR2RML.Adversarial.IdentityClosureTest do
       mapping = AshR2RML.Resource.Info.mapping!(NaturalKeyResource)
 
       assert mapping.subject_map.strategy == :template
-      assert mapping.subject_map.value == "https://example.org/articles/{slug}"
+      assert mapping.subject_map.value == "urn:sha256:{slug}"
       assert [:id] in mapping.identities
       assert [:slug] in mapping.identities
       assert Mapping.stable_subject_identity?(mapping)
@@ -253,7 +253,7 @@ defmodule AshR2RML.Adversarial.IdentityClosureTest do
       mapping = AshR2RML.Resource.Info.mapping!(CompositeKeyResource)
 
       assert mapping.subject_map.strategy == :template
-      assert mapping.subject_map.value == "https://example.org/tenants/{tenant_id}/codes/{code}"
+      assert mapping.subject_map.value == "urn:sha256:{tenant_id}-{code}"
       assert [:id] in mapping.identities
       assert [:code, :tenant_id] in mapping.identities
       assert Mapping.stable_subject_identity?(mapping)
@@ -263,7 +263,7 @@ defmodule AshR2RML.Adversarial.IdentityClosureTest do
       mapping = AshR2RML.Resource.Info.mapping!(MultiColumnPkResource)
 
       assert mapping.subject_map.strategy == :template
-      assert mapping.subject_map.value == "https://example.org/org/{org_code}/dept/{dept_code}"
+      assert mapping.subject_map.value == "urn:sha256:{org_code}-{dept_code}"
       assert [:dept_code, :org_code] in mapping.identities
       assert Mapping.stable_subject_identity?(mapping)
     end
@@ -272,7 +272,7 @@ defmodule AshR2RML.Adversarial.IdentityClosureTest do
       mapping = AshR2RML.Resource.Info.mapping!(ConstantIriResource)
 
       assert mapping.subject_map.strategy == :constant
-      assert mapping.subject_map.value == "https://example.org/system/global-config"
+      assert mapping.subject_map.value == "urn:uuid:00000000-0000-0000-0000-000000000001"
       assert Mapping.stable_subject_identity?(mapping)
     end
 
@@ -287,13 +287,13 @@ defmodule AshR2RML.Adversarial.IdentityClosureTest do
   describe "2. URI Template Escaping and Rendering" do
     test "renders template with special URI characters and query components" do
       assert {:ok, ttl} = AshR2RML.render(CompositeKeyResource)
-      assert ttl =~ ~s(rr:template "https://example.org/tenants/{tenant_id}/codes/{code}")
-      assert ttl =~ ~s(rr:class <https://example.org/ontology/TenantEntry>)
+      assert ttl =~ ~s(rr:template "urn:sha256:{tenant_id}-{code}")
+      assert ttl =~ ~s(rr:class <http://www.w3.org/ns/org#Organization>)
     end
 
     test "renders multi-column primary key template accurately in R2RML" do
       assert {:ok, ttl} = AshR2RML.render(MultiColumnPkResource)
-      assert ttl =~ ~s(rr:template "https://example.org/org/{org_code}/dept/{dept_code}")
+      assert ttl =~ ~s(rr:template "urn:sha256:{org_code}-{dept_code}")
       assert ttl =~ ~s(rr:tableName "departments")
     end
   end
@@ -303,10 +303,10 @@ defmodule AshR2RML.Adversarial.IdentityClosureTest do
       resource_mapping = %AshR2RML.Mapping.Resource{
         ash_resource: CompositeKeyResource,
         logical_table: %AshR2RML.Mapping.LogicalTable{table_name: "tenant_entries"},
-        class_iris: ["https://example.org/ontology/TenantEntry"],
+        class_iris: ["http://www.w3.org/ns/org#Organization"],
         subject_map: %AshR2RML.Mapping.SubjectMap{
           strategy: :template,
-          value: "https://example.org/tenants/{tenant_id}",
+          value: "urn:sha256:{tenant_id}",
           term_type: :iri
         },
         identities: [[:id], [:tenant_id, :code]],
@@ -328,10 +328,10 @@ defmodule AshR2RML.Adversarial.IdentityClosureTest do
       resource_mapping = %AshR2RML.Mapping.Resource{
         ash_resource: StandardUuidResource,
         logical_table: %AshR2RML.Mapping.LogicalTable{table_name: "standard_uuids"},
-        class_iris: ["https://example.org/ontology/StandardItem"],
+        class_iris: ["http://schema.org/Thing"],
         subject_map: %AshR2RML.Mapping.SubjectMap{
           strategy: :template,
-          value: "https://example.org/items/{missing_field}",
+          value: "urn:uuid:{missing_field}",
           term_type: :iri
         },
         identities: [[:id]],
@@ -346,10 +346,10 @@ defmodule AshR2RML.Adversarial.IdentityClosureTest do
       res1 = %AshR2RML.Mapping.Resource{
         ash_resource: :ResourceA,
         logical_table: %AshR2RML.Mapping.LogicalTable{table_name: "common_table"},
-        class_iris: ["https://example.org/Person"],
+        class_iris: ["http://xmlns.com/foaf/0.1/Person"],
         subject_map: %AshR2RML.Mapping.SubjectMap{
           strategy: :template,
-          value: "https://example.org/person/{id}",
+          value: "urn:uuid:{id}",
           term_type: :iri
         },
         identities: [[:id]],
@@ -359,10 +359,10 @@ defmodule AshR2RML.Adversarial.IdentityClosureTest do
       res2 = %AshR2RML.Mapping.Resource{
         ash_resource: :ResourceB,
         logical_table: %AshR2RML.Mapping.LogicalTable{table_name: "common_table"},
-        class_iris: ["https://example.org/Person"],
+        class_iris: ["http://xmlns.com/foaf/0.1/Person"],
         subject_map: %AshR2RML.Mapping.SubjectMap{
           strategy: :template,
-          value: "https://example.org/person/{id}",
+          value: "urn:uuid:{id}",
           term_type: :iri
         },
         identities: [[:id]],
@@ -378,10 +378,10 @@ defmodule AshR2RML.Adversarial.IdentityClosureTest do
       res1 = %AshR2RML.Mapping.Resource{
         ash_resource: :TeacherResource,
         logical_table: %AshR2RML.Mapping.LogicalTable{table_name: "people"},
-        class_iris: ["https://example.org/Teacher"],
+        class_iris: ["http://xmlns.com/foaf/0.1/Person"],
         subject_map: %AshR2RML.Mapping.SubjectMap{
           strategy: :template,
-          value: "https://example.org/people/{id}",
+          value: "urn:uuid:{id}",
           term_type: :iri
         },
         identities: [[:id]],
@@ -391,10 +391,10 @@ defmodule AshR2RML.Adversarial.IdentityClosureTest do
       res2 = %AshR2RML.Mapping.Resource{
         ash_resource: :StudentResource,
         logical_table: %AshR2RML.Mapping.LogicalTable{table_name: "people"},
-        class_iris: ["https://example.org/Student"],
+        class_iris: ["http://www.w3.org/ns/org#Organization"],
         subject_map: %AshR2RML.Mapping.SubjectMap{
           strategy: :template,
-          value: "https://example.org/people/{id}",
+          value: "urn:uuid:{id}",
           term_type: :iri
         },
         identities: [[:id]],

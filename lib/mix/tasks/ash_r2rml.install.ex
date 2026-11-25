@@ -58,7 +58,7 @@ if Code.ensure_loaded?(Igniter) do
               r2rml do
                 class "https://schema.org/Person"
                 subject do
-                  template "https://example.org/people/{id}"
+                  template "urn:uuid:{id}"
                 end
               end
 
@@ -86,13 +86,13 @@ if Code.ensure_loaded?(Igniter) do
 
       """
       r2rml do
-        # TODO: replace the placeholder base IRI https://example.com/ns# with your real namespace
-        # and `{id}` with your resource's primary key attribute.
+        # TODO: replace the schema.org class with your domain class and `{id}` with
+        # your resource's primary key attribute.
         table_name "#{table}"
-        class "https://example.com/ns##{last}"
+        class "https://schema.org/Thing"
 
         subject do
-          template "https://example.com/ns##{table}/{id}"
+          template "urn:uuid:{id}"
         end
       end
       """
@@ -107,24 +107,33 @@ if Code.ensure_loaded?(Igniter) do
     # re-running `mix ash_r2rml.install --target` against an already-patched
     # module does not insert a second, duplicate block.
     defp add_starter_dsl_block(igniter, target_module) do
-      Igniter.Project.Module.find_and_update_module!(igniter, target_module, fn zipper ->
-        if match?({:ok, _}, Igniter.Code.Pattern.move_to(zipper, "r2rml do ... end")) do
-          {:ok, zipper}
-        else
-          case Igniter.Code.Module.move_to_use(zipper, Ash.Resource) do
-            {:ok, use_zipper} ->
-              {:ok,
-               Igniter.Code.Common.add_code(
-                 use_zipper,
-                 starter_block(target_module),
-                 placement: :after
-               )}
+      result =
+        Igniter.Project.Module.find_and_update_module(igniter, target_module, fn zipper ->
+          if match?({:ok, _}, Igniter.Code.Pattern.move_to(zipper, "r2rml do ... end")) do
+            {:ok, zipper}
+          else
+            case Igniter.Code.Module.move_to_use(zipper, Ash.Resource) do
+              {:ok, use_zipper} ->
+                {:ok,
+                 Igniter.Code.Common.add_code(
+                   use_zipper,
+                   starter_block(target_module),
+                   placement: :after
+                 )}
 
-            :error ->
-              {:ok, zipper}
+              :error ->
+                {:ok, zipper}
+            end
           end
-        end
-      end)
+        end)
+
+      case result do
+        {:ok, updated} ->
+          updated
+
+        {:error, failed} ->
+          Igniter.add_issue(failed, "AshR2RML install: module #{inspect(target_module)} not found")
+      end
     end
   end
 else
@@ -144,7 +153,7 @@ else
       AshR2RML manual installation steps:
 
       1. Add `:ash_r2rml` to your `mix.exs` dependencies:
-         {:ash_r2rml, "~> 0.1.0"}
+         {:ash_r2rml, "~> 26.11"}
 
       2. Add `import_deps: [:ash_r2rml]` and `plugins: [AshR2RML.Formatter]` to your `.formatter.exs`.
 

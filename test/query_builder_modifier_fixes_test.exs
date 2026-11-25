@@ -45,7 +45,7 @@ defmodule AshR2RML.QueryBuilderModifierFixesTest do
 
     test "decimals compare numerically and IRIs sort before literals" do
       assert Modifiers.compare(Decimal.new("9.5"), Decimal.new("10.0")) == :lt
-      assert Modifiers.compare(RDF.iri("http://example.com/a"), 1) == :lt
+      assert Modifiers.compare(RDF.iri("urn:uuid:00000000-0000-0000-0000-00000000000a"), 1) == :lt
       assert Modifiers.compare("a", "b") == :lt
     end
 

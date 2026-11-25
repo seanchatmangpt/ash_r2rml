@@ -12,8 +12,8 @@ defmodule AshR2RML.ObdaOrderUnprojectedTest do
 
   alias AshR2RML.Mapping.{Datatype, LogicalTable, ObjectMap, PredicateObjectMap, Resource, SubjectMap}
 
-  @ex "https://ex.test/"
-  @s "https://schema.test/"
+  @ex "urn:uuid:"
+  @s "https://schema.org/"
   @xsd_string "http://www.w3.org/2001/XMLSchema#string"
 
   defmodule Dom do
@@ -67,8 +67,8 @@ defmodule AshR2RML.ObdaOrderUnprojectedTest do
        %Resource{
          ash_resource: Person,
          logical_table: %LogicalTable{table_name: "person"},
-         subject_map: %SubjectMap{strategy: :template, value: @ex <> "person/{code}"},
-         class_iris: [@ex <> "Person"],
+         subject_map: %SubjectMap{strategy: :template, value: @ex <> "person-{code}"},
+         class_iris: [@s <> "Person"],
          identities: [[:code]],
          predicate_object_maps: [pom(:name, "name"), pom(:rank, "rank")]
        }}

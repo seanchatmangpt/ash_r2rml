@@ -7,20 +7,22 @@ defmodule AshR2RML.Formatter do
   Spark.Formatter plugin helper for AshR2RML DSL sections (`r2rml` and `sparql`).
   """
 
+  @behaviour Mix.Tasks.Format
+
   @doc "Returns the list of Spark extensions exported by AshR2RML."
   def extensions, do: [AshR2RML.Resource]
 
-  @doc "Mix.Tasks.Format plugin callback"
+  @impl Mix.Tasks.Format
   def features(_opts) do
     [extensions: [".ex", ".exs"]]
   end
 
-  @doc "Mix.Tasks.Format plugin format callback"
+  @impl Mix.Tasks.Format
   def format(contents, opts) do
     if Code.ensure_loaded?(Spark.Formatter) do
       opts_with_spark =
         Keyword.update(opts, :spark, [extensions: [AshR2RML.Resource]], fn spark ->
-          Keyword.update(spark, :extensions, [AshR2RML.Resource], &[AshR2RML.Resource | &1])
+          Keyword.update(spark, :extensions, [AshR2RML.Resource], &Enum.uniq([AshR2RML.Resource | &1]))
         end)
 
       Spark.Formatter.format(contents, opts_with_spark)

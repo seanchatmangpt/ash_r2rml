@@ -16,6 +16,9 @@ defmodule AshR2RML.OBDA.Worker do
   `max_heap_size` kill and an untrappable `:kill` signal identically. Any other exit reason
   is a `:REFUSED_WORKER_CRASHED` with `details.kind == :exit`.
 
+  The worker inherits the caller's `:"$callers"` chain (caller prepended), so ownership-based
+  lookups (e.g. SQL sandbox allowances) resolve inside the worker.
+
   Options: `:timeout_ms` (default #{5000}), `:max_heap_words` (default 50_000_000).
 
   ## Examples
@@ -61,10 +64,13 @@ defmodule AshR2RML.OBDA.Worker do
   defp do_run(fun, timeout, words) do
     parent = self()
     tag = make_ref()
+    # Ash/Ecto sandbox-style ownership and telemetry lookups follow `:"$callers"`.
+    callers = [parent | Process.get(:"$callers", [])]
 
     {pid, mref} =
       :erlang.spawn_opt(
         fn ->
+          Process.put(:"$callers", callers)
           # The guardian is the worker's first act, so a worker that runs at all is guarded:
           # a caller killed before this point yields an immediate DOWN (noproc) for the monitor.
           start_guardian(parent, self())

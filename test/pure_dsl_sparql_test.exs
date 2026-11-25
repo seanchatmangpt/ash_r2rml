@@ -21,7 +21,7 @@ defmodule AshR2RML.PureDslSparqlTest do
       class("https://schema.org/Person")
 
       subject do
-        template("https://example.org/people/{id}")
+        template("urn:uuid:{id}")
       end
 
       property(:name, "https://schema.org/name")

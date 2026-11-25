@@ -14,12 +14,16 @@ defmodule Mix.Tasks.AshR2rml.Render do
   use Mix.Task
 
   @impl Mix.Task
-  def run([]), do: Mix.raise("usage: mix ash_r2rml.render <Module> [<Module>...]")
+  def run(argv) do
+    {_opts, args, invalid} = OptionParser.parse(argv, strict: [])
 
-  def run(args) do
-    Mix.Task.run("app.start")
+    if invalid != [] or args == [] do
+      Mix.raise("usage: mix ash_r2rml.render <Module> [<Module>...]")
+    end
 
-    modules = Enum.map(args, &Module.concat([&1]))
+    Mix.Task.run("compile")
+
+    modules = Enum.map(args, &resolve_module!/1)
 
     with {:ok, bundle} <- AshR2RML.Compiler.compile(modules),
          {:ok, turtle} <- AshR2RML.R2RML.render(bundle) do
@@ -30,6 +34,24 @@ defmodule Mix.Tasks.AshR2rml.Render do
 
       {:error, other} ->
         Mix.raise("render refused: #{inspect(other)}")
+    end
+  end
+
+  # Resolves only modules whose atoms already exist and that are loadable;
+  # never mints atoms from CLI input.
+  @spec resolve_module!(String.t()) :: module()
+  defp resolve_module!(name) do
+    module =
+      try do
+        Module.safe_concat([name])
+      rescue
+        ArgumentError -> Mix.raise("unknown module: #{name}")
+      end
+
+    if Code.ensure_loaded?(module) do
+      module
+    else
+      Mix.raise("module not loadable: #{name}")
     end
   end
 end

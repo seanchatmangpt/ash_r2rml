@@ -17,6 +17,7 @@ Semantic mapping metadata normalized into AshR2RML.Mapping
  * [class](#r2rml-class)
  * [subject](#r2rml-subject)
  * [property](#r2rml-property)
+ * [temporal](#r2rml-temporal)
  * [reference](#r2rml-reference)
  * [graph](#r2rml-graph)
 
@@ -25,7 +26,7 @@ Semantic mapping metadata normalized into AshR2RML.Mapping
 ```
 r2rml do
   class "http://xmlns.com/foaf/0.1/Person"
-  subject template: "http://example.com/person/{id}"
+  subject template: "urn:uuid:{id}"
   property :name, "http://xmlns.com/foaf/0.1/name"
 end
 
@@ -60,7 +61,7 @@ class "http://xmlns.com/foaf/0.1/Person"
 ```
 
 ```
-class ["http://xmlns.com/foaf/0.1/Person", "http://schema.org/Person"]
+class ["http://xmlns.com/foaf/0.1/Person", "https://schema.org/Person"]
 ```
 
 
@@ -86,7 +87,7 @@ Defines how subject terms are generated: exactly one of template, column, or con
 
 ### Examples
 ```
-subject template: "http://example.com/person/{id}"
+subject template: "urn:uuid:{id}"
 ```
 
 ```
@@ -153,6 +154,37 @@ property :age, "http://xmlns.com/foaf/0.1/age", datatype: "http://www.w3.org/200
 
 
 
+### r2rml.temporal
+
+
+Projects start/end attributes as xsd:dateTime time:hasBeginning / time:hasEnd literals.
+
+
+
+### Examples
+```
+temporal start_attribute: :starts_at, end_attribute: :ends_at
+```
+
+```
+temporal start_attribute: :valid_from
+```
+
+
+
+
+### Options
+
+| Name | Type | Default | Docs |
+|------|------|---------|------|
+| [`start_attribute`](#r2rml-temporal-start_attribute){: #r2rml-temporal-start_attribute } | `atom` |  |  |
+| [`end_attribute`](#r2rml-temporal-end_attribute){: #r2rml-temporal-end_attribute } | `atom` |  |  |
+
+
+
+
+
+
 ### r2rml.reference
 ```elixir
 reference relationship, predicate_iri
@@ -165,11 +197,11 @@ Maps an Ash relationship to a referencing object map linking subjects via a pred
 
 ### Examples
 ```
-reference :company, "http://example.com/worksFor"
+reference :company, "https://schema.org/worksFor"
 ```
 
 ```
-reference :posts, "http://example.com/authored", direction: :incoming
+reference :posts, "https://schema.org/creator", direction: :incoming
 ```
 
 
@@ -205,11 +237,11 @@ Assigns generated triples to a named graph IRI, scoped to the whole resource or 
 
 ### Examples
 ```
-graph "http://example.com/graph/people"
+graph "urn:uuid:00000000-0000-0000-0000-000000000001"
 ```
 
 ```
-graph "http://example.com/graph/people", scope: :subject
+graph "urn:uuid:00000000-0000-0000-0000-000000000001", scope: :subject
 ```
 
 

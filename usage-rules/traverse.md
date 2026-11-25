@@ -1,4 +1,4 @@
-# Legacy path: graph traversal
+# Graph traversal (not provided)
 
 AshR2RML does not add a graph-native traversal expression to Ash queries.
 

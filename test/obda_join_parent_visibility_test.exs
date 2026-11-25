@@ -94,17 +94,16 @@ defmodule AshR2RML.OBDAJoinParentVisibilityTest do
     end
   end
 
-  @ex "https://example.org/"
-  @member_of @ex <> "memberOf"
-  @name_pred @ex <> "name"
+  @member_of "https://schema.org/memberOf"
+  @name_pred "https://schema.org/name"
   @string "http://www.w3.org/2001/XMLSchema#string"
 
   defp specs do
     org = %Resource{
       ash_resource: Org,
       logical_table: %LogicalTable{table_name: "orgs"},
-      subject_map: %SubjectMap{strategy: :template, value: @ex <> "orgs/{code}", term_type: :iri},
-      class_iris: [@ex <> "Org"],
+      subject_map: %SubjectMap{strategy: :template, value: "urn:uuid:org-{code}", term_type: :iri},
+      class_iris: ["https://schema.org/Organization"],
       identities: [[:code]],
       metadata: %{source: :obda_join_parent_visibility_test}
     }
@@ -112,8 +111,8 @@ defmodule AshR2RML.OBDAJoinParentVisibilityTest do
     person = %Resource{
       ash_resource: Person,
       logical_table: %LogicalTable{table_name: "people"},
-      subject_map: %SubjectMap{strategy: :template, value: @ex <> "people/{name}", term_type: :iri},
-      class_iris: [@ex <> "Person"],
+      subject_map: %SubjectMap{strategy: :template, value: "urn:uuid:person-{name}", term_type: :iri},
+      class_iris: ["https://schema.org/Person"],
       predicate_object_maps: [
         %PredicateObjectMap{
           attribute: :name,
@@ -169,13 +168,13 @@ defmodule AshR2RML.OBDAJoinParentVisibilityTest do
 
   test "actor of org a: only the visible parent is referenced; the invisible one is not disclosed" do
     assert {:ok, result} = OBDA.query(specs(), @select, domain: Domain, actor: %{org_code: "a"})
-    assert pairs(result) == [{@ex <> "people/p1", @ex <> "orgs/a"}]
-    refute inspect(result) =~ "orgs/b"
+    assert pairs(result) == [{"urn:uuid:person-p1", "urn:uuid:org-a"}]
+    refute inspect(result) =~ "org-b"
   end
 
   test "actor of org b sees the mirror image" do
     assert {:ok, result} = OBDA.query(specs(), @select, domain: Domain, actor: %{org_code: "b"})
-    assert pairs(result) == [{@ex <> "people/p2", @ex <> "orgs/b"}]
+    assert pairs(result) == [{"urn:uuid:person-p2", "urn:uuid:org-b"}]
   end
 
   test "actor of an org with no people: no memberOf triple and no foreign key leaks" do

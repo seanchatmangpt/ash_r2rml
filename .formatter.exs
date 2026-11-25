@@ -19,6 +19,7 @@
     reference: 3,
     graph: 1,
     graph: 2,
+    temporal: 1,
     query: 1,
     query: 2
   ],
@@ -32,6 +33,7 @@
       reference: 3,
       graph: 1,
       graph: 2,
+      temporal: 1,
       query: 1,
       query: 2
     ]

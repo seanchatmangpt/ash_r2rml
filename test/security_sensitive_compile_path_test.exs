@@ -9,8 +9,8 @@ defmodule AshR2RML.SecuritySensitiveCompilePathTest do
   """
   use ExUnit.Case, async: false
 
-  @secret_iri "https://example.org/sensitive/ssn"
-  @name_iri "https://example.org/sensitive/name"
+  @secret_iri "http://schema.org/taxID"
+  @name_iri "http://xmlns.com/foaf/0.1/name"
 
   defmodule Domain do
     use Ash.Domain, validate_config_inclusion?: false
@@ -24,17 +24,14 @@ defmodule AshR2RML.SecuritySensitiveCompilePathTest do
     use Ash.Resource,
       domain: AshR2RML.SecuritySensitiveCompilePathTest.Domain,
       data_layer: Ash.DataLayer.Ets,
-      extensions: [AshR2RML]
+      extensions: [AshR2RML.Resource]
 
     r2rml do
-      class_iri("https://example.org/sensitive/Person")
-      subject_template("https://example.org/sensitive/Person/{id}")
       table_name("sensitive_people")
-
-      attribute_mappings([
-        {:name, "https://example.org/sensitive/name"},
-        {:ssn, "https://example.org/sensitive/ssn"}
-      ])
+      class("http://xmlns.com/foaf/0.1/Person")
+      subject(template: "urn:uuid:{id}")
+      property(:name, "http://xmlns.com/foaf/0.1/name")
+      property(:ssn, "http://schema.org/taxID")
     end
 
     actions do

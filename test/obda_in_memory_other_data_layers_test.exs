@@ -33,7 +33,7 @@ defmodule AshR2RML.OBDA.InMemoryOtherDataLayersTest do
     use Ash.Resource,
       domain: AshR2RML.OBDA.InMemoryOtherDataLayersTest.CsvDomain,
       data_layer: AshCsv.DataLayer,
-      extensions: [AshR2RML]
+      extensions: [AshR2RML.Resource]
 
     csv do
       file(Path.join(System.tmp_dir!(), "ash_r2rml_csv_test_organizations.csv"))
@@ -43,14 +43,11 @@ defmodule AshR2RML.OBDA.InMemoryOtherDataLayersTest do
     end
 
     r2rml do
-      class_iri("https://schema.org/Organization")
-      subject_template("https://schema.org/Organization/{id}")
       table_name("schema_organizations")
-
-      attribute_mappings([
-        {:name, "https://schema.org/name"},
-        {:version, "https://schema.org/version"}
-      ])
+      class("https://schema.org/Organization")
+      subject(template: "urn:uuid:{id}")
+      property(:name, "https://schema.org/name")
+      property(:version, "https://schema.org/version")
     end
 
     actions do
@@ -81,21 +78,18 @@ defmodule AshR2RML.OBDA.InMemoryOtherDataLayersTest do
     use Ash.Resource,
       domain: AshR2RML.OBDA.InMemoryOtherDataLayersTest.CubDomain,
       data_layer: AshCubDB.DataLayer,
-      extensions: [AshR2RML]
+      extensions: [AshR2RML.Resource]
 
     cubdb do
       directory(Path.join(System.tmp_dir!(), "ash_r2rml_cubdb_test_#{System.unique_integer([:positive])}"))
     end
 
     r2rml do
-      class_iri("https://schema.org/Organization")
-      subject_template("https://schema.org/Organization/{id}")
       table_name("schema_organizations")
-
-      attribute_mappings([
-        {:name, "https://schema.org/name"},
-        {:version, "https://schema.org/version"}
-      ])
+      class("https://schema.org/Organization")
+      subject(template: "urn:uuid:{id}")
+      property(:name, "https://schema.org/name")
+      property(:version, "https://schema.org/version")
     end
 
     actions do
@@ -137,7 +131,7 @@ defmodule AshR2RML.OBDA.InMemoryOtherDataLayersTest do
 
       assert {:ok, graph} = AshR2RML.OBDA.InMemory.materialize(CsvOrganization, mapping, domain: CsvDomain)
 
-      subject = RDF.iri("https://schema.org/Organization/#{org.id}")
+      subject = RDF.iri("urn:uuid:#{org.id}")
       assert RDF.Graph.include?(graph, {subject, RDF.iri("https://schema.org/name"), RDF.literal("Csv Corp")})
 
       assert {:ok, observation} =
@@ -148,7 +142,7 @@ defmodule AshR2RML.OBDA.InMemoryOtherDataLayersTest do
                  domain: CsvDomain
                )
 
-      assert %{"s" => "https://schema.org/Organization/#{org.id}", "name" => "Csv Corp"} in observation.rows
+      assert %{"s" => "urn:uuid:#{org.id}", "name" => "Csv Corp"} in observation.rows
     end
   end
 
@@ -168,7 +162,7 @@ defmodule AshR2RML.OBDA.InMemoryOtherDataLayersTest do
 
       assert {:ok, graph} = AshR2RML.OBDA.InMemory.materialize(CubOrganization, mapping, domain: CubDomain)
 
-      subject = RDF.iri("https://schema.org/Organization/#{org.id}")
+      subject = RDF.iri("urn:uuid:#{org.id}")
       assert RDF.Graph.include?(graph, {subject, RDF.iri("https://schema.org/name"), RDF.literal("Cub Corp")})
 
       assert {:ok, observation} =
@@ -179,7 +173,7 @@ defmodule AshR2RML.OBDA.InMemoryOtherDataLayersTest do
                  domain: CubDomain
                )
 
-      assert %{"s" => "https://schema.org/Organization/#{org.id}", "name" => "Cub Corp"} in observation.rows
+      assert %{"s" => "urn:uuid:#{org.id}", "name" => "Cub Corp"} in observation.rows
     end
   end
 end

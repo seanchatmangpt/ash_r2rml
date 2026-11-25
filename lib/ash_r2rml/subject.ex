@@ -26,11 +26,11 @@ defmodule AshR2RML.Subject do
       iex> mapping = %Resource{
       ...>   ash_resource: "Person",
       ...>   logical_table: %LogicalTable{table_name: "people"},
-      ...>   subject_map: %SubjectMap{strategy: :template, value: "http://ex.org/p/{id}"}
+      ...>   subject_map: %SubjectMap{strategy: :template, value: "urn:uuid:{id}"}
       ...> }
       iex> AshR2RML.Subject.to_iri(mapping, %{id: "a b"})
-      {:ok, "http://ex.org/p/a%20b"}
-      iex> AshR2RML.Subject.from_iri(mapping, "http://ex.org/p/a%20b")
+      {:ok, "urn:uuid:a%20b"}
+      iex> AshR2RML.Subject.from_iri(mapping, "urn:uuid:a%20b")
       {:ok, %{id: "a b"}}
   """
 
@@ -162,27 +162,13 @@ defmodule AshR2RML.Subject do
   # -- template parsing -----------------------------------------------------------------
 
   @spec parse(MappingResource.t(), String.t()) :: {:ok, [segment()]} | {:error, Refusal.t()}
+  # Parsed on every call (no runtime cache): placeholders are resolved against the mapped
+  # resource's attributes, so no atom is minted and no template string is retained.
   defp parse(mapping, template) do
-    key = {__MODULE__, :segments, template}
-
-    case :persistent_term.get(key, nil) do
-      nil ->
-        with {:ok, segments} = ok <- parse_uncached(mapping, template) do
-          # Write-once: only successful parses are cached (errors depend on atom existence).
-          :persistent_term.put(key, segments)
-          ok
-        end
-
-      segments ->
-        {:ok, segments}
-    end
-  end
-
-  defp parse_uncached(mapping, template) do
     segments =
       @placeholder
       |> Regex.split(template, include_captures: true, trim: true)
-      |> Enum.map(&to_segment/1)
+      |> Enum.map(&to_segment(mapping, &1))
 
     if Enum.any?(segments, &(&1 == :error)) do
       {:error, refuse(mapping, :REFUSED_INVALID_TERM_MAP, "unknown template field", %{template: template})}
@@ -191,18 +177,41 @@ defmodule AshR2RML.Subject do
     end
   end
 
-  defp to_segment(chunk) do
+  defp to_segment(mapping, chunk) do
     case Regex.run(~r/\A\{([a-zA-Z0-9_]+)\}\z/, chunk, capture: :all_but_first) do
       [name] ->
-        try do
-          {:field, String.to_existing_atom(name)}
-        rescue
-          ArgumentError -> :error
+        case field_atom(mapping, name) do
+          {:ok, field} -> {:field, field}
+          :error -> :error
         end
 
       nil ->
         {:lit, chunk}
     end
+  end
+
+  # Ash resource mappings: the placeholder must name an attribute of the resource.
+  # Mappings without an Ash resource carry no attribute table; only an already-existing
+  # atom is accepted there (never minted).
+  defp field_atom(%MappingResource{ash_resource: resource}, name)
+       when is_atom(resource) and not is_nil(resource) do
+    if Ash.Resource.Info.resource?(resource) do
+      resource
+      |> Ash.Resource.Info.attributes()
+      |> Enum.find_value(:error, fn attribute ->
+        if Atom.to_string(attribute.name) == name, do: {:ok, attribute.name}
+      end)
+    else
+      existing_atom(name)
+    end
+  end
+
+  defp field_atom(_mapping, name), do: existing_atom(name)
+
+  defp existing_atom(name) do
+    {:ok, String.to_existing_atom(name)}
+  rescue
+    ArgumentError -> :error
   end
 
   # -- rendering ------------------------------------------------------------------------
@@ -258,10 +267,10 @@ defmodule AshR2RML.Subject do
         non_empty(mapping, field, to_string(value))
 
       %{type: type, constraints: constraints} ->
-        case Ash.Type.cast_input(type, value, constraints) do
-          {:ok, cast} when not is_nil(cast) ->
-            non_empty(mapping, field, to_string(cast))
-
+        with {:ok, cast} when not is_nil(cast) <- Ash.Type.cast_input(type, value, constraints),
+             {:ok, cast} <- Ash.Type.apply_constraints(type, cast, constraints) do
+          non_empty(mapping, field, to_string(cast))
+        else
           _ ->
             {:error,
              refuse(

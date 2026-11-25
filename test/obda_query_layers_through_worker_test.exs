@@ -73,9 +73,9 @@ defmodule AshR2RML.OBDAQueryLayersThroughWorkerTest do
   @people [{"w1", "Ada", 36}, {"w2", "Grace", 45}, {"w3", "Edsger", 72}]
 
   @expected [
-    {"https://ex.org/person/w1", "Ada", "36"},
-    {"https://ex.org/person/w2", "Grace", "45"},
-    {"https://ex.org/person/w3", "Edsger", "72"}
+    {"urn:uuid:w1", "Ada", "36"},
+    {"urn:uuid:w2", "Grace", "45"},
+    {"urn:uuid:w3", "Edsger", "72"}
   ]
 
   defp seed!(layer) do

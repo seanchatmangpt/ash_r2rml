@@ -19,7 +19,6 @@ defmodule AshR2RML.CompilationReceipt do
     :r2rml_sha256,
     :shacl_sha256,
     :query_parity,
-    :neo4j_postgres_parity,
     :cutover_authority,
     classes_admitted: 0,
     attributes_admitted: 0,
@@ -48,7 +47,6 @@ defmodule AshR2RML.CompilationReceipt do
           r2rml_sha256: String.t() | nil,
           shacl_sha256: String.t() | nil,
           query_parity: :UNKNOWN | :VERIFIED,
-          neo4j_postgres_parity: :UNKNOWN | :VERIFIED | nil,
           cutover_authority: :UNAUTHORIZED | :AUTHORIZED | nil,
           classes_admitted: non_neg_integer(),
           attributes_admitted: non_neg_integer(),
@@ -73,6 +71,8 @@ defmodule AshR2RML.Compiler do
   """
 
   alias AshR2RML.{CompilationReceipt, Refusal}
+
+  @max_closure_resources 10_000
 
   @spec compile(module() | [module()], keyword()) ::
           {:ok, AshR2RML.Mapping.Bundle.t()} | {:error, Refusal.t()}
@@ -123,31 +123,16 @@ defmodule AshR2RML.Compiler do
     end
   end
 
-  def attach_parity_witness(%CompilationReceipt{} = receipt, kind, witness)
-      when kind == :neo4j_postgres and is_map(witness) do
-    verified? = Map.get(witness, :verified?, Map.get(witness, "verified?", false))
-    witness_id = Map.get(witness, :receipt_sha256, Map.get(witness, "receipt_sha256"))
+  def attach_parity_witness(%CompilationReceipt{} = receipt, kind, witness) do
+    refusal =
+      Refusal.new(
+        :REFUSED_UNPROVEN_EQUIVALENCE,
+        kind,
+        "unsupported parity witness kind or malformed witness; only :sparql_sql with a map witness is admitted",
+        %{witness: witness}
+      )
 
-    if verified? and is_binary(witness_id) and witness_id != "" do
-      receipt = %{receipt | neo4j_postgres_parity: :VERIFIED}
-      blocked = List.delete(receipt.blocked, :neo4j_postgres_semantic_parity)
-
-      %{
-        receipt
-        | blocked: blocked,
-          verified: Enum.uniq([{:parity_witness, kind, witness_id} | receipt.verified])
-      }
-    else
-      refusal =
-        Refusal.new(
-          :REFUSED_UNPROVEN_EQUIVALENCE,
-          kind,
-          "parity witness must be observed, verified, and carry a stable receipt_sha256",
-          %{witness: witness}
-        )
-
-      %{receipt | refusals: [refusal | receipt.refusals]}
-    end
+    %{receipt | refusals: [refusal | receipt.refusals]}
   end
 
   @doc "Attach explicit cutover authority without conflating it with technical parity."
@@ -177,7 +162,7 @@ defmodule AshR2RML.Compiler do
 
   def compile_resources(resources) do
     with {:ok, resources} <- expand_domains(List.wrap(resources)),
-         {:ok, mappings} <- do_closure(resources, [], []) do
+         {:ok, mappings} <- do_closure(resources, %{}, []) do
       bundle = %AshR2RML.Mapping.Bundle{resources: mappings} |> AshR2RML.Mapping.normalize()
 
       case AshR2RML.Mapping.validate(bundle) do
@@ -223,30 +208,31 @@ defmodule AshR2RML.Compiler do
   defp do_closure([], _seen, acc), do: {:ok, Enum.reverse(acc)}
 
   defp do_closure([resource | rest], seen, acc) do
-    if resource in seen do
-      do_closure(rest, seen, acc)
-    else
-      case AshR2RML.Resource.Info.mapping_result(resource) do
-        {:ok, mapping} ->
-          mapping = AshR2RML.Security.sanitize_mapping(resource, mapping)
+    cond do
+      Map.has_key?(seen, resource) ->
+        do_closure(rest, seen, acc)
 
-          case AshR2RML.Security.check_protected_dependencies(resource, mapping) do
-            :ok ->
-              destinations = Enum.map(mapping.reference_object_maps, & &1.parent_resource) |> Enum.reject(&is_nil/1)
+      map_size(seen) >= @max_closure_resources ->
+        {:error,
+         Refusal.new(
+           :REFUSED_RESOURCE_BOUND,
+           :closure,
+           "resource closure exceeds #{@max_closure_resources} resources",
+           %{max_resources: @max_closure_resources}
+         )}
 
-              do_closure(
-                rest ++ destinations,
-                [resource | seen],
-                [mapping | acc]
-              )
+      true ->
+        closure_step(resource, rest, seen, acc)
+    end
+  end
 
-            {:error, refusal} ->
-              {:error, refusal}
-          end
+  defp closure_step(resource, rest, seen, acc) do
+    with {:ok, mapping} <- AshR2RML.Resource.Info.mapping_result(resource),
+         mapping = AshR2RML.Security.sanitize_mapping(resource, mapping),
+         :ok <- AshR2RML.Security.check_protected_dependencies(resource, mapping) do
+      destinations = Enum.map(mapping.reference_object_maps, & &1.parent_resource) |> Enum.reject(&is_nil/1)
 
-        {:error, refusal} ->
-          {:error, refusal}
-      end
+      do_closure(rest ++ destinations, Map.put(seen, resource, true), [mapping | acc])
     end
   end
 

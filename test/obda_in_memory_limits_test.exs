@@ -23,20 +23,17 @@ defmodule AshR2RML.OBDA.InMemoryLimitsTest do
     use Ash.Resource,
       domain: AshR2RML.OBDA.InMemoryLimitsTest.Domain,
       data_layer: Ash.DataLayer.Ets,
-      extensions: [AshR2RML]
+      extensions: [AshR2RML.Resource]
 
     ets do
       private? true
     end
 
     r2rml do
-      class_iri("https://example.org/Item")
-      subject_template("https://example.org/Item/{id}")
       table_name("limits_items")
-
-      attribute_mappings([
-        {:name, "https://example.org/name"}
-      ])
+      class("https://schema.org/Thing")
+      subject(template: "urn:uuid:{id}")
+      property(:name, "https://schema.org/name")
     end
 
     actions do
@@ -54,7 +51,7 @@ defmodule AshR2RML.OBDA.InMemoryLimitsTest do
     end
   end
 
-  @select "SELECT ?s ?name WHERE { ?s <https://example.org/name> ?name . }"
+  @select "SELECT ?s ?name WHERE { ?s <https://schema.org/name> ?name . }"
 
   setup do
     {:ok, mapping} = AshR2RML.Resource.Info.mapping_result(Item)
@@ -113,7 +110,7 @@ defmodule AshR2RML.OBDA.InMemoryLimitsTest do
   end
 
   test "constant subject IRI pushes down so a point lookup reads one row", %{mapping: mapping, items: [item | _]} do
-    iri = "https://example.org/Item/#{item.id}"
+    iri = "urn:uuid:#{item.id}"
 
     assert {{:ok, observation}, stats} =
              InMemory.query_with_stats([{Item, mapping}], @select, domain: Domain, subject_iri: iri)
@@ -126,12 +123,12 @@ defmodule AshR2RML.OBDA.InMemoryLimitsTest do
     assert {{:ok, _}, %{rows_read: 5}} =
              InMemory.query_with_stats([{Item, mapping}], @select,
                domain: Domain,
-               subject_iri: "https://other.example/x"
+               subject_iri: "urn:sha256:00"
              )
   end
 
   test "max_rows applies to the pushed-down read as well", %{mapping: mapping, items: [item | _]} do
-    iri = "https://example.org/Item/#{item.id}"
+    iri = "urn:uuid:#{item.id}"
 
     assert {:ok, _graph} =
              InMemory.materialize(Item, mapping, domain: Domain, subject_iri: iri, max_rows: 1)

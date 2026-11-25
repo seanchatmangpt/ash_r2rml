@@ -46,7 +46,7 @@ defmodule AshR2RML.WS2.JoinTableRefusalTest do
       class("https://schema.org/Patient")
 
       subject do
-        template("https://example.org/ws2/patient/{id}")
+        template("urn:uuid:{id}")
       end
 
       property(:name, "http://xmlns.com/foaf/0.1/name")
@@ -78,7 +78,7 @@ defmodule AshR2RML.WS2.JoinTableRefusalTest do
       class("https://schema.org/MedicalAppointment")
 
       subject do
-        template("https://example.org/ws2/visit/{id}")
+        template("urn:uuid:{id}")
       end
     end
   end
@@ -118,11 +118,11 @@ defmodule AshR2RML.WS2.JoinTableRefusalTest do
       class("https://schema.org/Physician")
 
       subject do
-        template("https://example.org/ws2/doctor/{id}")
+        template("urn:uuid:{id}")
       end
 
       property(:name, "http://xmlns.com/foaf/0.1/name")
-      reference(:patients, "https://example.org/ws2/caresFor")
+      reference(:patients, "http://xmlns.com/foaf/0.1/knows")
     end
   end
 

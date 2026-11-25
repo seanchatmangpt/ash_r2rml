@@ -70,15 +70,15 @@ defmodule AshR2RML.OBDAPushdownPreflightTest do
     end
   end
 
-  @ex "https://ex.org/"
+  @ex "urn:uuid:"
   @name "https://schema.org/name"
 
   defp mapping(resource, path) do
     %Resource{
       ash_resource: resource,
       logical_table: %LogicalTable{table_name: path},
-      subject_map: %SubjectMap{strategy: :template, value: @ex <> path <> "/{pid}"},
-      class_iris: ["https://ex.org/Thing"],
+      subject_map: %SubjectMap{strategy: :template, value: @ex <> path <> "-{pid}"},
+      class_iris: ["https://schema.org/Thing"],
       identities: [[:pid]],
       predicate_object_maps: [
         %PredicateObjectMap{
@@ -120,7 +120,7 @@ defmodule AshR2RML.OBDAPushdownPreflightTest do
 
   test "constant-subject point lookup reads exactly one row of 50" do
     seed!(Person, 50)
-    sparql = "SELECT ?n WHERE { <#{@ex}person/25> <#{@name}> ?n }"
+    sparql = "SELECT ?n WHERE { <#{@ex}person-25> <#{@name}> ?n }"
 
     assert {:ok, %Result{} = result} = OBDA.query([{Person, mapping(Person, "person")}], sparql, domain: Dom)
     assert result.bindings == [%{"n" => "n25"}]
@@ -137,14 +137,22 @@ defmodule AshR2RML.OBDAPushdownPreflightTest do
   end
 
   test "constant_subject/1 only extracts a lone-subject pattern" do
-    assert OBDA.constant_subject("SELECT ?n WHERE { <https://a.b/s> <https://a.b/p> ?n }") == "https://a.b/s"
-    assert OBDA.constant_subject("SELECT ?n WHERE { <https://a.b/s> <https://a.b/p> ?n . }") == "https://a.b/s"
-    assert OBDA.constant_subject("SELECT ?n WHERE { ?s <https://a.b/p> ?n }") == nil
+    assert OBDA.constant_subject("SELECT ?n WHERE { <https://schema.org/s> <https://schema.org/p> ?n }") ==
+             "https://schema.org/s"
 
-    assert OBDA.constant_subject("SELECT ?n WHERE { <https://a.b/s> <https://a.b/p> ?n . ?x <https://a.b/q> ?n }") ==
+    assert OBDA.constant_subject("SELECT ?n WHERE { <https://schema.org/s> <https://schema.org/p> ?n . }") ==
+             "https://schema.org/s"
+
+    assert OBDA.constant_subject("SELECT ?n WHERE { ?s <https://schema.org/p> ?n }") == nil
+
+    assert OBDA.constant_subject(
+             "SELECT ?n WHERE { <https://schema.org/s> <https://schema.org/p> ?n . ?x <https://schema.org/q> ?n }"
+           ) ==
              nil
 
-    assert OBDA.constant_subject("SELECT ?n WHERE { <https://a.b/s> <https://a.b/p> ?n OPTIONAL { ?x ?y ?z } }") ==
+    assert OBDA.constant_subject(
+             "SELECT ?n WHERE { <https://schema.org/s> <https://schema.org/p> ?n OPTIONAL { ?x ?y ?z } }"
+           ) ==
              nil
   end
 

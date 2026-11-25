@@ -28,7 +28,7 @@ defmodule AshR2RML.PublicMappingTest do
       logical_table: %LogicalTable{table_name: table},
       subject_map: %SubjectMap{
         strategy: :template,
-        value: "https://example.test/#{table}/{#{id_column}}",
+        value: "urn:uuid:#{table}-{#{id_column}}",
         term_type: :iri
       },
       identities: [[String.to_atom(id_column)]],
@@ -50,7 +50,7 @@ defmodule AshR2RML.PublicMappingTest do
   test "subject template refuses columns absent from the admitted resource mapping" do
     mapping =
       resource("Person", "people", "https://schema.org/Person")
-      |> put_in([Access.key!(:subject_map), Access.key!(:value)], "https://example.test/people/{missing}")
+      |> put_in([Access.key!(:subject_map), Access.key!(:value)], "urn:uuid:people-{missing}")
 
     assert {:error, refusals} = AshR2RML.Mapping.validate(mapping)
     assert Enum.any?(refusals, &(&1.code == :REFUSED_MISSING_SUBJECT_MAP))
@@ -58,7 +58,7 @@ defmodule AshR2RML.PublicMappingTest do
 
   test "reverse has_many-style join does not require the destination join column itself to be unique" do
     account =
-      resource("Account", "accounts", "https://example.test/Account",
+      resource("Account", "accounts", "https://schema.org/Thing",
         attribute_columns: %{id: "id", organization_id: "organization_id"}
       )
 
@@ -67,7 +67,7 @@ defmodule AshR2RML.PublicMappingTest do
         references: [
           %ReferenceObjectMap{
             relationship: :accounts,
-            predicate_iri: "https://example.test/hasAccount",
+            predicate_iri: "https://schema.org/owns",
             parent_resource: "Account",
             joins: [%JoinCondition{child: "id", parent: "organization_id"}],
             metadata: %{kind: :has_many, cardinality: :many}
@@ -90,7 +90,7 @@ defmodule AshR2RML.PublicMappingTest do
           %ReferenceObjectMap{
             relationship: :organizations,
             predicate_iri: "https://schema.org/memberOf",
-            inverse_predicate: "https://example.test/hasMember",
+            inverse_predicate: "https://schema.org/member",
             parent_resource: "Organization",
             metadata: %{
               kind: :many_to_many,
@@ -111,7 +111,7 @@ defmodule AshR2RML.PublicMappingTest do
 
     assert ttl =~ ~s(rr:tableName "memberships")
     assert ttl =~ ~s(rr:predicate <https://schema.org/memberOf>)
-    assert ttl =~ ~s(rr:predicate <https://example.test/hasMember>)
+    assert ttl =~ ~s(rr:predicate <https://schema.org/member>)
     assert ttl =~ ~s(rr:child "organization_id"; rr:parent "id")
   end
 
@@ -145,28 +145,28 @@ defmodule AshR2RML.PublicMappingTest do
     assert {:ok, datatype} =
              AshR2RML.Datatype.Registry.resolve(
                MyApp.Money,
-               "https://example.test/datatype/Money",
+               "http://www.w3.org/2001/XMLSchema#decimal",
                :decimal
              )
 
-    assert datatype.rdf_datatype == "https://example.test/datatype/Money"
+    assert datatype.rdf_datatype == "http://www.w3.org/2001/XMLSchema#decimal"
   end
 
   test "mapping identity is deterministic under semantic collection reordering" do
     property_a = %PredicateObjectMap{
       attribute: :name,
-      predicate_iri: "https://example.test/name",
+      predicate_iri: "https://schema.org/name",
       object_map: %ObjectMap{strategy: :column, value: "name", datatype: %Datatype{rdf_datatype: @xsd_string}}
     }
 
     property_b = %PredicateObjectMap{
       attribute: :code,
-      predicate_iri: "https://example.test/code",
+      predicate_iri: "https://schema.org/identifier",
       object_map: %ObjectMap{strategy: :column, value: "code", datatype: %Datatype{rdf_datatype: @xsd_string}}
     }
 
     first =
-      resource("Thing", "things", "https://example.test/Thing",
+      resource("Thing", "things", "https://schema.org/Thing",
         properties: [property_a, property_b],
         attribute_columns: %{id: "id", name: "name", code: "code"}
       )

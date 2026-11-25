@@ -39,8 +39,8 @@ defmodule AshR2RML.OBDA.Adapter.InMemoryConfig do
   @moduledoc """
   `AshR2RML.OBDA.Adapter` config for the in-process `AshR2RML.OBDA.InMemory`
   adapter. Wraps one or more `{ash_resource, mapping_resource}` specs so
-  `AshR2RML.OBDA.Adapter.dispatch/3` can route to `query/4` (single resource)
-  or `query_many/3` (multiple resources with relationships) uniformly.
+  `AshR2RML.OBDA.Adapter.dispatch/3` routes through `AshR2RML.OBDA.query/3` (bounded
+  `AshR2RML.OBDA.Worker`, returning an `AshR2RML.OBDA.Result`) uniformly for one or many specs.
   """
 
   @behaviour AshR2RML.OBDA.Adapter
@@ -55,16 +55,11 @@ defmodule AshR2RML.OBDA.Adapter.InMemoryConfig do
   @impl true
   def engine_name, do: :in_memory
 
+  # Routed through `AshR2RML.OBDA.query/3`: bounded worker (timeout/heap), option validation,
+  # preflight and an `AshR2RML.OBDA.Result` envelope instead of a raw unbounded materialization.
   @impl true
-  def query(%__MODULE__{specs: [{ash_resource, mapping_resource}]} = config, sparql, opts)
-      when is_binary(sparql) do
-    read_opts = Keyword.merge(config.read_opts, opts)
-    AshR2RML.OBDA.InMemory.query(ash_resource, mapping_resource, sparql, read_opts)
-  end
-
   def query(%__MODULE__{specs: specs} = config, sparql, opts)
       when is_list(specs) and is_binary(sparql) do
-    read_opts = Keyword.merge(config.read_opts, opts)
-    AshR2RML.OBDA.InMemory.query_many(specs, sparql, read_opts)
+    AshR2RML.OBDA.query(specs, sparql, Keyword.merge(config.read_opts, opts))
   end
 end

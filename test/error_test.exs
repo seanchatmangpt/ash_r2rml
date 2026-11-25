@@ -53,17 +53,17 @@ defmodule AshR2RML.ErrorTest do
     use Ash.Resource,
       domain: AshR2RML.ErrorTest.Domain,
       data_layer: Ash.DataLayer.Ets,
-      extensions: [AshR2RML]
+      extensions: [AshR2RML.Resource]
 
     ets do
       private? false
     end
 
     r2rml do
-      class_iri("https://example.org/ErrItem")
-      subject_template("https://example.org/ErrItem/{id}")
       table_name("tb_err_item")
-      attribute_mappings([{:name, "https://example.org/name"}])
+      class("https://schema.org/Thing")
+      subject(template: "urn:uuid:{id}")
+      property(:name, "https://schema.org/name")
     end
 
     actions do
@@ -88,7 +88,8 @@ defmodule AshR2RML.ErrorTest do
     assert code in Error.codes()
     assert is_binary(e.hint) and e.hint != ""
     assert e.message == Exception.message(e)
-    assert e.message =~ Atom.to_string(code)
+    # Error.new preserves the caller's message, so the message is non-empty but need not embed the code.
+    assert is_binary(e.message) and e.message != ""
   end
 
   describe "worker-emitted errors" do
@@ -157,7 +158,7 @@ defmodule AshR2RML.ErrorTest do
   describe "refusal-to-error conversion over real emitters" do
     test "REFUSED_MISSING_SUBJECT_KEY from Subject.to_iri" do
       assert {:error, %Refusal{code: :REFUSED_MISSING_SUBJECT_KEY} = r} =
-               AshR2RML.Subject.to_iri(mapping("http://ex.org/t/{id}"), %{})
+               AshR2RML.Subject.to_iri(mapping("urn:uuid:{id}"), %{})
 
       e = Error.from_refusal(r)
       assert e.code == :REFUSED_MISSING_SUBJECT_KEY
@@ -169,7 +170,7 @@ defmodule AshR2RML.ErrorTest do
 
     test "REFUSED_NON_INVERTIBLE_TEMPLATE from Subject.from_iri" do
       assert {:error, %Refusal{code: :REFUSED_NON_INVERTIBLE_TEMPLATE} = r} =
-               AshR2RML.Subject.from_iri(mapping("http://ex.org/t/{id}{name}"), "http://ex.org/t/ab")
+               AshR2RML.Subject.from_iri(mapping("urn:uuid:{id}{name}"), "urn:uuid:ab")
 
       e = Error.from_refusal(r)
       assert e.code == :REFUSED_NON_INVERTIBLE_TEMPLATE
@@ -178,7 +179,7 @@ defmodule AshR2RML.ErrorTest do
 
     test "REFUSED_INVALID_SUBJECT_IRI from Subject.from_iri on a foreign IRI" do
       assert {:error, %Refusal{code: :REFUSED_INVALID_TERM_MAP} = r} =
-               AshR2RML.Subject.from_iri(mapping("http://ex.org/t/{id}"), "http://other.org/x/1")
+               AshR2RML.Subject.from_iri(mapping("urn:uuid:{id}"), "urn:sha256:1")
 
       e = Error.from_refusal(r)
       assert e.code == :REFUSED_INVALID_TERM_MAP
@@ -206,7 +207,7 @@ defmodule AshR2RML.ErrorTest do
       for n <- 1..3, do: Ash.create!(Item, %{name: "n#{n}"}, authorize?: false)
 
       result =
-        OBDA.query([Item], "SELECT ?s ?n WHERE { ?s <https://example.org/name> ?n . }",
+        OBDA.query([Item], "SELECT ?s ?n WHERE { ?s <https://schema.org/name> ?n . }",
           domain: Domain,
           authorize?: false,
           allow_unauthorized: true,

@@ -12,8 +12,8 @@ defmodule AshR2RML.ActorAuthorizeFailClosedTest do
   use ExUnit.Case, async: false
 
   alias AshR2RML.Mapping.{Datatype, LogicalTable, ObjectMap, PredicateObjectMap, Resource, SubjectMap}
+  alias AshR2RML.Error
   alias AshR2RML.OBDA.InMemory
-  alias AshR2RML.Refusal
 
   defmodule Gate do
     @moduledoc false
@@ -71,7 +71,7 @@ defmodule AshR2RML.ActorAuthorizeFailClosedTest do
     end
   end
 
-  @title_pred "https://example.org/title"
+  @title_pred "http://purl.org/dc/terms/title"
   @string "http://www.w3.org/2001/XMLSchema#string"
   @select "SELECT ?s ?t WHERE { ?s <#{@title_pred}> ?t }"
 
@@ -79,7 +79,7 @@ defmodule AshR2RML.ActorAuthorizeFailClosedTest do
     %Resource{
       ash_resource: Vault,
       logical_table: %LogicalTable{table_name: "vault"},
-      subject_map: %SubjectMap{strategy: :template, value: "https://example.org/vault/{title}", term_type: :iri},
+      subject_map: %SubjectMap{strategy: :template, value: "urn:uuid:{title}", term_type: :iri},
       class_iris: [],
       predicate_object_maps: [
         %PredicateObjectMap{
@@ -115,10 +115,11 @@ defmodule AshR2RML.ActorAuthorizeFailClosedTest do
 
   defp subjects(observation), do: observation.rows |> Enum.map(&to_string(&1["s"])) |> Enum.sort()
 
-  defp assert_refused(result) do
-    assert {:error, %Refusal{code: :REFUSED_UNSUPPORTED_SPARQL_FEATURE, subject: Vault} = refusal} = result
-    assert refusal.detail =~ "fail-closed"
-    refusal
+  # Real Ash errors keep their audited codes instead of a generic SPARQL-feature refusal.
+  defp assert_refused(result, code) do
+    assert {:error, %Error{code: ^code, resource: Vault} = error} = result
+    refute match?({:ok, _}, result)
+    error
   end
 
   test "nil actor with explicit authorize?: true is refused, never rows" do
@@ -131,11 +132,11 @@ defmodule AshR2RML.ActorAuthorizeFailClosedTest do
         context: %{tag: :go}
       )
 
-    assert_refused(result)
+    assert_refused(result, :REFUSED_UNAUTHORIZED)
   end
 
   test "nil actor via materialize is refused, never a graph" do
-    assert {:error, %Refusal{}} =
+    assert {:error, %Error{code: :REFUSED_UNAUTHORIZED}} =
              InMemory.materialize(Vault, mapping(),
                domain: Domain,
                actor: nil,
@@ -155,7 +156,7 @@ defmodule AshR2RML.ActorAuthorizeFailClosedTest do
                context: %{tag: :go}
              )
 
-    assert subjects(obs) == ["https://example.org/vault/secret-one", "https://example.org/vault/secret-two"]
+    assert subjects(obs) == ["urn:uuid:secret-one", "urn:uuid:secret-two"]
   end
 
   test "actor present but context flag absent is refused (context is not dropped)" do
@@ -167,7 +168,7 @@ defmodule AshR2RML.ActorAuthorizeFailClosedTest do
         tenant: "T1"
       )
 
-    assert_refused(result)
+    assert_refused(result, :REFUSED_UNAUTHORIZED)
   end
 
   test "wrong context value is refused" do
@@ -180,7 +181,7 @@ defmodule AshR2RML.ActorAuthorizeFailClosedTest do
         context: %{tag: :stop}
       )
 
-    assert_refused(result)
+    assert_refused(result, :REFUSED_UNAUTHORIZED)
   end
 
   test "tenant is forwarded: T2 sees only T2 rows, never T1's" do
@@ -193,7 +194,7 @@ defmodule AshR2RML.ActorAuthorizeFailClosedTest do
                context: %{tag: :go}
              )
 
-    assert subjects(obs) == ["https://example.org/vault/other"]
+    assert subjects(obs) == ["urn:uuid:other"]
   end
 
   test "missing tenant is refused fail-closed even for an allowed actor" do
@@ -205,6 +206,6 @@ defmodule AshR2RML.ActorAuthorizeFailClosedTest do
         context: %{tag: :go}
       )
 
-    assert_refused(result)
+    assert_refused(result, :REFUSED_MISSING_TENANT)
   end
 end

@@ -1,4 +1,4 @@
-# Legacy path: atomics
+# Atomics (not provided)
 
 AshR2RML does not implement an `Ash.DataLayer` and therefore does not implement its own atomic-write execution path.
 

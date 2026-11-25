@@ -11,6 +11,8 @@ defmodule AshR2RML.OBDA.Preflight do
     * `:ok` - the read may proceed.
     * `:pruned` - the actor cannot read the resource at all (`Ash.can?/3` with
       `maybe_is: true` is false); the resource contributes no triples.
+    * `{:error, %AshR2RML.Refusal{code: :REFUSED_INVALID_TERM_MAP}}` - the resource has no
+      primary read action, or the requested `:action` is not a read action of it.
     * `{:error, %AshR2RML.Refusal{code: :REFUSED_MISSING_TENANT}}` - the resource is
       multitenant (`:attribute` / `:context`), is not `global?`, and no tenant was given.
 
@@ -64,15 +66,37 @@ defmodule AshR2RML.OBDA.Preflight do
 
     case action do
       nil ->
-        :pruned
+        {:error,
+         Refusal.new(
+           :REFUSED_INVALID_TERM_MAP,
+           resource,
+           "resource #{inspect(resource)} has no primary read action",
+           %{}
+         )}
 
       name ->
+        policy_for_action(resource, name, actor, tenant, opts)
+    end
+  end
+
+  defp policy_for_action(resource, name, actor, tenant, opts) do
+    case Ash.Resource.Info.action(resource, name) do
+      %{type: :read} ->
         can_opts =
           [tenant: tenant, maybe_is: true]
           |> put_context(Keyword.get(opts, :context))
           |> put_domain(Keyword.get(opts, :domain))
 
         if Ash.can?({resource, name}, actor, can_opts), do: :ok, else: :pruned
+
+      _ ->
+        {:error,
+         Refusal.new(
+           :REFUSED_INVALID_TERM_MAP,
+           resource,
+           "#{inspect(name)} is not a read action of #{inspect(resource)}",
+           %{action: name}
+         )}
     end
   end
 

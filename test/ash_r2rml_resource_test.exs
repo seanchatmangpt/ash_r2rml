@@ -16,10 +16,10 @@ defmodule AshR2RML.ResourceTest.Organization do
   r2rml do
     table_name("organizations")
 
-    class("https://www.w3.org/ns/org#Organization")
+    class("http://www.w3.org/ns/org#Organization")
 
     subject do
-      template("https://example.test/organization/{id}")
+      template("urn:uuid:{id}")
     end
 
     property(:name, "http://xmlns.com/foaf/0.1/name")
@@ -46,14 +46,14 @@ defmodule AshR2RML.ResourceTest.Account do
   r2rml do
     table_name("accounts")
 
-    class("https://example.test/ontology/Account")
+    class("https://spec.edmcouncil.org/fibo/ontology/FBC/ProductsAndServices/ClientsAndAccounts/Account")
 
     subject do
-      template("https://example.test/account/{id}")
+      template("urn:uuid:{id}")
     end
 
-    property(:account_number, "https://example.test/ontology/accountNumber")
-    reference(:organization, "https://www.w3.org/ns/org#memberOf")
+    property(:account_number, "https://schema.org/identifier")
+    reference(:organization, "http://www.w3.org/ns/org#memberOf")
   end
 end
 
@@ -67,9 +67,13 @@ defmodule AshR2RML.ResourceTest do
 
     assert %AshR2RML.Mapping.Resource{} = mapping
     assert mapping.ash_resource == Account
-    assert mapping.class_iris == ["https://example.test/ontology/Account"]
+
+    assert mapping.class_iris == [
+             "https://spec.edmcouncil.org/fibo/ontology/FBC/ProductsAndServices/ClientsAndAccounts/Account"
+           ]
+
     assert mapping.logical_table.table_name == "accounts"
-    assert mapping.subject_map.value == "https://example.test/account/{id}"
+    assert mapping.subject_map.value == "urn:uuid:{id}"
     assert mapping.identities == [[:id]]
 
     assert [%AshR2RML.Mapping.PredicateObjectMap{} = property] = mapping.predicate_object_maps

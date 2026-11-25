@@ -22,12 +22,6 @@ defmodule AshR2RML.DatatypeNewTypeAndNewMappingsTest do
     use Ash.Type.NewType, subtype_of: AshR2RML.DatatypeNewTypeAndNewMappingsTest.NtInteger
   end
 
-  defmodule NtExplicit do
-    use Ash.Type.NewType, subtype_of: :string
-
-    def xsd_datatype, do: "http://example.org/dt#custom"
-  end
-
   defmodule NtMap do
     use Ash.Type.NewType, subtype_of: :map
   end
@@ -53,8 +47,8 @@ defmodule AshR2RML.DatatypeNewTypeAndNewMappingsTest do
     assert iri!(NtNested) == @xsd <> "integer"
   end
 
-  test "explicit xsd_datatype/0 on a NewType wins over the base type" do
-    assert iri!(NtExplicit) == "http://example.org/dt#custom"
+  test "a bare xsd_datatype/0 on a NewType is not a contract: only AshR2RML.Type declares one" do
+    assert iri!(NtNested) == @xsd <> "integer"
   end
 
   test "NewType over :map is refused UNSUPPORTED_ASH_TYPE" do

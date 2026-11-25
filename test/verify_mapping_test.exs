@@ -3,18 +3,23 @@
 # SPDX-License-Identifier: MIT
 
 defmodule AshR2RML.VerifyMappingTest do
+  @moduledoc """
+  Real resource source files compiled against the one canonical DSL
+  (`AshR2RML.Resource`): every refusal surfaces from the transformer or from the
+  `Mapping.normalize/1` + `Mapping.validate/1` verifier path.
+  """
   use ExUnit.Case, async: true
 
   @moduletag :tmp_dir
 
   @valid """
-      class_iri "https://example.org/Thing"
-      subject_template "https://example.org/thing/{id}"
       table_name "things"
+      class "https://schema.org/Thing"
+      subject template: "urn:uuid:{id}"
   """
 
   # Writes a real resource source file and compiles it. Returns {:ok, module}
-  # or {:error, exception message} when the Spark verifier refuses.
+  # or {:error, message} when the transformer or the Spark verifier refuses.
   defp compile(dir, name, r2rml_body) do
     mod = "AshR2RML.VerifyMappingTest.#{name}"
 
@@ -24,7 +29,7 @@ defmodule AshR2RML.VerifyMappingTest do
         domain: nil,
         validate_domain_inclusion?: false,
         data_layer: Ash.DataLayer.Ets,
-        extensions: [AshR2RML]
+        extensions: [AshR2RML.Resource]
 
       ets do
         private? true
@@ -68,17 +73,20 @@ defmodule AshR2RML.VerifyMappingTest do
 
   test "accepts a valid mapping", %{tmp_dir: dir} do
     assert {:ok, mod} = compile(dir, "Valid", @valid)
-    assert mod.__ash_r2rml_mapping__().logical_table == {:table, "things"}
+
+    assert {:ok, mapping} = AshR2RML.Resource.Info.mapping_result(mod)
+    assert mapping.logical_table == %AshR2RML.Mapping.LogicalTable{table_name: "things"}
+    assert AshR2RML.Mapping.validate(mapping) == :ok
   end
 
-  test "refuses when neither table_name nor sql_query is set", %{tmp_dir: dir} do
+  test "refuses a missing subject map", %{tmp_dir: dir} do
     assert {:error, msg} =
-             compile(dir, "NoTable", """
-                 class_iri "https://example.org/Thing"
-                 subject_template "https://example.org/thing/{id}"
+             compile(dir, "NoSubject", """
+                 table_name "things"
+                 class "https://schema.org/Thing"
              """)
 
-    assert msg =~ "exactly one of table_name or sql_query"
+    assert msg =~ "subject mapping is required"
   end
 
   test "refuses when both table_name and sql_query are set", %{tmp_dir: dir} do
@@ -86,50 +94,39 @@ defmodule AshR2RML.VerifyMappingTest do
     assert msg =~ "exactly one of table_name or sql_query"
   end
 
-  test "refuses relative class_iri", %{tmp_dir: dir} do
+  test "refuses relative class IRI", %{tmp_dir: dir} do
     assert {:error, msg} =
              compile(dir, "RelClass", """
-                 class_iri "relative/Thing"
-                 subject_template "https://example.org/thing/{id}"
                  table_name "things"
+                 class "relative/Thing"
+                 subject template: "urn:uuid:{id}"
              """)
 
-    assert msg =~ "class_iri must be an absolute IRI"
+    assert msg =~ "REFUSED_INVALID_CLASS_IRI"
   end
 
-  test "refuses relative graph_iri", %{tmp_dir: dir} do
-    assert {:error, msg} = compile(dir, "RelGraph", @valid <> "    graph_iri \"rel/graph\"\n")
-    assert msg =~ "graph_iri must be an absolute IRI"
+  test "refuses relative graph IRI", %{tmp_dir: dir} do
+    assert {:error, msg} = compile(dir, "RelGraph", @valid <> "    graph \"rel/graph\"\n")
+    assert msg =~ "REFUSED_INVALID_GRAPH_MAP"
   end
 
   test "refuses relative predicate IRI", %{tmp_dir: dir} do
-    assert {:error, msg} =
-             compile(dir, "RelPred", @valid <> "    attribute_mappings [{:name, \"name\"}]\n")
-
-    assert msg =~ "absolute IRI"
+    assert {:error, msg} = compile(dir, "RelPred", @valid <> "    property :name, \"name\"\n")
+    assert msg =~ "predicate IRI must be absolute"
   end
 
   test "refuses unknown attribute", %{tmp_dir: dir} do
     assert {:error, msg} =
-             compile(
-               dir,
-               "UnknownAttr",
-               @valid <> "    attribute_mappings [{:ghost, \"https://example.org/g\"}]\n"
-             )
+             compile(dir, "UnknownAttr", @valid <> "    property :ghost, \"https://schema.org/name\"\n")
 
-    assert msg =~ "unknown attributes"
-    assert msg =~ ":ghost"
+    assert msg =~ "unknown Ash attribute"
   end
 
   test "refuses unknown relationship", %{tmp_dir: dir} do
     assert {:error, msg} =
-             compile(
-               dir,
-               "UnknownRel",
-               @valid <> "    relationship_mappings [{:ghost, \"https://example.org/g\"}]\n"
-             )
+             compile(dir, "UnknownRel", @valid <> "    reference :ghost, \"https://schema.org/knows\"\n")
 
-    assert msg =~ "relationship mappings must reference relationships"
+    assert msg =~ "Ash relationship does not exist"
   end
 
   test "refuses duplicate attribute mapping", %{tmp_dir: dir} do
@@ -138,20 +135,20 @@ defmodule AshR2RML.VerifyMappingTest do
                dir,
                "DupAttr",
                @valid <>
-                 "    attribute_mappings [{:name, \"https://example.org/a\"}, {:name, \"https://example.org/b\"}]\n"
+                 "    property :name, \"https://schema.org/name\"\n    property :name, \"https://schema.org/name\"\n"
              )
 
-    assert msg =~ "attributes may be mapped only once"
+    assert msg =~ ~r/duplicate/i
   end
 
-  test "refuses subject_template missing the primary key placeholder", %{tmp_dir: dir} do
+  test "refuses a subject template that omits the primary key placeholder", %{tmp_dir: dir} do
     assert {:error, msg} =
              compile(dir, "NoPk", """
-                 class_iri "https://example.org/Thing"
-                 subject_template "https://example.org/thing/{name}"
                  table_name "things"
+                 class "https://schema.org/Thing"
+                 subject template: "urn:uuid:{name}"
              """)
 
-    assert msg =~ "primary-key"
+    assert msg =~ "REFUSED_NON_UNIQUE_SEMANTIC_IDENTITY"
   end
 end

@@ -22,15 +22,15 @@ defmodule AshR2RML.DslCalcAggregateTest.Item do
 
   r2rml do
     table_name("calc_items")
-    class("http://example.com/Item")
+    class("https://schema.org/Thing")
 
     subject do
-      template("http://example.com/item/{id}")
+      template("urn:uuid:{id}")
     end
 
-    property(:name, "http://example.com/name")
-    property(:shout, "http://example.com/shout")
-    property(:line_count, "http://example.com/lineCount")
+    property(:name, "https://schema.org/name")
+    property(:shout, "http://purl.org/dc/terms/title")
+    property(:line_count, "https://schema.org/numberOfItems")
   end
 
   actions do
@@ -67,9 +67,9 @@ defmodule AshR2RML.DslCalcAggregateTest do
     mapping = Info.mapping(Item)
     predicates = Map.new(mapping.predicate_object_maps, &{&1.attribute, &1.predicate_iri})
 
-    assert predicates[:shout] == "http://example.com/shout"
-    assert predicates[:line_count] == "http://example.com/lineCount"
-    assert predicates[:name] == "http://example.com/name"
+    assert predicates[:shout] == "http://purl.org/dc/terms/title"
+    assert predicates[:line_count] == "https://schema.org/numberOfItems"
+    assert predicates[:name] == "https://schema.org/name"
   end
 
   test "derived properties are recorded as read-only in mapping metadata" do

@@ -66,17 +66,32 @@ defmodule AshR2RML.OBDA.InMemory do
   `:REFUSED_UNSUPPORTED_SPARQL_FEATURE` refusal returned from `materialize/3` and
   `materialize_many/2`, not a silent skip -- the caller is told exactly which
   relationship was dropped and why, rather than discovering a missing edge in the
-  materialized graph with no signal at all. Anything else the current mapping IR does
-  not model (e.g. custom graph maps beyond the default graph) remains a typed refusal
-  or a silently-skipped triple, never a fabricated one.
+  materialized graph with no signal at all.
+
+  ## Named graphs (`rr:graphMap`)
+
+  Materialization produces quads. `materialize_dataset/2` returns the `RDF.Dataset`
+  (`{s, p, o, g}`; `g == nil` is the default graph) with each triple placed in the graphs its
+  resource, subject, predicate-object, object and reference graph maps resolve to for the row.
+  `materialize/3` and `materialize_many/2` return the union of all graphs as one
+  `RDF.Graph`, and a query without `GRAPH` runs against that union (union default graph).
+  `GRAPH <iri> { ... }` and `GRAPH ?g { ... }` are evaluated against the named graphs (see
+  `AshR2RML.OBDA.InMemory.GraphQuery` for the supported shapes; others are typed refusals).
+  Because rows are read through `Ash.read/2` with the caller's `:actor`/`:tenant`, graph
+  content is already scoped to what that actor/tenant may see.
   """
 
   alias AshR2RML.Mapping.{JoinCondition, ObjectMap, PredicateObjectMap, ReferenceObjectMap, Resource, SubjectMap}
   alias AshR2RML.Refusal
   alias AshR2RML.Security
-  alias AshR2RML.SPARQL.{Local, Observation}
+  alias AshR2RML.Mapping.GraphMap
+  alias AshR2RML.SPARQL.{Local, Observation, Query, Result}
 
   @type spec :: {ash_resource :: module(), mapping_resource :: Resource.t()}
+
+  # A read failing with a real Ash Forbidden/TenantRequired keeps its typed `%AshR2RML.Error{}`
+  # (see `AshR2RML.OBDA.classify/1`); every other refusal is an `%AshR2RML.Refusal{}`.
+  @type failure :: Refusal.t() | AshR2RML.Error.t()
 
   @default_max_rows 10_000
   @default_max_triples 100_000
@@ -94,7 +109,7 @@ defmodule AshR2RML.OBDA.InMemory do
   `previous_graph:` differential option of `materialize_many/2` flows through here
   unchanged (this function delegates to it).
   """
-  @spec materialize(module(), Resource.t(), keyword()) :: {:ok, RDF.Graph.t()} | {:error, Refusal.t()}
+  @spec materialize(module(), Resource.t(), keyword()) :: {:ok, RDF.Graph.t()} | {:error, failure()}
   def materialize(ash_resource, %Resource{} = mapping_resource, opts \\ []) when is_atom(ash_resource) do
     materialize_many([{ash_resource, mapping_resource}], opts)
   end
@@ -116,7 +131,7 @@ defmodule AshR2RML.OBDA.InMemory do
   return is the historical `{:ok, graph}` unchanged.
   """
   @spec materialize_many([spec()], keyword()) ::
-          {:ok, RDF.Graph.t()} | {:ok, %{graph: RDF.Graph.t(), delta: AshR2RML.Delta.t()}} | {:error, Refusal.t()}
+          {:ok, RDF.Graph.t()} | {:ok, %{graph: RDF.Graph.t(), delta: AshR2RML.Delta.t()}} | {:error, failure()}
   def materialize_many(specs, opts \\ []) when is_list(specs) do
     {result, _stats} = materialize_many_with_stats(specs, opts)
     result
@@ -132,8 +147,52 @@ defmodule AshR2RML.OBDA.InMemory do
   #     does not invert, the read is not narrowed.
   # `triples_emitted` counts triples produced per row before cross-row de-duplication.
   defp materialize_many_with_stats(specs, opts) do
-    allow_sensitive? = Keyword.get(opts, :allow_sensitive, false)
     previous_graph = Keyword.get(opts, :previous_graph)
+
+    {dataset_result, stats} = materialize_dataset_with_stats(specs, opts)
+
+    result =
+      case {dataset_result, previous_graph} do
+        {{:ok, dataset}, nil} ->
+          {:ok, union_graph(dataset)}
+
+        {{:ok, dataset}, %RDF.Graph{} = old_graph} ->
+          graph = union_graph(dataset)
+          {:ok, %{graph: graph, delta: AshR2RML.Delta.diff(old_graph, graph)}}
+
+        {{:error, refusal}, _} ->
+          {:error, refusal}
+      end
+
+    {result, stats}
+  end
+
+  @doc """
+  Materializes several resources into one `RDF.Dataset` of quads `{s, p, o, g}`.
+
+  `rr:graphMap`/`rr:graph` placement is enforced here: a triple lands in every named
+  graph its resource-, subject-, predicate-object- and object-level graph maps resolve to
+  for the row (constant IRI, template or column). A triple with no graph map lands in the
+  default graph (graph name `nil`). A graph map that cannot resolve for a row (nil/forbidden
+  column, invalid IRI) drops the triple for that graph -- it never falls back to the default
+  graph. Reads run under the caller's `:actor`/`:tenant`, so graph content is already
+  filtered by Ash policies and tenancy. Same options as `materialize_many/2`
+  (`:previous_graph` is ignored).
+  """
+  @spec materialize_dataset([spec()], keyword()) :: {:ok, RDF.Dataset.t()} | {:error, failure()}
+  def materialize_dataset(specs, opts \\ []) when is_list(specs) do
+    {result, _stats} = materialize_dataset_with_stats(specs, opts)
+    result
+  end
+
+  defp union_graph(%RDF.Dataset{} = dataset) do
+    dataset
+    |> RDF.Dataset.graphs()
+    |> Enum.reduce(RDF.Graph.new(), fn graph, acc -> RDF.Graph.add(acc, %{graph | name: nil}) end)
+  end
+
+  defp materialize_dataset_with_stats(specs, opts) do
+    allow_sensitive? = Keyword.get(opts, :allow_sensitive, false)
     max_triples = Keyword.get(opts, :max_triples, @default_max_triples)
 
     read_opts =
@@ -156,14 +215,12 @@ defmodule AshR2RML.OBDA.InMemory do
     {first_result, stats, pending} =
       Enum.reduce_while(
         admitted_specs,
-        {{:ok, RDF.Graph.new()}, %{rows_read: 0, triples_emitted: 0}, []},
+        {{:ok, RDF.Dataset.new()}, %{rows_read: 0, triples_emitted: 0}, []},
         fn {ash_resource, mapping_resource}, {{:ok, graph_acc}, stats, pending} ->
           budget_opts = Keyword.put(read_opts, :triple_budget, max_triples - stats.triples_emitted)
 
           case rows_for(ash_resource, mapping_resource, budget_opts) do
             {:ok, rows} ->
-              stats = %{stats | rows_read: stats.rows_read + length(rows)}
-
               case add_rows(
                      rows,
                      graph_acc,
@@ -174,12 +231,14 @@ defmodule AshR2RML.OBDA.InMemory do
                      mapping_index,
                      allow_sensitive?
                    ) do
-                {:ok, graph, emitted} ->
+                {:ok, graph, emitted, n} ->
                   pending = [{ash_resource, mapping_resource, rows} | pending]
-                  {:cont, {{:ok, graph}, %{stats | triples_emitted: emitted}, pending}}
+                  stats = %{stats | rows_read: stats.rows_read + n, triples_emitted: emitted}
+                  {:cont, {{:ok, graph}, stats, pending}}
 
-                {:error, refusal, emitted} ->
-                  {:halt, {{:error, refusal}, %{stats | triples_emitted: emitted}, pending}}
+                {:error, refusal, emitted, n} ->
+                  stats = %{stats | rows_read: stats.rows_read + n, triples_emitted: emitted}
+                  {:halt, {{:error, refusal}, stats, pending}}
               end
 
             {:error, refusal} ->
@@ -191,34 +250,19 @@ defmodule AshR2RML.OBDA.InMemory do
     # Reference objects are resolved only after every resource was read, and only to parent
     # subjects actually materialized in this query (a parent row the actor cannot read must
     # not be disclosed through a child's FK value).
-    {base_result, stats} =
-      case first_result do
-        {:ok, graph} ->
-          add_reference_pass(
-            Enum.reverse(pending),
-            graph,
-            stats,
-            max_triples,
-            mapping_index
-          )
+    case first_result do
+      {:ok, dataset} ->
+        add_reference_pass(
+          Enum.reverse(pending),
+          dataset,
+          stats,
+          max_triples,
+          mapping_index
+        )
 
-        error ->
-          {error, stats}
-      end
-
-    result =
-      case {base_result, previous_graph} do
-        {{:ok, graph}, nil} ->
-          {:ok, graph}
-
-        {{:ok, graph}, %RDF.Graph{} = old_graph} ->
-          {:ok, %{graph: graph, delta: AshR2RML.Delta.diff(old_graph, graph)}}
-
-        {{:error, refusal}, _} ->
-          {:error, refusal}
-      end
-
-    {result, stats}
+      error ->
+        {error, stats}
+    end
   end
 
   @doc """
@@ -227,7 +271,7 @@ defmodule AshR2RML.OBDA.InMemory do
   observations `AshR2RML.SPARQL.Local` already produces.
   """
   @spec query(module(), Resource.t(), String.t(), keyword()) ::
-          {:ok, Observation.t()} | {:error, Refusal.t()}
+          {:ok, Observation.t()} | {:error, failure()}
   def query(ash_resource, %Resource{} = mapping_resource, sparql, read_opts \\ [])
       when is_atom(ash_resource) and is_binary(sparql) do
     query_many([{ash_resource, mapping_resource}], sparql, read_opts)
@@ -238,7 +282,7 @@ defmodule AshR2RML.OBDA.InMemory do
   one SPARQL query across all of them -- a real cross-resource join, resolved from the
   same mapping IR every other rendering surface uses.
   """
-  @spec query_many([spec()], String.t(), keyword()) :: {:ok, Observation.t()} | {:error, Refusal.t()}
+  @spec query_many([spec()], String.t(), keyword()) :: {:ok, Observation.t()} | {:error, failure()}
   def query_many(specs, sparql, read_opts \\ []) when is_list(specs) and is_binary(sparql) do
     {result, _stats} = query_with_stats(specs, sparql, read_opts)
     result
@@ -253,19 +297,106 @@ defmodule AshR2RML.OBDA.InMemory do
   and `subject_iri` (constant subject IRI pushed down as a key filter for a single spec).
   """
   @spec query_with_stats([spec()], String.t(), keyword()) ::
-          {{:ok, Observation.t()} | {:error, Refusal.t()},
+          {{:ok, Observation.t()} | {:error, failure()},
            %{rows_read: non_neg_integer(), triples_emitted: non_neg_integer()}}
   def query_with_stats(specs, sparql, read_opts \\ []) when is_list(specs) and is_binary(sparql) do
-    case materialize_many_with_stats(specs, read_opts) do
-      {{:ok, %RDF.Graph{} = graph}, stats} ->
-        query_with_stats_graph(graph, sparql, stats)
+    case materialize_dataset_with_stats(specs, read_opts) do
+      {{:ok, %RDF.Dataset{} = dataset}, stats} ->
+        case AshR2RML.OBDA.InMemory.GraphQuery.plan(sparql) do
+          :none ->
+            query_with_stats_graph(union_graph(dataset), sparql, stats)
 
-      {{:ok, %{graph: graph}}, stats} ->
-        query_with_stats_graph(graph, sparql, stats)
+          {:ok, plan} ->
+            query_graph_plan(dataset, plan, sparql, stats)
+
+          {:error, message, evidence} ->
+            refusal = Refusal.new(:REFUSED_UNSUPPORTED_SPARQL_FEATURE, :graph_pattern, message, evidence)
+            {{:error, refusal}, stats}
+        end
 
       {{:error, _} = error, stats} ->
         {error, stats}
     end
+  end
+
+  # `GRAPH <iri> { P }`: one execution against that named graph (empty graph when absent).
+  defp query_graph_plan(dataset, %{kind: :iri, iri: iri, rewritten: rewritten}, sparql, stats) do
+    graph = RDF.Dataset.graph(dataset, iri) || RDF.Graph.new()
+
+    case query_with_stats_graph(graph, rewritten, stats) do
+      {{:ok, observation}, stats} -> {{:ok, reidentify(observation, sparql, :graph_iri)}, stats}
+      other -> other
+    end
+  end
+
+  # `GRAPH ?g { P }`: P is evaluated per named graph with `BIND(<g> AS ?g)` and the
+  # per-graph observations are merged.
+  defp query_graph_plan(dataset, %{kind: :var, rewrite: rewrite}, sparql, stats) do
+    names = dataset |> RDF.Dataset.graph_names() |> Enum.reject(&is_nil/1) |> Enum.sort_by(&to_string/1)
+
+    results =
+      Enum.reduce_while(names, {:ok, []}, fn name, {:ok, acc} ->
+        graph = RDF.Dataset.graph(dataset, name)
+
+        case query_with_stats_graph(graph, rewrite.(to_string(name)), stats) do
+          {{:ok, observation}, _stats} -> {:cont, {:ok, [observation | acc]}}
+          {{:error, _} = error, _stats} -> {:halt, error}
+        end
+      end)
+
+    case results do
+      {:ok, observations} ->
+        {{:ok, merge_observations(Enum.reverse(observations), sparql)}, stats}
+
+      {:error, _} = error ->
+        {error, stats}
+    end
+  end
+
+  defp reidentify(%Observation{} = observation, sparql, kind) do
+    %{
+      observation
+      | query_sha256: :crypto.hash(:sha256, sparql) |> Base.encode16(case: :lower),
+        metadata: Map.put(observation.metadata, :graph_pattern, kind)
+    }
+  end
+
+  # No named graph exists: `GRAPH ?g { P }` has no solutions (ASK is false).
+  defp merge_observations([], sparql) do
+    {:ok, admitted} = Query.admit(sparql)
+
+    {kind, rows} =
+      case admitted.form do
+        :ask -> {:boolean, [%{"ask" => false}]}
+        :select -> {:bindings, []}
+        _ -> {:rdf, []}
+      end
+
+    %Observation{
+      strategy: :local_rdf,
+      query_sha256: admitted.sha256,
+      query_form: admitted.form,
+      status: :PARTIAL_ALIVE,
+      standing: :observed_local_rdf_execution,
+      evidence_kind: :in_memory_execution,
+      result_kind: kind,
+      result_sha256: Result.hash_rows(rows),
+      rows: rows,
+      metadata: %{engine: :in_memory_ets}
+    }
+    |> reidentify(sparql, :graph_var)
+  end
+
+  defp merge_observations([first | _] = observations, sparql) do
+    rows =
+      case first.result_kind do
+        :boolean -> [%{"ask" => Enum.any?(observations, fn o -> Enum.any?(o.rows, & &1["ask"]) end)}]
+        :rdf -> observations |> Enum.flat_map(& &1.rows) |> Enum.uniq()
+        _ -> Enum.flat_map(observations, & &1.rows)
+      end
+
+    merged = %{first | rows: rows, result_sha256: Result.hash_rows(rows)}
+    merged |> canonical_order(sparql) |> reidentify(sparql, :graph_var)
   end
 
   defp query_with_stats_graph(graph, sparql, stats) do
@@ -408,7 +539,8 @@ defmodule AshR2RML.OBDA.InMemory do
            AshR2RML.QueryBuilder.pushdown_query(ash_resource, mapping, plan,
              actor: read_opts[:actor],
              tenant: read_opts[:tenant],
-             max_rows: Keyword.get(read_opts, :max_rows, @default_max_rows)
+             max_rows: Keyword.get(read_opts, :max_rows, @default_max_rows),
+             row_cap: read_opts[:row_cap]
            ) do
       pushed =
         query
@@ -484,24 +616,23 @@ defmodule AshR2RML.OBDA.InMemory do
     min_per_row = Keyword.get(read_opts, :min_triples_per_row, 0)
     budget = Keyword.get(read_opts, :triple_budget)
 
-    triple_cap =
-      if is_integer(budget) and min_per_row > 0, do: div(max(budget, 0), min_per_row) + 1, else: nil
+    triple_cap = AshR2RML.QueryBuilder.triple_row_cap(budget, min_per_row)
+    clamp? = is_integer(triple_cap) and triple_cap < max_rows + 1
 
-    limit = if triple_cap && triple_cap < max_rows + 1, do: triple_cap, else: max_rows + 1
+    limit = if clamp?, do: triple_cap, else: max_rows + 1
 
-    {query, limit} =
-      case apply_query_pushdown(query, ash_resource, read_opts) do
+    query =
+      case apply_query_pushdown(query, ash_resource, Keyword.put(read_opts, :row_cap, triple_cap)) do
         {:ok, pushed} ->
-          # QueryBuilder already bounded the read (`min(plan.limit, max_rows + 1)`).
-          pushed = if pushed.limit, do: pushed, else: Ash.Query.limit(pushed, max_rows + 1)
-          {pushed, max_rows + 1}
+          # QueryBuilder already bounded the read (`min(plan.limit, max_rows + 1, row_cap)`).
+          if pushed.limit, do: pushed, else: Ash.Query.limit(pushed, limit)
 
         :none ->
-          {query |> apply_pushdown(read_opts[:pushdown]) |> Ash.Query.limit(limit), limit}
+          query |> apply_pushdown(read_opts[:pushdown]) |> Ash.Query.limit(limit)
       end
 
     case Ash.read(query, Keyword.take(read_opts, [:actor, :tenant, :authorize?, :domain])) do
-      {:ok, rows} when is_list(rows) and limit != max_rows + 1 and length(rows) >= limit ->
+      {:ok, rows} when is_list(rows) and clamp? and length(rows) >= triple_cap ->
         # `limit` rows each emit at least `min_per_row` triples: the budget is provably exceeded.
         {:error,
          Refusal.new(
@@ -532,12 +663,23 @@ defmodule AshR2RML.OBDA.InMemory do
       {:error, error} ->
         class = if is_exception(error), do: error.__struct__, else: error
 
-        {:error,
-         read_refusal(
-           ash_resource,
-           "fail-closed: could not read the real Ash resource for materialization (#{inspect(class)}, e.g. forbidden by policy)",
-           %{resource: ash_resource, action: read_opts[:action], error_class: inspect(class)}
-         )}
+        case AshR2RML.OBDA.classify(error) do
+          {:REFUSED_READ_FAILED, _} ->
+            {:error,
+             read_refusal(
+               ash_resource,
+               "fail-closed: could not read the real Ash resource for materialization (#{inspect(class)}, e.g. forbidden by policy)",
+               %{resource: ash_resource, action: read_opts[:action], error_class: inspect(class)}
+             )}
+
+          {code, resource} ->
+            # Real Ash errors (Forbidden, TenantRequired) keep their typed identity.
+            {:error,
+             AshR2RML.Error.new(code,
+               resource: resource || ash_resource,
+               details: %{action: read_opts[:action], error_class: inspect(class)}
+             )}
+        end
     end
   rescue
     exception in [ArgumentError, RuntimeError, KeyError] ->
@@ -561,10 +703,50 @@ defmodule AshR2RML.OBDA.InMemory do
   # Each row is built into its own small graph so its triple count is cheap; the running
   # `emitted` total halts accumulation the moment it exceeds `max_triples`.
   defp add_rows(rows, graph_acc, emitted0, max_triples, ash_resource, mapping_resource, mapping_index, allow_sensitive?) do
-    Enum.reduce_while(rows, {:ok, graph_acc, emitted0}, fn row, {:ok, acc, emitted} ->
-      case add_row(RDF.Graph.new(), row, ash_resource, mapping_resource, mapping_index, allow_sensitive?) do
+    # Sensitivity/schema checks depend only on the spec, so they run once per spec (and only
+    # when there is at least one row, as before), not once per row.
+    case check_spec_sensitive(rows, mapping_resource, ash_resource, allow_sensitive?) do
+      :ok ->
+        add_checked_rows(
+          rows,
+          graph_acc,
+          emitted0,
+          max_triples,
+          ash_resource,
+          mapping_resource,
+          mapping_index,
+          allow_sensitive?
+        )
+
+      {:error, refusal} ->
+        {:error, refusal, emitted0, 0}
+    end
+  end
+
+  defp check_spec_sensitive([], _mapping_resource, _ash_resource, _allow_sensitive?), do: :ok
+
+  defp check_spec_sensitive(_rows, %Resource{} = mapping_resource, ash_resource, allow_sensitive?) do
+    with :ok <- check_subject_sensitive(mapping_resource.subject_map, ash_resource, allow_sensitive?),
+         :ok <- check_joins_sensitive(mapping_resource.reference_object_maps, ash_resource, allow_sensitive?) do
+      check_graphs_sensitive(mapping_resource, ash_resource, allow_sensitive?)
+    end
+  end
+
+  defp add_checked_rows(
+         rows,
+         graph_acc,
+         emitted0,
+         max_triples,
+         ash_resource,
+         mapping_resource,
+         mapping_index,
+         allow_sensitive?
+       ) do
+    rows
+    |> Enum.reduce_while({:ok, graph_acc, emitted0, 0}, fn row, {:ok, acc, emitted, n} ->
+      case add_row(RDF.Dataset.new(), row, ash_resource, mapping_resource, mapping_index, allow_sensitive?) do
         {:ok, row_graph} ->
-          emitted = emitted + RDF.Graph.triple_count(row_graph)
+          emitted = emitted + RDF.Dataset.statement_count(row_graph)
 
           if emitted > max_triples do
             {:halt,
@@ -574,13 +756,13 @@ defmodule AshR2RML.OBDA.InMemory do
                 ash_resource,
                 "materialization exceeded max_triples (#{max_triples}); refusing",
                 %{resource: ash_resource, limit: max_triples}
-              ), emitted}}
+              ), emitted, n + 1}}
           else
-            {:cont, {:ok, RDF.Graph.add(acc, row_graph), emitted}}
+            {:cont, {:ok, RDF.Dataset.add(acc, row_graph), emitted, n + 1}}
           end
 
         {:error, refusal} ->
-          {:halt, {:error, refusal, emitted}}
+          {:halt, {:error, refusal, emitted, n}}
       end
     end)
   end
@@ -610,9 +792,9 @@ defmodule AshR2RML.OBDA.InMemory do
           {:cont, {:cont, {{:ok, graph}, stats}}}
 
         subject ->
-          case add_reference_triples(RDF.Graph.new(), subject, row, refs, mapping_index, visible) do
+          case add_reference_triples(RDF.Dataset.new(), subject, row, refs, {mapping, mapping_index, visible}) do
             {:ok, ref_graph} ->
-              emitted = stats.triples_emitted + RDF.Graph.triple_count(ref_graph)
+              emitted = stats.triples_emitted + RDF.Dataset.statement_count(ref_graph)
               stats = %{stats | triples_emitted: emitted}
 
               if emitted > max_triples do
@@ -626,7 +808,7 @@ defmodule AshR2RML.OBDA.InMemory do
 
                 {:halt, {:halt, {{:error, refusal}, stats}}}
               else
-                {:cont, {:cont, {{:ok, RDF.Graph.add(graph, ref_graph)}, stats}}}
+                {:cont, {:cont, {{:ok, RDF.Dataset.add(graph, ref_graph)}, stats}}}
               end
 
             {:error, refusal} ->
@@ -637,28 +819,79 @@ defmodule AshR2RML.OBDA.InMemory do
   end
 
   defp add_row(graph, row, ash_resource, %Resource{} = mapping_resource, mapping_index, allow_sensitive?) do
-    with :ok <- check_subject_sensitive(mapping_resource.subject_map, ash_resource, allow_sensitive?),
-         :ok <- check_joins_sensitive(mapping_resource.reference_object_maps, ash_resource, allow_sensitive?) do
-      case subject_iri(mapping_resource.subject_map, row) do
-        nil ->
-          {:ok, graph}
+    case subject_iri(mapping_resource.subject_map, row) do
+      nil ->
+        {:ok, graph}
 
-        subject ->
-          graph = add_class_triples(graph, subject, mapping_resource.class_iris)
+      subject ->
+        class_graphs = graph_names(mapping_resource, [], row)
+        graph = add_class_triples(graph, subject, mapping_resource.class_iris, class_graphs)
 
-          # Reference triples are added afterwards by `add_reference_pass/5`.
-          _ = mapping_index
+        # Reference triples are added afterwards by `add_reference_pass/5`.
+        _ = mapping_index
 
-          add_predicate_triples(
-            graph,
-            subject,
-            row,
-            mapping_resource.predicate_object_maps,
-            ash_resource,
-            allow_sensitive?
-          )
-      end
+        add_predicate_triples(graph, subject, row, mapping_resource, ash_resource, allow_sensitive?)
     end
+  end
+
+  # Graph names (`nil` = default graph) a triple of this row is placed in. Resource-level,
+  # subject-level and the supplied predicate-object/object/reference graph maps all apply.
+  # When maps exist but none resolves for the row the result is `[]`: the triple is dropped,
+  # never demoted into the default graph.
+  defp graph_names(%Resource{} = mapping, extra_maps, row) do
+    case mapping.graph_maps ++ mapping.subject_map.graph_maps ++ extra_maps do
+      [] -> [nil]
+      maps -> maps |> Enum.map(&resolve_graph(&1, row)) |> Enum.reject(&is_nil/1) |> Enum.uniq()
+    end
+  end
+
+  defp resolve_graph(%GraphMap{strategy: :constant, value: value}, _row), do: valid_iri_or_nil(value)
+
+  defp resolve_graph(%GraphMap{strategy: :template, value: template}, row) do
+    if template_fields_readable?(template, row) do
+      template |> substitute_template(row) |> valid_iri_or_nil()
+    end
+  rescue
+    ArgumentError -> nil
+  end
+
+  defp resolve_graph(%GraphMap{strategy: :column, value: column}, row) do
+    case readable(Map.get(row, safe_atom(column))) do
+      nil -> nil
+      value -> value |> to_string() |> valid_iri_or_nil()
+    end
+  rescue
+    ArgumentError -> nil
+  end
+
+  defp resolve_graph(_other, _row), do: nil
+
+  defp add_quads(dataset, subject, predicate, object, graphs) do
+    Enum.reduce(graphs, dataset, fn graph_name, acc ->
+      graph = if graph_name, do: RDF.iri(graph_name)
+      RDF.Dataset.add(acc, {RDF.iri(subject), RDF.iri(predicate), object, graph})
+    end)
+  end
+
+  defp check_graphs_sensitive(_mapping, _ash_resource, true), do: :ok
+
+  defp check_graphs_sensitive(%Resource{} = mapping, ash_resource, false) do
+    all_maps =
+      mapping.graph_maps ++
+        mapping.subject_map.graph_maps ++
+        Enum.flat_map(mapping.predicate_object_maps, &(&1.graph_maps ++ &1.object_map.graph_maps)) ++
+        Enum.flat_map(mapping.reference_object_maps, & &1.graph_maps)
+
+    Enum.find_value(all_maps, :ok, fn
+      %GraphMap{strategy: strategy, value: value} when strategy in [:template, :column] ->
+        case check_subject_sensitive(%SubjectMap{strategy: strategy, value: value}, ash_resource, false) do
+          :ok -> nil
+          error -> error
+        end
+
+      _ ->
+        nil
+    end)
   end
 
   defp check_subject_sensitive(_subject_map, _ash_resource, true), do: :ok
@@ -784,12 +1017,9 @@ defmodule AshR2RML.OBDA.InMemory do
   defp readable(%Ash.NotLoaded{}), do: nil
   defp readable(value), do: value
 
-  defp add_class_triples(graph, subject, class_iris) do
+  defp add_class_triples(graph, subject, class_iris, graphs) do
     Enum.reduce(class_iris, graph, fn class_iri, acc ->
-      RDF.Graph.add(
-        acc,
-        {RDF.iri(subject), RDF.iri("http://www.w3.org/1999/02/22-rdf-syntax-ns#type"), RDF.iri(class_iri)}
-      )
+      add_quads(acc, subject, "http://www.w3.org/1999/02/22-rdf-syntax-ns#type", RDF.iri(class_iri), graphs)
     end)
   end
 
@@ -803,8 +1033,8 @@ defmodule AshR2RML.OBDA.InMemory do
   # :admin can read :secret_key") carry through into the RDF projection without extra code
   # at each call site -- security is enforced once, by Ash, and respected here rather than
   # bypassed.
-  defp add_predicate_triples(graph, subject, row, predicate_object_maps, ash_resource, allow_sensitive?) do
-    Enum.reduce_while(predicate_object_maps, {:ok, graph}, fn
+  defp add_predicate_triples(graph, subject, row, %Resource{} = mapping, ash_resource, allow_sensitive?) do
+    Enum.reduce_while(mapping.predicate_object_maps, {:ok, graph}, fn
       %PredicateObjectMap{object_map: %ObjectMap{strategy: :template, term_type: :iri, value: template}} = pom,
       {:ok, acc} ->
         object_map_subject = %SubjectMap{strategy: :template, value: template}
@@ -816,14 +1046,16 @@ defmodule AshR2RML.OBDA.InMemory do
               {:cont, {:ok, acc}}
 
             object_iri ->
-              {:cont, {:ok, RDF.Graph.add(acc, {RDF.iri(subject), RDF.iri(pom.predicate_iri), RDF.iri(object_iri)})}}
+              graphs = graph_names(mapping, pom.graph_maps ++ pom.object_map.graph_maps, row)
+              {:cont, {:ok, add_quads(acc, subject, pom.predicate_iri, RDF.iri(object_iri), graphs)}}
           end
         else
           {:error, refusal} -> {:halt, {:error, refusal}}
         end
 
       %PredicateObjectMap{object_map: %ObjectMap{strategy: :constant, term_type: :iri, value: iri}} = pom, {:ok, acc} ->
-        {:cont, {:ok, RDF.Graph.add(acc, {RDF.iri(subject), RDF.iri(pom.predicate_iri), RDF.iri(iri)})}}
+        graphs = graph_names(mapping, pom.graph_maps ++ pom.object_map.graph_maps, row)
+        {:cont, {:ok, add_quads(acc, subject, pom.predicate_iri, RDF.iri(iri), graphs)}}
 
       %PredicateObjectMap{object_map: %ObjectMap{strategy: strategy, term_type: term_type}} = pom, {:ok, _acc}
       when strategy in [:template, :constant] ->
@@ -840,7 +1072,8 @@ defmodule AshR2RML.OBDA.InMemory do
       %PredicateObjectMap{attribute: nil}, {:ok, acc} ->
         {:cont, {:ok, acc}}
 
-      %PredicateObjectMap{attribute: attribute, predicate_iri: predicate_iri, object_map: object_map}, {:ok, acc} ->
+      %PredicateObjectMap{attribute: attribute, predicate_iri: predicate_iri, object_map: object_map} = pom,
+      {:ok, acc} ->
         case readable(Map.get(row, attribute)) do
           nil ->
             {:cont, {:ok, acc}}
@@ -856,9 +1089,23 @@ defmodule AshR2RML.OBDA.InMemory do
                   %{attribute: attribute}
                 )}}
             else
-              case rdf_literal(value, object_map) do
-                {:ok, literal} ->
-                  {:cont, {:ok, RDF.Graph.add(acc, {RDF.iri(subject), RDF.iri(predicate_iri), literal})}}
+              case object_term(value, object_map) do
+                {:ok, term} ->
+                  graphs = graph_names(mapping, pom.graph_maps ++ object_map.graph_maps, row)
+                  {:cont, {:ok, add_quads(acc, subject, predicate_iri, term, graphs)}}
+
+                :skip ->
+                  {:cont, {:ok, acc}}
+
+                :unsupported ->
+                  {:halt,
+                   {:error,
+                    Refusal.new(
+                      :UNSUPPORTED_TERM_TYPE,
+                      ash_resource,
+                      "in-memory materialization does not render term type #{inspect(object_map.term_type)} for column object maps",
+                      %{predicate: predicate_iri, strategy: :column, term_type: object_map.term_type}
+                    )}}
 
                 :error ->
                   {:halt,
@@ -898,14 +1145,15 @@ defmodule AshR2RML.OBDA.InMemory do
   # The one shape that is NOT silently skipped is `joins: []` -- the `:join_table`
   # many-to-many relationship shape (see moduledoc): that surfaces as a real
   # `{:error, refusal}` instead, propagated all the way out through `materialize_many/2`.
-  defp add_reference_triples(graph, subject, row, reference_object_maps, mapping_index, visible) do
+  defp add_reference_triples(graph, subject, row, reference_object_maps, {mapping, mapping_index, visible}) do
     Enum.reduce_while(reference_object_maps, {:ok, graph}, fn reference, {:ok, acc} ->
       case resolve_reference_object(reference, row, mapping_index, visible) do
         {:ok, nil} ->
           {:cont, {:ok, acc}}
 
         {:ok, object_iri} ->
-          {:cont, {:ok, RDF.Graph.add(acc, {RDF.iri(subject), RDF.iri(reference.predicate_iri), RDF.iri(object_iri)})}}
+          graphs = graph_names(mapping, reference.graph_maps, row)
+          {:cont, {:ok, add_quads(acc, subject, reference.predicate_iri, RDF.iri(object_iri), graphs)}}
 
         {:error, refusal} ->
           {:halt, {:error, refusal}}
@@ -1001,6 +1249,27 @@ defmodule AshR2RML.OBDA.InMemory do
   # The mapping's declared datatype wins: typed literals are what make numeric/temporal FILTERs and
   # ORDER BY semantically correct. Values with no declared datatype keep the plain-string form.
   # Returns `{:ok, literal}` or `:error` (value has no lexical form; never raises).
+  # A column object map with `term_type: :iri` stores the whole IRI in the column (R2RML
+  # `rr:column` + `rr:termType rr:IRI`): it is an IRI term, never a literal. A malformed stored
+  # value is skipped (fail-closed, like `:column` subject maps), never literalized.
+  defp object_term(value, %ObjectMap{term_type: :iri}) do
+    with {:ok, lex} <- lexical(value),
+         true <- valid_iri?(lex) do
+      {:ok, RDF.iri(lex)}
+    else
+      _ -> :skip
+    end
+  end
+
+  defp object_term(_value, %ObjectMap{term_type: :blank_node}), do: :unsupported
+
+  defp object_term(value, object_map) do
+    case rdf_literal(value, object_map) do
+      {:ok, literal} -> {:ok, literal}
+      :error -> :error
+    end
+  end
+
   defp rdf_literal(value, object_map) do
     with {:ok, lex} <- lexical(value) do
       {:ok, build_literal(lex, object_map)}
@@ -1046,4 +1315,230 @@ defmodule AshR2RML.OBDA.InMemory do
 
   defp safe_atom(value) when is_atom(value), do: value
   defp safe_atom(value) when is_binary(value), do: String.to_existing_atom(value)
+end
+
+defmodule AshR2RML.OBDA.InMemory.GraphQuery do
+  @moduledoc """
+  Plans SPARQL `GRAPH` patterns for `AshR2RML.OBDA.InMemory`.
+
+  SPARQL.ex parses `GRAPH` but cannot execute it, so the in-memory backend evaluates it
+  against the materialized `RDF.Dataset` itself. Supported shape: exactly one
+  `GRAPH <iri> { P }`, `GRAPH prefix:name { P }` or `GRAPH ?g { P }` that is the only
+  content (besides `FILTER`s) of the top-level WHERE group.
+
+    * IRI form -- `P` runs once against that named graph (an absent graph is empty).
+    * Variable form -- `P` runs once per named graph with `BIND(<graph> AS ?g)` and the
+      solutions are merged. Solution modifiers that would be wrong when applied per graph
+      (LIMIT, OFFSET, ORDER BY, GROUP BY, DISTINCT, aggregates) are refused, not guessed.
+
+  Anything else (several GRAPH clauses, GRAPH mixed with other patterns, nested GRAPH) is
+  a typed refusal, never a silent partial answer.
+  """
+
+  # Regexes live in functions, not module attributes (OTP 28 compiled-regex rule).
+  defp grapher, do: ~r/(?<![\w?$:.\-])GRAPH\s+(<i*>|[?$]\w+|[A-Za-z_][\w\-]*:[\w.\-]*)\s*\{/i
+
+  defp modifiers do
+    ~r/(?<![\w?$])(LIMIT|OFFSET|GROUP\s+BY|DISTINCT|REDUCED|ORDER\s+BY|HAVING|COUNT|SUM|AVG|MIN|MAX|SAMPLE|GROUP_CONCAT)(?![\w])/i
+  end
+
+  @type plan ::
+          %{kind: :iri, iri: RDF.IRI.t(), rewritten: String.t()}
+          | %{kind: :var, rewrite: (String.t() -> String.t())}
+
+  @doc """
+  Returns `:none` when the query has no GRAPH pattern, `{:ok, plan}` for a supported
+  shape, or `{:error, message, evidence}`.
+
+  ## Examples
+
+      iex> AshR2RML.OBDA.InMemory.GraphQuery.plan("SELECT * WHERE { ?s ?p ?o }")
+      :none
+
+      iex> {:ok, plan} =
+      ...>   AshR2RML.OBDA.InMemory.GraphQuery.plan("SELECT * WHERE { GRAPH <urn:uuid:5f1c2a64-0000-4000-8000-000000000001> { ?s ?p ?o } }")
+      iex> {plan.kind, to_string(plan.iri)}
+      {:iri, "urn:uuid:5f1c2a64-0000-4000-8000-000000000001"}
+  """
+  @spec plan(String.t()) :: :none | {:ok, plan()} | {:error, String.t(), map()}
+  def plan(sparql) when is_binary(sparql) do
+    masked = mask(sparql)
+
+    case Regex.scan(grapher(), masked, return: :index) do
+      [] -> :none
+      [[whole, target]] -> plan_clause(sparql, masked, whole, target)
+      many -> {:error, "only one GRAPH pattern per query is supported", %{graph_patterns: length(many)}}
+    end
+  end
+
+  defp plan_clause(sparql, masked, {start, len}, {t_start, t_len}) do
+    open = start + len - 1
+    close = matching_close(masked, open)
+    enclosing = enclosing_open(masked, start)
+    target = binary_part(sparql, t_start, t_len)
+
+    with {:ok, group_open} <- top_level_group(enclosing, start),
+         group_close = matching_close(masked, group_open),
+         :ok <- only_graph_in_group(masked, group_open, group_close, start, close),
+         {:ok, kind} <- classify(sparql, masked, target) do
+      build(kind, sparql, masked, {start, open, close})
+    end
+  end
+
+  defp build({:iri, iri}, sparql, _masked, {start, open, close}) do
+    rewritten =
+      binary_part(sparql, 0, start) <>
+        binary_part(sparql, open, close - open + 1) <>
+        binary_part(sparql, close + 1, byte_size(sparql) - close - 1)
+
+    {:ok, %{kind: :iri, iri: RDF.iri(iri), rewritten: rewritten}}
+  end
+
+  defp build({:var, var}, sparql, masked, {start, open, close}) do
+    if Regex.match?(modifiers(), masked) do
+      {:error, "GRAPH ?var cannot be combined with LIMIT/OFFSET/ORDER BY/GROUP BY/DISTINCT/aggregates",
+       %{variable: var}}
+    else
+      head = binary_part(sparql, 0, start)
+      inner = binary_part(sparql, open + 1, close - open - 1)
+      tail = binary_part(sparql, close + 1, byte_size(sparql) - close - 1)
+
+      rewrite = fn graph_iri -> head <> "{ " <> inner <> " BIND(<" <> graph_iri <> "> AS " <> var <> ") }" <> tail end
+      {:ok, %{kind: :var, rewrite: rewrite}}
+    end
+  end
+
+  defp classify(_sparql, _masked, "<" <> _ = target), do: {:ok, {:iri, String.slice(target, 1..-2//1)}}
+  defp classify(_sparql, _masked, <<c, _::binary>> = target) when c in [??, ?$], do: {:ok, {:var, target}}
+
+  defp classify(sparql, masked, prefixed) do
+    [prefix, local] = String.split(prefixed, ":", parts: 2)
+
+    case Enum.find(prefix_decls(sparql, masked), fn {name, _iri} -> name == prefix end) do
+      {_, base} -> {:ok, {:iri, base <> local}}
+      nil -> {:error, "GRAPH prefixed name uses an undeclared prefix", %{prefix: prefix}}
+    end
+  end
+
+  defp prefix_decls(sparql, masked) do
+    ~r/PREFIX\s+([\w\-]*):\s*(<i*>)/i
+    |> Regex.scan(masked, return: :index)
+    |> Enum.map(fn [_, {n_start, n_len}, {i_start, i_len}] ->
+      {binary_part(sparql, n_start, n_len), binary_part(sparql, i_start + 1, i_len - 2)}
+    end)
+  end
+
+  defp top_level_group({open, depth}, _start) when depth == 1, do: {:ok, open}
+
+  defp top_level_group(_, _start),
+    do: {:error, "GRAPH inside a nested group (OPTIONAL/UNION/MINUS/subquery) is unsupported", %{}}
+
+  defp only_graph_in_group(masked, group_open, group_close, start, close) do
+    before_clause = binary_part(masked, group_open + 1, start - group_open - 1)
+    after_clause = binary_part(masked, close + 1, group_close - close - 1)
+    rest = strip_filters(before_clause <> " " <> after_clause)
+
+    if String.replace(rest, ~r/[\s.]/, "") == "" do
+      :ok
+    else
+      {:error, "GRAPH mixed with other patterns in the same group is unsupported", %{remainder: String.trim(rest)}}
+    end
+  end
+
+  # Removes `FILTER ( ... )` (balanced parentheses) from an already masked fragment.
+  defp strip_filters(fragment) do
+    case Regex.run(~r/FILTER\s*\(/i, fragment, return: :index) do
+      nil ->
+        fragment
+
+      [{start, len}] ->
+        open = start + len - 1
+        close = matching(fragment, open, ?(, ?))
+
+        binary_part(fragment, 0, start) <>
+          " " <> strip_filters(binary_part(fragment, close + 1, byte_size(fragment) - close - 1))
+    end
+  end
+
+  defp matching_close(text, open), do: matching(text, open, ?{, ?})
+
+  # Index of the bracket closing the one at `open`; end of text when unbalanced.
+  defp matching(text, open, opener, closer) do
+    size = byte_size(text)
+
+    Enum.reduce_while((open + 1)..(size - 1)//1, 1, fn index, depth ->
+      case :binary.at(text, index) do
+        ^opener -> {:cont, depth + 1}
+        ^closer when depth == 1 -> {:halt, {:found, index}}
+        ^closer -> {:cont, depth - 1}
+        _ -> {:cont, depth}
+      end
+    end)
+    |> case do
+      {:found, index} -> index
+      _ -> size - 1
+    end
+  end
+
+  # `{index_of_innermost_open_brace, depth}` at byte `start` (depth 0 => no open group).
+  defp enclosing_open(masked, start) do
+    masked
+    |> binary_part(0, start)
+    |> :binary.bin_to_list()
+    |> Enum.with_index()
+    |> Enum.reduce([], fn
+      {?{, index}, stack -> [index | stack]
+      {?}, _index}, [_ | stack] -> stack
+      _, stack -> stack
+    end)
+    |> case do
+      [] -> {nil, 0}
+      [innermost | _] = stack -> {innermost, length(stack)}
+    end
+  end
+
+  # Same-length copy of `sparql` in which comments are blanked, string literals become
+  # `"sss"` and IRIREFs become `<iii>`, so structural scans cannot be fooled by their content.
+  defp mask(sparql), do: sparql |> mask([]) |> Enum.reverse() |> IO.iodata_to_binary()
+
+  defp mask(<<>>, acc), do: acc
+
+  defp mask(<<"#", rest::binary>>, acc) do
+    {comment, remainder} = split_line(rest)
+    mask(remainder, [String.duplicate(" ", byte_size(comment) + 1) | acc])
+  end
+
+  defp mask(<<q, rest::binary>>, acc) when q in [?", ?'] do
+    {length, remainder} = skip_string(rest, q, 0)
+    mask(remainder, [<<q>> <> String.duplicate("s", max(length - 1, 0)) <> closing(length, q) | acc])
+  end
+
+  defp mask(<<"<", rest::binary>> = whole, acc) do
+    case Regex.run(~r/\A<([^\s<>"{}|^`\\]*)>/, whole) do
+      [matched, inner] ->
+        remainder = binary_part(rest, byte_size(matched) - 1, byte_size(rest) - byte_size(matched) + 1)
+        mask(remainder, ["<" <> String.duplicate("i", byte_size(inner)) <> ">" | acc])
+
+      nil ->
+        mask(rest, ["<" | acc])
+    end
+  end
+
+  defp mask(<<char, rest::binary>>, acc), do: mask(rest, [<<char>> | acc])
+
+  defp closing(0, _q), do: ""
+  defp closing(_length, q), do: <<q>>
+
+  defp split_line(text) do
+    case :binary.split(text, "\n") do
+      [comment, remainder] -> {comment, "\n" <> remainder}
+      [comment] -> {comment, ""}
+    end
+  end
+
+  # Returns `{consumed_bytes_including_closing_quote, remainder}`.
+  defp skip_string(<<>>, _q, count), do: {count, <<>>}
+  defp skip_string(<<?\\, _escaped, rest::binary>>, q, count), do: skip_string(rest, q, count + 2)
+  defp skip_string(<<q, rest::binary>>, q, count), do: {count + 1, rest}
+  defp skip_string(<<_, rest::binary>>, q, count), do: skip_string(rest, q, count + 1)
 end

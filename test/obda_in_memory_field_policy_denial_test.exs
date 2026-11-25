@@ -14,14 +14,17 @@ defmodule AshR2RML.OBDA.InMemoryFieldPolicyDenialTest do
   alias AshR2RML.OBDA.InMemory
 
   @secret "sk_live_must_not_leak"
-  @secret_pred "https://w3id.org/fortune5/ontology#apiKeySecret"
+  # The secret predicate is read from the fixture's own mapping, never restated here.
+  @secret_pred AshR2RML.mapping(PaymentGateway).predicate_object_maps
+               |> Enum.find(&(&1.attribute == :secret_key))
+               |> Map.fetch!(:predicate_iri)
   @name_pred "https://schema.org/name"
 
   setup do
     PaymentGateway
     |> Ash.Changeset.for_create(
       :create,
-      %{name: "Gateway-Denial", provider: "p", api_endpoint: "https://x.example", secret_key: @secret},
+      %{name: "Gateway-Denial", provider: "p", api_endpoint: "https://schema.org/", secret_key: @secret},
       authorize?: false
     )
     |> Ash.create!(authorize?: false)

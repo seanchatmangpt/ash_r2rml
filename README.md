@@ -141,7 +141,7 @@ defmodule MyApp.Person do
   r2rml do
     class "http://xmlns.com/foaf/0.1/Person"
 
-    subject template: "https://example.org/people/{id}", term_type: :iri
+    subject template: "urn:uuid:{id}", term_type: :iri
 
     property :name, "http://xmlns.com/foaf/0.1/name"
   end
@@ -177,7 +177,7 @@ The resulting triples map is equivalent in shape to:
     a rr:TriplesMap ;
     rr:logicalTable [ rr:tableName "people" ] ;
     rr:subjectMap [
-        rr:template "https://example.org/people/{id}" ;
+        rr:template "urn:uuid:{id}" ;
         rr:class foaf:Person ;
         rr:termType rr:IRI
     ] ;
@@ -249,7 +249,7 @@ Example:
 r2rml do
   class "https://schema.org/Organization"
 
-  subject template: "https://example.org/org/{tenant_id}/{id}", term_type: :iri
+  subject template: "urn:uuid:{tenant_id}-{id}", term_type: :iri
 end
 ```
 
@@ -305,6 +305,14 @@ This representation is deliberately close to R2RML terminology. It is inspectabl
   metadata: %{}
 }
 ```
+
+## Unreleased capabilities
+
+Named graphs (`graph "iri"`), money composites (`AshR2RML.Money`), temporal intervals
+(`temporal start_attribute:, end_attribute:`), the AshCloak enclave guard, and opt-in strict
+domain mode (`r2rml_domain do strict? true end`). Downstream handoff contract: deterministic
+R2RML, canonical N-Quads (`AshR2RML.NQuads`), invertible `AshR2RML.Subject` codec, and the
+`AshR2RML.OBDA.Result` digest. Details and status: `CHANGELOG.md` under "Unreleased".
 
 ## Typed refusals
 

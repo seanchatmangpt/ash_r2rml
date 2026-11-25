@@ -72,8 +72,8 @@ defmodule AshR2RML.OBDAContractFixesTest do
     end
   end
 
-  @title_pred "https://example.org/title"
-  @token_pred "https://example.org/token"
+  @title_pred "https://schema.org/name"
+  @token_pred "https://schema.org/identifier"
   @string "http://www.w3.org/2001/XMLSchema#string"
 
   defp pom(attribute, predicate) do
@@ -93,7 +93,7 @@ defmodule AshR2RML.OBDAContractFixesTest do
       ash_resource: resource,
       logical_table: %LogicalTable{table_name: Atom.to_string(resource)},
       subject_map: %SubjectMap{strategy: :template, value: template, term_type: :iri},
-      class_iris: ["https://example.org/Thing"],
+      class_iris: ["https://schema.org/Thing"],
       predicate_object_maps: for({attr, pred} <- attrs, do: pom(attr, pred)),
       identities: [[:title]],
       metadata: %{source: :obda_contract_fixes_test}
@@ -102,8 +102,8 @@ defmodule AshR2RML.OBDAContractFixesTest do
     [{resource, mapping}]
   end
 
-  defp doc_specs, do: specs(Doc, "https://example.org/doc/{title}", title: @title_pred, token: @token_pred)
-  defp title_specs, do: specs(Doc, "https://example.org/doc/{title}", title: @title_pred)
+  defp doc_specs, do: specs(Doc, "urn:uuid:{title}", title: @title_pred, token: @token_pred)
+  defp title_specs, do: specs(Doc, "urn:uuid:{title}", title: @title_pred)
   defp select(pred), do: "SELECT ?s ?o WHERE { ?s <#{pred}> ?o }"
   defp objects(%OBDA.Result{bindings: rows}), do: rows |> Enum.map(&to_string(&1["o"])) |> Enum.sort()
 
@@ -176,7 +176,7 @@ defmodule AshR2RML.OBDAContractFixesTest do
 
   describe "private ETS" do
     test "is refused with REFUSED_PRIVATE_DATA_LAYER instead of an empty result" do
-      hidden = specs(Hidden, "https://example.org/hidden/{title}", title: @title_pred)
+      hidden = specs(Hidden, "urn:uuid:{title}", title: @title_pred)
 
       assert {:error, %Error{code: :REFUSED_PRIVATE_DATA_LAYER, resource: Hidden} = error} =
                OBDA.query(hidden, select(@title_pred), domain: Domain)
@@ -190,7 +190,7 @@ defmodule AshR2RML.OBDAContractFixesTest do
       :ok = :telemetry.attach(id, [:ash_r2rml, :obda, :query, :stop], &__MODULE__.handle_event/4, self())
       on_exit(fn -> :telemetry.detach(id) end)
 
-      hidden = specs(Hidden, "https://example.org/hidden/{title}", title: @title_pred)
+      hidden = specs(Hidden, "urn:uuid:{title}", title: @title_pred)
       assert {:error, %Error{}} = OBDA.query(hidden, select(@title_pred), domain: Domain)
 
       assert_receive {:stop_meta, %{result: :error, code: :REFUSED_PRIVATE_DATA_LAYER}}, 1_000

@@ -11,12 +11,12 @@ use Ash.Resource, extensions: [AshR2RML.Resource]
 
 r2rml do
   class "http://xmlns.com/foaf/0.1/Person"
-  subject template: "http://example.com/person/{id}"
+  subject template: "urn:uuid:{id}"
   property :name, "http://xmlns.com/foaf/0.1/name"
   property :age, "http://xmlns.com/foaf/0.1/age",
     datatype: "http://www.w3.org/2001/XMLSchema#integer"
-  reference :company, "http://example.com/worksFor"
-  graph "http://example.com/graph/people"
+  reference :company, "https://schema.org/worksFor"
+  graph "urn:uuid:00000000-0000-0000-0000-000000000001"
 end
 ```
 

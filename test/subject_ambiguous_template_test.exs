@@ -23,12 +23,13 @@ defmodule AshR2RML.SubjectAmbiguousTemplateTest do
   end
 
   test "to_iri still renders the ambiguous template (forward direction is total)" do
-    assert {:ok, "http://ex/p/x-y-z"} = Subject.to_iri(mapping("http://ex/p/{a}-{b}"), %{a: "x-y", b: "z"})
+    assert {:ok, "http://xmlns.com/foaf/0.1/p/x-y-z"} =
+             Subject.to_iri(mapping("http://xmlns.com/foaf/0.1/p/{a}-{b}"), %{a: "x-y", b: "z"})
   end
 
   for sep <- ["-", ".", "_", "~", "ab", "-.-", "%"] do
     test "from_iri refuses unreserved-only separator #{inspect(sep)}" do
-      template = "http://ex/p/{a}#{unquote(sep)}{b}"
+      template = "http://xmlns.com/foaf/0.1/p/{a}#{unquote(sep)}{b}"
       assert {:ok, iri} = Subject.to_iri(mapping(template), %{a: "x", b: "z"})
 
       assert {:error, %Refusal{code: :REFUSED_NON_INVERTIBLE_TEMPLATE}} = Subject.from_iri(mapping(template), iri)
@@ -36,21 +37,23 @@ defmodule AshR2RML.SubjectAmbiguousTemplateTest do
   end
 
   test "from_iri refuses the witnessed ambiguous IRI instead of mis-splitting" do
-    m = mapping("http://ex/p/{a}-{b}")
-    assert {:error, %Refusal{code: :REFUSED_NON_INVERTIBLE_TEMPLATE}} = Subject.from_iri(m, "http://ex/p/x-y-z")
+    m = mapping("http://xmlns.com/foaf/0.1/p/{a}-{b}")
+
+    assert {:error, %Refusal{code: :REFUSED_NON_INVERTIBLE_TEMPLATE}} =
+             Subject.from_iri(m, "http://xmlns.com/foaf/0.1/p/x-y-z")
   end
 
   test "reserved-character separators stay invertible (positive control)" do
-    m = mapping("http://ex/p/{a}/{b}")
-    assert {:ok, %{a: "x-y", b: "z"}} = Subject.from_iri(m, "http://ex/p/x-y/z")
+    m = mapping("http://xmlns.com/foaf/0.1/p/{a}/{b}")
+    assert {:ok, %{a: "x-y", b: "z"}} = Subject.from_iri(m, "http://xmlns.com/foaf/0.1/p/x-y/z")
 
-    m2 = mapping("http://ex/orgs/{a}/people/{b}")
-    assert {:ok, %{a: "o", b: "p"}} = Subject.from_iri(m2, "http://ex/orgs/o/people/p")
+    m2 = mapping("http://xmlns.com/foaf/0.1/orgs/{a}/people/{b}")
+    assert {:ok, %{a: "o", b: "p"}} = Subject.from_iri(m2, "http://xmlns.com/foaf/0.1/orgs/o/people/p")
   end
 
   test "to_iri refuses an empty value with no Ash attribute so it agrees with from_iri" do
-    m = mapping("http://ex/p/{a}")
+    m = mapping("http://xmlns.com/foaf/0.1/p/{a}")
     assert {:error, %Refusal{code: :REFUSED_INVALID_SUBJECT_IRI}} = Subject.to_iri(m, %{a: ""})
-    assert {:error, %Refusal{}} = Subject.from_iri(m, "http://ex/p/")
+    assert {:error, %Refusal{}} = Subject.from_iri(m, "http://xmlns.com/foaf/0.1/p/")
   end
 end

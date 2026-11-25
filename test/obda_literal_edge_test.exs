@@ -52,7 +52,7 @@ defmodule AshR2RML.OBDALiteralEdgeTest do
     end
   end
 
-  @pred "https://example.org/value"
+  @pred "https://schema.org/value"
   @string "http://www.w3.org/2001/XMLSchema#string"
   @select "SELECT ?s ?o WHERE { ?s <#{@pred}> ?o }"
 
@@ -62,8 +62,8 @@ defmodule AshR2RML.OBDALiteralEdgeTest do
        %Resource{
          ash_resource: Blob,
          logical_table: %LogicalTable{table_name: "blobs"},
-         subject_map: %SubjectMap{strategy: :template, value: "https://example.org/blob/{title}", term_type: :iri},
-         class_iris: ["https://example.org/Thing"],
+         subject_map: %SubjectMap{strategy: :template, value: "urn:uuid:{title}", term_type: :iri},
+         class_iris: ["https://schema.org/Thing"],
          predicate_object_maps: [
            %PredicateObjectMap{
              attribute: :value,

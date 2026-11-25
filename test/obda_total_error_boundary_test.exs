@@ -43,17 +43,17 @@ defmodule AshR2RML.OBDATotalErrorBoundaryTest do
     use Ash.Resource,
       domain: AshR2RML.OBDATotalErrorBoundaryTest.Domain,
       data_layer: Ash.DataLayer.Ets,
-      extensions: [AshR2RML]
+      extensions: [AshR2RML.Resource]
 
     ets do
       private? true
     end
 
     r2rml do
-      class_iri("https://example.org/PrivateTable")
-      subject_template("https://example.org/PrivateTable/{id}")
       table_name("tb_private")
-      attribute_mappings([{:name, "https://example.org/name"}])
+      class("https://schema.org/Thing")
+      subject(template: "urn:uuid:{id}")
+      property(:name, "https://schema.org/name")
     end
 
     actions do
@@ -70,13 +70,13 @@ defmodule AshR2RML.OBDATotalErrorBoundaryTest do
     use Ash.Resource,
       domain: AshR2RML.OBDATotalErrorBoundaryTest.Domain,
       data_layer: Ash.DataLayer.Ets,
-      extensions: [AshR2RML]
+      extensions: [AshR2RML.Resource]
 
     r2rml do
-      class_iri("https://example.org/Raising")
-      subject_template("https://example.org/Raising/{id}")
       table_name("tb_raising")
-      attribute_mappings([{:name, "https://example.org/name"}])
+      class("https://schema.org/Thing")
+      subject(template: "urn:uuid:{id}")
+      property(:name, "https://schema.org/name")
     end
 
     actions do
@@ -96,13 +96,13 @@ defmodule AshR2RML.OBDATotalErrorBoundaryTest do
     use Ash.Resource,
       domain: AshR2RML.OBDATotalErrorBoundaryTest.Domain,
       data_layer: Ash.DataLayer.Ets,
-      extensions: [AshR2RML]
+      extensions: [AshR2RML.Resource]
 
     r2rml do
-      class_iri("https://example.org/Failing")
-      subject_template("https://example.org/Failing/{id}")
       table_name("tb_failing")
-      attribute_mappings([{:name, "https://example.org/name"}])
+      class("https://schema.org/Thing")
+      subject(template: "urn:uuid:{id}")
+      property(:name, "https://schema.org/name")
     end
 
     actions do
@@ -123,13 +123,13 @@ defmodule AshR2RML.OBDATotalErrorBoundaryTest do
       domain: AshR2RML.OBDATotalErrorBoundaryTest.Domain,
       data_layer: Ash.DataLayer.Ets,
       authorizers: [Ash.Policy.Authorizer],
-      extensions: [AshR2RML]
+      extensions: [AshR2RML.Resource]
 
     r2rml do
-      class_iri("https://example.org/Locked")
-      subject_template("https://example.org/Locked/{id}")
       table_name("tb_locked")
-      attribute_mappings([{:name, "https://example.org/name"}])
+      class("https://schema.org/Thing")
+      subject(template: "urn:uuid:{id}")
+      property(:name, "https://schema.org/name")
     end
 
     policies do
@@ -148,7 +148,7 @@ defmodule AshR2RML.OBDATotalErrorBoundaryTest do
     end
   end
 
-  @sparql "SELECT ?s ?name WHERE { ?s <https://example.org/name> ?name . }"
+  @sparql "SELECT ?s ?name WHERE { ?s <https://schema.org/name> ?name . }"
 
   test "a read that raises becomes a typed refusal naming the raised class, never an exception" do
     # The raise escapes InMemory's rescue as an Ash.Error.Unknown and is classified by the

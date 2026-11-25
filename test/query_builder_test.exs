@@ -133,12 +133,12 @@ defmodule AshR2RML.QueryBuilderTest do
       ash_resource: resource,
       logical_table: %LogicalTable{table_name: "t"},
       subject_map: %SubjectMap{strategy: :template, value: template, term_type: :iri},
-      class_iris: ["https://example.org/C"],
+      class_iris: ["https://schema.org/Thing"],
       identities: [[:id]]
     }
   end
 
-  defp person_mapping, do: mapping(Person, "https://example.org/p/{name}")
+  defp person_mapping, do: mapping(Person, "urn:uuid:{name}")
 
   defp create!(resource, params, opts \\ []) do
     resource
@@ -260,7 +260,7 @@ defmodule AshR2RML.QueryBuilderTest do
         create!(TenantDoc, %{title: title}, tenant: tenant)
       end
 
-      mapping = mapping(TenantDoc, "https://example.org/d/{id}")
+      mapping = mapping(TenantDoc, "urn:uuid:{id}")
 
       query =
         QueryBuilder.build_ash_query(mapping, %Plan{needed_attributes: [:title]}, tenant: "A", domain: Domain)
@@ -272,7 +272,7 @@ defmodule AshR2RML.QueryBuilderTest do
       create!(OwnedDoc, %{title: "mine", owner: "me"})
       create!(OwnedDoc, %{title: "theirs", owner: "them"})
 
-      mapping = mapping(OwnedDoc, "https://example.org/o/{id}")
+      mapping = mapping(OwnedDoc, "urn:uuid:{id}")
 
       query =
         QueryBuilder.build_ash_query(mapping, %Plan{needed_attributes: [:title]},

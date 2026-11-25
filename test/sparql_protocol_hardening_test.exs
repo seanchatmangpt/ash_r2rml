@@ -15,8 +15,8 @@ defmodule AshR2RML.SPARQLProtocolHardeningTest do
 
   for endpoint <- [
         "file:///etc/passwd",
-        "ftp://example.org/sparql",
-        "gopher://example.org/",
+        "ftp://93.184.216.34/sparql",
+        "gopher://93.184.216.34/",
         "http://",
         "https:///sparql",
         "not a url",
@@ -204,7 +204,11 @@ defmodule AshR2RML.SPARQLProtocolHardeningTest do
 
   defp graph(n) do
     Enum.reduce(1..n, RDF.Graph.new(), fn i, g ->
-      RDF.Graph.add(g, {RDF.iri("https://example.org/s#{i}"), RDF.iri("https://example.org/p"), RDF.literal(i)})
+      RDF.Graph.add(
+        g,
+        {RDF.iri("urn:uuid:00000000-0000-0000-0000-#{String.pad_leading("#{i}", 12, "0")}"),
+         RDF.iri("https://schema.org/value"), RDF.literal(i)}
+      )
     end)
   end
 

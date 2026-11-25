@@ -111,7 +111,7 @@ defmodule AshR2RML.MixProject do
   end
 
   # File-only list: no directories, no lib/mix/**, no ontop/jdbc/docker.
-  defp package_files do
+  def package_files do
     lib =
       "lib/**/*.ex"
       |> Path.wildcard()

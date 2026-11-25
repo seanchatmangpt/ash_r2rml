@@ -345,8 +345,10 @@ defmodule AshR2RML.SPARQL.Protocol do
   `:follow_redirects` (default 0; a positive integer opts in to redirects, which
   are NOT re-vetted against the private-network guard), and the allowlisted
   SPARQL.Client options `:request_method`, `:protocol_version`,
-  `:accept_header`, `:default_graph`, `:named_graph`, `:raw_mode`. All other
-  options (e.g. `:logger`, `:max_redirects`, `:headers`) are dropped. A 3xx
+  `:accept_header`, `:default_graph`, `:named_graph`, `:raw_mode`, plus
+  `:request_opts`. Any other option (e.g. `:logger`, `:max_redirects`,
+  `:headers`) is refused with `:REFUSED_INVALID_FEDERATION_ENVIRONMENT`
+  (`evidence.unknown_options`), never silently dropped. A 3xx
   response with redirects disabled refuses with
   `:REFUSED_INVALID_FEDERATION_ENVIRONMENT` ("redirects are not followed").
 
@@ -367,7 +369,8 @@ defmodule AshR2RML.SPARQL.Protocol do
   def query(endpoint, query, opts \\ []) when is_binary(endpoint) do
     {allow_private, opts} = Keyword.pop(opts, :allow_private_network, false)
 
-    with :ok <- validate_endpoint(endpoint, allow_private) do
+    with :ok <- validate_options(endpoint, opts),
+         :ok <- validate_endpoint(endpoint, allow_private) do
       client_opts = client_opts(opts)
 
       do_query(
@@ -437,6 +440,24 @@ defmodule AshR2RML.SPARQL.Protocol do
     :raw_mode,
     :max_rows
   ]
+
+  @accepted_opts [:timeout, :follow_redirects, :request_opts] ++ @forwarded_opts
+
+  defp validate_options(endpoint, opts) do
+    case Keyword.keys(opts) -- @accepted_opts do
+      [] ->
+        :ok
+
+      unknown ->
+        {:error,
+         Refusal.new(
+           :REFUSED_INVALID_FEDERATION_ENVIRONMENT,
+           redact_uri_string(endpoint),
+           "unknown SPARQL protocol options are refused, not dropped",
+           %{unknown_options: Enum.uniq(unknown), accepted_options: @accepted_opts}
+         )}
+    end
+  end
 
   @doc false
   # Builds the option list handed to SPARQL.Client. Only allowlisted keys pass;

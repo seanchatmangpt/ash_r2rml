@@ -21,7 +21,7 @@ resource already uses is needed; AshPostgres is not a runtime requirement.
 
 ## Define a resource
 
-Add `AshR2RML` to `extensions:` and describe the mapping in an `r2rml` block.
+Add `AshR2RML.Resource` to `extensions:` and describe the mapping in an `r2rml` block.
 
 ```elixir
 defmodule MyApp.Domain do
@@ -36,15 +36,15 @@ defmodule MyApp.Widget do
   use Ash.Resource,
     domain: MyApp.Domain,
     data_layer: Ash.DataLayer.Ets,
-    extensions: [AshR2RML]
+    extensions: [AshR2RML.Resource]
 
   r2rml do
-    class_iri("https://example.org/Widget")
-    subject_template("https://example.org/Widget/{id}")
+    class_iri("https://schema.org/Thing")
+    subject_template("urn:uuid:{id}")
     table_name("widgets")
 
     attribute_mappings([
-      {:label, "https://example.org/label"}
+      {:label, "https://schema.org/name"}
     ])
   end
 
@@ -76,7 +76,7 @@ returns a typed `AshR2RML.Refusal`.
 mapping.logical_table.table_name
 #=> "widgets"
 mapping.subject_map.value
-#=> "https://example.org/Widget/{id}"
+#=> "urn:uuid:{id}"
 ```
 
 ## Render Turtle
@@ -89,9 +89,9 @@ mapping.subject_map.value
 
 ttl =~ ~s(rr:tableName "widgets")
 #=> true
-ttl =~ "rr:class <https://example.org/Widget>"
+ttl =~ "rr:class <https://schema.org/Thing>"
 #=> true
-ttl =~ "rr:predicate <https://example.org/label>"
+ttl =~ "rr:predicate <https://schema.org/name>"
 #=> true
 ```
 
@@ -111,13 +111,13 @@ widget =
   AshR2RML.OBDA.InMemory.query(
     MyApp.Widget,
     mapping,
-    "SELECT ?s ?l WHERE { ?s a <https://example.org/Widget> ; " <>
-      "<https://example.org/label> ?l . }",
+    "SELECT ?s ?l WHERE { ?s a <https://schema.org/Thing> ; " <>
+      "<https://schema.org/name> ?l . }",
     domain: MyApp.Domain
   )
 
 observation.rows
-#=> [%{"s" => "https://example.org/Widget/#{widget.id}", "l" => "gear"}]
+#=> [%{"s" => "urn:uuid:#{widget.id}", "l" => "gear"}]
 ```
 
 ### Actor and tenant
@@ -126,7 +126,7 @@ For a resource with policies, pass `actor:`; rows the actor may not read never e
 graph. For an attribute-multitenant resource, pass `tenant:`.
 
 ```elixir
-@select "SELECT ?s ?t WHERE { ?s <https://example.org/title> ?t }"
+@select "SELECT ?s ?t WHERE { ?s <https://schema.org/headline> ?t }"
 
 AshR2RML.OBDA.InMemory.query(Note, note_mapping, @select,
   domain: Domain,
@@ -151,12 +151,12 @@ does not re-encode exactly.
 
 ```elixir
 {:ok, iri} = AshR2RML.Subject.to_iri(MyApp.Widget, %{id: "a b"})
-#=> {:ok, "https://example.org/Widget/a%20b"}
+#=> {:ok, "urn:uuid:a%20b"}
 
 AshR2RML.Subject.from_iri(MyApp.Widget, iri)
 #=> {:ok, %{id: "a b"}}
 
-AshR2RML.Subject.from_iri(MyApp.Widget, "https://other.example/x")
+AshR2RML.Subject.from_iri(MyApp.Widget, "urn:sha256:00")
 #=> {:error, %AshR2RML.Refusal{code: :REFUSED_INVALID_TERM_MAP}}
 ```
 

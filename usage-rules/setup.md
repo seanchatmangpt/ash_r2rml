@@ -37,7 +37,7 @@ defmodule MyApp.Person do
   r2rml do
     class "https://schema.org/Person"
 
-    subject template: "https://example.org/people/{id}", term_type: :iri
+    subject template: "urn:uuid:{id}", term_type: :iri
   end
 end
 ```

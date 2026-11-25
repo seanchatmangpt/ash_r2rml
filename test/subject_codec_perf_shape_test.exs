@@ -16,29 +16,28 @@ defmodule AshR2RML.SubjectCodecPerfShapeTest do
     }
   end
 
-  test "repeated round trips are stable and the parsed template is cached" do
-    template = "http://ex.org/perf/{id}/x/{name}"
+  test "repeated round trips are stable and leave no persistent_term cache" do
+    template = "urn:uuid:perf/{id}/x/{name}"
     m = mapping(template)
 
     for _ <- 1..3 do
       assert {:ok, iri} = Subject.to_iri(m, %{id: "a b", name: "n"})
-      assert iri == "http://ex.org/perf/a%20b/x/n"
+      assert iri == "urn:uuid:perf/a%20b/x/n"
       assert {:ok, %{id: "a b", name: "n"}} = Subject.from_iri(m, iri)
     end
 
-    assert [{:lit, "http://ex.org/perf/"}, {:field, :id}, {:lit, "/x/"}, {:field, :name}] =
-             :persistent_term.get({Subject, :segments, template})
+    assert :persistent_term.get({Subject, :segments, template}, nil) == nil
   end
 
   test "refusals are not cached and stay identical" do
-    m = mapping("http://ex.org/{zz_never_an_atom_qq9}")
+    m = mapping("urn:uuid:{zz_never_an_atom_qq9}")
 
     for _ <- 1..2 do
       assert {:error, %AshR2RML.Refusal{code: :REFUSED_INVALID_TERM_MAP}} =
                Subject.to_iri(m, %{id: 1})
     end
 
-    assert :persistent_term.get({Subject, :segments, "http://ex.org/{zz_never_an_atom_qq9}"}, nil) ==
+    assert :persistent_term.get({Subject, :segments, "urn:uuid:{zz_never_an_atom_qq9}"}, nil) ==
              nil
   end
 end

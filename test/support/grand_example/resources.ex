@@ -49,7 +49,7 @@ defmodule AshR2RML.GrandExample.Organization do
   use Ash.Resource,
     domain: AshR2RML.GrandExample.Domain,
     data_layer: Ash.DataLayer.Ets,
-    extensions: [AshR2RML]
+    extensions: [AshR2RML.Resource]
 
   # private?(true): this fixture is shared across obda_in_memory_test.exs,
   # grand_example_e2e_test.exs, zach_post_agi_reactor_test.exs,
@@ -65,14 +65,11 @@ defmodule AshR2RML.GrandExample.Organization do
   end
 
   r2rml do
-    class_iri("https://schema.org/Organization")
-    subject_template("https://schema.org/Organization/{id}")
     table_name("schema_organizations")
-
-    attribute_mappings([
-      {:name, "https://schema.org/name"},
-      {:version, "https://schema.org/version"}
-    ])
+    class("https://schema.org/Organization")
+    subject(template: "https://schema.org/Organization/{id}")
+    property(:name, "https://schema.org/name")
+    property(:version, "https://schema.org/version")
   end
 
   actions do
@@ -96,7 +93,7 @@ defmodule AshR2RML.GrandExample.Person do
   use Ash.Resource,
     domain: AshR2RML.GrandExample.Domain,
     data_layer: Ash.DataLayer.Ets,
-    extensions: [AshR2RML]
+    extensions: [AshR2RML.Resource]
 
   # See AshR2RML.GrandExample.Organization's `ets do private?(true) end` comment.
   ets do
@@ -104,18 +101,12 @@ defmodule AshR2RML.GrandExample.Person do
   end
 
   r2rml do
-    class_iri("https://schema.org/Person")
-    subject_template("https://schema.org/Person/{id}")
     table_name("schema_people")
-
-    attribute_mappings([
-      {:name, "https://schema.org/name"},
-      {:email, "https://schema.org/email"}
-    ])
-
-    relationship_mappings([
-      {:organization, "https://schema.org/memberOf"}
-    ])
+    class("https://schema.org/Person")
+    subject(template: "https://schema.org/Person/{id}")
+    property(:name, "https://schema.org/name")
+    property(:email, "https://schema.org/email")
+    reference(:organization, "https://schema.org/memberOf")
   end
 
   actions do
@@ -148,7 +139,7 @@ defmodule AshR2RML.GrandExample.SemanticManifest do
   use Ash.Resource,
     domain: AshR2RML.GrandExample.Domain,
     data_layer: Ash.DataLayer.Ets,
-    extensions: [AshR2RML]
+    extensions: [AshR2RML.Resource]
 
   # See AshR2RML.GrandExample.Organization's `ets do private?(true) end` comment.
   ets do
@@ -156,15 +147,12 @@ defmodule AshR2RML.GrandExample.SemanticManifest do
   end
 
   r2rml do
-    class_iri("https://schema.org/Dataset")
-    subject_template("https://schema.org/Dataset/{id}")
     table_name("schema_datasets")
-
-    attribute_mappings([
-      {:title, "https://schema.org/headline"},
-      {:status, "https://schema.org/creativeWorkStatus"},
-      {:published_turtle, "https://schema.org/text"}
-    ])
+    class("https://schema.org/Dataset")
+    subject(template: "https://schema.org/Dataset/{id}")
+    property(:title, "https://schema.org/headline")
+    property(:status, "https://schema.org/creativeWorkStatus")
+    property(:published_turtle, "https://schema.org/text")
   end
 
   attributes do
@@ -203,13 +191,10 @@ defmodule AshR2RML.GrandExample.Warehouse do
   resolution rather than the single-column foreign-key case every other fixture here
   already covers.
 
-  Deliberately does **not** use the `AshR2RML` extension/`r2rml` DSL: `VerifyMapping`
-  enforces a real, project-wide invariant that a resource's `subject_template` must
-  contain its physical primary-key placeholder (`{id}`), which is correct for every
-  other fixture here but is exactly the case this composite-key semantic identity
-  (`{region, code}`, not `{id}`) needs to *not* hold -- that is the whole point of a
-  composite natural key. Rather than weakening that invariant (out of this ticket's
-  scope) or fabricating a fake `{id}` placeholder into the template (which would leave
+  Deliberately does **not** use the `AshR2RML.Resource` extension/`r2rml` DSL: this
+  composite natural-key semantic identity (`{region, code}`, not `{id}`) is not the
+  single-placeholder subject template every other fixture here declares. Rather than
+  fabricating a fake `{id}` placeholder into the template (which would leave
   an unsubstituted, invalid IRI fragment once the composite join only substitutes
   `region`/`code`), the test builds this resource's `AshR2RML.Mapping.Resource` by
   hand -- the same pattern `test/obda_in_memory_test.exs`'s "refuses unsupported
@@ -246,9 +231,9 @@ defmodule AshR2RML.GrandExample.Shipment do
   @moduledoc """
   Child resource carrying both halves (`:region`, `:warehouse_code`) of a composite
   foreign key into `Warehouse`'s `{region, code}` natural key. The R2RML DSL's
-  `relationship_mappings` only introspects single-column Ash `belongs_to`
+  `reference` entity only introspects single-column Ash `belongs_to`
   `source_attribute`/`destination_attribute` pairs, so this composite relationship
-  is not declared through that macro -- the test constructs the composite
+  is not declared through that entity -- the test constructs the composite
   `ReferenceObjectMap` by hand against this resource's *real* mapping the same way
   `test/obda_in_memory_test.exs`'s existing hand-built-mapping tests already do,
   while every row still comes from a real `Ash.create!`/`Ash.read!` call.
@@ -256,7 +241,7 @@ defmodule AshR2RML.GrandExample.Shipment do
   use Ash.Resource,
     domain: AshR2RML.GrandExample.Domain,
     data_layer: Ash.DataLayer.Ets,
-    extensions: [AshR2RML]
+    extensions: [AshR2RML.Resource]
 
   # See AshR2RML.GrandExample.Organization's `ets do private?(true) end` comment.
   ets do
@@ -264,13 +249,10 @@ defmodule AshR2RML.GrandExample.Shipment do
   end
 
   r2rml do
-    class_iri("https://schema.org/Shipment")
-    subject_template("https://schema.org/Shipment/{id}")
     table_name("schema_shipments")
-
-    attribute_mappings([
-      {:tracking_number, "https://schema.org/identifier"}
-    ])
+    class("https://schema.org/Shipment")
+    subject(template: "https://schema.org/Shipment/{id}")
+    property(:tracking_number, "https://schema.org/identifier")
   end
 
   actions do

@@ -17,13 +17,13 @@ defmodule AshR2RML.DomainVerifierTest.Org do
   use Ash.Resource,
     domain: AshR2RML.DomainVerifierTest.Domain,
     data_layer: Ash.DataLayer.Ets,
-    extensions: [AshR2RML]
+    extensions: [AshR2RML.Resource]
 
   r2rml do
-    class_iri("https://schema.org/Organization")
-    subject_template("https://schema.org/Organization/{id}")
     table_name("dv_orgs")
-    attribute_mappings([{:name, "https://schema.org/name"}])
+    class("https://schema.org/Organization")
+    subject(template: "urn:uuid:{id}")
+    property(:name, "https://schema.org/name")
   end
 
   actions do
@@ -41,14 +41,14 @@ defmodule AshR2RML.DomainVerifierTest.Member do
   use Ash.Resource,
     domain: AshR2RML.DomainVerifierTest.Domain,
     data_layer: Ash.DataLayer.Ets,
-    extensions: [AshR2RML]
+    extensions: [AshR2RML.Resource]
 
   r2rml do
-    class_iri("https://schema.org/Person")
-    subject_template("https://schema.org/Person/{id}")
     table_name("dv_members")
-    attribute_mappings([{:name, "https://schema.org/name"}])
-    relationship_mappings([{:organization, "https://schema.org/memberOf"}])
+    class("https://schema.org/Person")
+    subject(template: "urn:uuid:{id}")
+    property(:name, "https://schema.org/name")
+    reference(:organization, "https://schema.org/memberOf")
   end
 
   actions do
@@ -80,13 +80,13 @@ defmodule AshR2RML.DomainVerifierTest.RemapParent do
   use Ash.Resource,
     domain: AshR2RML.DomainVerifierTest.RemapDomain,
     data_layer: Ash.DataLayer.Ets,
-    extensions: [AshR2RML]
+    extensions: [AshR2RML.Resource]
 
   r2rml do
-    class_iri("https://schema.org/Organization")
-    subject_template("https://schema.org/Organization/{id}")
     table_name("dv_remap_parents")
-    attribute_mappings([{:name, "https://schema.org/name"}])
+    class("https://schema.org/Organization")
+    subject(template: "urn:uuid:{id}")
+    property(:name, "https://schema.org/name")
   end
 
   actions do
@@ -105,14 +105,14 @@ defmodule AshR2RML.DomainVerifierTest.RemapChild do
   use Ash.Resource,
     domain: AshR2RML.DomainVerifierTest.RemapDomain,
     data_layer: Ash.DataLayer.Ets,
-    extensions: [AshR2RML]
+    extensions: [AshR2RML.Resource]
 
   r2rml do
-    class_iri("https://schema.org/Person")
-    subject_template("https://schema.org/Person/{id}")
     table_name("dv_remap_children")
-    attribute_mappings([{:name, "https://schema.org/name"}])
-    relationship_mappings([{:parent, "https://schema.org/memberOf"}])
+    class("https://schema.org/Person")
+    subject(template: "urn:uuid:{id}")
+    property(:name, "https://schema.org/name")
+    reference(:parent, "https://schema.org/memberOf")
   end
 
   actions do

@@ -12,13 +12,13 @@ defmodule AshR2RML.DeterminismTest.A do
 
   r2rml do
     table_name("det_a")
-    class("https://example.test/ontology/A")
+    class("http://xmlns.com/foaf/0.1/Person")
 
     subject do
-      template("https://example.test/a/{id}")
+      template("urn:uuid:{id}")
     end
 
-    property(:name, "https://example.test/ontology/aName")
+    property(:name, "http://xmlns.com/foaf/0.1/name")
   end
 end
 
@@ -36,14 +36,14 @@ defmodule AshR2RML.DeterminismTest.B do
 
   r2rml do
     table_name("det_b")
-    class("https://example.test/ontology/B")
+    class("https://schema.org/Thing")
 
     subject do
-      template("https://example.test/b/{id}")
+      template("urn:uuid:{id}")
     end
 
-    property(:label, "https://example.test/ontology/bLabel")
-    reference(:a, "https://example.test/ontology/ofA")
+    property(:label, "http://www.w3.org/2000/01/rdf-schema#label")
+    reference(:a, "http://purl.org/dc/terms/isPartOf")
   end
 end
 
@@ -61,14 +61,14 @@ defmodule AshR2RML.DeterminismTest.C do
 
   r2rml do
     table_name("det_c")
-    class("https://example.test/ontology/C")
+    class("http://www.w3.org/ns/org#Organization")
 
     subject do
-      template("https://example.test/c/{id}")
+      template("urn:uuid:{id}")
     end
 
-    property(:note, "https://example.test/ontology/cNote")
-    reference(:b, "https://example.test/ontology/ofB")
+    property(:note, "http://www.w3.org/2004/02/skos/core#note")
+    reference(:b, "http://purl.org/dc/terms/references")
   end
 end
 
@@ -121,7 +121,7 @@ defmodule AshR2RML.DeterminismTest do
     end
   end
 
-  @title_pred "https://example.org/title"
+  @title_pred "http://purl.org/dc/terms/title"
   @string "http://www.w3.org/2001/XMLSchema#string"
 
   defp permutations([]), do: [[]]
@@ -167,7 +167,7 @@ defmodule AshR2RML.DeterminismTest do
       %Resource{
         ash_resource: Item,
         logical_table: %LogicalTable{table_name: "items"},
-        subject_map: %SubjectMap{strategy: :template, value: "https://example.org/items/{id}", term_type: :iri},
+        subject_map: %SubjectMap{strategy: :template, value: "urn:uuid:{id}", term_type: :iri},
         class_iris: [],
         predicate_object_maps: [
           %PredicateObjectMap{

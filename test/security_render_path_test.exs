@@ -49,10 +49,10 @@ defmodule AshR2RML.SecurityRenderPathTest do
 
     r2rml do
       table_name("simple_protected")
-      class("https://example.test/Person")
-      subject template: "https://example.test/person/{id}"
-      property(:name, "https://example.test/name")
-      property(:email, "https://example.test/email")
+      class("http://xmlns.com/foaf/0.1/Person")
+      subject template: "urn:uuid:{id}"
+      property(:name, "http://xmlns.com/foaf/0.1/name")
+      property(:email, "http://xmlns.com/foaf/0.1/mbox")
     end
   end
 
@@ -91,10 +91,10 @@ defmodule AshR2RML.SecurityRenderPathTest do
 
     r2rml do
       table_name("ets_protected")
-      class("https://example.test/Person")
-      subject template: "https://example.test/ets-person/{id}"
-      property(:name, "https://example.test/name")
-      property(:email, "https://example.test/email")
+      class("http://xmlns.com/foaf/0.1/Person")
+      subject template: "urn:uuid:{id}"
+      property(:name, "http://xmlns.com/foaf/0.1/name")
+      property(:email, "http://xmlns.com/foaf/0.1/mbox")
     end
   end
 
@@ -120,9 +120,9 @@ defmodule AshR2RML.SecurityRenderPathTest do
 
     r2rml do
       table_name("sensitive_subjects")
-      class("https://example.test/Citizen")
-      subject template: "https://example.test/citizen/{national_id}"
-      property(:name, "https://example.test/name")
+      class("https://schema.org/Person")
+      subject template: "urn:uuid:{national_id}"
+      property(:name, "http://xmlns.com/foaf/0.1/name")
     end
   end
 
@@ -135,8 +135,8 @@ defmodule AshR2RML.SecurityRenderPathTest do
     refute Enum.any?(mapping.predicate_object_maps, &(&1.attribute in [:email, :name]))
 
     {:ok, ttl} = AshR2RML.render_r2rml(SimpleProtected)
-    refute ttl =~ "https://example.test/email"
-    refute ttl =~ "https://example.test/name"
+    refute ttl =~ "http://xmlns.com/foaf/0.1/mbox"
+    refute ttl =~ "http://xmlns.com/foaf/0.1/name"
   end
 
   test "ETS layer keeps field-policy attributes (Ash-mediated reads enforce them)" do

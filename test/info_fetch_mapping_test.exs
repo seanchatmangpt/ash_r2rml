@@ -21,10 +21,10 @@ defmodule AshR2RML.InfoFetchMappingTest.Mapped do
 
   r2rml do
     table_name("fetch_mapped")
-    class("http://example.com/Mapped")
+    class("http://schema.org/Thing")
 
     subject do
-      template("http://example.com/m/{id}")
+      template("urn:uuid:{id}")
     end
   end
 

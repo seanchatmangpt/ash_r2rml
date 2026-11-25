@@ -25,19 +25,16 @@ defmodule AshR2RML.DataLayerPortability.Fixture do
         use Ash.Resource,
           domain: unquote(domain),
           data_layer: unquote(data_layer),
-          extensions: [AshR2RML]
+          extensions: [AshR2RML.Resource]
 
         unquote(layer_dsl)
 
         r2rml do
-          class_iri("https://schema.org/Organization")
-          subject_template("https://schema.org/Organization/{id}")
           table_name("schema_organizations")
-
-          attribute_mappings([
-            {:name, "https://schema.org/name"},
-            {:version, "https://schema.org/version"}
-          ])
+          class("https://schema.org/Organization")
+          subject(template: "urn:uuid:{id}")
+          property(:name, "https://schema.org/name")
+          property(:version, "https://schema.org/version")
         end
 
         actions do
@@ -153,13 +150,13 @@ defmodule AshR2RML.DataLayerPortabilityTest do
     results = for {layer, resource} <- @layers, do: {layer, run_layer(resource, ids)}
 
     expected_subjects =
-      ids |> Enum.map(&"https://schema.org/Organization/#{&1}") |> Enum.sort()
+      ids |> Enum.map(&"urn:uuid:#{&1}") |> Enum.sort()
 
     expected_rows =
       ids
       |> Enum.zip(@seed)
       |> Enum.map(fn {id, {name, version}} ->
-        %{"s" => "https://schema.org/Organization/#{id}", "name" => name, "version" => version}
+        %{"s" => "urn:uuid:#{id}", "name" => name, "version" => version}
       end)
       |> Enum.sort_by(& &1["s"])
 

@@ -22,8 +22,8 @@ defmodule AshR2RML.OBDA.InMemoryCloakTest do
   defmodule Vault do
     @moduledoc false
 
-    def encrypt!(value) when is_binary(value), do: "ash-r2rml-cipher:" <> value
-    def decrypt!("ash-r2rml-cipher:" <> value), do: value
+    def encrypt!(value) when is_binary(value), do: "test-cipher:" <> value
+    def decrypt!("test-cipher:" <> value), do: value
   end
 
   defmodule Domain do
@@ -67,14 +67,14 @@ defmodule AshR2RML.OBDA.InMemoryCloakTest do
       logical_table: %LogicalTable{table_name: "secret_records"},
       subject_map: %SubjectMap{
         strategy: :template,
-        value: "https://example.org/records/{id}",
+        value: "urn:uuid:{id}",
         term_type: :iri
       },
-      class_iris: ["https://example.org/SecretRecord"],
+      class_iris: ["https://schema.org/Thing"],
       predicate_object_maps: [
         %PredicateObjectMap{
           attribute: :name,
-          predicate_iri: "https://example.org/name",
+          predicate_iri: "https://schema.org/name",
           object_map: %ObjectMap{
             strategy: :column,
             value: "name",
@@ -86,7 +86,7 @@ defmodule AshR2RML.OBDA.InMemoryCloakTest do
         },
         %PredicateObjectMap{
           attribute: :secret,
-          predicate_iri: "https://example.org/secret",
+          predicate_iri: "https://schema.org/description",
           object_map: %ObjectMap{
             strategy: :column,
             value: "secret",
@@ -141,9 +141,9 @@ defmodule AshR2RML.OBDA.InMemoryCloakTest do
 
     assert {:ok, graph} = InMemory.materialize(SecretRecord, mapping(), domain: Domain)
 
-    subject = RDF.iri("https://example.org/records/#{record.id}")
-    name_predicate = RDF.iri("https://example.org/name")
-    secret_predicate = RDF.iri("https://example.org/secret")
+    subject = RDF.iri("urn:uuid:#{record.id}")
+    name_predicate = RDF.iri("https://schema.org/name")
+    secret_predicate = RDF.iri("https://schema.org/description")
 
     assert RDF.Graph.include?(graph, {subject, name_predicate, RDF.literal("Cloaked Record")})
 
@@ -155,7 +155,7 @@ defmodule AshR2RML.OBDA.InMemoryCloakTest do
              InMemory.query(
                SecretRecord,
                mapping(),
-               "SELECT ?secret WHERE { ?s <https://example.org/secret> ?secret }",
+               "SELECT ?secret WHERE { ?s <https://schema.org/description> ?secret }",
                domain: Domain
              )
 
@@ -167,7 +167,7 @@ defmodule AshR2RML.OBDA.InMemoryCloakTest do
              InMemory.query(
                SecretRecord,
                mapping(),
-               "SELECT ?name WHERE { ?s <https://example.org/name> ?name }",
+               "SELECT ?name WHERE { ?s <https://schema.org/name> ?name }",
                domain: Domain
              )
 

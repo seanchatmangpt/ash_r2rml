@@ -14,17 +14,17 @@ defmodule Mix.Tasks.AshR2rml.RenderTest.Org do
   use Ash.Resource,
     domain: Mix.Tasks.AshR2rml.RenderTest.Dom,
     data_layer: Ash.DataLayer.Ets,
-    extensions: [AshR2RML]
+    extensions: [AshR2RML.Resource]
 
   ets do
     private? true
   end
 
   r2rml do
-    class_iri("https://schema.org/Organization")
-    subject_template("https://schema.org/Organization/{id}")
     table_name("render_orgs")
-    attribute_mappings([{:name, "https://schema.org/name"}])
+    class("https://schema.org/Organization")
+    subject(template: "urn:uuid:{id}")
+    property(:name, "https://schema.org/name")
   end
 
   actions do

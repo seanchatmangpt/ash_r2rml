@@ -26,10 +26,10 @@ defmodule AshR2RML.DslOptionsCoverageTest do
 
     r2rml do
       table_name("const_subjects")
-      class("https://example.test/Singleton")
+      class("https://schema.org/Thing")
 
       subject do
-        constant("https://example.test/thing/the-one")
+        constant("urn:uuid:00000000-0000-4000-8000-000000000001")
       end
 
       property(:name, "https://schema.org/name")
@@ -46,7 +46,7 @@ defmodule AshR2RML.DslOptionsCoverageTest do
 
     r2rml do
       table_name("bnode_templated")
-      class("https://example.test/Anon")
+      class("http://xmlns.com/foaf/0.1/Person")
 
       subject do
         template("anon_{id}")
@@ -67,7 +67,7 @@ defmodule AshR2RML.DslOptionsCoverageTest do
 
     r2rml do
       table_name("bnode_default")
-      class("https://example.test/Anon")
+      class("http://xmlns.com/foaf/0.1/Person")
 
       subject do
         term_type(:blank_node)
@@ -93,20 +93,23 @@ defmodule AshR2RML.DslOptionsCoverageTest do
 
     r2rml do
       table_name("property_maps")
-      class("https://example.test/PropertyMaps")
+      class("https://schema.org/Thing")
 
       subject do
-        template("https://example.test/pm/{id}")
+        template("urn:uuid:{id}")
       end
 
-      property(:kind, "https://example.test/kind", constant: "https://example.test/Kind/fixed", term_type: :iri)
+      property(:kind, "https://schema.org/additionalType",
+        constant: "http://xmlns.com/foaf/0.1/Document",
+        term_type: :iri
+      )
 
-      property(:slug, "https://example.test/slugIri", template: "https://example.test/slug/{slug}", term_type: :iri)
+      property(:slug, "https://schema.org/sameAs", template: "urn:uuid:{slug}", term_type: :iri)
 
-      property(:homepage, "https://example.test/homepage", term_type: :iri)
-      property(:anchor, "https://example.test/anchor", term_type: :blank_node)
-      property(:note, "https://example.test/note", constant: "fixed")
-      property(:label, "https://example.test/label", language_column: :label_lang)
+      property(:homepage, "http://xmlns.com/foaf/0.1/homepage", term_type: :iri)
+      property(:anchor, "https://schema.org/about", term_type: :blank_node)
+      property(:note, "http://www.w3.org/2004/02/skos/core#note", constant: "fixed")
+      property(:label, "http://www.w3.org/2000/01/rdf-schema#label", language_column: :label_lang)
     end
   end
 
@@ -120,13 +123,13 @@ defmodule AshR2RML.DslOptionsCoverageTest do
 
     r2rml do
       table_name("graph_subjects")
-      class("https://example.test/Graphed")
+      class("https://schema.org/Thing")
 
       subject do
-        template("https://example.test/graphed/{id}")
+        template("urn:uuid:{id}")
       end
 
-      graph("https://example.test/graph/g1", scope: :subject)
+      graph("urn:uuid:00000000-0000-4000-8000-0000000000a1", scope: :subject)
       property(:name, "https://schema.org/name")
     end
   end
@@ -141,10 +144,10 @@ defmodule AshR2RML.DslOptionsCoverageTest do
 
     r2rml do
       table_name("parents")
-      class("https://example.test/Parent")
+      class("http://www.w3.org/ns/org#Organization")
 
       subject do
-        template("https://example.test/parent/{id}")
+        template("urn:uuid:{id}")
       end
 
       property(:name, "https://schema.org/name")
@@ -164,16 +167,16 @@ defmodule AshR2RML.DslOptionsCoverageTest do
 
     r2rml do
       table_name("children")
-      class("https://example.test/Child")
+      class("http://xmlns.com/foaf/0.1/Person")
 
       subject do
-        template("https://example.test/child/{id}")
+        template("urn:uuid:{id}")
       end
 
-      reference(:parent, "https://example.test/hasParent",
+      reference(:parent, "http://purl.org/dc/terms/isPartOf",
         direction: :incoming,
-        guard_class: "https://example.test/Guard",
-        inverse_predicate: "https://example.test/hasChild"
+        guard_class: "https://schema.org/Organization",
+        inverse_predicate: "http://purl.org/dc/terms/hasPart"
       )
     end
   end
@@ -188,10 +191,10 @@ defmodule AshR2RML.DslOptionsCoverageTest do
 
     r2rml do
       table_name("query_forms")
-      class("https://example.test/Queried")
+      class("https://schema.org/Thing")
 
       subject do
-        template("https://example.test/queried/{id}")
+        template("urn:uuid:{id}")
       end
 
       property(:name, "https://schema.org/name")
@@ -205,7 +208,7 @@ defmodule AshR2RML.DslOptionsCoverageTest do
 
       query :describe_queried do
         form(:describe)
-        where [{:s, "http://www.w3.org/1999/02/22-rdf-syntax-ns#type", "https://example.test/Queried"}]
+        where [{:s, "http://www.w3.org/1999/02/22-rdf-syntax-ns#type", "https://schema.org/Thing"}]
       end
     end
   end
@@ -220,7 +223,7 @@ defmodule AshR2RML.DslOptionsCoverageTest do
   test "subject constant: compiles to a constant IRI subject map and renders rr:constant" do
     mapping = Info.mapping!(ConstSubject)
 
-    assert %SubjectMap{strategy: :constant, value: "https://example.test/thing/the-one", term_type: :iri} =
+    assert %SubjectMap{strategy: :constant, value: "urn:uuid:00000000-0000-4000-8000-000000000001", term_type: :iri} =
              mapping.subject_map
 
     assert AshR2RML.Mapping.stable_subject_identity?(mapping)
@@ -228,7 +231,7 @@ defmodule AshR2RML.DslOptionsCoverageTest do
     assert {:ok, ttl} = AshR2RML.render_r2rml(ConstSubject)
 
     assert ttl =~
-             ~s(rr:subjectMap [ rr:constant <https://example.test/thing/the-one>; rr:class <https://example.test/Singleton> ])
+             ~s(rr:subjectMap [ rr:constant <urn:uuid:00000000-0000-4000-8000-000000000001>; rr:class <https://schema.org/Thing> ])
   end
 
   test "constant subject is refused by the in-memory materializer with a typed refusal" do
@@ -242,10 +245,10 @@ defmodule AshR2RML.DslOptionsCoverageTest do
     mapping = Info.mapping!(PropertyMaps)
 
     assert %PredicateObjectMap{
-             predicate_iri: "https://example.test/kind",
+             predicate_iri: "https://schema.org/additionalType",
              object_map: %ObjectMap{
                strategy: :constant,
-               value: "https://example.test/Kind/fixed",
+               value: "http://xmlns.com/foaf/0.1/Document",
                term_type: :iri,
                datatype: nil,
                language: nil
@@ -255,7 +258,7 @@ defmodule AshR2RML.DslOptionsCoverageTest do
     assert {:ok, ttl} = AshR2RML.render_r2rml(PropertyMaps)
 
     assert ttl =~
-             ~s(rr:predicateObjectMap [ rr:predicate <https://example.test/kind>; rr:objectMap [ rr:constant <https://example.test/Kind/fixed>; rr:termType rr:IRI ] ])
+             ~s(rr:predicateObjectMap [ rr:predicate <https://schema.org/additionalType>; rr:objectMap [ rr:constant <http://xmlns.com/foaf/0.1/Document>; rr:termType rr:IRI ] ])
   end
 
   test "property constant: literal keeps the constant strategy and a literal term type" do
@@ -265,19 +268,19 @@ defmodule AshR2RML.DslOptionsCoverageTest do
              property!(mapping, :note).object_map
 
     assert {:ok, ttl} = AshR2RML.render_r2rml(PropertyMaps)
-    assert ttl =~ ~s(rr:predicate <https://example.test/note>; rr:objectMap [ rr:constant "fixed")
+    assert ttl =~ ~s(rr:predicate <http://www.w3.org/2004/02/skos/core#note>; rr:objectMap [ rr:constant "fixed")
   end
 
   test "property template: with term_type :iri compiles to a template object map" do
     mapping = Info.mapping!(PropertyMaps)
 
-    assert %ObjectMap{strategy: :template, value: "https://example.test/slug/{slug}", term_type: :iri} =
+    assert %ObjectMap{strategy: :template, value: "urn:uuid:{slug}", term_type: :iri} =
              property!(mapping, :slug).object_map
 
     assert {:ok, ttl} = AshR2RML.render_r2rml(PropertyMaps)
 
     assert ttl =~
-             ~s(rr:predicate <https://example.test/slugIri>; rr:objectMap [ rr:template "https://example.test/slug/{slug}"; rr:termType rr:IRI ])
+             ~s(rr:predicate <https://schema.org/sameAs>; rr:objectMap [ rr:template "urn:uuid:{slug}"; rr:termType rr:IRI ])
   end
 
   test "property term_type :iri over a column renders the column as an IRI" do
@@ -289,7 +292,7 @@ defmodule AshR2RML.DslOptionsCoverageTest do
     assert {:ok, ttl} = AshR2RML.render_r2rml(PropertyMaps)
 
     assert ttl =~
-             ~s(rr:predicate <https://example.test/homepage>; rr:objectMap [ rr:column "homepage"; rr:termType rr:IRI ])
+             ~s(rr:predicate <http://xmlns.com/foaf/0.1/homepage>; rr:objectMap [ rr:column "homepage"; rr:termType rr:IRI ])
   end
 
   test "property term_type :blank_node over a column renders rr:BlankNode" do
@@ -301,7 +304,7 @@ defmodule AshR2RML.DslOptionsCoverageTest do
     assert {:ok, ttl} = AshR2RML.render_r2rml(PropertyMaps)
 
     assert ttl =~
-             ~s(rr:predicate <https://example.test/anchor>; rr:objectMap [ rr:column "anchor"; rr:termType rr:BlankNode ])
+             ~s(rr:predicate <https://schema.org/about>; rr:objectMap [ rr:column "anchor"; rr:termType rr:BlankNode ])
   end
 
   test "property language_column: records the language column on a literal and renders rr:language" do
@@ -313,7 +316,7 @@ defmodule AshR2RML.DslOptionsCoverageTest do
     assert {:ok, ttl} = AshR2RML.render_r2rml(PropertyMaps)
 
     assert ttl =~
-             ~s(rr:predicate <https://example.test/label>; rr:objectMap [ rr:column "label"; rr:language "label_lang" ])
+             ~s(rr:predicate <http://www.w3.org/2000/01/rdf-schema#label>; rr:objectMap [ rr:column "label"; rr:language "label_lang" ])
   end
 
   test "subject term_type :blank_node with a template renders blank-node subjects" do
@@ -324,7 +327,7 @@ defmodule AshR2RML.DslOptionsCoverageTest do
     assert {:ok, ttl} = AshR2RML.render_r2rml(BNodeTemplated)
 
     assert ttl =~
-             ~s(rr:subjectMap [ rr:template "anon_{id}"; rr:class <https://example.test/Anon>; rr:termType rr:BlankNode ])
+             ~s(rr:subjectMap [ rr:template "anon_{id}"; rr:class <http://xmlns.com/foaf/0.1/Person>; rr:termType rr:BlankNode ])
   end
 
   test "subject term_type :blank_node without a template defaults to bnode_{id}" do
@@ -335,7 +338,7 @@ defmodule AshR2RML.DslOptionsCoverageTest do
     assert {:ok, ttl} = AshR2RML.render_r2rml(BNodeDefault)
 
     assert ttl =~
-             ~s(rr:subjectMap [ rr:template "bnode_{id}"; rr:class <https://example.test/Anon>; rr:termType rr:BlankNode ])
+             ~s(rr:subjectMap [ rr:template "bnode_{id}"; rr:class <http://xmlns.com/foaf/0.1/Person>; rr:termType rr:BlankNode ])
   end
 
   test "blank-node subject is refused by the in-memory materializer with a typed refusal" do
@@ -349,12 +352,14 @@ defmodule AshR2RML.DslOptionsCoverageTest do
     mapping = Info.mapping!(GraphSubject)
 
     assert mapping.graph_maps == []
-    assert [%GraphMap{strategy: :constant, value: "https://example.test/graph/g1"}] = mapping.subject_map.graph_maps
+
+    assert [%GraphMap{strategy: :constant, value: "urn:uuid:00000000-0000-4000-8000-0000000000a1"}] =
+             mapping.subject_map.graph_maps
 
     assert {:ok, ttl} = AshR2RML.render_r2rml(GraphSubject)
 
     assert ttl =~
-             ~s(rr:subjectMap [ rr:template "https://example.test/graphed/{id}"; rr:class <https://example.test/Graphed>; rr:graph <https://example.test/graph/g1> ])
+             ~s(rr:subjectMap [ rr:template "urn:uuid:{id}"; rr:class <https://schema.org/Thing>; rr:graph <urn:uuid:00000000-0000-4000-8000-0000000000a1> ])
   end
 
   test "reference direction: :incoming and guard_class are recorded on the reference IR" do
@@ -362,25 +367,25 @@ defmodule AshR2RML.DslOptionsCoverageTest do
 
     assert [%ReferenceObjectMap{} = reference] = mapping.reference_object_maps
     assert reference.parent_resource == Parent
-    assert reference.predicate_iri == "https://example.test/hasParent"
+    assert reference.predicate_iri == "http://purl.org/dc/terms/isPartOf"
     assert reference.metadata.direction == :incoming
-    assert reference.metadata.guard_class == "https://example.test/Guard"
+    assert reference.metadata.guard_class == "https://schema.org/Organization"
     assert reference.metadata.kind == :belongs_to
     assert [%AshR2RML.Mapping.JoinCondition{child: "parent_id", parent: "id"}] = reference.joins
   end
 
   test "reference inverse_predicate renders the exact inverse triples map with reversed joins" do
     mapping = Info.mapping!(Child)
-    assert [%ReferenceObjectMap{inverse_predicate: "https://example.test/hasChild"}] = mapping.reference_object_maps
+    assert [%ReferenceObjectMap{inverse_predicate: "http://purl.org/dc/terms/hasPart"}] = mapping.reference_object_maps
 
     assert {:ok, ttl} = AshR2RML.render_r2rml(Child)
 
     assert ttl =~
-             ~s(rr:predicateObjectMap [ rr:predicate <https://example.test/hasParent>; rr:objectMap [ rr:parentTriplesMap <#{map_name(Parent)}>; rr:joinCondition [ rr:child "parent_id"; rr:parent "id" ] ] ])
+             ~s(rr:predicateObjectMap [ rr:predicate <http://purl.org/dc/terms/isPartOf>; rr:objectMap [ rr:parentTriplesMap <#{map_name(Parent)}>; rr:joinCondition [ rr:child "parent_id"; rr:parent "id" ] ] ])
 
     assert ttl =~
-             ~s(rr:subjectMap [ rr:template "https://example.test/parent/{id}"; rr:class <https://example.test/Parent> ] ;\n) <>
-               ~s(  rr:predicateObjectMap [ rr:predicate <https://example.test/hasChild>; ) <>
+             ~s(rr:subjectMap [ rr:template "urn:uuid:{id}"; rr:class <http://www.w3.org/ns/org#Organization> ] ;\n) <>
+               ~s(  rr:predicateObjectMap [ rr:predicate <http://purl.org/dc/terms/hasPart>; ) <>
                ~s(rr:objectMap [ rr:parentTriplesMap <#{map_name(Child)}>; rr:joinCondition [ rr:child "id"; rr:parent "parent_id" ] ] ] .)
   end
 
@@ -393,6 +398,6 @@ defmodule AshR2RML.DslOptionsCoverageTest do
            ] = queries
 
     assert construct_where == [{:s, "https://schema.org/name", :n}]
-    assert describe_where == [{:s, @rdf_type, "https://example.test/Queried"}]
+    assert describe_where == [{:s, @rdf_type, "https://schema.org/Thing"}]
   end
 end

@@ -29,10 +29,10 @@ defmodule AshR2RML.Negative.RelationshipNegativeTest do
         logical_table: %Mapping.LogicalTable{table_name: "orders"},
         subject_map: %Mapping.SubjectMap{
           strategy: :template,
-          value: "https://example.org/orders/{id}",
+          value: "urn:uuid:{id}",
           term_type: :iri
         },
-        class_iris: ["https://example.org/ontology/Order"],
+        class_iris: ["https://schema.org/Order"],
         reference_object_maps: [
           %Mapping.ReferenceObjectMap{
             predicate_iri: "",
@@ -56,13 +56,13 @@ defmodule AshR2RML.Negative.RelationshipNegativeTest do
         logical_table: %Mapping.LogicalTable{table_name: "orders"},
         subject_map: %Mapping.SubjectMap{
           strategy: :template,
-          value: "https://example.org/orders/{id}",
+          value: "urn:uuid:{id}",
           term_type: :iri
         },
-        class_iris: ["https://example.org/ontology/Order"],
+        class_iris: ["https://schema.org/Order"],
         reference_object_maps: [
           %Mapping.ReferenceObjectMap{
-            predicate_iri: "https://example.org/ontology/hasCustomer",
+            predicate_iri: "https://schema.org/customer",
             parent_resource: :Customer,
             joins: []
           }
@@ -79,13 +79,13 @@ defmodule AshR2RML.Negative.RelationshipNegativeTest do
         logical_table: %Mapping.LogicalTable{table_name: "orders"},
         subject_map: %Mapping.SubjectMap{
           strategy: :template,
-          value: "https://example.org/orders/{id}",
+          value: "urn:uuid:{id}",
           term_type: :iri
         },
-        class_iris: ["https://example.org/ontology/Order"],
+        class_iris: ["https://schema.org/Order"],
         reference_object_maps: [
           %Mapping.ReferenceObjectMap{
-            predicate_iri: "https://example.org/ontology/hasCustomer",
+            predicate_iri: "https://schema.org/customer",
             parent_resource: :Customer,
             joins: [
               %Mapping.JoinCondition{child: "", parent: "id"}

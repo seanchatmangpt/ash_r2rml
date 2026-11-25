@@ -9,8 +9,8 @@ defmodule AshR2RML.MappingValidationGapsTest do
   alias AshR2RML.Mapping.{Datatype, GraphMap, LogicalTable, ObjectMap, PredicateObjectMap, ReferenceObjectMap}
   alias AshR2RML.Mapping.{JoinCondition, Resource, SubjectMap}
 
-  @class "https://example.test/Thing"
-  @pred "https://example.test/name"
+  @class "https://schema.org/Thing"
+  @pred "https://schema.org/name"
   @xsd "http://www.w3.org/2001/XMLSchema#string"
 
   defp base(opts) do
@@ -21,7 +21,7 @@ defmodule AshR2RML.MappingValidationGapsTest do
       subject_map:
         Keyword.get(opts, :subject_map, %SubjectMap{
           strategy: :template,
-          value: "https://example.test/things/{id}",
+          value: "urn:uuid:{id}",
           term_type: :iri
         }),
       identities: [[:id]],
@@ -62,7 +62,7 @@ defmodule AshR2RML.MappingValidationGapsTest do
     end
 
     test "positive control: absolute constant IRI validates" do
-      obj = %ObjectMap{strategy: :constant, value: "https://example.test/v", term_type: :iri}
+      obj = %ObjectMap{strategy: :constant, value: "https://schema.org/v", term_type: :iri}
       assert :ok = Mapping.validate(base(pom: [pom(obj)]))
     end
   end
@@ -96,7 +96,7 @@ defmodule AshR2RML.MappingValidationGapsTest do
 
     test "positive control: same attribute with different predicates validates" do
       obj = %ObjectMap{strategy: :column, value: "name"}
-      other = pom(obj, predicate: "https://example.test/label")
+      other = pom(obj, predicate: "http://www.w3.org/2000/01/rdf-schema#label")
       assert :ok = Mapping.validate(base(pom: [pom(obj), other]))
     end
 
@@ -115,7 +115,7 @@ defmodule AshR2RML.MappingValidationGapsTest do
     end
 
     test "positive control: distinct predicates do not trip the duplicate check" do
-      result = Mapping.validate(base(refs: [ref(@pred), ref("https://example.test/other")]))
+      result = Mapping.validate(base(refs: [ref(@pred), ref("http://purl.org/dc/terms/title")]))
       refute :REFUSED_AMBIGUOUS_RELATIONSHIP in codes(result)
     end
   end
@@ -135,7 +135,7 @@ defmodule AshR2RML.MappingValidationGapsTest do
   describe "6. IRIREF characters" do
     test "refuses forbidden characters in class, predicate, graph, datatype and constants" do
       for ch <- [" ", "<", ">", "\"", "{", "}", "|", "^", "`", "\\", "\n", <<0>>] do
-        bad = "https://example.test/a" <> ch <> "b"
+        bad = "https://schema.org/a" <> ch <> "b"
         obj = %ObjectMap{strategy: :column, value: "name"}
 
         assert :REFUSED_INVALID_CLASS_IRI in codes(Mapping.validate(base(class_iris: [bad]))), inspect(ch)
@@ -155,7 +155,7 @@ defmodule AshR2RML.MappingValidationGapsTest do
     end
 
     test "positive control: clean absolute IRIs with percent-encoding validate" do
-      iri = "https://example.test/a%20b?q=1#frag"
+      iri = "https://schema.org/a%20b?q=1#frag"
       gm = [%GraphMap{strategy: :constant, value: iri}]
       assert :ok = Mapping.validate(base(class_iris: [iri], graph_maps: gm))
     end

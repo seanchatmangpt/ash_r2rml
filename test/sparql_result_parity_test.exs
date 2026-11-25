@@ -8,13 +8,15 @@ defmodule AshR2RML.SPARQLResultParityTest do
   alias AshR2RML.{Parity, Refusal}
   alias AshR2RML.SPARQL.{Local, Protocol, Result}
 
-  @p "https://example.org/p"
-  @q "urn:q"
+  @p "https://schema.org/name"
+  @q "http://purl.org/dc/terms/title"
+  @a "urn:uuid:00000000-0000-0000-0000-00000000000a"
+  @b "urn:uuid:00000000-0000-0000-0000-00000000000b"
 
   defp graph do
     RDF.Graph.new([
-      {RDF.iri("https://example.org/a"), RDF.iri(@p), RDF.literal("one")},
-      {RDF.iri("https://example.org/b"), RDF.iri(@p), RDF.literal("two")}
+      {RDF.iri(@a), RDF.iri(@p), RDF.literal("one")},
+      {RDF.iri(@b), RDF.iri(@p), RDF.literal("two")}
     ])
   end
 
@@ -77,10 +79,11 @@ defmodule AshR2RML.SPARQLResultParityTest do
     test "bindings, boolean, and rdf shapes" do
       select = %SPARQL.Query.Result{
         variables: ["x"],
-        results: [%{"x" => RDF.literal(7), "?y" => RDF.iri("urn:y")}]
+        results: [%{"x" => RDF.literal(7), "?y" => RDF.iri("urn:uuid:00000000-0000-0000-0000-00000000000c")}]
       }
 
-      assert Result.normalize(select) == {:ok, :bindings, [%{"x" => 7, "y" => "urn:y"}]}
+      assert Result.normalize(select) ==
+               {:ok, :bindings, [%{"x" => 7, "y" => "urn:uuid:00000000-0000-0000-0000-00000000000c"}]}
 
       assert Result.normalize(%SPARQL.Query.Result{results: false}) ==
                {:ok, :boolean, [%{"ask" => false}]}
@@ -88,8 +91,8 @@ defmodule AshR2RML.SPARQLResultParityTest do
       assert {:ok, :rdf, rows} = Result.normalize(graph())
 
       assert Enum.sort_by(rows, & &1["subject"]) == [
-               %{"subject" => "https://example.org/a", "predicate" => @p, "object" => "one"},
-               %{"subject" => "https://example.org/b", "predicate" => @p, "object" => "two"}
+               %{"subject" => @a, "predicate" => @p, "object" => "one"},
+               %{"subject" => @b, "predicate" => @p, "object" => "two"}
              ]
     end
   end
@@ -153,8 +156,8 @@ defmodule AshR2RML.SPARQLResultParityTest do
       assert obs.query_form == :construct
 
       assert Enum.sort_by(obs.rows, & &1["subject"]) == [
-               %{"subject" => "https://example.org/a", "predicate" => @q, "object" => "one"},
-               %{"subject" => "https://example.org/b", "predicate" => @q, "object" => "two"}
+               %{"subject" => @a, "predicate" => @q, "object" => "one"},
+               %{"subject" => @b, "predicate" => @q, "object" => "two"}
              ]
 
       assert obs.result_sha256 == Result.hash_rows(Enum.reverse(obs.rows))
@@ -165,7 +168,7 @@ defmodule AshR2RML.SPARQLResultParityTest do
     test "success path parses SPARQL JSON results" do
       body =
         ~s({"head":{"vars":["s","o"]},"results":{"bindings":[) <>
-          ~s({"s":{"type":"uri","value":"http://example.org/a"},"o":{"type":"literal","value":"hi"}}]}})
+          ~s({"s":{"type":"uri","value":"urn:uuid:00000000-0000-0000-0000-00000000000a"},"o":{"type":"literal","value":"hi"}}]}})
 
       url = serve_once("200 OK", body)
 
@@ -175,7 +178,7 @@ defmodule AshR2RML.SPARQLResultParityTest do
       assert obs.strategy == :protocol
       assert obs.endpoint == url
       assert obs.result_kind == :bindings
-      assert obs.rows == [%{"s" => "http://example.org/a", "o" => "hi"}]
+      assert obs.rows == [%{"s" => @a, "o" => "hi"}]
       assert obs.result_sha256 == Result.hash_rows(obs.rows)
       assert obs.standing == :observed_remote_query
       assert obs.evidence_kind == :sparql_protocol
@@ -196,7 +199,7 @@ defmodule AshR2RML.SPARQLResultParityTest do
       end
 
       assert {:ok, obs} =
-               Protocol.query_with("http://example.org/sparql", "SELECT ?x WHERE { ?s ?p ?x }", [], client)
+               Protocol.query_with("http://127.0.0.1/sparql", "SELECT ?x WHERE { ?s ?p ?x }", [], client)
 
       assert obs.rows == [%{"x" => 1}]
       assert obs.standing == :test_double_only
@@ -206,7 +209,7 @@ defmodule AshR2RML.SPARQLResultParityTest do
     test "client error passes through and max_rows refuses" do
       failing = fn _, _, _ -> {:error, :boom} end
       q = "SELECT ?x WHERE { ?s ?p ?x }"
-      assert Protocol.query_with("http://e.org/s", q, [], failing) == {:error, :boom}
+      assert Protocol.query_with("http://127.0.0.1/s", q, [], failing) == {:error, :boom}
 
       two = fn _, _, _ ->
         {:ok,
@@ -217,7 +220,7 @@ defmodule AshR2RML.SPARQLResultParityTest do
       end
 
       assert {:error, %Refusal{code: :REFUSED_RESOURCE_BOUND}} =
-               Protocol.query_with("http://e.org/s", q, [max_rows: 1], two)
+               Protocol.query_with("http://127.0.0.1/s", q, [max_rows: 1], two)
     end
   end
 end

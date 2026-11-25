@@ -22,10 +22,10 @@ defmodule AshR2RML.RenderersIriEscapeTest do
 
     r2rml do
       table_name("iri_entities")
-      class("https://example.test/Thing")
-      subject template: "https://example.test/thing/{id}"
-      property(:label, "https://example.test/label")
-      property(:slug, "https://example.test/slug")
+      class("http://xmlns.com/foaf/0.1/Person")
+      subject template: "urn:uuid:{id}"
+      property(:label, "http://www.w3.org/2000/01/rdf-schema#label")
+      property(:slug, "http://purl.org/dc/terms/identifier")
     end
   end
 
@@ -42,14 +42,14 @@ defmodule AshR2RML.RenderersIriEscapeTest do
 
   test "baseline mapping renders" do
     assert {:ok, ttl} = render(mapping())
-    assert ttl =~ "<https://example.test/label>"
+    assert ttl =~ "<http://www.w3.org/2000/01/rdf-schema#label>"
   end
 
   for bad <- ["a b", "a>b", "a\"b", "a{b", "a}b", "a|b", "a^b", "a`b", "a\\b", "a\nb", "a\x01b"] do
     test "predicate IRI #{inspect(bad)} is refused" do
       m = mapping()
       [first | rest] = m.predicate_object_maps
-      m = %{m | predicate_object_maps: [%{first | predicate_iri: "https://example.test/" <> unquote(bad)} | rest]}
+      m = %{m | predicate_object_maps: [%{first | predicate_iri: "http://purl.org/dc/terms/" <> unquote(bad)} | rest]}
 
       assert %Refusal{code: code} = refused(render(m))
       assert code in [:REFUSED_INVALID_TERM_MAP, :REFUSED_RELATIONSHIP_WITHOUT_PREDICATE]
@@ -57,13 +57,13 @@ defmodule AshR2RML.RenderersIriEscapeTest do
   end
 
   test "class IRI with an injection payload is refused" do
-    m = %{mapping() | class_iris: ["https://example.test/X> ; rr:foo <https://evil"]}
+    m = %{mapping() | class_iris: ["http://xmlns.com/foaf/0.1/X> ; rr:foo <http://xmlns.com/foaf/0.1/Y"]}
     assert %Refusal{code: code} = refused(render(m))
     assert code in [:REFUSED_INVALID_TERM_MAP, :REFUSED_INVALID_CLASS_IRI]
   end
 
   test "graph constant IRI with a space is refused" do
-    m = %{mapping() | graph_maps: [%GraphMap{strategy: :constant, value: "https://example.test/g h"}]}
+    m = %{mapping() | graph_maps: [%GraphMap{strategy: :constant, value: "http://purl.org/dc/terms/g h"}]}
     assert %Refusal{code: code} = refused(render(m))
     assert code in [:REFUSED_INVALID_TERM_MAP, :REFUSED_INVALID_GRAPH_MAP]
   end

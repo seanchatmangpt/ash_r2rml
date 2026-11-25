@@ -32,7 +32,7 @@ defmodule AshR2RML.SparkFeaturesTest do
       class("https://schema.org/FragmentThing")
 
       subject do
-        template("https://example.org/fragment/{id}")
+        template("urn:uuid:{id}")
       end
     end
   end

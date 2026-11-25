@@ -71,8 +71,8 @@ defmodule AshR2RML.ActionQueryTest do
        %Resource{
          ash_resource: Thing,
          logical_table: %LogicalTable{table_name: "thing"},
-         subject_map: %SubjectMap{strategy: :template, value: "https://ex.org/thing/{code}"},
-         class_iris: ["https://ex.org/Thing"],
+         subject_map: %SubjectMap{strategy: :template, value: "urn:uuid:{code}"},
+         class_iris: ["https://schema.org/Thing"],
          identities: [[:code]],
          predicate_object_maps: [
            %PredicateObjectMap{

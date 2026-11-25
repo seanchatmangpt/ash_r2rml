@@ -50,7 +50,7 @@ defmodule AshPostgresFixture.MerchantAccount do
     domain: AshPostgresFixture.Domain,
     data_layer: AshPostgres.DataLayer,
     authorizers: [Ash.Policy.Authorizer],
-    extensions: [AshR2RML]
+    extensions: [AshR2RML.Resource]
 
   postgres do
     table "ash_postgres_fixture_merchant_accounts"
@@ -58,14 +58,11 @@ defmodule AshPostgresFixture.MerchantAccount do
   end
 
   r2rml do
-    class_iri("https://schema.org/MerchantAccount")
-    subject_template("https://finance.fortune5.com/merchant-accounts/{id}")
     table_name("ash_postgres_fixture_merchant_accounts")
-
-    attribute_mappings([
-      {:display_name, "https://schema.org/name"},
-      {:secret_key, "https://w3id.org/fortune5/ontology#apiKeySecret"}
-    ])
+    class("https://schema.org/MerchantAccount")
+    subject(template: "urn:uuid:{id}")
+    property(:display_name, "https://schema.org/name")
+    property(:secret_key, "https://schema.org/apiKeySecret")
   end
 
   attributes do

@@ -68,7 +68,8 @@ defmodule AshR2RML.SubjectIriRoundtripTest do
     end
   end
 
-  @ex "http://ex.org/"
+  @ex "urn:uuid:"
+  @thing "https://schema.org/Thing"
   @rdf_type "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
 
   defp mapping(resource, template, strategy \\ :template) do
@@ -76,7 +77,7 @@ defmodule AshR2RML.SubjectIriRoundtripTest do
       ash_resource: resource,
       logical_table: %LogicalTable{table_name: Atom.to_string(resource)},
       subject_map: %SubjectMap{strategy: strategy, value: template},
-      class_iris: [@ex <> "Thing"]
+      class_iris: [@thing]
     }
   end
 
@@ -90,7 +91,7 @@ defmodule AshR2RML.SubjectIriRoundtripTest do
   end
 
   defp emitted_subjects(resource, mapping) do
-    sparql = "SELECT ?s WHERE { ?s <#{@rdf_type}> <#{@ex}Thing> }"
+    sparql = "SELECT ?s WHERE { ?s <#{@rdf_type}> <#{@thing}> }"
     assert {:ok, obs} = InMemory.query(resource, mapping, sparql, domain: Dom)
     obs.rows |> Enum.map(& &1["s"]) |> Enum.sort()
   end
@@ -169,7 +170,7 @@ defmodule AshR2RML.SubjectIriRoundtripTest do
   end
 
   test "literal mismatch refuses" do
-    refused(Subject.from_iri(item_mapping(), "http://other.org/item/x"), :REFUSED_INVALID_TERM_MAP)
+    refused(Subject.from_iri(item_mapping(), "urn:sha256:item/x"), :REFUSED_INVALID_TERM_MAP)
     refused(Subject.from_iri(member_mapping(), @ex <> "orgs/acme/staff/p1"), :REFUSED_INVALID_TERM_MAP)
     refused(Subject.from_iri(item_mapping(), @ex <> "item/x/trailing"), :REFUSED_INVALID_TERM_MAP)
   end

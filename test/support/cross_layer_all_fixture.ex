@@ -53,19 +53,16 @@ defmodule AshR2RML.CrossLayerEquivalenceAll.Fixture do
         use Ash.Resource,
           domain: unquote(domain),
           data_layer: unquote(data_layer),
-          extensions: [AshR2RML]
+          extensions: [AshR2RML.Resource]
 
         unquote(layer_dsl)
 
         r2rml do
-          class_iri("https://ex.org/Person")
-          subject_template("https://ex.org/person/{pid}")
           table_name("xl_people")
-
-          attribute_mappings([
-            {:name, "https://schema.org/name"},
-            {:age, "https://schema.org/age"}
-          ])
+          class("http://xmlns.com/foaf/0.1/Person")
+          subject(template: "urn:uuid:{pid}")
+          property(:name, "https://schema.org/name")
+          property(:age, "https://schema.org/age")
         end
 
         unquote(actions)

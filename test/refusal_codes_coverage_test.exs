@@ -32,34 +32,6 @@ defmodule AshR2RML.RefusalCodesCoverageTest do
     end
   end
 
-  defmodule LegacyGhost do
-    use Ash.Resource, domain: nil, data_layer: Ash.DataLayer.Ets
-
-    attributes do
-      uuid_primary_key :id
-    end
-
-    actions do
-      defaults [:read]
-    end
-
-    def __ash_r2rml_mapping__ do
-      %AshR2RML.LegacyMapping{
-        resource: __MODULE__,
-        class_iri: "https://example.org/Ghost",
-        subject_template: "https://example.org/ghost/{id}",
-        logical_table: {:table, "ghosts"},
-        attributes: [
-          %AshR2RML.AttributeMapping{
-            attribute: :no_such_attribute,
-            column: "no_such_attribute",
-            predicate_iri: "https://example.org/p"
-          }
-        ]
-      }
-    end
-  end
-
   defp compile_error_message(source) do
     Code.compile_string(source)
     flunk("expected compilation to fail")
@@ -87,10 +59,10 @@ defmodule AshR2RML.RefusalCodesCoverageTest do
 
       r2rml do
         table_name("things")
-        class("https://example.org/Thing")
+        class("https://schema.org/Thing")
 
         subject do
-          template("https://example.org/thing/{id}")
+          template("urn:uuid:{id}")
         end
 
     #{r2rml_body}
@@ -104,8 +76,8 @@ defmodule AshR2RML.RefusalCodesCoverageTest do
       %Mapping.Resource{
         ash_resource: :CoverageRes,
         logical_table: %Mapping.LogicalTable{table_name: "items"},
-        class_iris: ["https://example.org/Item"],
-        subject_map: %Mapping.SubjectMap{strategy: :template, value: "https://example.org/i/{id}", term_type: :iri},
+        class_iris: ["https://schema.org/Thing"],
+        subject_map: %Mapping.SubjectMap{strategy: :template, value: "urn:uuid:{id}", term_type: :iri},
         identities: [[:id]],
         metadata: %{attribute_columns: %{id: "id", name: "name"}}
       },
@@ -137,7 +109,7 @@ defmodule AshR2RML.RefusalCodesCoverageTest do
       source =
         resource_source(
           "AmbiguousRel",
-          ~s|    property(:name, "https://example.org/name")\n    reference(:ghost, "https://example.org/hasGhost")|
+          ~s|    property(:name, "https://schema.org/name")\n    reference(:ghost, "https://schema.org/knows")|
         )
 
       assert compile_error_message(source) =~ "Ash relationship does not exist"
@@ -145,16 +117,8 @@ defmodule AshR2RML.RefusalCodesCoverageTest do
   end
 
   describe "REFUSED_UNKNOWN_ATTRIBUTE" do
-    test "compatibility adapter refuses a mapping on an attribute the resource lacks" do
-      assert {:error, %Refusal{code: :REFUSED_UNKNOWN_ATTRIBUTE} = refusal} =
-               AshR2RML.Resource.Info.mapping_result(LegacyGhost)
-
-      assert refusal.detail =~ "unknown attribute"
-      assert refusal.subject == {LegacyGhost, :no_such_attribute}
-    end
-
     test "DSL compile refuses a property on an unknown attribute" do
-      source = resource_source("UnknownAttr", ~s|    property(:ghost_attr, "https://example.org/ghost")|)
+      source = resource_source("UnknownAttr", ~s|    property(:ghost_attr, "https://schema.org/alternateName")|)
 
       assert compile_error_message(source) =~ "unknown Ash attribute"
     end
@@ -165,7 +129,7 @@ defmodule AshR2RML.RefusalCodesCoverageTest do
       source =
         resource_source(
           "LangIri",
-          ~s|    property(:name, "https://example.org/name", language: "en", term_type: :iri)|
+          ~s|    property(:name, "https://schema.org/name", language: "en", term_type: :iri)|
         )
 
       assert compile_error_message(source) =~ "language-tagged values must be literal term maps"
@@ -173,9 +137,7 @@ defmodule AshR2RML.RefusalCodesCoverageTest do
 
     test "Mapping.validate refuses an unsupported subject strategy" do
       mapping =
-        base_resource(
-          subject_map: %Mapping.SubjectMap{strategy: :bogus, value: "https://example.org/i/{id}", term_type: :iri}
-        )
+        base_resource(subject_map: %Mapping.SubjectMap{strategy: :bogus, value: "urn:uuid:{id}", term_type: :iri})
 
       found =
         refusal_with(refusals(Mapping.validate(mapping)), :REFUSED_INVALID_TERM_MAP, "unsupported subject strategy")
@@ -189,7 +151,7 @@ defmodule AshR2RML.RefusalCodesCoverageTest do
           predicate_object_maps: [
             %Mapping.PredicateObjectMap{
               attribute: :name,
-              predicate_iri: "https://example.org/name",
+              predicate_iri: "https://schema.org/name",
               object_map: %Mapping.ObjectMap{strategy: :column, value: "", term_type: :literal}
             }
           ]
@@ -209,7 +171,7 @@ defmodule AshR2RML.RefusalCodesCoverageTest do
         base_resource(
           subject_map: %Mapping.SubjectMap{
             strategy: :template,
-            value: "https://example.org/i/{id}",
+            value: "urn:uuid:{id}",
             term_type: :literal
           }
         )
@@ -224,7 +186,7 @@ defmodule AshR2RML.RefusalCodesCoverageTest do
           predicate_object_maps: [
             %Mapping.PredicateObjectMap{
               attribute: :name,
-              predicate_iri: "https://example.org/name",
+              predicate_iri: "https://schema.org/name",
               object_map: %Mapping.ObjectMap{strategy: :column, value: "name", term_type: :bogus}
             }
           ]
@@ -238,12 +200,12 @@ defmodule AshR2RML.RefusalCodesCoverageTest do
         base_resource(
           ash_resource: AshR2RML.GrandExample.Person,
           logical_table: %Mapping.LogicalTable{table_name: "sources"},
-          class_iris: ["https://example.org/Source"],
+          class_iris: ["https://schema.org/Thing"],
           subject_map: %Mapping.SubjectMap{strategy: :blank_node, value: "src", term_type: :blank_node},
           reference_object_maps: [
             %Mapping.ReferenceObjectMap{
               relationship: :targets,
-              predicate_iri: "https://example.org/hasTarget",
+              predicate_iri: "https://schema.org/knows",
               parent_resource: AshR2RML.GrandExample.Organization,
               metadata: %{
                 kind: :many_to_many,
@@ -259,8 +221,8 @@ defmodule AshR2RML.RefusalCodesCoverageTest do
         base_resource(
           ash_resource: AshR2RML.GrandExample.Organization,
           logical_table: %Mapping.LogicalTable{table_name: "targets"},
-          class_iris: ["https://example.org/Target"],
-          subject_map: %Mapping.SubjectMap{strategy: :template, value: "https://example.org/t/{id}", term_type: :iri}
+          class_iris: ["https://schema.org/Thing"],
+          subject_map: %Mapping.SubjectMap{strategy: :template, value: "urn:uuid:{id}", term_type: :iri}
         )
 
       assert {:error, %Refusal{code: :UNSUPPORTED_TERM_TYPE} = refusal} =
@@ -276,7 +238,7 @@ defmodule AshR2RML.RefusalCodesCoverageTest do
 
     test "refuses a non-http scheme" do
       assert {:error, %Refusal{code: :REFUSED_INVALID_FEDERATION_ENVIRONMENT} = refusal} =
-               AshR2RML.SPARQL.Protocol.query("ftp://example.org/sparql", @query)
+               AshR2RML.SPARQL.Protocol.query("ftp://127.0.0.1/sparql", @query)
 
       assert refusal.detail =~ "http or https"
     end
@@ -324,7 +286,7 @@ defmodule AshR2RML.RefusalCodesCoverageTest do
           reference_object_maps: [
             %Mapping.ReferenceObjectMap{
               relationship: :owner,
-              predicate_iri: "https://example.org/owner",
+              predicate_iri: "https://schema.org/author",
               inverse_predicate: "relative-inverse",
               parent_resource: :CoverageRes,
               joins: [%Mapping.JoinCondition{child: "id", parent: "id"}]
@@ -345,7 +307,11 @@ defmodule AshR2RML.RefusalCodesCoverageTest do
       mapping =
         base_resource(
           ash_resource: PlainThing,
-          subject_map: %Mapping.SubjectMap{strategy: :constant, value: "https://example.org/only", term_type: :iri}
+          subject_map: %Mapping.SubjectMap{
+            strategy: :constant,
+            value: "urn:uuid:00000000-0000-0000-0000-000000000001",
+            term_type: :iri
+          }
         )
 
       assert {:error, %Refusal{code: :REFUSED_UNSUPPORTED_SPARQL_FEATURE} = refusal} =

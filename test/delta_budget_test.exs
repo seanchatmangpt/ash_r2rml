@@ -41,21 +41,18 @@ defmodule AshR2RML.DeltaBudgetTest do
     use Ash.Resource,
       domain: AshR2RML.DeltaBudgetTest.BudgetDomain,
       data_layer: Ash.DataLayer.Ets,
-      extensions: [AshR2RML]
+      extensions: [AshR2RML.Resource]
 
     ets do
       private? true
     end
 
     r2rml do
-      class_iri("https://example.org/ontology/BudgetEntity")
-      subject_template("https://example.org/budget/{id}")
       table_name("budget_entities")
-
-      attribute_mappings([
-        {:name, "https://schema.org/name"},
-        {:version, "https://schema.org/version"}
-      ])
+      class("https://schema.org/Thing")
+      subject(template: "urn:uuid:{id}")
+      property(:name, "https://schema.org/name")
+      property(:version, "https://schema.org/version")
     end
 
     actions do
@@ -92,7 +89,7 @@ defmodule AshR2RML.DeltaBudgetTest do
   end
 
   @rdf_type RDF.iri("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
-  @class_iri RDF.iri("https://example.org/ontology/BudgetEntity")
+  @class_iri RDF.iri("https://schema.org/Thing")
   @name_iri RDF.iri("https://schema.org/name")
   @version_iri RDF.iri("https://schema.org/version")
 
@@ -120,7 +117,7 @@ defmodule AshR2RML.DeltaBudgetTest do
     {:ok, new_graph} = InMemory.materialize(BudgetEntity, mapping, domain: BudgetDomain)
     delta = Delta.diff(old_graph, new_graph)
 
-    subject = fn row -> RDF.iri("https://example.org/budget/#{row.id}") end
+    subject = fn row -> RDF.iri("urn:uuid:#{row.id}") end
 
     # added: the created row's full triple set + the updated row's new name triple
     assert {subject.(created), @rdf_type, @class_iri} in delta.added
@@ -183,7 +180,7 @@ defmodule AshR2RML.DeltaBudgetTest do
 
     # added: exactly the created row's 3 triples; nothing removed.
     assert length(delta.added) == 3
-    assert {RDF.iri("https://example.org/budget/#{created.id}"), @name_iri, RDF.literal("delta-wired")} in delta.added
+    assert {RDF.iri("urn:uuid:#{created.id}"), @name_iri, RDF.literal("delta-wired")} in delta.added
     assert delta.removed == []
     assert delta.root_digest == Delta.root_digest(graph)
   end

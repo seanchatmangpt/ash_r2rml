@@ -98,7 +98,7 @@ defmodule AshR2RML.OBDA.InMemorySecurityOptsTest do
     end
   end
 
-  @title_pred "https://example.org/title"
+  @title_pred "https://schema.org/name"
   @string "http://www.w3.org/2001/XMLSchema#string"
   @select "SELECT ?s ?t WHERE { ?s <#{@title_pred}> ?t }"
 
@@ -124,9 +124,9 @@ defmodule AshR2RML.OBDA.InMemorySecurityOptsTest do
     }
   end
 
-  defp guarded_mapping, do: mapping(Guarded, "guarded", "https://example.org/g/{title}")
-  defp plain_mapping, do: mapping(Plain, "plain", "https://example.org/p/{title}")
-  defp tenant_mapping, do: mapping(Tenanted, "tenanted", "https://example.org/t/{title}")
+  defp guarded_mapping, do: mapping(Guarded, "guarded", "urn:uuid:{title}")
+  defp plain_mapping, do: mapping(Plain, "plain", "urn:uuid:{title}")
+  defp tenant_mapping, do: mapping(Tenanted, "tenanted", "urn:uuid:{title}")
 
   defp subjects(observation), do: observation.rows |> Enum.map(&to_string(&1["s"])) |> Enum.sort()
 
@@ -155,11 +155,11 @@ defmodule AshR2RML.OBDA.InMemorySecurityOptsTest do
   describe "authorize? default and explicit false" do
     test "default authorizes: policy admits the allowed actor" do
       assert {:ok, obs} = InMemory.query(Guarded, guarded_mapping(), @select, domain: Domain, actor: %{name: "alice"})
-      assert subjects(obs) == ["https://example.org/g/one"]
+      assert subjects(obs) == ["urn:uuid:one"]
     end
 
     test "default authorizes: policy denies another actor (refusal, no rows)" do
-      assert {:error, %Refusal{code: :REFUSED_UNSUPPORTED_SPARQL_FEATURE}} =
+      assert {:error, %AshR2RML.Error{code: :REFUSED_UNAUTHORIZED, resource: Guarded}} =
                InMemory.query(Guarded, guarded_mapping(), @select, domain: Domain, actor: %{name: "mallory"})
     end
 
@@ -184,7 +184,7 @@ defmodule AshR2RML.OBDA.InMemorySecurityOptsTest do
                  allow_unauthorized: true
                )
 
-      assert subjects(obs) == ["https://example.org/g/one"]
+      assert subjects(obs) == ["urn:uuid:one"]
     end
 
     test "authorize?: true explicitly behaves like the default" do
@@ -195,7 +195,7 @@ defmodule AshR2RML.OBDA.InMemorySecurityOptsTest do
                  actor: %{name: "alice"}
                )
 
-      assert subjects(obs) == ["https://example.org/g/one"]
+      assert subjects(obs) == ["urn:uuid:one"]
     end
   end
 
@@ -213,12 +213,12 @@ defmodule AshR2RML.OBDA.InMemorySecurityOptsTest do
                  actor: %{name: "alice"}
                )
 
-      assert subjects(obs) == ["https://example.org/g/one"]
+      assert subjects(obs) == ["urn:uuid:one"]
     end
 
     test "without the option an authorizer-less resource is readable" do
       assert {:ok, obs} = InMemory.query(Plain, plain_mapping(), @select, domain: Domain)
-      assert subjects(obs) == ["https://example.org/p/one"]
+      assert subjects(obs) == ["urn:uuid:one"]
     end
 
     test "one authorizer-less spec refuses a whole materialize_many" do
@@ -242,17 +242,17 @@ defmodule AshR2RML.OBDA.InMemorySecurityOptsTest do
       assert {:ok, obs} =
                InMemory.query(Tenanted, tenant_mapping(), @select, domain: Domain, require_tenant: true, tenant: "A")
 
-      assert subjects(obs) == ["https://example.org/t/t1"]
+      assert subjects(obs) == ["urn:uuid:t1"]
     end
 
     test "does not affect a non-multitenant resource" do
       assert {:ok, obs} = InMemory.query(Plain, plain_mapping(), @select, domain: Domain, require_tenant: true)
-      assert subjects(obs) == ["https://example.org/p/one"]
+      assert subjects(obs) == ["urn:uuid:one"]
     end
 
     test "without the option a global multitenant resource reads without tenant" do
       assert {:ok, obs} = InMemory.query(Tenanted, tenant_mapping(), @select, domain: Domain)
-      assert subjects(obs) == ["https://example.org/t/t1"]
+      assert subjects(obs) == ["urn:uuid:t1"]
     end
   end
 end

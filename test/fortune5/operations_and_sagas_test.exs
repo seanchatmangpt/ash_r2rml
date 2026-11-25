@@ -357,16 +357,16 @@ defmodule AshR2RML.Fortune5.OperationsAndSagasTest do
     end
   end
 
-  defmodule CRRevokeLegacyKey do
+  defmodule CRRevokePriorKey do
     use Reactor.Step
 
     def run(arguments, _context, _options) do
-      SagaRecorder.record({:run, :cr_revoke_legacy, arguments[:service_name]})
+      SagaRecorder.record({:run, :cr_revoke_prior, arguments[:service_name]})
       {:ok, %{revoked_key_version: "v2_#{arguments[:service_name]}", revoked: true}}
     end
 
     def undo(result, arguments, _context, _options) do
-      SagaRecorder.record({:undo, :cr_revoke_legacy, result.revoked_key_version, arguments[:service_name]})
+      SagaRecorder.record({:undo, :cr_revoke_prior, result.revoked_key_version, arguments[:service_name]})
       :ok
     end
   end
@@ -392,7 +392,7 @@ defmodule AshR2RML.Fortune5.OperationsAndSagasTest do
       wait_for :distribute_key
     end
 
-    step :revoke_legacy, CRRevokeLegacyKey do
+    step :revoke_prior, CRRevokePriorKey do
       argument :service_name, input(:service_name)
       wait_for :verify_auth
     end
@@ -511,7 +511,7 @@ defmodule AshR2RML.Fortune5.OperationsAndSagasTest do
   end
 
   describe "3. Credential Rotation Saga" do
-    test "rotates secrets and revokes legacy keys seamlessly" do
+    test "rotates secrets and revokes prior keys seamlessly" do
       inputs = %{service_name: "auth-gateway", simulate_auth_failure: false}
 
       assert {:ok, result} = Reactor.run(CredentialRotationReactor, inputs)
@@ -524,7 +524,7 @@ defmodule AshR2RML.Fortune5.OperationsAndSagasTest do
                :cr_generate_key,
                :cr_distribute_key,
                :cr_verify_auth,
-               :cr_revoke_legacy
+               :cr_revoke_prior
              ]
     end
 
@@ -535,8 +535,8 @@ defmodule AshR2RML.Fortune5.OperationsAndSagasTest do
 
       events = SagaRecorder.get_events()
 
-      # Legacy key was never revoked
-      refute Enum.any?(events, &match?({:run, :cr_revoke_legacy, _}, &1))
+      # Prior key was never revoked
+      refute Enum.any?(events, &match?({:run, :cr_revoke_prior, _}, &1))
 
       # Failed step compensated
       assert Enum.any?(
@@ -552,7 +552,7 @@ defmodule AshR2RML.Fortune5.OperationsAndSagasTest do
 
       assert :cr_distribute_key in undo_steps
       assert :cr_generate_key in undo_steps
-      refute :cr_revoke_legacy in undo_steps
+      refute :cr_revoke_prior in undo_steps
     end
   end
 end

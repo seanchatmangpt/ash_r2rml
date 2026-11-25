@@ -27,10 +27,10 @@ defmodule AshR2RML.Negative.IdentityNegativeTest do
         logical_table: %Mapping.LogicalTable{table_name: "items"},
         subject_map: %Mapping.SubjectMap{
           strategy: :template,
-          value: "https://example.org/items/{id",
+          value: "urn:uuid:{id",
           term_type: :iri
         },
-        class_iris: ["https://example.org/ontology/Item"]
+        class_iris: ["http://schema.org/Thing"]
       }
 
       refusals = extract_refusals(Mapping.validate(mapping))
@@ -52,10 +52,10 @@ defmodule AshR2RML.Negative.IdentityNegativeTest do
         logical_table: %Mapping.LogicalTable{table_name: "items_a"},
         subject_map: %Mapping.SubjectMap{
           strategy: :template,
-          value: "https://example.org/same_iri/{id}",
+          value: "urn:uuid:{id}",
           term_type: :iri
         },
-        class_iris: ["https://example.org/ontology/Item"]
+        class_iris: ["http://schema.org/Thing"]
       }
 
       res2 = %Mapping.Resource{
@@ -63,10 +63,10 @@ defmodule AshR2RML.Negative.IdentityNegativeTest do
         logical_table: %Mapping.LogicalTable{table_name: "items_b"},
         subject_map: %Mapping.SubjectMap{
           strategy: :template,
-          value: "https://example.org/same_iri/{id}",
+          value: "urn:uuid:{id}",
           term_type: :iri
         },
-        class_iris: ["https://example.org/ontology/Item"]
+        class_iris: ["http://schema.org/Thing"]
       }
 
       bundle = %Mapping.Bundle{

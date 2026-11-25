@@ -18,10 +18,10 @@ defmodule AshR2RML.ApiSurfaceCoverageTest do
 
   defp hand_resource(overrides \\ []) do
     base = %Resource{
-      ash_resource: "urn:test:A",
+      ash_resource: "urn:uuid:00000000-0000-0000-0000-00000000000a",
       logical_table: %LogicalTable{table_name: "a"},
-      subject_map: %SubjectMap{strategy: :template, value: "https://ex.org/a/{id}"},
-      class_iris: ["https://ex.org/A"],
+      subject_map: %SubjectMap{strategy: :template, value: "urn:uuid:{id}"},
+      class_iris: ["https://schema.org/Person"],
       identities: [[:id]],
       metadata: %{attribute_columns: %{id: "id"}}
     }
@@ -137,17 +137,6 @@ defmodule AshR2RML.ApiSurfaceCoverageTest do
              ] = out.refusals
     end
 
-    test "neo4j_postgres witness valid and invalid" do
-      ok = Compiler.attach_parity_witness(receipt!(), :neo4j_postgres, %{verified?: true, receipt_sha256: "n4j"})
-      assert ok.neo4j_postgres_parity == :VERIFIED
-      assert {:parity_witness, :neo4j_postgres, "n4j"} in ok.verified
-      assert ok.query_parity == :UNKNOWN
-
-      bad = Compiler.attach_parity_witness(receipt!(), :neo4j_postgres, %{verified?: true})
-      assert bad.neo4j_postgres_parity == nil
-      assert [%Refusal{code: :REFUSED_UNPROVEN_EQUIVALENCE}] = bad.refusals
-    end
-
     test "authorize_cutover/2 with a valid authority plus parity yields cutover_ready?" do
       out =
         receipt!()
@@ -183,25 +172,35 @@ defmodule AshR2RML.ApiSurfaceCoverageTest do
     test "normalize/1 sorts and dedupes class iris and identities" do
       resource =
         hand_resource(
-          class_iris: ["https://ex.org/B", "https://ex.org/A", "https://ex.org/B"],
+          class_iris: ["https://schema.org/Thing", "https://schema.org/Person", "https://schema.org/Thing"],
           identities: [[:b, :a], [:a, :b], [:id]],
           graph_maps: [
-            %GraphMap{strategy: :constant, value: "https://ex.org/g2"},
-            %GraphMap{strategy: :constant, value: "https://ex.org/g1"},
-            %GraphMap{strategy: :constant, value: "https://ex.org/g1"}
+            %GraphMap{strategy: :constant, value: "urn:uuid:00000000-0000-0000-0000-000000000002"},
+            %GraphMap{strategy: :constant, value: "urn:uuid:00000000-0000-0000-0000-000000000001"},
+            %GraphMap{strategy: :constant, value: "urn:uuid:00000000-0000-0000-0000-000000000001"}
           ]
         )
 
       normalized = Mapping.normalize(resource)
-      assert normalized.class_iris == ["https://ex.org/A", "https://ex.org/B"]
+      assert normalized.class_iris == ["https://schema.org/Person", "https://schema.org/Thing"]
       assert normalized.identities == [[:a, :b], [:id]]
-      assert Enum.map(normalized.graph_maps, & &1.value) == ["https://ex.org/g1", "https://ex.org/g2"]
+
+      assert Enum.map(normalized.graph_maps, & &1.value) == [
+               "urn:uuid:00000000-0000-0000-0000-000000000001",
+               "urn:uuid:00000000-0000-0000-0000-000000000002"
+             ]
+
       assert Mapping.normalize(normalized) == normalized
     end
 
     test "normalize/1 on a bundle orders resources by mapping identity" do
       a = hand_resource()
-      b = hand_resource(class_iris: ["https://ex.org/B"], ash_resource: "urn:test:B")
+
+      b =
+        hand_resource(
+          class_iris: ["https://schema.org/Thing"],
+          ash_resource: "urn:uuid:00000000-0000-0000-0000-00000000000b"
+        )
 
       %Bundle{resources: out} = Mapping.normalize(%Bundle{resources: [a, b]})
       %Bundle{resources: out_rev} = Mapping.normalize(%Bundle{resources: [b, a]})
@@ -237,7 +236,7 @@ defmodule AshR2RML.ApiSurfaceCoverageTest do
     end
 
     test "validate/1 refuses a template column absent from the mapping" do
-      subject = %SubjectMap{strategy: :template, value: "https://ex.org/a/{ghost}"}
+      subject = %SubjectMap{strategy: :template, value: "urn:uuid:{ghost}"}
 
       assert {:error, refusals} = Mapping.validate(hand_resource(subject_map: subject))
       assert :REFUSED_MISSING_SUBJECT_MAP in Enum.map(refusals, & &1.code)
@@ -251,8 +250,8 @@ defmodule AshR2RML.ApiSurfaceCoverageTest do
     test "validate/1 on a bundle refuses a reference to an unmapped parent" do
       ref = %AshR2RML.Mapping.ReferenceObjectMap{
         relationship: :parent,
-        predicate_iri: "https://ex.org/parent",
-        parent_resource: "urn:test:Missing",
+        predicate_iri: "http://www.w3.org/ns/org#memberOf",
+        parent_resource: "urn:uuid:00000000-0000-0000-0000-00000000000c",
         joins: [%JoinCondition{child: "parent_id", parent: "id"}]
       }
 
@@ -263,13 +262,17 @@ defmodule AshR2RML.ApiSurfaceCoverageTest do
     test "subject_identity_columns/1 per strategy" do
       assert Mapping.subject_identity_columns(hand_resource()) == ["id"]
 
-      multi = hand_resource(subject_map: %SubjectMap{strategy: :template, value: "https://ex.org/{b}/{a}/{b}"})
+      multi = hand_resource(subject_map: %SubjectMap{strategy: :template, value: "urn:uuid:{b}-{a}-{b}"})
       assert Mapping.subject_identity_columns(multi) == ["a", "b"]
 
       column = hand_resource(subject_map: %SubjectMap{strategy: :column, value: "uri"})
       assert Mapping.subject_identity_columns(column) == ["uri"]
 
-      constant = hand_resource(subject_map: %SubjectMap{strategy: :constant, value: "https://ex.org/x"})
+      constant =
+        hand_resource(
+          subject_map: %SubjectMap{strategy: :constant, value: "urn:uuid:00000000-0000-0000-0000-0000000000f1"}
+        )
+
       assert Mapping.subject_identity_columns(constant) == []
       assert Mapping.subject_identity_columns(:other) == []
     end
@@ -278,7 +281,11 @@ defmodule AshR2RML.ApiSurfaceCoverageTest do
       assert Mapping.stable_subject_identity?(hand_resource())
       refute Mapping.stable_subject_identity?(hand_resource(identities: [[:other]]))
 
-      constant_ok = hand_resource(subject_map: %SubjectMap{strategy: :constant, value: "https://ex.org/x"})
+      constant_ok =
+        hand_resource(
+          subject_map: %SubjectMap{strategy: :constant, value: "urn:uuid:00000000-0000-0000-0000-0000000000f1"}
+        )
+
       assert Mapping.stable_subject_identity?(constant_ok)
 
       constant_bad = hand_resource(subject_map: %SubjectMap{strategy: :constant, value: "relative"})
@@ -318,7 +325,7 @@ defmodule AshR2RML.ApiSurfaceCoverageTest do
       assert meta.source == Person
       assert meta.destination == Organization
       assert meta.through == Shipment
-      assert meta.through_logical_table == %LogicalTable{table_name: to_string(Shipment)}
+      assert meta.through_logical_table == %LogicalTable{table_name: "schema_shipments"}
       assert meta.source_parent_column == "id"
       assert meta.source_join_column == "region"
       assert meta.destination_join_column == "warehouse_code"
@@ -357,18 +364,18 @@ defmodule AshR2RML.ApiSurfaceCoverageTest do
     end
   end
 
-  describe "Resource.LegacyAdapter.convert/1" do
-    test "converts a DSL-declared resource into a normalized mapping" do
-      assert {:ok, %Resource{} = mapping} = AshR2RML.Resource.LegacyAdapter.convert(Person)
+  describe "Resource.Info.mapping_result/1" do
+    test "normalizes a DSL-declared resource into a validated mapping" do
+      assert {:ok, %Resource{} = mapping} = AshR2RML.Resource.Info.mapping_result(Person)
 
       assert mapping.ash_resource == Person
       assert mapping.class_iris == ["https://schema.org/Person"]
       assert mapping.logical_table == %LogicalTable{table_name: "schema_people"}
       assert mapping.subject_map.strategy == :template
       assert mapping.subject_map.value == "https://schema.org/Person/{id}"
-      assert mapping.metadata.source == :compatibility
+      assert mapping.metadata.source == :ash_first
 
-      assert Enum.map(mapping.predicate_object_maps, & &1.predicate_iri) ==
+      assert mapping.predicate_object_maps |> Enum.map(& &1.predicate_iri) |> Enum.sort() ==
                ["https://schema.org/email", "https://schema.org/name"]
 
       assert [%{relationship: :organization, predicate_iri: "https://schema.org/memberOf"} = ref] =
@@ -381,9 +388,9 @@ defmodule AshR2RML.ApiSurfaceCoverageTest do
 
     test "refuses resources with no mapping" do
       assert {:error, %Refusal{code: :REFUSED_MISSING_SUBJECT_MAP, subject: Warehouse}} =
-               AshR2RML.Resource.LegacyAdapter.convert(Warehouse)
+               AshR2RML.Resource.Info.mapping_result(Warehouse)
 
-      assert {:error, %Refusal{code: :REFUSED_MISSING_SUBJECT_MAP}} = AshR2RML.Resource.LegacyAdapter.convert(String)
+      assert {:error, %Refusal{code: :REFUSED_MISSING_SUBJECT_MAP}} = AshR2RML.Resource.Info.mapping_result(String)
     end
   end
 

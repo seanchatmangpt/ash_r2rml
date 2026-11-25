@@ -3,12 +3,16 @@
 # SPDX-License-Identifier: MIT
 
 defmodule AshR2RML.PersistMappingTest do
+  @moduledoc """
+  The canonical `AshR2RML.Resource` transformer persists a normalized
+  `AshR2RML.Mapping.Resource` readable through `AshR2RML.Resource.Info`.
+  """
   use ExUnit.Case, async: true
 
   @moduletag :tmp_dir
 
   # Compiles a real resource source file written to tmp_dir; returns the module.
-  defp compile_resource!(dir, name, r2rml_body, extra \\ "") do
+  defp compile_resource!(dir, name, r2rml_body) do
     mod = "AshR2RML.PersistMappingTest.#{name}"
 
     source = """
@@ -17,7 +21,7 @@ defmodule AshR2RML.PersistMappingTest do
         domain: nil,
         validate_domain_inclusion?: false,
         data_layer: Ash.DataLayer.Ets,
-        extensions: [AshR2RML]
+        extensions: [AshR2RML.Resource]
 
       ets do
         private? true
@@ -36,7 +40,6 @@ defmodule AshR2RML.PersistMappingTest do
         attribute :name, :string, public?: true
         attribute :display_name, :string, public?: true, source: :disp_nm
         attribute :age, :integer, public?: true
-    #{extra}
       end
     end
     """
@@ -50,54 +53,54 @@ defmodule AshR2RML.PersistMappingTest do
   test "persists table-backed mapping with attribute columns and datatypes", %{tmp_dir: dir} do
     mod =
       compile_resource!(dir, "TableRes", """
-          class_iri "https://example.org/Thing"
-          subject_template "https://example.org/thing/{id}"
           table_name "things"
-          attribute_mappings [{:name, "https://example.org/name"}, {:display_name, "https://example.org/dn"}]
-          typed_attribute_mappings [{:age, "https://example.org/age", "http://www.w3.org/2001/XMLSchema#integer"}]
+          class "https://schema.org/Thing"
+          subject template: "urn:uuid:{id}"
+          property :name, "https://schema.org/name"
+          property :display_name, "https://schema.org/alternateName"
+          property :age, "https://schema.org/age", datatype: "http://www.w3.org/2001/XMLSchema#integer"
       """)
 
-    m = mod.__ash_r2rml_mapping__()
+    assert {:ok, m} = AshR2RML.Resource.Info.mapping_result(mod)
 
-    assert m.resource == mod
-    assert m.class_iri == "https://example.org/Thing"
-    assert m.subject_template == "https://example.org/thing/{id}"
-    assert m.logical_table == {:table, "things"}
-    assert m.graph_iri == nil
+    assert m.ash_resource == mod
+    assert m.class_iris == ["https://schema.org/Thing"]
+    assert m.subject_map.value == "urn:uuid:{id}"
+    assert m.logical_table == %AshR2RML.Mapping.LogicalTable{table_name: "things"}
+    assert m.graph_maps == []
 
-    by_attr = Map.new(m.attributes, &{&1.attribute, &1})
-    assert by_attr[:name].column == "name"
-    assert by_attr[:name].datatype_iri == nil
-    assert by_attr[:display_name].column == "display_name"
-    assert by_attr[:age].datatype_iri == "http://www.w3.org/2001/XMLSchema#integer"
-    assert by_attr[:age].predicate_iri == "https://example.org/age"
-    assert length(m.attributes) == 3
+    by_attr = Map.new(m.predicate_object_maps, &{&1.attribute, &1})
+    assert by_attr[:name].object_map.value == "name"
+    assert by_attr[:display_name].object_map.value == "disp_nm"
+    assert by_attr[:age].predicate_iri == "https://schema.org/age"
+    assert by_attr[:age].object_map.datatype.rdf_datatype == "http://www.w3.org/2001/XMLSchema#integer"
+    assert length(m.predicate_object_maps) == 3
   end
 
   test "persists sql_query logical table and graph iri", %{tmp_dir: dir} do
     mod =
       compile_resource!(dir, "QueryRes", """
-          class_iri "https://example.org/Thing"
-          subject_template "https://example.org/thing/{id}"
           sql_query "SELECT id, name FROM things"
-          graph_iri "https://example.org/graph"
+          class "https://schema.org/Thing"
+          subject template: "urn:uuid:{id}"
+          graph "urn:uuid:00000000-0000-4000-8000-000000000001"
       """)
 
-    m = mod.__ash_r2rml_mapping__()
-    assert m.logical_table == {:sql_query, "SELECT id, name FROM things"}
-    assert m.graph_iri == "https://example.org/graph"
-    assert m.attributes == []
-    assert m.relationships == []
+    assert {:ok, m} = AshR2RML.Resource.Info.mapping_result(mod)
+    assert m.logical_table == %AshR2RML.Mapping.LogicalTable{sql_query: "SELECT id, name FROM things"}
+    assert [%{value: "urn:uuid:00000000-0000-4000-8000-000000000001"}] = m.graph_maps
+    assert m.predicate_object_maps == []
+    assert m.reference_object_maps == []
   end
 
-  test "grand example fixture persists a mapping struct", _ctx do
-    m = AshR2RML.GrandExample.Organization.__ash_r2rml_mapping__()
+  test "grand example fixture persists a normalized mapping", _ctx do
+    assert {:ok, m} = AshR2RML.Resource.Info.mapping_result(AshR2RML.GrandExample.Organization)
 
-    assert m.resource == AshR2RML.GrandExample.Organization
-    assert m.logical_table == {:table, "schema_organizations"}
-    assert m.class_iri == "https://schema.org/Organization"
+    assert m.ash_resource == AshR2RML.GrandExample.Organization
+    assert m.logical_table == %AshR2RML.Mapping.LogicalTable{table_name: "schema_organizations"}
+    assert m.class_iris == ["https://schema.org/Organization"]
 
-    assert Enum.map(m.attributes, & &1.predicate_iri) |> Enum.sort() ==
+    assert Enum.map(m.predicate_object_maps, & &1.predicate_iri) |> Enum.sort() ==
              ["https://schema.org/name", "https://schema.org/version"]
   end
 end
