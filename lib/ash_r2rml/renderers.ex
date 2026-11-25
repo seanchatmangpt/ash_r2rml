@@ -82,8 +82,7 @@ defmodule AshR2RML.R2RML do
       end
 
     conflict_refusals =
-      for %{object_map: %ObjectMap{language: language, datatype: datatype}} = property <- resource.predicate_object_maps,
-          is_binary(language) and not is_nil(datatype) do
+      for property <- resource.predicate_object_maps, language_and_datatype?(property) do
         Refusal.new(
           :REFUSED_INVALID_TERM_MAP,
           {resource.ash_resource, property.attribute},
@@ -93,6 +92,11 @@ defmodule AshR2RML.R2RML do
 
     iri_refusals ++ conflict_refusals
   end
+
+  defp language_and_datatype?(%{object_map: %ObjectMap{language: language, datatype: datatype}}),
+    do: is_binary(language) and not is_nil(datatype)
+
+  defp language_and_datatype?(_), do: false
 
   defp property_iris(property) do
     object = property.object_map
