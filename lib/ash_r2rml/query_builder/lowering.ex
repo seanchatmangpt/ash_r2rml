@@ -212,10 +212,26 @@ defmodule AshR2RML.QueryBuilder.Lowering do
     if declared in [nil, default_datatype(ash_kind)], do: ash_kind, else: :other
   end
 
-  defp ash_kind(Ash.Type.Integer), do: :integer
-  defp ash_kind(Ash.Type.String), do: :string
-  defp ash_kind(Ash.Type.Decimal), do: :decimal
-  defp ash_kind(_), do: :other
+  defp ash_kind(type), do: type |> unwrap_new_type(8) |> builtin_kind()
+
+  defp builtin_kind(Ash.Type.Integer), do: :integer
+  defp builtin_kind(Ash.Type.String), do: :string
+  defp builtin_kind(Ash.Type.Decimal), do: :decimal
+  defp builtin_kind(_), do: :other
+
+  # Unwraps an `Ash.Type.NewType` chain to its built-in subtype; the depth bound is the cycle
+  # guard (an exhausted bound classifies as :other).
+  defp unwrap_new_type(_type, 0), do: nil
+
+  defp unwrap_new_type(type, depth) when is_atom(type) and not is_nil(type) do
+    if Ash.Type.NewType.new_type?(type) do
+      type |> Ash.Type.NewType.subtype_of() |> Ash.Type.get_type() |> unwrap_new_type(depth - 1)
+    else
+      type
+    end
+  end
+
+  defp unwrap_new_type(type, _depth), do: type
 
   defp default_datatype(:integer), do: @xsd_integer
   defp default_datatype(:decimal), do: @xsd_decimal

@@ -16,6 +16,33 @@ See [Conventional Commits](Https://conventionalcommits.org) for commit guideline
 Version stays v26.11.24; everything below is unreleased and read from the code on disk.
 Items marked UNVERIFIED have source present but no test run by the docs lane.
 
+### Audit closure (red-before-green, 44 + 31 findings):
+* `OBDA.query/3` returns `%AshR2RML.Error{}` for every refusal; invalid options are
+  `REFUSED_INVALID_OPTION`, `authorize?: false` without `allow_unauthorized` is
+  `REFUSED_UNAUTHORIZED`. `Error.new/2` keeps the code and hint when a message is given.
+* Worker concurrency slot leak fixed (guardian traps exits); acquire is lock-free.
+* Required-pagination reads honour pushed-down OFFSET; reference joins are hash-indexed.
+* Unsupported `ORDER BY` expressions are refused instead of silently left unsorted.
+* `QueryBuilder.build_ash_query/3` and `pushdown_query/4` return `{:ok, query} | {:error, _}`.
+* ETS resources with an explicit `ets do table ... end` infer their logical table.
+* Known gaps: Credo not clean; no external OBDA engine verified; SSRF DNS-rebind window in
+  `SPARQL.Protocol`; `max_heap_size` does not bound refc binaries.
+
+### Audit fixes (errors, Spark, packaging):
+* `AshR2RML.Refusal` and `AshR2RML.Error` are `Splode.Error` exceptions; refusal codes map to the
+  Ash classes `:forbidden`, `:invalid` and `:unknown` (`AshR2RML.Refusal.class_for/1`). Catalog
+  hints name the real options `max_rows`, `max_heap_words`, `timeout_ms`.
+* The Persist transformer returns `Spark.Error.DslError` with `module`, path `[:r2rml]` and the
+  refusal code plus evidence, and runs after every `Ash.Resource.Transformers.*` transformer.
+* `Resource.Info` no longer rescues load faults: a module that cannot be loaded refuses with
+  `REFUSED_INVALID_OPTION` (`evidence.reason: :module_unavailable`) instead of reading as unmapped;
+  the domain verifier reports an uncompiled member instead of skipping it.
+* `Compiler.compile/2` refuses options and non-module input with `REFUSED_INVALID_OPTION`; the
+  closure worklist is a queue that drops seen resources before enqueuing. The cutover helpers
+  moved from `AshR2RML.Compiler` to `AshR2RML.CompilationReceipt`.
+* Hex package ships `ash_r2rml.install` and `ash_r2rml.render`; `mix ash_r2rml.render` loads
+  compiled-but-unloaded modules in a fresh VM.
+
 ### Features:
 * Named graphs: `graph "iri"` (resource scope) and `graph "iri", scope: :subject` in the `r2rml`
   section compile to constant `GraphMap`s. `AshR2RML.NQuads.serialize/1` emits canonical N-Quads

@@ -124,6 +124,102 @@ defmodule AshR2RML.Type do
     if function_exported?(module, callback, 0), do: apply(module, callback, []), else: nil
   end
 
+  @xsd_string "http://www.w3.org/2001/XMLSchema#string"
+
+  @doc false
+  @spec __contract_opts__(keyword()) :: map()
+  def __contract_opts__(opts) do
+    validate_opts!(opts)
+    semantic_kind = Keyword.get(opts, :semantic_kind, :literal)
+    default_datatype = if semantic_kind == :literal, do: @xsd_string
+
+    %{
+      semantic_kind: semantic_kind,
+      datatype_iri: Keyword.get(opts, :datatype_iri, Keyword.get(opts, :xsd_datatype, default_datatype)),
+      class_iri: Keyword.get(opts, :class_iri),
+      concept_scheme_iri: Keyword.get(opts, :concept_scheme_iri),
+      shacl_constraints: Keyword.get(opts, :shacl_constraints, [])
+    }
+  end
+
+  @option_keys [
+    :semantic_kind,
+    :datatype_iri,
+    :xsd_datatype,
+    :class_iri,
+    :concept_scheme_iri,
+    :shacl_constraints
+  ]
+  @semantic_kinds [:literal, :iri, :concept, :value_object, :resource]
+
+  defp validate_opts!(opts) do
+    unless Keyword.keyword?(opts) do
+      raise ArgumentError, "use AshR2RML.Type expects a keyword list, got: #{inspect(opts)}"
+    end
+
+    case Keyword.keys(opts) -- @option_keys do
+      [] ->
+        :ok
+
+      unknown ->
+        raise ArgumentError,
+              "unknown use AshR2RML.Type option(s) #{inspect(unknown)}; " <>
+                "valid options: #{inspect(@option_keys)}"
+    end
+
+    kind = Keyword.get(opts, :semantic_kind, :literal)
+
+    unless kind in @semantic_kinds do
+      raise ArgumentError,
+            "invalid :semantic_kind #{inspect(kind)}; expected one of #{inspect(@semantic_kinds)}"
+    end
+
+    :ok
+  end
+
+  @doc false
+  @spec __to_rdf__(module(), term()) :: rdf_term() | {:error, term()}
+  def __to_rdf__(module, value) do
+    kind = module.semantic_kind()
+
+    cond do
+      kind not in [:literal, :iri, :concept] ->
+        {:error, {:semantic_encoder_not_implemented, kind}}
+
+      not function_exported?(module, :to_rdf_lexical, 1) ->
+        {:error, :lexical_encoder_not_implemented}
+
+      kind == :literal ->
+        case module.datatype_iri() do
+          datatype when is_binary(datatype) -> {:literal, module.to_rdf_lexical(value), datatype}
+          _ -> {:error, :literal_without_datatype}
+        end
+
+      true ->
+        {:iri, module.to_rdf_lexical(value)}
+    end
+  end
+
+  @doc false
+  @spec __from_rdf__(module(), term()) :: {:ok, term()} | {:error, term()}
+  def __from_rdf__(module, {:literal, lexical, datatype}) do
+    if datatype == module.datatype_iri() and function_exported?(module, :from_rdf_lexical, 1) do
+      module.from_rdf_lexical(lexical)
+    else
+      {:error, :rdf_literal_not_decodable}
+    end
+  end
+
+  def __from_rdf__(module, {:iri, iri}) do
+    cond do
+      module.semantic_kind() not in [:iri, :concept] -> {:error, :rdf_term_kind_mismatch}
+      function_exported?(module, :from_rdf_lexical, 1) -> module.from_rdf_lexical(iri)
+      true -> {:error, :rdf_decoder_not_implemented}
+    end
+  end
+
+  def __from_rdf__(_module, _term), do: {:error, :rdf_term_kind_mismatch}
+
   @doc """
   Adopts the `AshR2RML.Type` behaviour and injects the contract callbacks.
 
@@ -133,81 +229,30 @@ defmodule AshR2RML.Type do
   injected; the implementer defines them.
   """
   defmacro __using__(opts) do
-    semantic_kind = Keyword.get(opts, :semantic_kind, :literal)
-
-    default_datatype = if semantic_kind == :literal, do: "http://www.w3.org/2001/XMLSchema#string"
-
-    datatype_iri =
-      Keyword.get(
-        opts,
-        :datatype_iri,
-        Keyword.get(opts, :xsd_datatype, default_datatype)
-      )
-
-    class_iri = Keyword.get(opts, :class_iri)
-    concept_scheme_iri = Keyword.get(opts, :concept_scheme_iri)
-    shacl_constraints = Keyword.get(opts, :shacl_constraints, [])
-
-    quote do
+    # `bind_quoted` evaluates the options in the caller's module body, so attribute-valued
+    # options (`semantic_kind: @kind`) are values, never raw AST.
+    quote bind_quoted: [opts: opts] do
       @behaviour AshR2RML.Type
 
-      def semantic_kind, do: unquote(semantic_kind)
+      @ash_r2rml_contract AshR2RML.Type.__contract_opts__(opts)
 
-      def datatype_iri, do: unquote(datatype_iri)
+      def semantic_kind, do: @ash_r2rml_contract.semantic_kind
 
-      def class_iri, do: unquote(class_iri)
+      def datatype_iri, do: @ash_r2rml_contract.datatype_iri
 
-      def concept_scheme_iri, do: unquote(concept_scheme_iri)
+      def class_iri, do: @ash_r2rml_contract.class_iri
 
-      def shacl_constraints, do: unquote(Macro.escape(shacl_constraints))
+      def concept_scheme_iri, do: @ash_r2rml_contract.concept_scheme_iri
+
+      def shacl_constraints, do: @ash_r2rml_contract.shacl_constraints
 
       def xsd_datatype, do: datatype_iri()
 
       # `to_rdf_lexical/1` and `from_rdf_lexical/1` are NOT injected: an
       # implementer that does not define them fails closed with a typed error.
-      def to_rdf(value) do
-        kind = apply(__MODULE__, :semantic_kind, [])
+      def to_rdf(value), do: AshR2RML.Type.__to_rdf__(__MODULE__, value)
 
-        cond do
-          kind not in [:literal, :iri, :concept] ->
-            {:error, {:semantic_encoder_not_implemented, kind}}
-
-          not function_exported?(__MODULE__, :to_rdf_lexical, 1) ->
-            {:error, :lexical_encoder_not_implemented}
-
-          kind == :literal ->
-            case datatype_iri() do
-              datatype when is_binary(datatype) ->
-                {:literal, apply(__MODULE__, :to_rdf_lexical, [value]), datatype}
-
-              _ ->
-                {:error, :literal_without_datatype}
-            end
-
-          true ->
-            {:iri, apply(__MODULE__, :to_rdf_lexical, [value])}
-        end
-      end
-
-      def from_rdf({:literal, lexical, datatype}) do
-        if datatype == datatype_iri() and function_exported?(__MODULE__, :from_rdf_lexical, 1) do
-          apply(__MODULE__, :from_rdf_lexical, [lexical])
-        else
-          {:error, :rdf_literal_not_decodable}
-        end
-      end
-
-      def from_rdf({:iri, iri}) do
-        kind = apply(__MODULE__, :semantic_kind, [])
-
-        cond do
-          kind not in [:iri, :concept] -> {:error, :rdf_term_kind_mismatch}
-          function_exported?(__MODULE__, :from_rdf_lexical, 1) -> apply(__MODULE__, :from_rdf_lexical, [iri])
-          true -> {:error, :rdf_decoder_not_implemented}
-        end
-      end
-
-      def from_rdf(_), do: {:error, :rdf_term_kind_mismatch}
+      def from_rdf(term), do: AshR2RML.Type.__from_rdf__(__MODULE__, term)
 
       defoverridable semantic_kind: 0,
                      datatype_iri: 0,

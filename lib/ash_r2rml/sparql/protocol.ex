@@ -14,11 +14,14 @@ defmodule AshR2RML.SPARQL.Protocol do
   `AshR2RML.SPARQL.Protocol.Host`.
   """
 
+  alias AshR2RML.OBDA.Worker
   alias AshR2RML.Refusal
   alias AshR2RML.SPARQL.Protocol.Host
   alias AshR2RML.SPARQL.{Observation, Query, Result}
 
   @default_timeout_ms 30_000
+  @worker_grace_ms 5_000
+  @max_heap_words 10_000_000
 
   @doc """
   Options: `:timeout` (ms, default 30_000, always merged into the httpc adapter
@@ -34,6 +37,18 @@ defmodule AshR2RML.SPARQL.Protocol do
   (`evidence.unknown_options`), never silently dropped. A 3xx
   response with redirects disabled refuses with
   `:REFUSED_INVALID_FEDERATION_ENVIRONMENT` ("redirects are not followed").
+
+  Option values are validated before any network I/O: `:allow_private_network`
+  must be a boolean, `:follow_redirects` a non-negative integer, `:request_opts`
+  (and its `:adapter`) a keyword list (each refused with
+  `:REFUSED_INVALID_FEDERATION_ENVIRONMENT`), and `:max_rows` a positive integer
+  (`:REFUSED_RESOURCE_BOUND`).
+
+  Transport pins the vetted address: a hostname is resolved once by the vetting
+  step and the request connects to that address, sending the original host as
+  the `Host` header (and as verified TLS SNI for https). Client call and response
+  normalization run in a heap-capped worker; only transport/parse exceptions are
+  refused (naming `exception_module`), programmer errors propagate.
 
   Private-network guard (`private_ip?/1`, see `AshR2RML.SPARQL.Protocol.Host`)
   covers: IPv4 0/8, 10/8, 100.64/10,
@@ -53,19 +68,57 @@ defmodule AshR2RML.SPARQL.Protocol do
   def query(endpoint, query, opts \\ []) when is_binary(endpoint) do
     {allow_private, opts} = Keyword.pop(opts, :allow_private_network, false)
 
-    with :ok <- validate_options(endpoint, opts),
-         :ok <- validate_endpoint(endpoint, allow_private) do
-      client_opts = client_opts(opts)
+    with :ok <- validate_allow_private(endpoint, allow_private),
+         :ok <- validate_options(endpoint, opts),
+         {:ok, pin} <- validate_endpoint(endpoint, allow_private) do
+      client_opts = opts |> client_opts() |> apply_pin(pin)
+      transport_url = pinned_url(endpoint, pin)
+      client = fn parsed, _endpoint, o -> no_redirect_client(parsed, transport_url, o) end
 
-      do_query(
-        endpoint,
-        query,
-        client_opts,
-        &no_redirect_client/3,
-        :sparql_protocol,
-        :observed_remote_query
-      )
+      do_query(endpoint, query, client_opts, client, :sparql_protocol, :observed_remote_query)
     end
+  end
+
+  # Address pinning (DNS-rebinding guard): the vetted address is the one the
+  # request connects to; the original host travels as the Host header and, for
+  # https, as TLS SNI with hostname verification against the original name.
+  defp pinned_url(endpoint, nil), do: endpoint
+
+  defp pinned_url(endpoint, %{ip: ip}) do
+    uri = URI.parse(endpoint)
+    host = Host.ip_string(ip)
+    host = if tuple_size(ip) == 8, do: "[" <> host <> "]", else: host
+    URI.to_string(%URI{uri | host: host, authority: nil})
+  end
+
+  defp apply_pin(client_opts, nil), do: client_opts
+
+  defp apply_pin(client_opts, %{host: host, host_header: host_header, scheme: scheme}) do
+    request_opts = Keyword.fetch!(client_opts, :request_opts)
+    adapter = Keyword.fetch!(request_opts, :adapter)
+
+    adapter =
+      if scheme == "https" do
+        Keyword.put(adapter, :ssl, tls_opts(Keyword.get(adapter, :ssl, []), host))
+      else
+        adapter
+      end
+
+    client_opts
+    |> Keyword.put(:headers, %{"Host" => host_header})
+    |> Keyword.put(:request_opts, Keyword.put(request_opts, :adapter, adapter))
+  end
+
+  defp tls_opts(caller_ssl, host) do
+    caller_ssl = if Keyword.keyword?(caller_ssl), do: caller_ssl, else: []
+
+    caller_ssl
+    |> Keyword.merge(
+      verify: :verify_peer,
+      cacerts: :public_key.cacerts_get(),
+      server_name_indication: String.to_charlist(host),
+      customize_hostname_check: [match_fun: :public_key.pkix_verify_hostname_match_fun(:https)]
+    )
   end
 
   # SPARQL.Client.query/3 validates :max_redirects as :pos_integer, so 0 (no
@@ -75,6 +128,9 @@ defmodule AshR2RML.SPARQL.Protocol do
   # max_redirects: 0, which refuses to follow any 3xx.
   @doc false
   def no_redirect_client(%Elixir.SPARQL.Query{} = parsed, endpoint, opts) do
+    # :timeout is kept in client_opts for the worker deadline; the adapter carries its own copy.
+    opts = Keyword.delete(opts, :timeout)
+
     with {:ok, request} <-
            Elixir.SPARQL.Client.Request.build(
              Elixir.SPARQL.Client.Query,
@@ -126,7 +182,11 @@ defmodule AshR2RML.SPARQL.Protocol do
   defp validate_options(endpoint, opts) do
     case Keyword.keys(opts) -- @accepted_opts do
       [] ->
-        validate_timeout(endpoint, Keyword.get(opts, :timeout, @default_timeout_ms))
+        with :ok <- validate_timeout(endpoint, Keyword.get(opts, :timeout, @default_timeout_ms)),
+             :ok <- validate_follow_redirects(endpoint, Keyword.get(opts, :follow_redirects, 0)),
+             :ok <- validate_request_opts(endpoint, Keyword.get(opts, :request_opts, [])) do
+          validate_max_rows(endpoint, Keyword.get(opts, :max_rows, Result.default_max_rows()))
+        end
 
       unknown ->
         {:error,
@@ -150,6 +210,56 @@ defmodule AshR2RML.SPARQL.Protocol do
        redact_uri_string(endpoint),
        "SPARQL protocol :timeout must be a positive integer (ms)",
        %{timeout: inspect(timeout)}
+     )}
+  end
+
+  defp validate_allow_private(_endpoint, value) when is_boolean(value), do: :ok
+
+  defp validate_allow_private(endpoint, value) do
+    invalid_env(endpoint, ":allow_private_network must be a boolean", %{
+      allow_private_network: inspect(value)
+    })
+  end
+
+  defp validate_follow_redirects(_endpoint, n) when is_integer(n) and n >= 0, do: :ok
+
+  defp validate_follow_redirects(endpoint, value) do
+    invalid_env(endpoint, ":follow_redirects must be a non-negative integer", %{
+      follow_redirects: inspect(value)
+    })
+  end
+
+  defp validate_request_opts(endpoint, request_opts) do
+    adapter = if Keyword.keyword?(request_opts), do: Keyword.get(request_opts, :adapter, []), else: []
+
+    if Keyword.keyword?(request_opts) and Keyword.keyword?(adapter) do
+      :ok
+    else
+      invalid_env(endpoint, ":request_opts (and its :adapter) must be a keyword list", %{
+        request_opts: inspect(request_opts)
+      })
+    end
+  end
+
+  defp validate_max_rows(_endpoint, n) when is_integer(n) and n > 0, do: :ok
+
+  defp validate_max_rows(endpoint, value) do
+    {:error,
+     Refusal.new(
+       :REFUSED_RESOURCE_BOUND,
+       redact_uri_string(endpoint),
+       "SPARQL protocol :max_rows must be a positive integer",
+       %{max_rows: inspect(value)}
+     )}
+  end
+
+  defp invalid_env(endpoint, detail, evidence) do
+    {:error,
+     Refusal.new(
+       :REFUSED_INVALID_FEDERATION_ENVIRONMENT,
+       redact_uri_string(endpoint),
+       detail,
+       evidence
      )}
   end
 
@@ -185,6 +295,7 @@ defmodule AshR2RML.SPARQL.Protocol do
 
     opts
     |> Keyword.take(@forwarded_opts)
+    |> Keyword.put(:timeout, timeout)
     |> Keyword.put(:max_redirects, max_redirects)
     |> Keyword.put(:request_opts, request_opts)
   end
@@ -206,9 +317,9 @@ defmodule AshR2RML.SPARQL.Protocol do
            }
          )}
 
-      %URI{scheme: scheme, host: host}
+      %URI{scheme: scheme, host: host} = uri
       when scheme in ["http", "https"] and is_binary(host) and host != "" ->
-        if allow_private == true, do: :ok, else: vet_endpoint_host(endpoint, host)
+        if allow_private == true, do: {:ok, nil}, else: vet_endpoint_host(endpoint, uri)
 
       _ ->
         {:error,
@@ -221,10 +332,10 @@ defmodule AshR2RML.SPARQL.Protocol do
     end
   end
 
-  defp vet_endpoint_host(endpoint, host) do
-    case Host.vet_host(host) do
-      :ok ->
-        :ok
+  defp vet_endpoint_host(endpoint, %URI{host: host} = uri) do
+    case Host.vet(host) do
+      {:ok, [ip | _]} ->
+        {:ok, pin_for(uri, host, ip)}
 
       {:private, addrs} ->
         {:error,
@@ -247,6 +358,18 @@ defmodule AshR2RML.SPARQL.Protocol do
     end
   end
 
+  # A literal-IP host is its own pin; a name is pinned to its first vetted address.
+  defp pin_for(%URI{scheme: scheme, port: port}, host, ip) do
+    case :inet.parse_address(String.to_charlist(host)) do
+      {:ok, _literal} ->
+        nil
+
+      {:error, _} ->
+        host_header = if port == URI.default_port(scheme), do: host, else: "#{host}:#{port}"
+        %{ip: ip, host: host, host_header: host_header, scheme: scheme}
+    end
+  end
+
   # Drops userinfo, query and fragment so credentials never reach a Refusal.
   defp redact_endpoint(%URI{} = uri),
     do: URI.to_string(%URI{uri | userinfo: nil, query: nil, fragment: nil})
@@ -266,10 +389,11 @@ defmodule AshR2RML.SPARQL.Protocol do
   defp do_query(endpoint, query, opts, client_fun, evidence_kind, standing) do
     {max_rows, opts} = Keyword.pop(opts, :max_rows, Result.default_max_rows())
 
-    with {:ok, admitted} <- Query.admit(query),
-         {:ok, result} <- client_fun.(admitted.parsed, endpoint, opts),
+    with :ok <- validate_max_rows(endpoint, max_rows),
+         {:ok, admitted} <- Query.admit(query),
+         {:ok, result_kind, rows} <- fetch(admitted, endpoint, opts, client_fun),
          {:ok, result_kind, rows} <-
-           result |> Result.normalize() |> Result.bound(endpoint, max_rows) do
+           Result.bound({:ok, result_kind, rows}, endpoint, max_rows) do
       {:ok,
        %Observation{
          strategy: :protocol,
@@ -297,14 +421,54 @@ defmodule AshR2RML.SPARQL.Protocol do
            %{result: inspect(other)}
          )}
     end
+  end
+
+  # The client call and response normalization run in a heap-capped, monitored
+  # worker (remote response parsing is isolated from the caller). Only transport
+  # and parse boundary exceptions are refused; anything else is re-raised here.
+  defp fetch(admitted, endpoint, opts, client_fun) do
+    timeout =
+      case Keyword.get(opts, :timeout, @default_timeout_ms) do
+        t when is_integer(t) and t > 0 -> t
+        _ -> @default_timeout_ms
+      end
+
+    worker_opts = [timeout_ms: timeout + @worker_grace_ms, max_heap_words: @max_heap_words]
+
+    case Worker.call(fn -> call_client(admitted, endpoint, opts, client_fun) end, worker_opts) do
+      {:ok, {:boundary_error, exception}} ->
+        {:error,
+         Refusal.new(
+           :REFUSED_UNPROVEN_EQUIVALENCE,
+           endpoint,
+           "SPARQL protocol query raised",
+           %{exception: Exception.message(exception), exception_module: inspect(exception.__struct__)}
+         )}
+
+      {:ok, outcome} ->
+        outcome
+
+      {:raised, kind, reason, stacktrace} ->
+        :erlang.raise(kind, reason, stacktrace)
+
+      {:error, %AshR2RML.Error{code: code, message: message}} ->
+        {:error,
+         Refusal.new(
+           :REFUSED_RESOURCE_BOUND,
+           endpoint,
+           "SPARQL protocol response handling exceeded its isolation bound: #{message}",
+           %{worker_code: code}
+         )}
+    end
+  end
+
+  defp call_client(admitted, endpoint, opts, client_fun) do
+    case client_fun.(admitted.parsed, endpoint, opts) do
+      {:ok, result} -> Result.normalize(result)
+      other -> other
+    end
   rescue
-    exception ->
-      {:error,
-       Refusal.new(
-         :REFUSED_UNPROVEN_EQUIVALENCE,
-         endpoint,
-         "SPARQL protocol query raised",
-         %{exception: Exception.message(exception)}
-       )}
+    exception in [Tesla.Error, Elixir.SPARQL.Client.HTTPError, ArgumentError, RuntimeError] ->
+      {:boundary_error, exception}
   end
 end

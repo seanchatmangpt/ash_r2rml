@@ -133,5 +133,5 @@ end
 
 defmodule AshR2RML.Validation do
   @moduledoc false
-  defdelegate cutover_ready?(receipt), to: AshR2RML.Compiler
+  defdelegate cutover_ready?(receipt), to: AshR2RML.CompilationReceipt
 end

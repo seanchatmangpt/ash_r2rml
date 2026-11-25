@@ -7,9 +7,9 @@ defmodule AshR2RML.RefactorW10CompilerLensTest do
   alias AshR2RML.{Compiler, Refusal}
 
   test "a non-module element in the resource list is a typed refusal, not a crash" do
-    assert {:error, %Refusal{code: :REFUSED_MISSING_SUBJECT_MAP}} =
+    assert {:error, %Refusal{code: :REFUSED_INVALID_OPTION}} =
              Compiler.compile([{:not, "a module"}])
 
-    assert {:error, %Refusal{code: :REFUSED_MISSING_SUBJECT_MAP}} = Compiler.compile(["text"])
+    assert {:error, %Refusal{code: :REFUSED_INVALID_OPTION}} = Compiler.compile(["text"])
   end
 end

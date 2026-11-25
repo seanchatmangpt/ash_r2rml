@@ -81,8 +81,9 @@ defmodule AshR2RML.CapabilityProbeTest do
     end
 
     test "capable layer receives filter, sort, offset and limit" do
-      query = QueryBuilder.build_ash_query(mapping(EtsThing), plan(), domain: Dom)
-      assert %Ash.Query{} = query
+      assert {:ok, %Ash.Query{} = query} =
+               QueryBuilder.build_ash_query(mapping(EtsThing), plan(), domain: Dom)
+
       assert query.filter != nil
       assert query.sort != []
       assert query.offset == 2
@@ -90,8 +91,9 @@ defmodule AshR2RML.CapabilityProbeTest do
     end
 
     test "layer without pushdown is read plainly and never raises" do
-      query = QueryBuilder.build_ash_query(mapping(MinimalProbeResource), plan(), domain: Dom)
-      assert %Ash.Query{} = query
+      assert {:ok, %Ash.Query{} = query} =
+               QueryBuilder.build_ash_query(mapping(MinimalProbeResource), plan(), domain: Dom)
+
       assert query.filter == nil
       assert query.sort == []
       assert query.limit == nil

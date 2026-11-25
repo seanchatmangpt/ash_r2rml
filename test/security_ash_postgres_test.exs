@@ -25,7 +25,7 @@ defmodule AshR2RML.SecurityAshPostgresTest do
   test "compile_resources/1 removes the field-policy-protected attribute's predicate_object_map and records the exclusion" do
     # Confirms the fixture actually exercises the branch this ticket closes: a real
     # AshPostgres.DataLayer-backed resource, not the Ash.DataLayer.Ets fixtures used elsewhere.
-    assert AshR2RML.DataLayer.backend(MerchantAccount) == :postgres
+    assert AshR2RML.Introspection.backend(MerchantAccount) == :postgres
 
     assert {:ok, bundle} = Compiler.compile_resources([MerchantAccount])
     assert [mapping] = bundle.resources
@@ -56,7 +56,7 @@ defmodule AshR2RML.SecurityAshPostgresTest do
     # the exclusion isn't a blanket behavior triggered by any field_policy anywhere in the run.
     alias AshR2RML.Fortune5.PaymentGateway
 
-    assert AshR2RML.DataLayer.backend(PaymentGateway) == :ets
+    assert AshR2RML.Introspection.backend(PaymentGateway) == :ets
 
     assert {:ok, bundle} = Compiler.compile_resources([MerchantAccount, PaymentGateway])
 

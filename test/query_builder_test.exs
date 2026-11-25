@@ -157,8 +157,9 @@ defmodule AshR2RML.QueryBuilderTest do
   end
 
   defp run(plan, opts \\ []) do
-    query = QueryBuilder.build_ash_query(person_mapping(), plan, Keyword.put_new(opts, :domain, Domain))
-    assert %Ash.Query{} = query
+    assert {:ok, %Ash.Query{} = query} =
+             QueryBuilder.build_ash_query(person_mapping(), plan, Keyword.put_new(opts, :domain, Domain))
+
     Ash.read!(query)
   end
 
@@ -262,8 +263,11 @@ defmodule AshR2RML.QueryBuilderTest do
 
       mapping = mapping(TenantDoc, "urn:uuid:{id}")
 
-      query =
-        QueryBuilder.build_ash_query(mapping, %Plan{needed_attributes: [:title]}, tenant: "A", domain: Domain)
+      assert {:ok, query} =
+               QueryBuilder.build_ash_query(mapping, %Plan{needed_attributes: [:title]},
+                 tenant: "A",
+                 domain: Domain
+               )
 
       assert Enum.map(Ash.read!(query), & &1.title) == ["a-doc"]
     end
@@ -274,11 +278,11 @@ defmodule AshR2RML.QueryBuilderTest do
 
       mapping = mapping(OwnedDoc, "urn:uuid:{id}")
 
-      query =
-        QueryBuilder.build_ash_query(mapping, %Plan{needed_attributes: [:title]},
-          actor: %{name: "me"},
-          domain: Domain
-        )
+      assert {:ok, query} =
+               QueryBuilder.build_ash_query(mapping, %Plan{needed_attributes: [:title]},
+                 actor: %{name: "me"},
+                 domain: Domain
+               )
 
       assert Enum.map(Ash.read!(query), & &1.title) == ["mine"]
     end

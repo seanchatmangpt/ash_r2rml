@@ -137,10 +137,12 @@ defmodule AshR2RML.Temporal do
          )}
 
       {:ok, type, column} ->
-        cond do
-          range_type?(type) -> {:error, range_refusal(type, attribute)}
-          datetime_type?(type) -> build(attribute, predicate, type, column)
-          true -> {:error, not_datetime(attribute, type)}
+        with {:ok, base, _constraints} <- AshR2RML.Datatype.Registry.unwrap_checked(type) do
+          cond do
+            base == Ash.Type.Range -> {:error, range_refusal(type, attribute)}
+            base in @datetime_types -> build(attribute, predicate, type, column)
+            true -> {:error, not_datetime(attribute, type)}
+          end
         end
     end
   end

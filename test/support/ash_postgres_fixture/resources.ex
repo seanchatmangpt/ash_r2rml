@@ -4,7 +4,7 @@
 
 # R2RML-105: a real `AshPostgres.DataLayer`-backed fixture, distinct from the
 # `Ash.DataLayer.Ets`-backed `AshR2RML.Fortune5.PaymentGateway` fixture. Its purpose is to
-# exercise `AshR2RML.DataLayer.backend/1`'s `:postgres` branch and, through it,
+# exercise `AshR2RML.Introspection.backend/1`'s `:postgres` branch and, through it,
 # `AshR2RML.Security.sanitize_mapping/2`'s `:postgres`-gated exclusion path -- end to end
 # through `AshR2RML.Compiler.compile_resources/1`, per R2RML-105 acceptance criterion #3.
 #

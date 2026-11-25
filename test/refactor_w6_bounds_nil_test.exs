@@ -66,6 +66,6 @@ defmodule AshR2RML.RefactorW6BoundsNilTest do
 
   test "non-positive bounds are refused up front" do
     assert {:error, error} = run(max_rows: 0)
-    assert error.code == :REFUSED_UNSUPPORTED_SPARQL_FEATURE
+    assert error.code == :REFUSED_INVALID_OPTION
   end
 end

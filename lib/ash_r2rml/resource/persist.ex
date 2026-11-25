@@ -19,15 +19,19 @@ defmodule AshR2RML.Resource.Persist do
   }
 
   alias AshR2RML.Refusal
+  alias AshR2RML.Resource.Verify
   alias Spark.Dsl.Transformer
 
   @impl true
-  def after?(Ash.Resource.Transformers.CachePrimaryKey), do: true
-  def after?(Ash.Resource.Transformers.DefaultPrimaryKey), do: true
-  def after?(Ash.Resource.Transformers.SetRelationshipInformation), do: true
-  def after?(Ash.Resource.Transformers.BelongsToAttribute), do: true
-  def after?(Ash.Resource.Transformers.BelongsToSourceAttribute), do: true
-  def after?(_), do: false
+  def after?(module), do: ash_resource_transformer?(module)
+
+  # Every Ash resource-building transformer (attributes, relationships, calculations,
+  # aggregates, primary keys) runs first, so `Ash.Resource.Info` is fully populated here.
+  defp ash_resource_transformer?(module) do
+    match?(["Ash", "Resource", "Transformers" | _], Module.split(module))
+  rescue
+    ArgumentError -> false
+  end
 
   # Every Ash/Spark lookup below receives `dsl`, never the module atom: the
   # module is still compiling while transformers run.
@@ -41,10 +45,9 @@ defmodule AshR2RML.Resource.Persist do
 
     with {:ok, logical_table} <- Introspection.logical_table(resource, table_options(dsl)),
          {:ok, subject_map} <- compile_subject(resource, dsl, subject, graphs),
-         {:ok, property_maps} <- compile_properties(resource, dsl, properties),
          {:ok, temporal_maps} <- compile_temporals(dsl, Map.get(grouped, AshR2RML.Dsl.Temporal, [])),
-         {:ok, reference_object_maps} <-
-           compile_references(resource, dsl, Map.get(grouped, AshR2RML.Dsl.Reference, [])) do
+         {:ok, property_maps, reference_object_maps} <-
+           compile_terms(resource, dsl, properties, Map.get(grouped, AshR2RML.Dsl.Reference, [])) do
       mapping =
         build_mapping(dsl, resource, grouped, %{
           logical_table: logical_table,
@@ -55,8 +58,9 @@ defmodule AshR2RML.Resource.Persist do
 
       {:ok, Transformer.persist(dsl, :ash_r2rml_public_mapping, mapping)}
     else
-      {:error, %Refusal{} = refusal} -> {:error, "#{refusal.code}: #{refusal.detail}"}
-      {:error, other} -> {:error, inspect(other)}
+      {:error, %Refusal{} = refusal} -> {:error, Verify.diagnostic(resource, [refusal])}
+      {:error, [%Refusal{} | _] = refusals} -> {:error, Verify.diagnostic(resource, refusals)}
+      {:error, other} -> {:error, Verify.diagnostic(resource, inspect(other))}
     end
   end
 
@@ -180,14 +184,28 @@ defmodule AshR2RML.Resource.Persist do
   end
 
   defp compile_properties(resource, dsl, properties) do
-    Enum.reduce_while(properties, {:ok, []}, fn property, {:ok, acc} ->
-      case compile_property(resource, dsl, property) do
-        {:ok, mapping} -> {:cont, {:ok, [mapping | acc]}}
-        {:error, refusal} -> {:halt, {:error, refusal}}
-      end
-    end)
-    |> reverse_ok()
+    properties
+    |> Enum.map(&compile_property(resource, dsl, &1))
+    |> collect()
   end
+
+  # Gathers every refusal instead of stopping at the first one.
+  defp collect(results) do
+    case Enum.split_with(results, &match?({:ok, _}, &1)) do
+      {oks, []} -> {:ok, Enum.map(oks, fn {:ok, value} -> value end)}
+      {_oks, errors} -> {:error, Enum.flat_map(errors, fn {:error, e} -> List.wrap(e) end)}
+    end
+  end
+
+  defp compile_terms(resource, dsl, properties, references) do
+    case {compile_properties(resource, dsl, properties), compile_references(resource, dsl, references)} do
+      {{:ok, property_maps}, {:ok, reference_maps}} -> {:ok, property_maps, reference_maps}
+      {first, second} -> {:error, error_list(first) ++ error_list(second)}
+    end
+  end
+
+  defp error_list({:error, errors}), do: List.wrap(errors)
+  defp error_list(_ok), do: []
 
   defp compile_temporals(dsl, temporals) do
     lookup = fn name ->
@@ -210,6 +228,7 @@ defmodule AshR2RML.Resource.Persist do
   defp compile_property(resource, dsl, property) do
     with {:ok, attribute, column} <- resolve_term(resource, dsl, property.attribute),
          :ok <- reject_range(attribute, property),
+         :ok <- check_language_column(resource, dsl, property),
          {:ok, object_map} <- compile_object_map(attribute, column, property) do
       {:ok,
        %PredicateObjectMap{
@@ -243,6 +262,15 @@ defmodule AshR2RML.Resource.Persist do
         with {:ok, column} <- Introspection.column(dsl, name) do
           {:ok, attribute, column}
         end
+    end
+  end
+
+  defp check_language_column(_resource, _dsl, %{language_column: nil}), do: :ok
+
+  defp check_language_column(resource, dsl, %{language_column: name}) do
+    case resolve_term(resource, dsl, name) do
+      {:ok, _attribute, _column} -> :ok
+      {:error, refusal} -> {:error, refusal}
     end
   end
 
@@ -287,6 +315,14 @@ defmodule AshR2RML.Resource.Persist do
            language: property.language,
            term_type: :literal
          }}
+
+      property.language_column && property.term_type != :literal ->
+        {:error,
+         Refusal.new(
+           :REFUSED_INVALID_TERM_MAP,
+           property.attribute,
+           "language_column requires a literal term map, not #{property.term_type}"
+         )}
 
       property.language_column ->
         {:ok,
@@ -345,38 +381,40 @@ defmodule AshR2RML.Resource.Persist do
   end
 
   defp compile_references(resource, dsl, references) do
-    Enum.reduce_while(references, {:ok, []}, fn reference, {:ok, acc} ->
-      rel_result =
-        case Introspection.relationship(resource, reference.relationship, dsl) do
-          {:ok, metadata} ->
-            {:ok, metadata}
+    references
+    |> Enum.map(&compile_reference(resource, dsl, &1))
+    |> collect()
+  end
 
-          {:error, refusal} ->
-            if Ash.Resource.Info.relationship(dsl, reference.relationship) do
-              {:error, refusal}
-            else
-              compile_dsl_relationship(resource, dsl, reference.relationship)
-            end
-        end
-
-      case rel_result do
+  defp compile_reference(resource, dsl, reference) do
+    rel_result =
+      case Introspection.relationship(resource, reference.relationship, dsl) do
         {:ok, metadata} ->
-          mapping = %ReferenceObjectMap{
-            relationship: reference.relationship,
-            predicate_iri: reference.predicate_iri,
-            inverse_predicate: reference.inverse_predicate,
-            parent_resource: metadata.destination,
-            joins: Map.get(metadata, :joins, []),
-            metadata: Map.merge(metadata, %{direction: reference.direction, guard_class: reference.guard_class})
-          }
-
-          {:cont, {:ok, [mapping | acc]}}
+          {:ok, metadata}
 
         {:error, refusal} ->
-          {:halt, {:error, refusal}}
+          if Ash.Resource.Info.relationship(dsl, reference.relationship) do
+            {:error, refusal}
+          else
+            compile_dsl_relationship(resource, dsl, reference.relationship)
+          end
       end
-    end)
-    |> reverse_ok()
+
+    case rel_result do
+      {:ok, metadata} ->
+        {:ok,
+         %ReferenceObjectMap{
+           relationship: reference.relationship,
+           predicate_iri: reference.predicate_iri,
+           inverse_predicate: reference.inverse_predicate,
+           parent_resource: metadata.destination,
+           joins: Map.get(metadata, :joins, []),
+           metadata: Map.merge(metadata, %{direction: reference.direction, guard_class: reference.guard_class})
+         }}
+
+      {:error, refusal} ->
+        {:error, refusal}
+    end
   end
 
   defp compile_dsl_relationship(resource, dsl, rel_name) do
@@ -480,7 +518,4 @@ defmodule AshR2RML.Resource.Persist do
 
   defp derived_type(nil), do: nil
   defp derived_type(type), do: Ash.Type.get_type(type)
-
-  defp reverse_ok({:ok, values}), do: {:ok, Enum.reverse(values)}
-  defp reverse_ok(other), do: other
 end

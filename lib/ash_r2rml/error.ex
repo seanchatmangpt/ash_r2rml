@@ -16,9 +16,12 @@ defmodule AshR2RML.Error do
 
   alias AshR2RML.Refusal
 
-  defexception [:code, :message, :resource, :field, :sparql_clause, :hint, details: %{}]
+  use Splode.Error,
+    fields: [:code, :message, :resource, :field, :sparql_clause, :hint, details: %{}],
+    class: :invalid
 
   @type t :: %__MODULE__{
+          class: :forbidden | :invalid | :unknown,
           code: atom(),
           message: String.t() | nil,
           resource: module() | nil,
@@ -53,10 +56,10 @@ defmodule AshR2RML.Error do
     REFUSED_UNSUPPORTED_SPARQL_FEATURE:
       {"SPARQL feature is not supported by the in-memory OBDA backend",
        "rewrite the query using supported clauses (BGP, FILTER, LIMIT)"},
-    REFUSED_RESULT_LIMIT_EXCEEDED: {"result row limit exceeded", "add a LIMIT or raise the max_results bound"},
+    REFUSED_RESULT_LIMIT_EXCEEDED: {"result row limit exceeded", "add a LIMIT or raise the max_rows bound"},
     REFUSED_TRIPLE_LIMIT_EXCEEDED: {"triple limit exceeded", "narrow the query or raise the max_triples bound"},
-    REFUSED_MEMORY_LIMIT_EXCEEDED: {"memory limit exceeded", "narrow the query or raise the max_memory bound"},
-    REFUSED_QUERY_TIMEOUT: {"query exceeded its time budget", "narrow the query or raise the timeout bound"},
+    REFUSED_MEMORY_LIMIT_EXCEEDED: {"memory limit exceeded", "narrow the query or raise the max_heap_words bound"},
+    REFUSED_QUERY_TIMEOUT: {"query exceeded its time budget", "narrow the query or raise the timeout_ms bound"},
     REFUSED_MISSING_TENANT: {"tenant is required but missing", "pass a tenant in the query options"},
     REFUSED_MISSING_SUBJECT_KEY: {"subject key is missing", "supply every attribute the subject template references"},
     REFUSED_UNAUTHORIZED: {"actor is not authorized", "pass an actor permitted by the resource policies"},
@@ -132,12 +135,22 @@ defmodule AshR2RML.Error do
       sparql_clause: opts[:sparql_clause],
       hint: opts[:hint] || default_hint(code),
       details: Map.new(opts[:details] || %{}),
-      message: opts[:message]
+      message: opts[:message],
+      class: Refusal.class_for(code)
     }
 
     if is_binary(caller_message) and caller_message != "",
-      do: err,
+      do: %{err | message: caller_text(err, caller_message)},
       else: %{err | message: build_message(err)}
+  end
+
+  # A caller message keeps the code and hint visible: "CODE: text Hint: hint".
+  defp caller_text(%__MODULE__{code: code, hint: hint}, text) do
+    prefixed = if String.contains?(text, to_string(code)), do: text, else: "#{code}: #{text}"
+
+    if is_binary(hint) and hint != "" and not String.contains?(prefixed, hint),
+      do: "#{prefixed} Hint: #{hint}",
+      else: prefixed
   end
 
   @doc "Converts a `%AshR2RML.Refusal{}`; resource/field/clause come from subject and evidence."
@@ -155,9 +168,13 @@ defmodule AshR2RML.Error do
     )
   end
 
-  @impl true
+  @impl Exception
   def message(%__MODULE__{message: m}) when is_binary(m), do: m
-  def message(%__MODULE__{} = e), do: build_message(e)
+
+  def message(%__MODULE__{code: code} = e) do
+    text = build_message(e)
+    if String.contains?(text, to_string(code)), do: text, else: "#{code}: #{text}"
+  end
 
   defp split_subject({resource, field}) when is_atom(resource) and not is_nil(resource) do
     if resource?(resource), do: {resource, field}, else: {nil, nil}

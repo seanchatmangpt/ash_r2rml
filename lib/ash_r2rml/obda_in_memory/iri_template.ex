@@ -23,24 +23,49 @@ defmodule AshR2RML.OBDA.InMemory.IriTemplate do
       "http://schema.org/ok"
   """
 
-  @placeholder ~r/\{([a-zA-Z0-9_]+)\}/
+  # A function, not a module attribute: compiled regexes must not live in the literal pool (OTP 28).
+  defp placeholder, do: ~r/\{([a-zA-Z0-9_]+)\}/
 
   @doc """
   Substitutes `{field}` placeholders from `row`, percent-encoding each value.
 
-  Raises `ArgumentError` for a field with no existing atom and `Protocol.UndefinedError` for a
-  value without `String.Chars`; callers translate both into a nil (row-skipping) result.
-  """
-  @spec substitute(String.t(), map()) :: String.t()
-  def substitute(template, row) do
-    Regex.replace(@placeholder, template, fn _whole, field ->
-      value = Map.get(row, String.to_existing_atom(field))
+  Returns `nil` (a row miss, never a raise) when a field has no existing atom, is absent or
+  nil in the row, or holds a value with no lexical form.
 
-      case lexical(value) do
-        {:ok, lex} -> encode(lex)
-        :error -> raise ArgumentError, "no lexical form for template field #{field}"
+  ## Examples
+
+      iex> AshR2RML.OBDA.InMemory.IriTemplate.substitute("http://schema.org/{name}", %{})
+      nil
+  """
+  @spec substitute(String.t(), map()) :: String.t() | nil
+  def substitute(template, row) do
+    fields = placeholder() |> Regex.scan(template, capture: :all_but_first) |> List.flatten()
+
+    case encoded_fields(fields, row) do
+      {:ok, values} ->
+        Regex.replace(placeholder(), template, fn _whole, field -> Map.fetch!(values, field) end)
+
+      :error ->
+        nil
+    end
+  end
+
+  defp encoded_fields(fields, row) do
+    Enum.reduce_while(fields, {:ok, %{}}, fn field, {:ok, acc} ->
+      with {:ok, atom} <- existing_atom(field),
+           value when not is_nil(value) <- Map.get(row, atom),
+           {:ok, lex} <- lexical(value) do
+        {:cont, {:ok, Map.put(acc, field, encode(lex))}}
+      else
+        _ -> {:halt, :error}
       end
     end)
+  end
+
+  defp existing_atom(field) do
+    {:ok, String.to_existing_atom(field)}
+  rescue
+    ArgumentError -> :error
   end
 
   @doc """
@@ -97,7 +122,7 @@ defmodule AshR2RML.OBDA.InMemory.IriTemplate do
   """
   @spec fields_readable?(String.t(), map()) :: boolean()
   def fields_readable?(template, row) do
-    @placeholder
+    placeholder()
     |> Regex.scan(template, capture: :all_but_first)
     |> Enum.all?(fn [field] -> readable(Map.get(row, String.to_existing_atom(field))) != nil end)
   rescue

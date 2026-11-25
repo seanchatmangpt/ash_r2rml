@@ -110,12 +110,13 @@ defmodule AshR2RML.MixProject do
     ]
   end
 
-  # File-only list: no directories, no lib/mix/**, no ontop/jdbc/docker.
+  # File-only list: no directories, the public install/render mix tasks ship, the dev-only
+  # generate_docs task does not, no ontop/jdbc/docker.
   def package_files do
     lib =
       "lib/**/*.ex"
       |> Path.wildcard()
-      |> Enum.reject(&String.starts_with?(&1, "lib/mix/"))
+      |> Enum.reject(&(&1 == "lib/mix/tasks/ash_r2rml.generate_docs.ex"))
 
     docs =
       ["usage-rules/**/*.md", "README*", "LICENSE*", "LICENSES/*.md", "CHANGELOG*"]

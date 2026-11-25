@@ -217,14 +217,14 @@ defmodule AshR2RML.AuditRegressionsTest do
       plan = %Plan{needed_attributes: [:title], filter: {:eq, :secret, "guess"}}
 
       assert {:error, %Refusal{code: @sensitive, evidence: %{attribute: :secret}}} =
-               QueryBuilder.build_ash_query(mapping, plan, authorize?: false)
+               QueryBuilder.build_ash_query(mapping, plan, authorize?: false, allow_unauthorized: true)
     end
 
     test "sorting on it is refused", %{mapping: mapping} do
       plan = %Plan{needed_attributes: [:title], sort: [{:secret, :asc}]}
 
       assert {:error, %Refusal{code: @sensitive, evidence: %{attribute: :secret}}} =
-               QueryBuilder.build_ash_query(mapping, plan, authorize?: false)
+               QueryBuilder.build_ash_query(mapping, plan, authorize?: false, allow_unauthorized: true)
     end
 
     # A `field_policy :*` wildcard covers every attribute, so on `Fielded` all attributes are
@@ -233,7 +233,8 @@ defmodule AshR2RML.AuditRegressionsTest do
       mapping = mapping(GraphA, [])
       plan = %Plan{needed_attributes: [:name], filter: {:eq, :name, "t"}, sort: [{:name, :asc}]}
 
-      assert %Ash.Query{} = QueryBuilder.build_ash_query(mapping, plan, authorize?: false)
+      assert {:ok, %Ash.Query{}} =
+               QueryBuilder.build_ash_query(mapping, plan, authorize?: false, allow_unauthorized: true)
     end
   end
 

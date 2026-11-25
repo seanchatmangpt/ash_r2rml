@@ -34,16 +34,31 @@ defmodule AshR2RML.OBDA.Preflight do
     actor = Keyword.get(opts, :actor)
     tenant = Keyword.get(opts, :tenant)
 
-    with :ok <- check_tenant(resource, tenant) do
+    with :ok <- check_tenant(resource, tenant, Keyword.get(opts, :action)) do
       check_policy(resource, actor, tenant, opts)
     end
   end
 
-  defp check_tenant(resource, tenant) do
+  defp action_multitenancy(resource, nil) do
+    case Ash.Resource.Info.primary_action(resource, :read) do
+      %{multitenancy: mt} -> mt
+      _ -> nil
+    end
+  end
+
+  defp action_multitenancy(resource, name) do
+    case Ash.Resource.Info.action(resource, name) do
+      %{multitenancy: mt} -> mt
+      _ -> nil
+    end
+  end
+
+  defp check_tenant(resource, tenant, action) do
     strategy = Ash.Resource.Info.multitenancy_strategy(resource)
 
     if strategy in [:attribute, :context] and
-         not Ash.Resource.Info.multitenancy_global?(resource) and is_nil(tenant) do
+         not Ash.Resource.Info.multitenancy_global?(resource) and is_nil(tenant) and
+         action_multitenancy(resource, action) not in [:allow_global, :bypass, :bypass_all] do
       {:error,
        Refusal.new(
          :REFUSED_MISSING_TENANT,

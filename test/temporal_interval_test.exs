@@ -162,7 +162,7 @@ defmodule AshR2RML.TemporalIntervalTest do
   end
 
   defp assert_refused(attrs, entries, message) do
-    assert_raise RuntimeError, message, fn -> fixture(attrs, entries) end
+    assert_raise Spark.Error.DslError, message, fn -> fixture(attrs, entries) end
   end
 
   test "temporal with neither attribute is refused" do

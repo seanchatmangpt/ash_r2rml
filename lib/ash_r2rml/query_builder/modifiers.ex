@@ -56,16 +56,22 @@ defmodule AshR2RML.QueryBuilder.Modifiers do
   end
 
   @doc """
-  Refuses a query whose modifier tail cannot be parsed but contains `LIMIT` or `OFFSET`, since
-  `run/2` would otherwise silently return every row.
+  Refuses a query whose modifier tail cannot be parsed but contains `ORDER BY`, `LIMIT`, `OFFSET`,
+  `GROUP BY`, `HAVING` or `VALUES`, since `run/2` would otherwise silently return unsorted or
+  untruncated rows.
 
   ## Examples
 
       iex> AshR2RML.QueryBuilder.Modifiers.check("SELECT ?x WHERE { ?s ?p ?x } ORDER BY DESC(?x) LIMIT 2")
       :ok
 
-      iex> AshR2RML.QueryBuilder.Modifiers.check("SELECT ?x WHERE { ?s ?p ?x } ORDER BY STR(?x)")
+      iex> AshR2RML.QueryBuilder.Modifiers.check("SELECT ?x WHERE { ?s ?p ?x }")
       :ok
+
+      iex> sparql = "SELECT ?x WHERE { ?s ?p ?x } ORDER BY STR(?x)"
+      iex> {:error, %AshR2RML.Refusal{code: code}} = AshR2RML.QueryBuilder.Modifiers.check(sparql)
+      iex> code
+      :REFUSED_UNSUPPORTED_SPARQL_FEATURE
 
       iex> sparql = "SELECT ?x WHERE { ?s ?p ?x } ORDER BY STR(?x) LIMIT 2"
       iex> {:error, %AshR2RML.Refusal{code: code}} = AshR2RML.QueryBuilder.Modifiers.check(sparql)
@@ -76,11 +82,11 @@ defmodule AshR2RML.QueryBuilder.Modifiers do
   def check(sparql) when is_binary(sparql) do
     with :unparsed <- parse(sparql),
          tail when is_binary(tail) <- tail(sparql),
-         true <- Regex.match?(~r/\b(?:LIMIT|OFFSET|GROUP\s+BY|HAVING|VALUES)\b/i, tail) do
+         true <- Regex.match?(~r/\b(?:ORDER\s+BY|LIMIT|OFFSET|GROUP\s+BY|HAVING|VALUES)\b/i, tail) do
       {:error,
        AshR2RML.Refusal.new(
          :REFUSED_UNSUPPORTED_SPARQL_FEATURE,
-         "LIMIT/OFFSET/GROUP BY/HAVING/VALUES",
+         "ORDER BY/LIMIT/OFFSET/GROUP BY/HAVING/VALUES",
          "an unsupported solution-modifier tail (ORDER BY over an expression, GROUP BY, HAVING, VALUES) " <>
            "cannot be applied",
          %{tail: String.trim(tail)}
@@ -122,8 +128,20 @@ defmodule AshR2RML.QueryBuilder.Modifiers do
 
   def compare(a, b) do
     case {rank(a), rank(b)} do
-      {same, same} -> if inspect(a) < inspect(b), do: :lt, else: :gt
+      {same, same} -> tie_break(a, b)
       {ra, rb} -> if ra < rb, do: :lt, else: :gt
+    end
+  end
+
+  # `inspect/1` may collide for distinct terms; Erlang term order keeps the order antisymmetric.
+  defp tie_break(a, b) do
+    {ia, ib} = {inspect(a), inspect(b)}
+
+    cond do
+      ia < ib -> :lt
+      ia > ib -> :gt
+      a < b -> :lt
+      true -> :gt
     end
   end
 
@@ -168,6 +186,7 @@ defmodule AshR2RML.QueryBuilder.Modifiers do
     stripped =
       sparql
       |> String.replace(~r/<[^<>"{}|^`\\\s]*>/, "<I>")
+      |> String.replace(~r/"""(?:[^\\]|\\.)*?"""|'''(?:[^\\]|\\.)*?'''/s, "\"S\"")
       |> String.replace(~r/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/s, "\"S\"")
       |> String.replace(~r/#[^\n]*/, "")
 

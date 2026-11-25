@@ -258,7 +258,7 @@ defmodule AshR2RML.RefusalCodesCoverageTest do
     end
 
     test "Query.admit refuses text that is not SPARQL" do
-      assert {:error, %Refusal{code: :REFUSED_UNPROVEN_EQUIVALENCE} = refusal} =
+      assert {:error, %Refusal{code: :REFUSED_UNSUPPORTED_SPARQL_FEATURE} = refusal} =
                AshR2RML.SPARQL.Query.admit("this is definitely not sparql")
 
       assert refusal.detail =~ "language admission"
@@ -267,7 +267,7 @@ defmodule AshR2RML.RefusalCodesCoverageTest do
     test "Query.load_file refuses an unreadable path" do
       path = Path.join(System.tmp_dir!(), "ash_r2rml_missing_#{System.unique_integer([:positive])}.rq")
 
-      assert {:error, %Refusal{code: :REFUSED_UNPROVEN_EQUIVALENCE} = refusal} =
+      assert {:error, %Refusal{code: :REFUSED_READ_FAILED} = refusal} =
                AshR2RML.SPARQL.Query.load_file(path)
 
       assert refusal.detail =~ "failed to read SPARQL file"

@@ -8,10 +8,68 @@ defmodule AshR2RML.Refusal do
 
       iex> AshR2RML.Refusal.new(:REFUSED_INVALID_CLASS_IRI, MyApp.Person, "class IRI must be absolute").code
       :REFUSED_INVALID_CLASS_IRI
+
+  A refusal is also a `Splode.Error`: it can be raised, `Exception.message/1` renders
+  `CODE: detail`, and `Ash.Error.to_error_class/1` classifies it by its code (see `class_for/1`).
   """
 
   @enforce_keys [:code, :subject, :detail]
-  defstruct [:code, :subject, :detail, evidence: %{}]
+  use Splode.Error, fields: [:code, :subject, :detail, evidence: %{}], class: :invalid
+
+  @forbidden_codes [
+    :REFUSED_UNAUTHORIZED,
+    :REFUSED_SENSITIVE_ATTRIBUTE_MATERIALIZATION,
+    :REFUSED_ENCRYPTED_ATTRIBUTE_PROJECTION
+  ]
+
+  @unknown_codes [
+    :REFUSED_QUERY_TIMEOUT,
+    :REFUSED_READ_FAILED,
+    :REFUSED_WORKER_CRASHED,
+    :REFUSED_RESULT_LIMIT_EXCEEDED,
+    :REFUSED_TRIPLE_LIMIT_EXCEEDED,
+    :REFUSED_MEMORY_LIMIT_EXCEEDED,
+    :REFUSED_RESOURCE_BOUND,
+    :REFUSED_MANIFEST_GENERATION
+  ]
+
+  @doc """
+  The Ash error class of a refusal code: policy and sensitivity refusals are `:forbidden`,
+  runtime and bound failures are `:unknown`, mapping/option/validation refusals are `:invalid`.
+
+      iex> AshR2RML.Refusal.class_for(:REFUSED_UNAUTHORIZED)
+      :forbidden
+      iex> AshR2RML.Refusal.class_for(:REFUSED_INVALID_OPTION)
+      :invalid
+  """
+  @spec class_for(atom()) :: :forbidden | :invalid | :unknown
+  def class_for(code) when code in @forbidden_codes, do: :forbidden
+  def class_for(code) when code in @unknown_codes, do: :unknown
+  def class_for(_code), do: :invalid
+
+  @doc false
+  @impl Exception
+  def exception(opts) do
+    refusal = super(opts)
+    %{refusal | class: class_for(refusal.code)}
+  end
+
+  @impl Exception
+  def message(%__MODULE__{code: code, detail: detail} = refusal) do
+    detail_text = if is_binary(detail), do: detail, else: inspect(detail)
+    "#{code}: #{detail_text}#{context_text(refusal)}"
+  end
+
+  defp context_text(%__MODULE__{subject: subject, evidence: evidence}) do
+    subject_text = if is_nil(subject), do: "", else: " (subject: #{inspect(subject)})"
+
+    evidence_text =
+      if is_map(evidence) and map_size(evidence) > 0,
+        do: " evidence: #{inspect(evidence, limit: 20, printable_limit: 200)}",
+        else: ""
+
+    subject_text <> evidence_text
+  end
 
   @type code ::
           :REFUSED_INVALID_CLASS_IRI
@@ -41,12 +99,23 @@ defmodule AshR2RML.Refusal do
           | :REFUSED_TRIPLE_LIMIT_EXCEEDED
           | :REFUSED_INVALID_FEDERATION_ENVIRONMENT
           | :REFUSED_MISSING_TENANT
+          | :REFUSED_INVALID_OPTION
+          | :REFUSED_UNAUTHORIZED
+          | :REFUSED_QUERY_TIMEOUT
+          | :REFUSED_READ_FAILED
+          | :REFUSED_WORKER_CRASHED
+          | :REFUSED_MEMORY_LIMIT_EXCEEDED
+          | :REFUSED_MISSING_SUBJECT_KEY
+          | :REFUSED_INVALID_SUBJECT_IRI
+          | :REFUSED_NON_INVERTIBLE_TEMPLATE
+          | :REFUSED_PRIVATE_DATA_LAYER
 
   @type t :: %__MODULE__{
           code: code(),
           subject: term(),
           detail: String.t(),
-          evidence: map()
+          evidence: map(),
+          class: :forbidden | :invalid | :unknown
         }
 
   @doc """
@@ -55,7 +124,7 @@ defmodule AshR2RML.Refusal do
   """
   @spec new(code(), term(), String.t(), map()) :: t()
   def new(code, subject, detail, evidence \\ %{}) do
-    %__MODULE__{code: code, subject: subject, detail: detail, evidence: evidence}
+    %__MODULE__{code: code, subject: subject, detail: detail, evidence: evidence, class: class_for(code)}
   end
 end
 

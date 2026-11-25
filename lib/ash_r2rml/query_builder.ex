@@ -37,15 +37,19 @@ defmodule AshR2RML.QueryBuilder do
   (default #{@default_max_rows}), `:authorize?` (default `true`), `:row_cap` (optional extra
   limit ceiling, see `triple_row_cap/2`; it only ever lowers the limit).
 
+  Returns `{:ok, query}`; `max_rows` must be a positive integer (`:REFUSED_INVALID_OPTION`).
   Returns `{:error, %AshR2RML.Refusal{}}` (fail closed) for an unknown or sensitive attribute,
   an unknown relationship, a malformed filter, or a resource without a read action.
   """
-  @spec build_ash_query(Resource.t(), Plan.t(), keyword()) :: Ash.Query.t() | {:error, Refusal.t()}
+  @spec build_ash_query(Resource.t(), Plan.t(), keyword()) :: {:ok, Ash.Query.t()} | {:error, Refusal.t()}
   def build_ash_query(%Resource{ash_resource: resource} = mapping, %Plan{} = plan, opts \\ [])
       when is_atom(resource) do
     max_rows = Keyword.get(opts, :max_rows, @default_max_rows)
 
-    with {:ok, action} <- read_action(mapping, opts),
+    with :ok <- check_max_rows(mapping, max_rows),
+         :ok <- check_guards(mapping, opts),
+         {:ok, action} <- read_action(mapping, opts),
+         :ok <- check_tenant(mapping, action, opts),
          :ok <- check_attributes(mapping, plan.needed_attributes),
          :ok <- check_relationships(mapping, plan.needed_relationships),
          {:ok, sort_attrs} <- sort_attributes(mapping, plan.sort),
@@ -68,12 +72,101 @@ defmodule AshR2RML.QueryBuilder do
       resource
       |> Ash.Query.new()
       |> Ash.Query.for_read(action, %{}, read_opts(opts))
+      |> maybe_unpage(resource, action)
       |> Ash.Query.select(select)
       |> maybe_load(plan.needed_relationships)
       |> maybe_filter(if(caps.filter, do: filter_expr))
       |> maybe_sort(if(window?, do: plan.sort, else: []))
       |> maybe_offset(if(window?, do: plan.offset))
       |> maybe_limit(caps.limit, clamp_row_cap(effective_limit(limit_value, max_rows), opts[:row_cap]))
+      |> ensure_valid(mapping)
+    end
+  end
+
+  defp ensure_valid(%Ash.Query{valid?: true} = query, _mapping), do: {:ok, query}
+
+  defp ensure_valid(%Ash.Query{errors: errors}, mapping) do
+    detail = "built Ash.Query is invalid"
+    evidence = %{errors: Enum.map(errors, &error_evidence/1)}
+    {:error, refuse(mapping, :REFUSED_INVALID_TERM_MAP, detail, evidence)}
+  end
+
+  defp error_evidence(error) do
+    %{
+      class: Map.get(error, :class),
+      path: Map.get(error, :path),
+      message: error_message(error)
+    }
+  end
+
+  defp error_message(error) when is_exception(error), do: Exception.message(error)
+  defp error_message(error), do: inspect(error)
+
+  defp maybe_unpage(query, resource, action) do
+    case Ash.Resource.Info.action(resource, action) do
+      %{pagination: pagination} when pagination not in [nil, false] -> Ash.Query.page(query, false)
+      _ -> query
+    end
+  end
+
+  defp check_max_rows(_mapping, max_rows) when is_integer(max_rows) and max_rows > 0, do: :ok
+
+  defp check_max_rows(mapping, max_rows) do
+    {:error,
+     refuse(mapping, :REFUSED_INVALID_OPTION, "max_rows must be a positive integer", %{
+       max_rows: inspect(max_rows)
+     })}
+  end
+
+  # A strict multitenant resource read without any tenant is refused up front, unless the
+  # resource is `global?` or the read action itself is `:allow_global` / `:bypass`.
+  defp check_tenant(%Resource{ash_resource: resource} = mapping, action, opts) do
+    if Ash.Resource.Info.multitenancy_strategy(resource) != nil and is_nil(opts[:tenant]) and
+         not tenant_exempt?(resource, action, opts) do
+      {:error,
+       refuse(mapping, :REFUSED_MISSING_TENANT, "multitenant resource requires a :tenant", %{
+         action: action
+       })}
+    else
+      :ok
+    end
+  end
+
+  defp tenant_exempt?(resource, action, opts) do
+    action_mt =
+      case Ash.Resource.Info.action(resource, action) do
+        %{multitenancy: mt} -> mt
+        _ -> nil
+      end
+
+    action_mt in [:allow_global, :bypass, :bypass_all] or
+      (Ash.Resource.Info.multitenancy_global?(resource) and opts[:require_tenant] != true)
+  end
+
+  # Same guard admission as `AshR2RML.OBDA.InMemory`: unauthorized reads, a missing authorizer
+  # or a missing tenant are refused before any query is built.
+  defp check_guards(%Resource{ash_resource: resource} = mapping, opts) do
+    cond do
+      opts[:authorize?] == false and opts[:allow_unauthorized] != true ->
+        {:error,
+         refuse(
+           mapping,
+           :REFUSED_UNSUPPORTED_SPARQL_FEATURE,
+           "authorize?: false requires allow_unauthorized: true",
+           %{}
+         )}
+
+      opts[:require_authorizer] == true and Ash.Resource.Info.authorizers(resource) == [] ->
+        {:error,
+         refuse(
+           mapping,
+           :REFUSED_UNAUTHORIZED,
+           "require_authorizer: true but resource has no Ash.Authorizer",
+           %{}
+         )}
+
+      true ->
+        :ok
     end
   end
 
@@ -113,7 +206,8 @@ defmodule AshR2RML.QueryBuilder do
   Returns `{:error, %AshR2RML.Refusal{}}` when the plan is not admissible; the receiver then
   reads without pushdown.
   """
-  @spec pushdown_query(module(), Resource.t(), Plan.t(), keyword()) :: Ash.Query.t() | {:error, Refusal.t()}
+  @spec pushdown_query(module(), Resource.t(), Plan.t(), keyword()) ::
+          {:ok, Ash.Query.t()} | {:error, Refusal.t()}
   def pushdown_query(resource, %Resource{} = mapping, %Plan{} = plan, opts \\ []) when is_atom(resource),
     do: build_ash_query(%Resource{mapping | ash_resource: resource}, plan, opts)
 
@@ -159,8 +253,24 @@ defmodule AshR2RML.QueryBuilder do
       nil ->
         {:error, refuse(mapping, :REFUSED_INVALID_TERM_MAP, "resource has no read action", %{})}
 
-      action ->
-        {:ok, action}
+      %{name: name} ->
+        validate_read_action(mapping, name)
+
+      name ->
+        validate_read_action(mapping, name)
+    end
+  end
+
+  defp validate_read_action(%Resource{ash_resource: resource} = mapping, name) do
+    case is_atom(name) and Ash.Resource.Info.action(resource, name) do
+      %{type: :read} ->
+        {:ok, name}
+
+      _ ->
+        {:error,
+         refuse(mapping, :REFUSED_INVALID_TERM_MAP, "action is not a read action of the resource", %{
+           action: inspect(name)
+         })}
     end
   end
 

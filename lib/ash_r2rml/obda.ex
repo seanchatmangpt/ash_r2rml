@@ -29,7 +29,7 @@ defmodule AshR2RML.OBDA do
   `:context`, `:domain`, `:allow_unauthorized`, `:require_authorizer`, `:require_tenant` are
   forwarded to the read. Exceeding `:max_triples` yields `:REFUSED_TRIPLE_LIMIT_EXCEEDED`
   (raised by `AshR2RML.OBDA.InMemory`); `:max_rows` is enforced by the SPARQL engine. The four
-  bounds must be positive integers, else `:REFUSED_UNSUPPORTED_SPARQL_FEATURE`.
+  bounds must be positive integers, else `:REFUSED_INVALID_OPTION`.
 
   Resources on a `private?: true` ETS table are refused with `:REFUSED_PRIVATE_DATA_LAYER`:
   the read runs in a worker process that cannot see a private table.
@@ -76,7 +76,8 @@ defmodule AshR2RML.OBDA do
 
   @doc """
   Runs one SPARQL query over mapped Ash resources and returns `{:ok, %AshR2RML.OBDA.Result{}}`
-  or `{:error, %AshR2RML.Error{} | %AshR2RML.Refusal{}}`.
+  or `{:error, %AshR2RML.Error{}}` (every `%AshR2RML.Refusal{}` is converted with
+  `AshR2RML.Error.from_refusal/1`).
 
   `resources_or_domain` and `opts` are described in the module documentation. A `nil` value for
   `:max_rows` or `:max_triples` selects the default bound (never "unbounded"); `:timeout_ms` and
@@ -86,7 +87,7 @@ defmodule AshR2RML.OBDA do
   `:REFUSED_RESULT_LIMIT_EXCEEDED` and `:REFUSED_TRIPLE_LIMIT_EXCEEDED`.
   """
   @spec query(module() | [module() | InMemory.spec()], String.t(), keyword()) ::
-          {:ok, Result.t()} | {:error, Error.t() | Refusal.t()}
+          {:ok, Result.t()} | {:error, Error.t()}
   def query(resources_or_domain, sparql, opts \\ []) when is_binary(sparql) and is_list(opts) do
     started = System.monotonic_time()
     meta = %{sparql_bytes: byte_size(sparql)}
@@ -97,13 +98,24 @@ defmodule AshR2RML.OBDA do
       result =
         with :ok <- validate_bounds(opts),
              :ok <- check_private_data_layers(resources_or_domain) do
-          case Worker.call(fn -> execute(resources_or_domain, sparql, opts, started) end, opts) do
+          case Worker.call(fn -> execute(resources_or_domain, sparql, opts, started) end, worker_opts(opts)) do
             # Worker wraps the function's own {:ok, _} | {:error, _} return; flatten it.
-            {:ok, inner} -> normalize_result(inner)
-            {:error, _} = worker_error -> normalize_result(worker_error)
+            {:ok, inner} ->
+              normalize_result(inner)
+
+            {:error, _} = worker_error ->
+              normalize_result(worker_error)
+
             # Raises/throws/exits inside the worker keep their real reason, so a Forbidden is
             # classified REFUSED_UNAUTHORIZED instead of a generic worker crash.
-            {:raised, kind, reason, _stack} -> {:error, wrap_failure(kind, reason)}
+            {:raised, kind, reason, stack} ->
+              :telemetry.execute(
+                @event ++ [:exception],
+                %{duration: System.monotonic_time() - started},
+                Map.merge(meta, %{kind: kind, reason: reason, stacktrace: stack})
+              )
+
+              {:error, wrap_failure(kind, reason, stack)}
           end
         else
           {:error, _} = refused -> normalize_result(refused)
@@ -119,32 +131,45 @@ defmodule AshR2RML.OBDA do
           Map.merge(meta, %{kind: kind, reason: reason, stacktrace: __STACKTRACE__})
         )
 
-        {:error, wrap_failure(kind, reason)}
+        # A shutdown aimed at the calling process is never swallowed into an error tuple.
+        if kind == :exit and shutdown_reason?(reason), do: :erlang.raise(kind, reason, __STACKTRACE__)
+
+        {:error, wrap_failure(kind, reason, __STACKTRACE__)}
     end
   end
 
+  defp shutdown_reason?(:shutdown), do: true
+  defp shutdown_reason?({:shutdown, _}), do: true
+  defp shutdown_reason?(_), do: false
+
   @doc false
-  # Total error boundary: every non-ok outcome leaves `query/3` as `%Error{}` or `%Refusal{}`.
-  @spec normalize_result(term()) :: {:ok, Result.t()} | {:error, Error.t() | Refusal.t()}
+  # Total error boundary: every non-ok outcome leaves `query/3` as `%Error{}`.
+  @spec normalize_result(term()) :: {:ok, Result.t()} | {:error, Error.t()}
   def normalize_result({:ok, _} = ok), do: ok
   def normalize_result({:error, %Error{} = e}), do: {:error, e}
-  def normalize_result({:error, %Refusal{} = r}), do: {:error, r}
-  def normalize_result({:error, [%Refusal{} = r | _]}), do: {:error, r}
+  def normalize_result({:error, %Refusal{} = r}), do: {:error, Error.from_refusal(r)}
+  def normalize_result({:error, [%Refusal{} = r | _]}), do: {:error, Error.from_refusal(r)}
   def normalize_result({:error, other}), do: {:error, wrap_failure(:error, other)}
   def normalize_result(other), do: {:error, wrap_failure(:error, {:unexpected_result, other})}
 
   @doc false
-  @spec wrap_failure(atom(), term()) :: Error.t()
-  def wrap_failure(_kind, %Error{} = e), do: e
-  def wrap_failure(_kind, %Refusal{} = r), do: Error.from_refusal(r)
+  @spec wrap_failure(atom(), term(), Exception.stacktrace()) :: Error.t()
+  def wrap_failure(kind, reason, stack \\ [])
+  def wrap_failure(_kind, %Error{} = e, _stack), do: e
+  def wrap_failure(_kind, %Refusal{} = r, _stack), do: Error.from_refusal(r)
 
-  def wrap_failure(kind, reason) do
+  def wrap_failure(kind, reason, stack) do
     {code, resource} = classify(reason)
 
     Error.new(code,
       resource: resource,
       message: nil,
-      details: %{kind: kind, class: class_of(reason)}
+      details: %{
+        kind: kind,
+        class: class_of(reason),
+        reason: inspect(reason, limit: 20, printable_limit: 500),
+        stacktrace: Exception.format_stacktrace(stack)
+      }
     )
   end
 
@@ -165,7 +190,8 @@ defmodule AshR2RML.OBDA do
   def classify(_reason), do: {:REFUSED_READ_FAILED, nil}
 
   defp forbidden?(%{__struct__: mod} = reason) do
-    mod |> Module.split() |> Enum.member?("Forbidden") or nested?(reason, &forbidden?/1)
+    Map.get(reason, :class) == :forbidden or
+      mod |> Module.split() |> Enum.member?("Forbidden") or nested?(reason, &forbidden?/1)
   rescue
     # Module.split/1 raises on a non-Elixir module name; that is simply "not a Forbidden".
     ArgumentError -> false
@@ -196,10 +222,14 @@ defmodule AshR2RML.OBDA do
   defp class_of(_), do: nil
 
   defp stop_meta(meta, {:ok, _}), do: Map.put(meta, :result, :ok)
-  defp stop_meta(meta, {:error, %Refusal{code: code}}), do: meta |> Map.put(:result, :error) |> Map.put(:code, code)
   defp stop_meta(meta, {:error, %Error{code: code}}), do: meta |> Map.put(:result, :error) |> Map.put(:code, code)
 
   @bound_keys [:max_rows, :max_triples, :timeout_ms, :max_heap_words]
+
+  # A nil worker bound means "absent" (default), exactly as validate_bounds/1 admits it.
+  defp worker_opts(opts) do
+    Enum.reject(opts, fn {key, value} -> key in [:timeout_ms, :max_heap_words] and is_nil(value) end)
+  end
 
   # Bounds must be positive integers (or absent/nil); anything else is refused up front rather than
   # reaching the worker or the engine with a nonsensical limit.
@@ -213,10 +243,12 @@ defmodule AshR2RML.OBDA do
 
       key ->
         {:error,
-         refusal("option #{key}", "#{key} must be a positive integer", %{
-           option: key,
-           value: inspect(Keyword.get(opts, key))
-         })}
+         Refusal.new(
+           :REFUSED_INVALID_OPTION,
+           "option #{key}",
+           "#{key} must be a positive integer",
+           %{option: key, value: inspect(Keyword.get(opts, key))}
+         )}
     end
   end
 
@@ -322,14 +354,17 @@ defmodule AshR2RML.OBDA do
 
   # Full-IRI (normalized to <>) and prefixed-name forms: sequence, alternative, inverse, and the
   # * + ? modifiers glued to a predicate. `?x+1` (no prefix) and `^^xsd:t` are not paths.
-  @path_patterns [
-    ~r/(<>|[\w-]*:[\w-]*)\s*[\/|]\s*(<>|[\w-]*:)/,
-    ~r/(?<!\^)\^(?!\^)\s*(<>|[\w-]*:|\()/,
-    ~r/(<>|[\w-]*:[\w-]+)[*+?](?=[\s)]|$)/,
-    ~r/\(\s*(<>|[\w-]*:[\w-]*)\s*[\/|]/
-  ]
+  # Functions, not module attributes: compiled regexes must not live in the literal pool (OTP 28).
+  defp path_patterns do
+    [
+      ~r/(<>|[\w-]*:[\w-]*)\s*[\/|]\s*(<>|[\w-]*:)/,
+      ~r/(?<!\^)\^(?!\^)\s*(<>|[\w-]*:|\()/,
+      ~r/(<>|[\w-]*:[\w-]+)[*+?](?=[\s)]|$)/,
+      ~r/\(\s*(<>|[\w-]*:[\w-]*)\s*[\/|]/
+    ]
+  end
 
-  defp property_path?(plain), do: Enum.any?(@path_patterns, &Regex.match?(&1, plain))
+  defp property_path?(plain), do: Enum.any?(path_patterns(), &Regex.match?(&1, plain))
 
   # Strings become "", IRIs become <>, comments are dropped, so keyword scans see only real tokens.
   defp normalize_sparql(sparql) do
@@ -357,12 +392,15 @@ defmodule AshR2RML.OBDA do
     end
   end
 
-  @select_clause ~r/\bSELECT\b\s+(?:DISTINCT\s+|REDUCED\s+)?(.*?)\s*(?:\bWHERE\b|\{)/is
-  @query_form ~r/\A (?:\s* (?:\#[^\n]*(?:\n|\z) | PREFIX\s+[^\s<]*\s*<[^>]*> | BASE\s+<[^>]*>))*
-                  \s* (SELECT|ASK|CONSTRUCT|DESCRIBE)/xi
+  defp select_clause, do: ~r/\bSELECT\b\s+(?:DISTINCT\s+|REDUCED\s+)?(.*?)\s*(?:\bWHERE\b|\{)/is
+
+  defp query_form do
+    ~r/\A (?:\s* (?:\#[^\n]*(?:\n|\z) | PREFIX\s+[^\s<]*\s*<[^>]*> | BASE\s+<[^>]*>))*
+       \s* (SELECT|ASK|CONSTRUCT|DESCRIBE)/xi
+  end
 
   defp check_select_order(sparql, order) do
-    case Regex.run(@select_clause, normalize_sparql(sparql)) do
+    case Regex.run(select_clause(), normalize_sparql(sparql)) do
       [_, select] -> check_projected(select, order)
       nil -> unmatched_select(sparql)
     end
@@ -370,7 +408,7 @@ defmodule AshR2RML.OBDA do
 
   # A SELECT whose clause text cannot be matched must not fail open; other forms are untouched.
   defp unmatched_select(sparql) do
-    case Regex.run(@query_form, sparql, capture: :all_but_first) do
+    case Regex.run(query_form(), sparql, capture: :all_but_first) do
       [form] ->
         if String.upcase(form) == "SELECT" do
           {:error,
@@ -473,12 +511,22 @@ defmodule AshR2RML.OBDA do
       {:ok, specs, 0}
     else
       pre_opts = Keyword.take(opts, [:actor, :tenant, :context, :domain, :action])
+      guard_opts = Keyword.take(opts, [:allow_unauthorized, :require_authorizer, :require_tenant])
 
       Enum.reduce_while(specs, {:ok, [], 0}, fn {resource, _mapping} = spec, {:ok, keep, pruned} ->
         case AshR2RML.OBDA.Preflight.check(resource, pre_opts) do
-          :ok -> {:cont, {:ok, [spec | keep], pruned}}
-          :pruned -> {:cont, {:ok, keep, pruned + 1}}
-          {:error, _} = error -> {:halt, error}
+          :ok ->
+            {:cont, {:ok, [spec | keep], pruned}}
+
+          :pruned ->
+            # Pruning must not skip the guards the read path would have applied.
+            case InMemory.check_read_guards(resource, guard_opts, tenant: opts[:tenant], authorize?: true) do
+              :ok -> {:cont, {:ok, keep, pruned + 1}}
+              {:error, _} = error -> {:halt, error}
+            end
+
+          {:error, _} = error ->
+            {:halt, error}
         end
       end)
       |> case do

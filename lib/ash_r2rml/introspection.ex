@@ -55,6 +55,130 @@ defmodule AshR2RML.Introspection do
     end
   end
 
+  @doc "Identifies which Ash data layer backs a resource: `:postgres`, `:ets`, or `:unknown`."
+  @spec backend(module()) :: :postgres | :ets | :unknown
+  def backend(resource) when is_atom(resource) do
+    if Code.ensure_loaded?(resource) and Ash.Resource.Info.resource?(resource) do
+      case Ash.Resource.Info.data_layer(resource) do
+        Ash.DataLayer.Ets -> :ets
+        layer -> if postgres_data_layer?(layer), do: :postgres, else: :unknown
+      end
+    else
+      :unknown
+    end
+  end
+
+  @doc """
+  Physical table name declared by the resource's data layer.
+
+  `{:error, refusal}` when the layer is unknown or declares no concrete table; a name is
+  never derived from the module name.
+  """
+  @spec table_name(module()) :: {:ok, String.t()} | {:error, Refusal.t()}
+  def table_name(resource) when is_atom(resource) do
+    case backend(resource) do
+      :postgres ->
+        case infer_postgres_table(resource, resource) do
+          {:ok, %LogicalTable{table_name: table}} -> {:ok, table}
+          {:error, %Refusal{}} = error -> error
+        end
+
+      :ets ->
+        ets_table_name(resource)
+
+      :unknown ->
+        {:error,
+         Refusal.new(
+           :REFUSED_INVALID_LOGICAL_TABLE,
+           resource,
+           "data layer is unknown or the module is not an Ash resource; no table name can be derived"
+         )}
+    end
+  end
+
+  defp ets_table_name(resource) do
+    table = Ash.DataLayer.Ets.Info.table(resource)
+
+    if table not in [nil, resource] do
+      {:ok, Atom.to_string(table)}
+    else
+      {:error,
+       Refusal.new(
+         :REFUSED_INVALID_LOGICAL_TABLE,
+         resource,
+         "ETS resource declares no explicit table; no table name can be derived"
+       )}
+    end
+  end
+
+  @doc "Database schema name declared on a Postgres-backed resource; `nil` for any other layer."
+  @spec schema_name(module()) :: String.t() | nil
+  def schema_name(resource) when is_atom(resource) do
+    with :postgres <- backend(resource),
+         info = Module.concat(["AshPostgres", "DataLayer", "Info"]),
+         true <- Code.ensure_loaded?(info),
+         schema when is_binary(schema) and schema != "" <- info.schema(resource) do
+      schema
+    else
+      _ -> nil
+    end
+  end
+
+  @doc """
+  Join column names of a relationship (a struct or a map) as `{source_column, destination_column}`.
+
+  The source attribute is read through `column/2`, so `attribute.source` remapping is honored.
+  A relationship that names no source or destination attribute is refused; `:id` is never assumed.
+  """
+  @spec join_columns(module(), map()) :: {:ok, {String.t(), String.t()}} | {:error, Refusal.t()}
+  def join_columns(resource, relationship) when is_atom(resource) and is_map(relationship) do
+    source_attr = Map.get(relationship, :source_attribute) || Map.get(relationship, :source_attribute_on_join_resource)
+
+    dest_attr =
+      Map.get(relationship, :destination_attribute) || Map.get(relationship, :destination_attribute_on_join_resource)
+
+    with {:ok, source_column} <- named_column(resource, relationship, source_attr, :source),
+         {:ok, dest_column} <- join_destination_column(relationship, dest_attr) do
+      {:ok, {source_column, dest_column}}
+    end
+  end
+
+  defp named_column(resource, relationship, nil, side) do
+    {:error,
+     Refusal.new(
+       :REFUSED_AMBIGUOUS_RELATIONSHIP,
+       {resource, Map.get(relationship, :name)},
+       "relationship names no #{side} attribute; no join column can be derived"
+     )}
+  end
+
+  defp named_column(resource, _relationship, attribute, _side) do
+    case attribute(resource, attribute) do
+      nil -> {:ok, to_string(attribute)}
+      attr -> {:ok, source_column(attr)}
+    end
+  end
+
+  defp join_destination_column(relationship, attribute) do
+    destination = Map.get(relationship, :destination)
+
+    cond do
+      is_nil(attribute) ->
+        {:error,
+         Refusal.new(
+           :REFUSED_AMBIGUOUS_RELATIONSHIP,
+           {destination, Map.get(relationship, :name)},
+           "relationship names no destination attribute; no join column can be derived"
+         )}
+
+      is_atom(destination) and not is_nil(destination) ->
+        destination_column(destination, attribute)
+
+      true ->
+        {:ok, to_string(attribute)}
+    end
+  end
+
   defp blank_to_nil(value) when is_binary(value) do
     case String.trim(value) do
       "" -> nil
@@ -272,16 +396,31 @@ defmodule AshR2RML.Introspection do
     end
   end
 
-  # A destination resource that is still compiling (cyclic resource graphs) cannot be read yet;
-  # its column is then the attribute name, and a compiled destination refuses unknown attributes.
+  # A loaded Ash resource is read through `column/2`; a loaded non-resource or missing module is
+  # refused. The only unreadable-but-lawful destination is one still being compiled by the
+  # parallel compiler (cyclic resource graphs): there, and only there, its declared
+  # destination attribute name stands in for the column.
   defp destination_column(destination, attribute_name) do
-    case Ash.Resource.Info.attributes(destination) do
-      attributes when is_list(attributes) -> column(destination, attribute_name)
+    loaded? = is_atom(destination) and not is_nil(destination) and Code.ensure_loaded?(destination)
+
+    cond do
+      loaded? and Ash.Resource.Info.resource?(destination) ->
+        column(destination, attribute_name)
+
+      # A destination that is not compiled yet (mutually referencing resources compile in one pass)
+      # keeps the declared destination attribute name; the dependency-closed bundle later refuses
+      # a target that never materializes (REFUSED_RELATIONSHIP_TARGET_UNMAPPED).
+      not loaded? and is_atom(destination) and is_atom(attribute_name) and not is_nil(attribute_name) ->
+        {:ok, to_string(attribute_name)}
+
+      true ->
+        {:error,
+         Refusal.new(
+           :REFUSED_AMBIGUOUS_RELATIONSHIP,
+           {destination, attribute_name},
+           "relationship destination is not a loadable Ash resource; no destination column can be derived"
+         )}
     end
-  rescue
-    RuntimeError -> {:ok, to_string(attribute_name)}
-    ArgumentError -> {:ok, to_string(attribute_name)}
-    UndefinedFunctionError -> {:ok, to_string(attribute_name)}
   end
 
   @doc false
@@ -359,17 +498,22 @@ defmodule AshR2RML.Introspection do
   defp infer_logical_table_from_data_layer(resource, source) do
     data_layer = Ash.Resource.Info.data_layer(source)
 
-    if postgres_data_layer?(data_layer) do
-      infer_postgres_table(resource, source)
-    else
-      {:error,
-       Refusal.new(
-         :REFUSED_INVALID_LOGICAL_TABLE,
-         resource,
-         "active Ash data layer does not expose a supported relational logical table; " <>
-           "configure an explicit read-only logical table",
-         %{data_layer: data_layer}
-       )}
+    cond do
+      postgres_data_layer?(data_layer) ->
+        infer_postgres_table(resource, source)
+
+      data_layer == Ash.DataLayer.Ets and Ash.DataLayer.Ets.Info.table(source) not in [nil, resource] ->
+        {:ok, %LogicalTable{table_name: Atom.to_string(Ash.DataLayer.Ets.Info.table(source))}}
+
+      true ->
+        {:error,
+         Refusal.new(
+           :REFUSED_INVALID_LOGICAL_TABLE,
+           resource,
+           "active Ash data layer does not expose a supported relational logical table; " <>
+             "configure an explicit read-only logical table",
+           %{data_layer: data_layer}
+         )}
     end
   end
 

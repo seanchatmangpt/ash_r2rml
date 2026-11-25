@@ -22,12 +22,13 @@ defmodule AshR2RML.QueryBuilderModifierFixesTest do
     test "accepts parsed modifiers, unparsed tails without LIMIT/OFFSET, and no tail" do
       assert :ok = Modifiers.check(@base <> "ORDER BY DESC(?n) LIMIT 3 OFFSET 1")
       assert :ok = Modifiers.check(@base <> "LIMIT 3")
-      assert :ok = Modifiers.check(@base <> "ORDER BY STR(?n)")
+      assert {:error, %AshR2RML.Refusal{}} = Modifiers.check(@base <> "ORDER BY STR(?n)")
       assert :ok = Modifiers.check(@base)
     end
 
     test "a LIMIT inside a string literal in the pattern is not a tail" do
-      assert :ok = Modifiers.check(~s[SELECT ?n WHERE { ?s ?p "LIMIT" } ORDER BY STR(?n)])
+      assert {:error, %AshR2RML.Refusal{evidence: %{tail: "ORDER BY STR(?n)"}}} =
+               Modifiers.check(~s[SELECT ?n WHERE { ?s ?p "LIMIT" } ORDER BY STR(?n)])
     end
   end
 

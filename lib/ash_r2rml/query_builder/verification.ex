@@ -31,10 +31,6 @@ defmodule AshR2RML.QueryBuilder.Verification do
       {:ok, rows} -> decide(rows, keys, keep, fetch, solution_count)
       :error -> :fallback
     end
-  rescue
-    # Only key-comparison failures (incomparable values) mean "cannot trust the narrowed read".
-    # Any other exception is a programmer error and crashes.
-    _error in [ArgumentError, FunctionClauseError, Decimal.Error] -> :fallback
   end
 
   defp decide(rows, keys, keep, fetch, solution_count) do

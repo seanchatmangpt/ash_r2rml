@@ -49,6 +49,17 @@ defmodule AshR2RML.Domain.Verifier do
     |> Enum.sort()
   end
 
+  # An unavailable member has no verifier of its own to report it: surface it here.
+  defp member_errors(
+         {resource, %AshR2RML.Refusal{evidence: %{reason: reason}, detail: detail}},
+         _members,
+         _mappings,
+         _strict?,
+         _prefixes
+       )
+       when reason in [:module_unavailable, :compile_pending],
+       do: ["#{inspect(resource)}: member resource is unavailable: #{detail}"]
+
   # Members whose own mapping failed are reported by their own verifier.
   defp member_errors({resource, %Mapping.Resource{} = mapping}, members, mappings, strict?, prefixes) do
     check(resource, mapping, members, mappings) ++
@@ -69,14 +80,39 @@ defmodule AshR2RML.Domain.Verifier do
   end
 
   # A member resolves to its mapping, or to the real %Refusal{} so the parent's
-  # own refusal is surfaced, not masked. Referencing the member module waits on
-  # the parallel compiler; no explicit compile call is needed.
+  # own refusal is surfaced, not masked. `Code.ensure_compiled/1` waits on the
+  # parallel compiler; a member that stays unavailable (never compiled, or a
+  # compile cycle) is reported as unavailable, never as an unmapped resource.
   defp resolve(resource) do
-    case AshR2RML.Resource.Info.mapping_result(resource) do
-      {:ok, %Mapping.Resource{} = mapping} -> mapping
-      {:error, %AshR2RML.Refusal{} = refusal} -> refusal
+    with {:module, _} <- ensure_member(resource),
+         {:ok, %Mapping.Resource{} = mapping} <- AshR2RML.Resource.Info.mapping_result(resource) do
+      mapping
+    else
+      {:error, %AshR2RML.Refusal{} = refusal} ->
+        refusal
+
+      {:error, reason} ->
+        AshR2RML.Refusal.new(
+          :REFUSED_INVALID_OPTION,
+          resource,
+          "#{inspect(resource)} is not compiled (#{inspect(reason)})",
+          %{option: :resource, reason: unavailable_reason(reason)}
+        )
     end
   end
+
+  # A member the compiler reports unavailable (cycle) may still be loaded already.
+  defp ensure_member(resource) do
+    case Code.ensure_compiled(resource) do
+      {:module, _} = ok -> ok
+      {:error, _} = error -> if Code.ensure_loaded?(resource), do: {:module, resource}, else: error
+    end
+  end
+
+  # `:unavailable` means the parallel compiler is mid-cycle: the member cannot be judged yet,
+  # which is not the same as a module that does not exist.
+  defp unavailable_reason(:unavailable), do: :compile_pending
+  defp unavailable_reason(_reason), do: :module_unavailable
 
   @doc false
   @spec check(module(), Mapping.Resource.t(), [module()], map()) :: [String.t()]

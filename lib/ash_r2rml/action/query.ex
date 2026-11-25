@@ -14,15 +14,25 @@ defmodule AshR2RML.Action.Query do
 
   Source options (one required): `:domain`, `:resources` (module list), or
   `:specs_fun` (an `{module, function, args}` returning `{resource, mapping}` specs).
-  `:max_rows`, `:max_triples`, `:timeout_ms`, `:allow_sensitive?`, `:require_authorizer` and
-  `:require_tenant` are forwarded. Actor, tenant
-  and authorize? come from the action context. The action returns a plain map with
+  `:max_rows`, `:max_triples`, `:timeout_ms` (positive integers), `:allow_sensitive?` (alias
+  `:allow_sensitive`), `:allow_unauthorized`, `:require_authorizer` and `:require_tenant` are forwarded. Actor,
+  tenant and authorize? come from the action context; `authorize?: false` is refused unless
+  the action itself opts in with `allow_unauthorized: true`. The action returns a plain map with
   `:bindings`, `:triples`, `:stats` and `:digest`; a refusal is returned as `{:error, refusal}`.
   """
 
   use Ash.Resource.Actions.Implementation
 
-  @forwarded [:max_rows, :max_triples, :timeout_ms, :allow_sensitive?, :require_authorizer, :require_tenant]
+  @forwarded [
+    :max_rows,
+    :max_triples,
+    :timeout_ms,
+    :allow_sensitive?,
+    :allow_sensitive,
+    :allow_unauthorized,
+    :require_authorizer,
+    :require_tenant
+  ]
   @source_keys [:domain, :resources, :specs_fun]
   @known_keys @forwarded ++ @source_keys
 
@@ -36,12 +46,36 @@ defmodule AshR2RML.Action.Query do
 
   def init(_opts), do: {:error, "options must be a keyword list"}
 
+  @bounds [:max_rows, :max_triples, :timeout_ms]
+
   defp validate_source(opts) do
-    case opts[:specs_fun] do
-      nil -> {:ok, opts}
-      {m, f, a} when is_atom(m) and is_atom(f) and is_list(a) -> {:ok, opts}
-      other -> {:error, ":specs_fun must be {module, function, args}, got #{inspect(other)}"}
+    with :ok <- validate_specs_fun(opts[:specs_fun]),
+         :ok <- validate_present(opts),
+         :ok <- validate_bounds(opts) do
+      {:ok, opts}
     end
+  end
+
+  defp validate_specs_fun(nil), do: :ok
+  defp validate_specs_fun({m, f, a}) when is_atom(m) and is_atom(f) and is_list(a), do: :ok
+  defp validate_specs_fun(other), do: {:error, ":specs_fun must be {module, function, args}, got #{inspect(other)}"}
+
+  defp validate_present(opts) do
+    if Enum.any?(@source_keys, &(opts[&1] != nil)),
+      do: :ok,
+      else: {:error, "one of #{inspect(@source_keys)} is required"}
+  end
+
+  defp validate_bounds(opts) do
+    Enum.find_value(@bounds, :ok, fn key ->
+      case Keyword.fetch(opts, key) do
+        {:ok, value} when not (is_integer(value) and value > 0) ->
+          {:error, "#{inspect(key)} must be a positive integer, got #{inspect(value)}"}
+
+        _ ->
+          nil
+      end
+    end)
   end
 
   @impl true
@@ -72,7 +106,7 @@ defmodule AshR2RML.Action.Query do
       true ->
         {:error,
          AshR2RML.Refusal.new(
-           :REFUSED_UNSUPPORTED_SPARQL_FEATURE,
+           :REFUSED_INVALID_OPTION,
            __MODULE__,
            "action requires one of :domain, :resources or :specs_fun",
            %{}
@@ -88,15 +122,9 @@ defmodule AshR2RML.Action.Query do
     |> Keyword.put(:actor, context.actor)
     |> Keyword.put(:tenant, context.tenant)
     |> Keyword.put(:authorize?, authorize?)
-    |> put_unless(:allow_unauthorized, true, authorize?)
     |> put_present(:context, context.source_context)
     |> put_present(:domain, context.domain || input.domain)
   end
-
-  # authorize?: false was requested explicitly by the caller of the action; the OBDA read
-  # needs the matching explicit opt-in.
-  defp put_unless(kw, _key, _value, true), do: kw
-  defp put_unless(kw, key, value, false), do: Keyword.put(kw, key, value)
 
   defp put_present(kw, _key, nil), do: kw
   defp put_present(kw, key, value), do: Keyword.put(kw, key, value)

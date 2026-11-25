@@ -75,11 +75,40 @@ defmodule AshR2RML.Parity do
   Compares two observed row lists as multisets and returns a `ParityReceipt`.
 
   `metadata` keys may be atoms or strings. `verified?` is true when the normalized
-  multisets are equal; `observed?` follows the rule in the moduledoc.
+  multisets are equal; `observed?` follows the rule in the moduledoc. Option `:max`
+  bounds each side's row count; over it the call returns
+  `{:error, %AshR2RML.Refusal{code: :REFUSED_RESOURCE_BOUND}}`. Default: unbounded.
   """
-  @spec compare(:sparql_sql, term(), list(), list(), map()) :: ParityReceipt.t()
-  def compare(kind, subject, left_rows, right_rows, metadata \\ %{})
-      when kind == :sparql_sql and is_list(left_rows) and is_list(right_rows) do
+  @spec compare(:sparql_sql, term(), list(), list(), map(), keyword()) ::
+          ParityReceipt.t() | {:error, AshR2RML.Refusal.t()}
+  def compare(kind, subject, left_rows, right_rows, metadata \\ %{}, opts \\ [])
+      when kind == :sparql_sql and is_list(left_rows) and is_list(right_rows) and
+             is_list(opts) do
+    with :ok <- check_bound(left_rows, :left, Keyword.get(opts, :max)),
+         :ok <- check_bound(right_rows, :right, Keyword.get(opts, :max)) do
+      do_compare(kind, subject, left_rows, right_rows, metadata)
+    end
+  end
+
+  defp check_bound(_rows, _side, nil), do: :ok
+
+  defp check_bound(rows, side, max) when is_integer(max) and max >= 0 do
+    count = length(rows)
+
+    if count > max do
+      {:error,
+       AshR2RML.Refusal.new(
+         :REFUSED_RESOURCE_BOUND,
+         :parity,
+         "#{side} row count #{count} exceeds max #{max}",
+         %{side: side, count: count, max: max}
+       )}
+    else
+      :ok
+    end
+  end
+
+  defp do_compare(kind, subject, left_rows, right_rows, metadata) do
     left = normalize_multiset(left_rows, csv?: get(metadata, :left_csv_rows) == true)
     right = normalize_multiset(right_rows, csv?: get(metadata, :right_csv_rows) == true)
     left_hash = sha256(left)
@@ -147,7 +176,16 @@ defmodule AshR2RML.Parity do
   defp canonical(%DateTime{} = datetime, _csv?), do: DateTime.to_iso8601(datetime)
   defp canonical(%NaiveDateTime{} = datetime, _csv?), do: NaiveDateTime.to_iso8601(datetime)
   defp canonical(%Date{} = date, _csv?), do: Date.to_iso8601(date)
-  defp canonical(%_{} = struct, csv?), do: struct |> Map.from_struct() |> canonical(csv?)
+  defp canonical(%Ash.CiString{} = ci, _csv?), do: Ash.CiString.value(ci)
+
+  # The struct module is part of the value: ForbiddenField, NotLoaded and a plain map with the
+  # same fields are different observations and must not collapse.
+  defp canonical(%module{} = struct, csv?) do
+    struct
+    |> Map.from_struct()
+    |> Map.put("__struct__", Atom.to_string(module))
+    |> canonical(csv?)
+  end
 
   # A SPARQL binding row can express "this variable has no value here" two
   # observably different ways depending on the execution surface: the local

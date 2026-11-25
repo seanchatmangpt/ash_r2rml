@@ -44,7 +44,7 @@ defmodule AshR2RML.Security do
     # Only Ash-mediated in-memory (:ets) reads can enforce field policies; every other layer,
     # including :unknown (fail closed), is read directly by an external R2RML engine.
     mapping =
-      if AshR2RML.DataLayer.backend(ash_resource) != :ets do
+      if AshR2RML.Introspection.backend(ash_resource) != :ets do
         ash_resource
         |> unenforceable_attributes(mapping)
         |> then(&remove_attributes(mapping, &1, :field_policy_excluded_attributes))
@@ -283,7 +283,7 @@ defmodule AshR2RML.Security do
     |> resolve_attributes(column)
     |> Enum.any?(fn attr ->
       attr.sensitive? == true or
-        (AshR2RML.DataLayer.backend(resource) != :ets and field_policy_protected?(resource, attr.name))
+        (AshR2RML.Introspection.backend(resource) != :ets and field_policy_protected?(resource, attr.name))
     end)
   rescue
     _ in [ArgumentError, UndefinedFunctionError, FunctionClauseError] -> true

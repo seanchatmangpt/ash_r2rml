@@ -29,6 +29,10 @@ defmodule AshR2RML.InstallStarterBlockTest do
               domain: nil,
               data_layer: Ash.DataLayer.Ets
 
+            ets do
+              table :installed_posts
+            end
+
             actions do
               defaults [:read]
             end

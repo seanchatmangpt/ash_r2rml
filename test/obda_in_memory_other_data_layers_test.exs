@@ -12,10 +12,10 @@ defmodule AshR2RML.OBDA.InMemoryOtherDataLayersTest do
   key-value store on disk). `ash_csv`/`ash_cubdb` are `:test`-only dependencies of AshR2RML
   itself, used solely to verify this -- AshR2RML's own runtime never depends on them.
 
-  `AshR2RML.DataLayer.backend/1` correctly classifies both as `:unknown` (it only recognizes
+  `AshR2RML.Introspection.backend/1` correctly classifies both as `:unknown` (it only recognizes
   `:postgres`/`:ets` by name) -- that's expected and does not block materialization, since
-  `InMemory` never consults `backend/1` at all. `table_name/1` for an `:unknown` backend falls
-  through to the module-name-derived default, also verified here.
+  `InMemory` never consults `backend/1` at all. `table_name/1` for an `:unknown` backend is a
+  typed refusal, never a module-name-derived guess, also verified here.
   """
   use ExUnit.Case, async: false
 
@@ -116,9 +116,9 @@ defmodule AshR2RML.OBDA.InMemoryOtherDataLayersTest do
   end
 
   describe "AshCsv.DataLayer" do
-    test "backend/1 classifies it as :unknown, table_name/1 falls through to the default, and materialization still works" do
-      assert AshR2RML.DataLayer.backend(CsvOrganization) == :unknown
-      assert AshR2RML.DataLayer.table_name(CsvOrganization) == "csv_organizations"
+    test "backend/1 classifies it as :unknown and table_name/1 refuses instead of guessing" do
+      assert AshR2RML.Introspection.backend(CsvOrganization) == :unknown
+      assert {:error, %AshR2RML.Refusal{}} = AshR2RML.Introspection.table_name(CsvOrganization)
     end
 
     test "AshR2RML.OBDA.InMemory materializes and queries real rows from a real CSV file" do
@@ -147,9 +147,9 @@ defmodule AshR2RML.OBDA.InMemoryOtherDataLayersTest do
   end
 
   describe "AshCubDB.DataLayer" do
-    test "backend/1 classifies it as :unknown, table_name/1 falls through to the default, and materialization still works" do
-      assert AshR2RML.DataLayer.backend(CubOrganization) == :unknown
-      assert AshR2RML.DataLayer.table_name(CubOrganization) == "cub_organizations"
+    test "backend/1 classifies it as :unknown and table_name/1 refuses instead of guessing" do
+      assert AshR2RML.Introspection.backend(CubOrganization) == :unknown
+      assert {:error, %AshR2RML.Refusal{}} = AshR2RML.Introspection.table_name(CubOrganization)
     end
 
     test "AshR2RML.OBDA.InMemory materializes and queries real rows from a real CubDB store" do

@@ -127,7 +127,7 @@ defmodule AshR2RML.SecurityRenderPathTest do
   end
 
   test "non-ETS layer (unknown backend) strips field-policy attributes" do
-    assert AshR2RML.DataLayer.backend(SimpleProtected) != :ets
+    assert AshR2RML.Introspection.backend(SimpleProtected) != :ets
     {:ok, bundle} = AshR2RML.Compiler.compile_resources(SimpleProtected)
     [mapping] = bundle.resources
 

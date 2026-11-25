@@ -34,14 +34,17 @@ defmodule AshR2RML.ZeroJdbcAndDepsGuardTest do
     end
   end
 
-  test "package files are files only and exclude jdbc/ontop/docker/lib/mix" do
+  test "package files are files only, ship install.ex and render.ex, exclude jdbc/ontop/bench/generate_docs" do
     files = Mix.Project.config()[:package][:files]
     assert is_list(files) and files != []
+    assert "lib/mix/tasks/ash_r2rml.install.ex" in files
+    assert "lib/mix/tasks/ash_r2rml.render.ex" in files
+    refute "lib/mix/tasks/ash_r2rml.generate_docs.ex" in files
 
     for f <- files do
       assert File.regular?(f), "#{f} is not a regular file"
       refute f =~ ~r/jdbc|ontop|docker/i
-      refute String.starts_with?(f, "lib/mix/")
+      refute String.starts_with?(f, "bench/")
     end
   end
 

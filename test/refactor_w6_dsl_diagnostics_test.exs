@@ -16,7 +16,7 @@ defmodule AshR2RML.RefactorW6DslDiagnosticsTest do
 
     error = Verify.diagnostic(Some.Resource, [refusal])
 
-    assert %Spark.Error.DslError{module: Some.Resource, path: [:r2rml]} = error
+    assert %Spark.Error.DslError{module: Some.Resource, path: [:r2rml, :nope]} = error
     assert error.message =~ "REFUSED_UNKNOWN_ATTRIBUTE"
     assert error.message =~ "unknown attribute"
     assert error.message =~ ":nope"
@@ -30,6 +30,6 @@ defmodule AshR2RML.RefactorW6DslDiagnosticsTest do
 
     message = Verify.diagnostic(Some.Resource, refusals).message
 
-    assert message == "REFUSED_INVALID_TERM_MAP: first; REFUSED_MISSING_SUBJECT_MAP: second"
+    assert message == "REFUSED_INVALID_TERM_MAP: first [a]; REFUSED_MISSING_SUBJECT_MAP: second [b]"
   end
 end

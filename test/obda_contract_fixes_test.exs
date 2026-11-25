@@ -14,7 +14,7 @@ defmodule AshR2RML.OBDAContractFixesTest do
   alias AshR2RML.Error
   alias AshR2RML.Mapping.{Datatype, LogicalTable, ObjectMap, PredicateObjectMap, Resource, SubjectMap}
   alias AshR2RML.OBDA
-  alias AshR2RML.Refusal
+  alias AshR2RML.Error
 
   defmodule Domain do
     use Ash.Domain, validate_config_inclusion?: false
@@ -155,7 +155,7 @@ defmodule AshR2RML.OBDAContractFixesTest do
       test "#{key}: #{inspect(bad)} is refused with a typed refusal" do
         opts = [{:domain, Domain}, {unquote(key), unquote(bad)}]
 
-        assert {:error, %Refusal{code: :REFUSED_UNSUPPORTED_SPARQL_FEATURE}} =
+        assert {:error, %Error{code: :REFUSED_INVALID_OPTION}} =
                  OBDA.query(title_specs(), select(@title_pred), opts)
       end
     end

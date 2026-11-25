@@ -69,7 +69,10 @@ defmodule AshR2RML.PublicNamespaceGateTest do
   # RDF term, so the namespace allowlist does not apply to it -- in these files only.
   @endpoint_test_files ~w(test/sparql_protocol_hardening_test.exs test/sparql_private_network_test.exs
                           test/sparql_result_parity_test.exs test/refusal_codes_coverage_test.exs
-                          test/refactor_w9_guard_tests_test.exs)
+                          test/refactor_w9_guard_tests_test.exs test/red_bounds_worker_test.exs
+                          test/red_protocol_opts_test.exs test/red_rescue_narrow_test.exs
+                          test/red2_unbounded_materialization_test.exs
+                          test/red2_domain_verifier_cycle_test.exs)
 
   # Exact hosts only: loopback, the documentation ranges (RFC 5737), the example.com address,
   # a host under the reserved .invalid TLD, or an interpolated / empty host. A host must end at

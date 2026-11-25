@@ -160,13 +160,14 @@ defmodule AshR2RML.OBDATotalErrorBoundaryTest do
                allow_unauthorized: true
              )
 
-    assert details == %{kind: :error, class: "Ash.Error.Unknown"}
+    assert %{kind: :error, class: "Ash.Error.Unknown", reason: reason} = details
+    assert reason =~ "boom from read"
   end
 
   test "a read returning {:error, %Ash.Error.Unknown{}} is wrapped" do
     # InMemory fails closed first with a typed Refusal naming the original error class; OBDA never
     # lets the raw Ash.Error.Unknown struct escape.
-    assert {:error, %Refusal{code: :REFUSED_UNSUPPORTED_SPARQL_FEATURE, subject: Failing, evidence: evidence}} =
+    assert {:error, %Error{code: :REFUSED_UNSUPPORTED_SPARQL_FEATURE, resource: Failing, details: evidence}} =
              OBDA.query([Failing], @sparql,
                domain: Domain,
                authorize?: false,
@@ -210,7 +211,9 @@ defmodule AshR2RML.OBDATotalErrorBoundaryTest do
              OBDA.normalize_result(:weird)
 
     refusal = Refusal.new(:REFUSED_UNSUPPORTED_SPARQL_FEATURE, nil, "x", %{})
-    assert {:error, ^refusal} = OBDA.normalize_result({:error, refusal})
+
+    assert {:error, %Error{code: :REFUSED_UNSUPPORTED_SPARQL_FEATURE}} =
+             OBDA.normalize_result({:error, refusal})
   end
 
   test "exit and throw inside the pipeline map to typed errors" do

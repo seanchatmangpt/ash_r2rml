@@ -8,7 +8,7 @@ defmodule AshR2RML.ApiSurfaceCoverageTest do
 
   import ExUnit.CaptureIO
 
-  alias AshR2RML.{CompilationReceipt, Compiler, DataLayer, Introspection, Refusal}
+  alias AshR2RML.{CompilationReceipt, Compiler, Introspection, Refusal}
   alias AshR2RML.GrandExample.{Organization, Person, Shipment, Warehouse}
 
   alias AshR2RML.Mapping
@@ -78,16 +78,16 @@ defmodule AshR2RML.ApiSurfaceCoverageTest do
     end
 
     test "cutover_ready?/1 is false for anything but a verified and authorized receipt" do
-      refute Compiler.cutover_ready?(receipt!())
-      refute Compiler.cutover_ready?(:not_a_receipt)
+      refute CompilationReceipt.cutover_ready?(receipt!())
+      refute CompilationReceipt.cutover_ready?(:not_a_receipt)
 
-      assert Compiler.cutover_ready?(%CompilationReceipt{
+      assert CompilationReceipt.cutover_ready?(%CompilationReceipt{
                query_parity: :VERIFIED,
                cutover_authority: :AUTHORIZED,
                blocked: []
              })
 
-      refute Compiler.cutover_ready?(%CompilationReceipt{
+      refute CompilationReceipt.cutover_ready?(%CompilationReceipt{
                query_parity: :VERIFIED,
                cutover_authority: :AUTHORIZED,
                blocked: [:something]
@@ -95,7 +95,8 @@ defmodule AshR2RML.ApiSurfaceCoverageTest do
     end
 
     test "valid sparql_sql witness clears the parity block and records the witness" do
-      out = Compiler.attach_parity_witness(receipt!(), :sparql_sql, %{verified?: true, receipt_sha256: "abc123"})
+      witness = %{verified?: true, receipt_sha256: "abc123"}
+      out = CompilationReceipt.attach_parity_witness(receipt!(), :sparql_sql, witness)
 
       assert out.query_parity == :VERIFIED
       assert out.blocked == [:cutover_authority]
@@ -104,7 +105,8 @@ defmodule AshR2RML.ApiSurfaceCoverageTest do
     end
 
     test "string-keyed witness is accepted" do
-      out = Compiler.attach_parity_witness(receipt!(), :sparql_sql, %{"verified?" => true, "receipt_sha256" => "ff"})
+      witness = %{"verified?" => true, "receipt_sha256" => "ff"}
+      out = CompilationReceipt.attach_parity_witness(receipt!(), :sparql_sql, witness)
       assert out.query_parity == :VERIFIED
     end
 
@@ -117,7 +119,7 @@ defmodule AshR2RML.ApiSurfaceCoverageTest do
             %{verified?: true, receipt_sha256: ""},
             %{verified?: false, receipt_sha256: "abc"}
           ] do
-        out = Compiler.attach_parity_witness(base, :sparql_sql, witness)
+        out = CompilationReceipt.attach_parity_witness(base, :sparql_sql, witness)
 
         assert out.query_parity == :UNKNOWN
         assert out.blocked == base.blocked
@@ -128,8 +130,8 @@ defmodule AshR2RML.ApiSurfaceCoverageTest do
     test "refusals accumulate across repeated invalid witnesses" do
       out =
         receipt!()
-        |> Compiler.attach_parity_witness(:sparql_sql, %{})
-        |> Compiler.attach_parity_witness(:neo4j_postgres, %{})
+        |> CompilationReceipt.attach_parity_witness(:sparql_sql, %{})
+        |> CompilationReceipt.attach_parity_witness(:neo4j_postgres, %{})
 
       assert [
                %Refusal{code: :REFUSED_UNPROVEN_EQUIVALENCE, subject: :neo4j_postgres},
@@ -140,28 +142,28 @@ defmodule AshR2RML.ApiSurfaceCoverageTest do
     test "authorize_cutover/2 with a valid authority plus parity yields cutover_ready?" do
       out =
         receipt!()
-        |> Compiler.attach_parity_witness(:sparql_sql, %{verified?: true, receipt_sha256: "p"})
-        |> Compiler.authorize_cutover(%{authorized?: true, receipt_sha256: "auth1"})
+        |> CompilationReceipt.attach_parity_witness(:sparql_sql, %{verified?: true, receipt_sha256: "p"})
+        |> CompilationReceipt.authorize_cutover(%{authorized?: true, receipt_sha256: "auth1"})
 
       assert out.cutover_authority == :AUTHORIZED
       assert out.blocked == []
       assert {:cutover_authority, "auth1"} in out.verified
-      assert Compiler.cutover_ready?(out)
+      assert CompilationReceipt.cutover_ready?(out)
       assert AshR2RML.Validation.cutover_ready?(out)
     end
 
     test "authorize_cutover/2 alone does not grant cutover while parity is blocked" do
-      out = Compiler.authorize_cutover(receipt!(), %{"authorized?" => true, "receipt_sha256" => "a"})
+      out = CompilationReceipt.authorize_cutover(receipt!(), %{"authorized?" => true, "receipt_sha256" => "a"})
       assert out.cutover_authority == :AUTHORIZED
       assert out.query_parity == :UNKNOWN
-      refute Compiler.cutover_ready?(out)
+      refute CompilationReceipt.cutover_ready?(out)
     end
 
     test "authorize_cutover/2 refuses unauthorized or id-less authority" do
       base = receipt!()
 
       for authority <- [%{}, %{authorized?: false, receipt_sha256: "x"}, %{authorized?: true}] do
-        out = Compiler.authorize_cutover(base, authority)
+        out = CompilationReceipt.authorize_cutover(base, authority)
         assert out.cutover_authority == :UNAUTHORIZED
         assert [%Refusal{code: :REFUSED_UNPROVEN_EQUIVALENCE, subject: :cutover_authority}] = out.refusals
       end
@@ -344,24 +346,24 @@ defmodule AshR2RML.ApiSurfaceCoverageTest do
     end
   end
 
-  describe "DataLayer.infer_join_columns/2" do
+  describe "Introspection.join_columns/2" do
     test "uses source/destination attributes" do
-      assert DataLayer.infer_join_columns(Person, %{source_attribute: :organization_id, destination_attribute: :id}) ==
-               {"organization_id", "id"}
+      assert Introspection.join_columns(Person, %{source_attribute: :organization_id, destination_attribute: :id}) ==
+               {:ok, {"organization_id", "id"}}
     end
 
-    test "falls back to join-resource attributes then :id" do
-      assert DataLayer.infer_join_columns(Person, %{
+    test "falls back to join-resource attributes and refuses a relationship naming none" do
+      assert Introspection.join_columns(Person, %{
                source_attribute_on_join_resource: :person_id,
                destination_attribute_on_join_resource: :org_id
-             }) == {"person_id", "org_id"}
+             }) == {:ok, {"person_id", "org_id"}}
 
-      assert DataLayer.infer_join_columns(Person, %{}) == {"id", "id"}
+      assert {:error, %Refusal{}} = Introspection.join_columns(Person, %{})
     end
 
     test "works against a real Ash relationship struct" do
       rel = Ash.Resource.Info.relationship(Person, :organization)
-      assert DataLayer.infer_join_columns(Person, rel) == {"organization_id", "id"}
+      assert Introspection.join_columns(Person, rel) == {:ok, {"organization_id", "id"}}
     end
   end
 

@@ -37,7 +37,7 @@ if Code.ensure_loaded?(Igniter) do
       base =
         igniter
         |> Igniter.Project.Formatter.import_dep(:ash_r2rml)
-        |> Igniter.Project.Formatter.add_formatter_plugin(AshR2RML.Formatter)
+        |> Igniter.Project.Formatter.add_formatter_plugin(Spark.Formatter)
 
       case igniter.args.options[:target] do
         nil ->
@@ -76,19 +76,14 @@ if Code.ensure_loaded?(Igniter) do
     end
 
     @doc false
-    # Minimal valid starter block: table name is the snake_case plural of the module's
-    # last segment; class IRI uses a placeholder base marked TODO; the subject template
-    # assumes an `id` primary key.
+    # Minimal valid starter block: class IRI uses a placeholder base marked TODO; the
+    # subject template assumes an `id` primary key. No table name is guessed.
     @spec starter_block(module()) :: String.t()
-    def starter_block(target_module) do
-      last = target_module |> Module.split() |> List.last()
-      table = Macro.underscore(last) <> "s"
-
+    def starter_block(_target_module) do
       """
       r2rml do
         # TODO: replace the schema.org class with your domain class and `{id}` with
         # your resource's primary key attribute.
-        table_name "#{table}"
         class "https://schema.org/Thing"
 
         subject do
@@ -122,7 +117,7 @@ if Code.ensure_loaded?(Igniter) do
                  )}
 
               :error ->
-                {:ok, zipper}
+                {:error, "#{inspect(target_module)} does not `use Ash.Resource`"}
             end
           end
         end)
@@ -141,6 +136,7 @@ else
     use Mix.Task
 
     @shortdoc "Installs AshR2RML (manual instructions)"
+    @moduledoc false
 
     @impl Mix.Task
     def run(_args) do
@@ -155,7 +151,7 @@ else
       1. Add `:ash_r2rml` to your `mix.exs` dependencies:
          {:ash_r2rml, "~> 26.11"}
 
-      2. Add `import_deps: [:ash_r2rml]` and `plugins: [AshR2RML.Formatter]` to your `.formatter.exs`.
+      2. Add `import_deps: [:ash_r2rml]` and `plugins: [Spark.Formatter]` to your `.formatter.exs`.
 
       3. Add `extensions: [AshR2RML.Resource]` to your `Ash.Resource` modules.
       """)

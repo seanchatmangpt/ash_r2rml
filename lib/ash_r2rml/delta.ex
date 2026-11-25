@@ -109,17 +109,40 @@ defmodule AshR2RML.Delta do
   Diffs `old_graph` against `new_graph` (triple-set algebra; see moduledoc) and
   returns the delta map with `root_digest` over `new_graph`.
   """
-  @spec diff(RDF.Graph.t(), RDF.Graph.t()) :: t()
-  def diff(%RDF.Graph{} = old_graph, %RDF.Graph{} = new_graph) do
-    old_set = triple_set(old_graph)
-    new_set = triple_set(new_graph)
+  @spec diff(RDF.Graph.t(), RDF.Graph.t(), keyword()) :: t() | {:error, AshR2RML.Refusal.t()}
+  def diff(%RDF.Graph{} = old_graph, %RDF.Graph{} = new_graph, opts \\ []) when is_list(opts) do
+    max = Keyword.get(opts, :max)
 
-    %{
-      added: new_set |> MapSet.difference(old_set) |> Enum.sort(),
-      removed: old_set |> MapSet.difference(new_set) |> Enum.sort(),
-      unchanged_count: old_set |> MapSet.intersection(new_set) |> MapSet.size(),
-      root_digest: root_digest(new_graph)
-    }
+    with :ok <- check_bound(old_graph, max),
+         :ok <- check_bound(new_graph, max) do
+      old_set = triple_set(old_graph)
+      new_set = triple_set(new_graph)
+
+      %{
+        added: new_set |> MapSet.difference(old_set) |> Enum.sort(),
+        removed: old_set |> MapSet.difference(new_set) |> Enum.sort(),
+        unchanged_count: old_set |> MapSet.intersection(new_set) |> MapSet.size(),
+        root_digest: root_digest(new_graph)
+      }
+    end
+  end
+
+  defp check_bound(_graph, nil), do: :ok
+
+  defp check_bound(%RDF.Graph{} = graph, max) when is_integer(max) and max >= 0 do
+    count = RDF.Graph.triple_count(graph)
+
+    if count > max do
+      {:error,
+       AshR2RML.Refusal.new(
+         :REFUSED_RESOURCE_BOUND,
+         :delta,
+         "triple count #{count} exceeds max #{max}",
+         %{count: count, max: max}
+       )}
+    else
+      :ok
+    end
   end
 
   @doc """
@@ -127,10 +150,12 @@ defmodule AshR2RML.Delta do
   sorted canonical N-Triples serialization (see moduledoc for the determinism scope
   and the RDFC-1.0 cross-reference).
   """
-  @spec root_digest(RDF.Graph.t()) :: String.t()
-  def root_digest(%RDF.Graph{} = graph) do
-    {:ok, ntriples} = RDF.NTriples.Encoder.encode(graph, sort: true)
-    "sha256:" <> Base.encode16(:crypto.hash(:sha256, ntriples), case: :lower)
+  @spec root_digest(RDF.Graph.t(), keyword()) :: String.t() | {:error, AshR2RML.Refusal.t()}
+  def root_digest(%RDF.Graph{} = graph, opts \\ []) when is_list(opts) do
+    with :ok <- check_bound(graph, Keyword.get(opts, :max)) do
+      {:ok, ntriples} = RDF.NTriples.Encoder.encode(graph, sort: true)
+      "sha256:" <> Base.encode16(:crypto.hash(:sha256, ntriples), case: :lower)
+    end
   end
 
   # An RDF.Graph is already a triple set (no duplicate {s,p,o}); RDF.Graph.triples/1

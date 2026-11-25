@@ -55,20 +55,42 @@ defmodule AshR2RML.NQuads do
   @doc """
   Serializes quads to canonical N-Quads, or refuses on a blank node / invalid term.
   """
-  @spec serialize([quad()]) :: {:ok, String.t()} | {:error, Refusal.t()}
-  def serialize(quads) when is_list(quads) do
-    with {:ok, lines} <- lines(quads) do
+  @spec serialize([quad()], keyword()) :: {:ok, String.t()} | {:error, Refusal.t()}
+  def serialize(quads, opts \\ []) when is_list(quads) and is_list(opts) do
+    with {:ok, lines} <- lines(quads, opts) do
       {:ok, lines |> Enum.map(&[&1, ?\n]) |> IO.iodata_to_binary()}
     end
   end
 
   @doc """
-  Like `serialize/1` but returns the sorted, de-duplicated lines (without newlines).
+  Like `serialize/2` but returns the sorted, de-duplicated lines (without newlines).
+
+  Option `:max` bounds the number of input quads; over it the call is refused with
+  `:REFUSED_RESOURCE_BOUND` before any line is built. Default: unbounded.
   """
-  @spec lines([quad()]) :: {:ok, [String.t()]} | {:error, Refusal.t()}
-  def lines(quads) when is_list(quads) do
-    with {:ok, acc} <- collect_lines(quads) do
+  @spec lines([quad()], keyword()) :: {:ok, [String.t()]} | {:error, Refusal.t()}
+  def lines(quads, opts \\ []) when is_list(quads) and is_list(opts) do
+    with :ok <- check_bound(quads, Keyword.get(opts, :max)),
+         {:ok, acc} <- collect_lines(quads) do
       {:ok, acc |> Enum.uniq() |> Enum.sort()}
+    end
+  end
+
+  defp check_bound(_quads, nil), do: :ok
+
+  defp check_bound(quads, max) when is_integer(max) and max >= 0 do
+    count = length(quads)
+
+    if count > max do
+      {:error,
+       Refusal.new(
+         :REFUSED_RESOURCE_BOUND,
+         :nquads,
+         "quad count #{count} exceeds max #{max}",
+         %{count: count, max: max}
+       )}
+    else
+      :ok
     end
   end
 

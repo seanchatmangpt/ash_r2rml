@@ -76,39 +76,40 @@ defmodule AshR2RML.R2RML do
 
   defp render_bundle(%Bundle{resources: resources}) do
     by_resource = Map.new(resources, &{&1.ash_resource, &1})
-    base_maps = Enum.map(resources, &render_resource(&1, by_resource))
 
-    bridge_maps = flat_reference_maps(resources, by_resource, &bridge_maps/3)
-    inverse_maps = flat_reference_maps(resources, by_resource, &inverse_maps/3)
+    with {:ok, base_maps} <- collect(resources, &render_resource(&1, by_resource)),
+         {:ok, bridge_maps} <- collect_references(resources, by_resource, &bridge_maps/3),
+         {:ok, inverse_maps} <- collect_references(resources, by_resource, &inverse_maps/3) do
+      rendered =
+        (base_maps ++ bridge_maps ++ inverse_maps)
+        |> Enum.reject(&(&1 == ""))
+        |> Enum.join("\n")
 
-    all = base_maps ++ bridge_maps ++ inverse_maps
-
-    case Enum.find(all, &match?({:error, _}, &1)) do
-      {:error, refusal} ->
-        {:error, refusal}
-
-      nil ->
-        rendered =
-          all
-          |> Enum.map(&unwrap/1)
-          |> Enum.reject(&(&1 == ""))
-          |> Enum.join("\n")
-
-        {:ok, rendered}
+      {:ok, rendered}
     end
   end
 
-  # Runs `fun` over every reference of every resource; refusals stay in the
-  # list as `{:error, refusal}` so the caller reports the first one in order.
-  defp flat_reference_maps(resources, by_resource, fun) do
-    for resource <- resources,
-        reference <- resource.reference_object_maps,
-        entry <- unwrap_maps(fun.(resource, reference, by_resource)),
-        do: entry
+  # Short-circuits on the first typed refusal; yields a flat list of rendered bodies.
+  defp collect(items, fun) do
+    items
+    |> Enum.reduce_while({:ok, []}, fn item, {:ok, acc} ->
+      case fun.(item) do
+        {:ok, body} when is_binary(body) -> {:cont, {:ok, [body | acc]}}
+        {:ok, bodies} when is_list(bodies) -> {:cont, {:ok, Enum.reverse(bodies, acc)}}
+        {:error, _} = error -> {:halt, error}
+      end
+    end)
+    |> case do
+      {:ok, acc} -> {:ok, Enum.reverse(acc)}
+      error -> error
+    end
   end
 
-  defp unwrap_maps({:ok, values}), do: values
-  defp unwrap_maps({:error, refusal}), do: [{:error, refusal}]
+  defp collect_references(resources, by_resource, fun) do
+    pairs = Enum.flat_map(resources, fn resource -> Enum.map(resource.reference_object_maps, &{resource, &1}) end)
+
+    collect(pairs, fn {resource, reference} -> fun.(resource, reference, by_resource) end)
+  end
 
   defp render_resource(%Resource{} = resource, by_resource) do
     references =
@@ -207,7 +208,7 @@ defmodule AshR2RML.R2RML do
           pom_graph_suffix(graphs) <>
           " ] .\n"
 
-      {:ok, [{:ok, body}]}
+      {:ok, [body]}
     end
   end
 
@@ -226,15 +227,18 @@ defmodule AshR2RML.R2RML do
          {:ok, inverse_subject} <- bridge_subject(parent, reference, :destination),
          {:ok, source_join} <- bridge_join(reference, :source) do
       id = bridge_id(resource, reference, "inverse")
+      graphs = Enum.flat_map(reference.graph_maps, &render_graph_map/1)
 
       body =
         "<#{id}> a rr:TriplesMap ;\n" <>
           "  rr:logicalTable [ #{render_logical_table(logical_table)} ] ;\n" <>
           "  rr:subjectMap [ #{inverse_subject} ] ;\n" <>
           "  rr:predicateObjectMap [ rr:predicate <#{reference.inverse_predicate}>; " <>
-          "rr:objectMap [ rr:parentTriplesMap <#{triples_map_name(resource)}>; #{render_join(source_join)} ] ] .\n"
+          "rr:objectMap [ rr:parentTriplesMap <#{triples_map_name(resource)}>; #{render_join(source_join)} ]" <>
+          pom_graph_suffix(graphs) <>
+          " ] .\n"
 
-      {:ok, [{:ok, body}]}
+      {:ok, [body]}
     end
   end
 
@@ -246,6 +250,7 @@ defmodule AshR2RML.R2RML do
         end)
 
       id = bridge_id(resource, reference, "inverse")
+      graphs = Enum.flat_map(reference.graph_maps, &render_graph_map/1)
 
       body =
         "<#{id}> a rr:TriplesMap ;\n" <>
@@ -254,9 +259,11 @@ defmodule AshR2RML.R2RML do
           "  rr:predicateObjectMap [ rr:predicate <#{reference.inverse_predicate}>; " <>
           "rr:objectMap [ rr:parentTriplesMap <#{triples_map_name(resource)}>; " <>
           Enum.map_join(reversed_joins, "; ", &render_join/1) <>
-          " ] ] .\n"
+          " ]" <>
+          pom_graph_suffix(graphs) <>
+          " ] .\n"
 
-      {:ok, [{:ok, body}]}
+      {:ok, [body]}
     end
   end
 
@@ -278,7 +285,10 @@ defmodule AshR2RML.R2RML do
 
   defp through_logical_table(reference) do
     case Map.get(reference.metadata, :through_logical_table) do
-      %LogicalTable{} = logical ->
+      %LogicalTable{table_name: table} = logical when is_binary(table) and table != "" ->
+        {:ok, logical}
+
+      %LogicalTable{sql_query: query} = logical when is_binary(query) and query != "" ->
         {:ok, logical}
 
       other ->
@@ -356,7 +366,7 @@ defmodule AshR2RML.R2RML do
     cond do
       Map.has_key?(metadata, :source_parent_column) and
           Map.has_key?(metadata, :source_join_column) ->
-        {:ok, {metadata.source_parent_column, metadata.source_join_column}}
+        explicit_columns(reference, metadata.source_parent_column, metadata.source_join_column, "source")
 
       match?(%AshR2RML.Mapping.JoinCondition{}, Map.get(metadata, :source_to_join)) ->
         join = metadata.source_to_join
@@ -378,7 +388,12 @@ defmodule AshR2RML.R2RML do
     cond do
       Map.has_key?(metadata, :destination_parent_column) and
           Map.has_key?(metadata, :destination_join_column) ->
-        {:ok, {metadata.destination_parent_column, metadata.destination_join_column}}
+        explicit_columns(
+          reference,
+          metadata.destination_parent_column,
+          metadata.destination_join_column,
+          "destination"
+        )
 
       match?(%AshR2RML.Mapping.JoinCondition{}, Map.get(metadata, :join_to_destination)) ->
         join = metadata.join_to_destination
@@ -392,6 +407,20 @@ defmodule AshR2RML.R2RML do
            "many_to_many destination bridge columns are incomplete"
          )}
     end
+  end
+
+  defp explicit_columns(_reference, parent, join, _side)
+       when is_binary(parent) and parent != "" and is_binary(join) and join != "",
+       do: {:ok, {parent, join}}
+
+  defp explicit_columns(reference, parent, join, side) do
+    {:error,
+     Refusal.new(
+       :REFUSED_INVALID_JOIN_CONDITION,
+       reference.relationship,
+       "many_to_many #{side} bridge columns must be non-empty strings",
+       %{parent_column: parent, join_column: join}
+     )}
   end
 
   defp bridge_join(reference, :source) do

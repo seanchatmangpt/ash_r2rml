@@ -36,8 +36,7 @@ defmodule AshR2RML.DatatypeRegistryCoverageTest do
         {:date, "date", :date},
         {:float, "double", :float},
         {:atom, "string", :text},
-        {:vector, "string", :vector},
-        {:array, "string", :array}
+        {:vector, "string", :vector}
       ]
 
       for {type, local, storage} <- cases do

@@ -8,7 +8,7 @@ defmodule AshR2RML.RefactorW7CompilerLensTest do
   alias AshR2RML.{CompilationReceipt, Compiler, Refusal}
 
   test "compile(nil) is refused instead of yielding an empty bundle" do
-    assert {:error, %Refusal{code: :REFUSED_MISSING_SUBJECT_MAP}} = Compiler.compile(nil)
+    assert {:error, %Refusal{code: :REFUSED_INVALID_OPTION}} = Compiler.compile(nil)
   end
 
   test "validate(nil) yields a REFUSED receipt" do

@@ -8,12 +8,7 @@
 # test/action_query_test.exs and test/inmemory_canonical_order_test.exs. Ignores are pinned by file and
 # warning class (not line) so they survive edits; a new class in these files still fails the gate.
 [
-  {"lib/ash_r2rml/resource.ex", :pattern_match, 1},
-  {"lib/ash_r2rml/datatype_registry.ex", :pattern_match, 1},
   {"lib/ash_r2rml/obda_in_memory.ex", :pattern_match},
   {"lib/ash_r2rml/obda_in_memory.ex", :pattern_match_cov},
-  {"lib/ash_r2rml/obda_in_memory.ex", :unused_fun},
-  {"lib/ash_r2rml/obda.ex", :pattern_match},
-  {"lib/ash_r2rml/obda.ex", :unused_fun},
   {"lib/ash_r2rml/action/query.ex", :pattern_match}
 ]

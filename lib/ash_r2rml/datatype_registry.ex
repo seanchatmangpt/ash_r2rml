@@ -35,7 +35,6 @@ defmodule AshR2RML.Datatype.Registry do
     atom: {@xsd <> "string", :text},
     geo_wkt: {@ogc_geo <> "wktLiteral", :geometry},
     vector: {@xsd <> "string", :vector},
-    array: {@xsd <> "string", :array},
     duration: {@xsd <> "duration", :duration},
     uuid_v7: {@xsd <> "string", :uuid},
     module: {@xsd <> "string", :text}
@@ -89,16 +88,19 @@ defmodule AshR2RML.Datatype.Registry do
 
   def resolve(ash_type, rdf_override, storage_override) do
     case unwrap_checked(ash_type) do
-      {:ok, base, _constraints} -> resolve_base(ash_type, base, rdf_override, storage_override)
-      {:error, %Refusal{}} = error -> error
+      {:ok, base, constraints} ->
+        resolve_base(ash_type, {base, constraints}, rdf_override, storage_override)
+
+      {:error, %Refusal{}} = error ->
+        error
     end
   end
 
-  defp resolve_base(ash_type, base, rdf_override, storage_override) do
+  defp resolve_base(ash_type, {base, constraints}, rdf_override, storage_override) do
     normalized = normalize(base)
 
     with {:ok, rdf_datatype, default_storage} <-
-           lookup_contract(ash_type, base, normalized, rdf_override) do
+           lookup_contract(ash_type, {base, constraints}, normalized, rdf_override) do
       {:ok,
        %Datatype{
          ash_type: ash_type,
@@ -111,9 +113,9 @@ defmodule AshR2RML.Datatype.Registry do
   # First matching contract wins: explicit override, semantic literal,
   # non-literal refusal, enum, money, builtin table.
   # Returns `{:ok, rdf_datatype, default_storage_type}` or a typed refusal.
-  defp lookup_contract(ash_type, base, normalized, rdf_override) when is_binary(rdf_override) do
+  defp lookup_contract(ash_type, based, normalized, rdf_override) when is_binary(rdf_override) do
     if absolute_iri?(rdf_override) do
-      {:ok, rdf_override, default_storage(ash_type, base, normalized)}
+      {:ok, rdf_override, default_storage(ash_type, based, normalized)}
     else
       {:error,
        Refusal.new(:REFUSED_UNMAPPED_DATATYPE, ash_type, "explicit RDF datatype must be an absolute IRI", %{
@@ -129,12 +131,20 @@ defmodule AshR2RML.Datatype.Registry do
      })}
   end
 
-  defp lookup_contract(ash_type, base, normalized, _rdf_override) do
+  defp lookup_contract(ash_type, {base, constraints}, normalized, _rdf_override) do
     case semantic_contract(ash_type, base) do
       {:literal, datatype} = contract ->
-        if semantic_literal?(contract),
-          do: {:ok, datatype, semantic_storage(ash_type) || :text},
-          else: builtin_contract(ash_type, base, normalized)
+        if semantic_literal?(contract) do
+          {:ok, datatype, semantic_storage(ash_type, base, constraints) || :text}
+        else
+          {:error,
+           Refusal.new(
+             :REFUSED_UNMAPPED_DATATYPE,
+             ash_type,
+             "literal AshR2RML.Type must declare an absolute datatype_iri",
+             %{datatype_iri: datatype}
+           )}
+        end
 
       {:non_literal, semantic_kind} ->
         {:error,
@@ -252,10 +262,19 @@ defmodule AshR2RML.Datatype.Registry do
 
   defp semantic_literal?({:literal, datatype}), do: is_binary(datatype) and absolute_iri?(datatype)
 
-  defp semantic_storage(ash_type) do
-    if is_atom(ash_type) and not is_nil(ash_type) and Code.ensure_loaded?(ash_type) and
-         function_exported?(ash_type, :storage_type, 1) do
-      ash_type.storage_type([])
+  # The declared type's own storage wins; a NewType without its own contract
+  # defers to the base type with the merged (unwrapped) constraints.
+  defp semantic_storage(ash_type, base, constraints) do
+    case contract_of(ash_type) do
+      :none -> storage_of(base, constraints)
+      _found -> storage_of(ash_type, constraints)
+    end
+  end
+
+  defp storage_of(type, constraints) do
+    if is_atom(type) and not is_nil(type) and Code.ensure_loaded?(type) and
+         function_exported?(type, :storage_type, 1) do
+      type.storage_type(constraints)
     end
   end
 
@@ -265,8 +284,8 @@ defmodule AshR2RML.Datatype.Registry do
   end
 
   # Storage type the type would have without an RDF override (enum, money, literal, builtin).
-  defp default_storage(ash_type, base, normalized) do
-    case lookup_contract(ash_type, base, normalized, nil) do
+  defp default_storage(ash_type, based, normalized) do
+    case lookup_contract(ash_type, based, normalized, nil) do
       {:ok, _rdf, storage} -> storage
       {:error, _} -> builtin_storage(normalized)
     end

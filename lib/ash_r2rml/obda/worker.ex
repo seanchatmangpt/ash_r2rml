@@ -19,25 +19,32 @@ defmodule AshR2RML.OBDA.Worker do
   The worker inherits the caller's `:"$callers"` chain (caller prepended), so ownership-based
   lookups (e.g. SQL sandbox allowances) resolve inside the worker.
 
-  Options: `:timeout_ms` (default 5000), `:max_heap_words` (default 50_000_000).
+  Options: `:timeout_ms` (default 5000), `:max_heap_words` (default 10_000_000).
+
+  ## Concurrency bound
+
+  At most `max_concurrent/0` workers run at once node-wide (application env
+  `:ash_r2rml, :max_obda_workers`, default `min(max(4 * schedulers, 16), 32)`). A call over the
+  bound is refused at once with `:REFUSED_RESOURCE_BOUND` and spawns nothing. Admission is a
+  lock-free compare-and-swap on an `:atomics` slot, so exactly `max_concurrent/0` callers of a
+  burst are admitted. The guardian process acquires the slot and releases it once the worker is
+  gone, so a killed caller, a timeout or a heap kill frees it.
 
   ## Message protocol
 
-  Worker to caller: `{tag, {:ok, value}}` or `{tag, {:error, kind, reason, stacktrace}}`, where
-  `tag` is a fresh reference. Runtime to caller: `{:DOWN, mref, :process, pid, reason}`. A
-  guardian process (two monitors, linked to the worker only) kills the worker if the caller
-  dies first. On timeout the caller kills the worker, waits for its DOWN, and flushes any late
-  result.
+  Guardian to caller: `{tag, reply}` where `tag` is a fresh reference and `reply` is `:full`,
+  `:timeout`, `{:result, outcome}` or `{:down, reason}`. On timeout the caller sends
+  `{:timeout, tag}` to the guardian, which kills the worker, waits for its DOWN, and replies.
 
   ## Lifecycle: who dies when
 
-    * Caller dies: the guardian sees the caller's DOWN and kills the worker.
-    * Worker finishes or crashes: the caller receives the result or DOWN; the guardian sees the
-      worker's DOWN and exits. Links the worker opened during the call are killed on a normal
-      return.
-    * Timeout: the caller kills the worker and waits for its DOWN; the guardian then exits.
+    * Caller dies: the guardian sees the caller's DOWN, kills the worker and releases the slot.
+    * Worker finishes or crashes: the guardian receives the result or DOWN, releases the slot,
+      replies and exits. Links the worker opened during the call are killed on a normal return.
+    * Timeout: the guardian kills the worker, waits for its DOWN, releases and replies.
     * Guardian is killed externally: the link takes the worker down with it (fail-closed).
-    * The worker is never linked to the caller, so no failure inside it can kill the caller.
+    * Neither guardian nor worker is linked to the caller, so no failure inside them can kill
+      the caller.
 
   `call/2` is `run/2` without the crash mapping: an exception raised by `fun` comes back as
   `{:raised, kind, reason, stacktrace}` so the caller can classify the real reason.
@@ -51,7 +58,9 @@ defmodule AshR2RML.OBDA.Worker do
   alias AshR2RML.Error
 
   @default_timeout_ms 5000
-  @default_max_heap_words 50_000_000
+  @default_max_heap_words 10_000_000
+  @gate_key {__MODULE__, :gate}
+  @cas_key {__MODULE__, :cas}
 
   @type opts :: [timeout_ms: pos_integer(), max_heap_words: pos_integer()]
 
@@ -105,69 +114,59 @@ defmodule AshR2RML.OBDA.Worker do
   end
 
   defp do_run(fun, timeout, words) do
-    worker = spawn_worker(fun, words)
-    await(worker, timeout, words)
-  end
-
-  # Spawn: the worker is unlinked and monitored by the caller, heap-capped by the runtime.
-  # Ash/Ecto sandbox-style ownership and telemetry lookups follow `:"$callers"`.
-  defp spawn_worker(fun, words) do
-    parent = self()
+    # The guardian acquires the slot, runs the worker and releases the slot, all on the caller's
+    # behalf, so a caller killed at any point cannot leak the slot or orphan the worker.
     tag = make_ref()
-    callers = [parent | Process.get(:"$callers", [])]
+    {guardian, gref} = start_guardian(self(), fun, words, tag)
 
-    {pid, mref} =
-      :erlang.spawn_opt(
-        fn ->
-          Process.put(:"$callers", callers)
-          # The guardian is the worker's first act, so a worker that runs at all is guarded:
-          # a caller killed before this point yields an immediate DOWN (noproc) for the monitor.
-          start_guardian(parent, self())
-          send(parent, {tag, execute(fun)})
-        end,
-        [:monitor, max_heap_size: %{size: words, kill: true, error_logger: false}]
-      )
-
-    %{pid: pid, mref: mref, tag: tag}
-  end
-
-  # Await: exactly one of the protocol messages decides the outcome.
-  defp await(%{pid: pid, mref: mref, tag: tag}, timeout, words) do
     receive do
-      {^tag, {:ok, value}} ->
-        Process.demonitor(mref, [:flush])
-        {:ok, value}
+      {^tag, reply} ->
+        Process.demonitor(gref, [:flush])
+        reply_outcome(reply, timeout, words)
 
-      {^tag, {:error, kind, reason, stack}} ->
-        Process.demonitor(mref, [:flush])
-        {:raised, kind, reason, stack}
-
-      {:DOWN, ^mref, :process, ^pid, :killed} ->
-        # No flush: the worker's result message, if sent, precedes its DOWN in the mailbox and
-        # would have matched the clauses above first.
-        {:error,
-         Error.new(:REFUSED_MEMORY_LIMIT_EXCEEDED,
-           message: "worker exceeded max heap of #{words} words",
-           details: %{max_heap_words: words}
-         )}
-
-      {:DOWN, ^mref, :process, ^pid, reason} ->
+      {:DOWN, ^gref, :process, ^guardian, reason} ->
         {:error, crash_error(:exit, reason)}
     after
-      timeout -> kill_and_reap(pid, mref, tag, timeout)
+      timeout ->
+        send(guardian, {:timeout, tag})
+
+        receive do
+          {^tag, reply} ->
+            Process.demonitor(gref, [:flush])
+            reply_outcome(reply, timeout, words)
+
+          {:DOWN, ^gref, :process, ^guardian, reason} ->
+            {:error, crash_error(:exit, reason)}
+        end
     end
   end
 
-  # Kill, then wait for the DOWN so no late result or DOWN can leak into the caller's mailbox.
-  defp kill_and_reap(pid, mref, tag, timeout) do
-    Process.exit(pid, :kill)
+  defp reply_outcome(:full, _timeout, _words) do
+    {:error,
+     Error.new(:REFUSED_RESOURCE_BOUND,
+       message: "OBDA worker concurrency bound reached (#{max_concurrent()})",
+       details: %{max_concurrent_workers: max_concurrent()}
+     )}
+  end
 
-    receive do
-      {:DOWN, ^mref, :process, ^pid, _} -> :ok
-    end
+  defp reply_outcome({:result, {:ok, value}}, _timeout, _words), do: {:ok, value}
 
-    flush(tag)
+  defp reply_outcome({:result, {:error, kind, reason, stack}}, _timeout, _words),
+    do: {:raised, kind, reason, stack}
 
+  # The runtime reports a max_heap_size kill and an untrappable :kill identically.
+  defp reply_outcome({:down, :killed}, _timeout, words) do
+    {:error,
+     Error.new(:REFUSED_MEMORY_LIMIT_EXCEEDED,
+       message: "worker exceeded max heap of #{words} words",
+       details: %{max_heap_words: words}
+     )}
+  end
+
+  defp reply_outcome({:down, reason}, _timeout, _words),
+    do: {:error, crash_error(:exit, reason)}
+
+  defp reply_outcome(:timeout, timeout, _words) do
     {:error,
      Error.new(:REFUSED_QUERY_TIMEOUT,
        message: "worker exceeded timeout of #{timeout} ms",
@@ -175,22 +174,137 @@ defmodule AshR2RML.OBDA.Worker do
      )}
   end
 
-  # Owns nothing but two monitors: kills the worker if the caller dies first, exits when the
-  # worker does. Linked to the worker only (a normal worker exit never signals the guardian; an
-  # abnormal one takes it down, and a guardian killed from outside takes the worker down), never
-  # to the caller, so it cannot propagate exit signals to it.
-  defp start_guardian(parent, worker) do
-    spawn_link(fn ->
-      pref = Process.monitor(parent)
-      wref = Process.monitor(worker)
+  @doc "Node-wide bound on concurrently running OBDA workers."
+  @spec max_concurrent() :: pos_integer()
+  def max_concurrent do
+    case Application.get_env(:ash_r2rml, :max_obda_workers) do
+      n when is_integer(n) and n > 0 -> n
+      _ -> min(max(4 * System.schedulers_online(), 16), 32)
+    end
+  end
 
-      receive do
-        {:DOWN, ^pref, :process, _, _} -> Process.exit(worker, :kill)
-        {:DOWN, ^wref, :process, _, _} -> :ok
-      end
-    end)
+  # Shared gate state, created once under a global lock so concurrent first callers agree:
+  # an `:atomics` slot decides admission by CAS, and a `:counters` mirror exposes the live
+  # in-flight count as an observable.
+  defp gate do
+    case :persistent_term.get(@cas_key, nil) do
+      nil ->
+        :global.trans({@gate_key, self()}, fn ->
+          case :persistent_term.get(@cas_key, nil) do
+            nil ->
+              :persistent_term.put(@gate_key, :counters.new(1, [:atomics]))
+              slots = :atomics.new(1, [])
+              :persistent_term.put(@cas_key, slots)
+              slots
+
+            slots ->
+              slots
+          end
+        end)
+
+      slots ->
+        slots
+    end
+  end
+
+  # Lock-free admission: CAS the in-flight count from n to n + 1 only while n < max, so
+  # exactly `max_concurrent/0` callers win a burst and no caller is refused spuriously.
+  defp acquire do
+    slots = gate()
+    counter = :persistent_term.get(@gate_key)
+
+    if cas_admit(slots, max_concurrent()) do
+      :counters.add(counter, 1, 1)
+      {:ok, {slots, counter}}
+    else
+      :full
+    end
+  end
+
+  defp cas_admit(slots, max) do
+    current = :atomics.get(slots, 1)
+
+    cond do
+      current >= max -> false
+      :atomics.compare_exchange(slots, 1, current, current + 1) == :ok -> true
+      true -> cas_admit(slots, max)
+    end
+  end
+
+  defp release({slots, counter}) do
+    :counters.sub(counter, 1, 1)
+    :atomics.sub(slots, 1, 1)
+    :ok
+  end
+
+  # The guardian is spawned unlinked from the caller (so nothing in it can kill the caller) and
+  # monitored by it. It traps exits because the worker is linked to it: a guardian killed from
+  # outside takes the worker down (fail-closed), while a worker death never kills the guardian.
+  defp start_guardian(parent, fun, words, tag) do
+    callers = [parent | Process.get(:"$callers", [])]
+    :erlang.spawn_opt(fn -> guardian(parent, fun, words, tag, callers) end, [:monitor])
+  end
+
+  defp guardian(parent, fun, words, tag, callers) do
+    Process.flag(:trap_exit, true)
+    pref = Process.monitor(parent)
+
+    case acquire() do
+      :full ->
+        send(parent, {tag, :full})
+
+      {:ok, gate_ref} ->
+        guardian = self()
+
+        {worker, wref} =
+          :erlang.spawn_opt(
+            fn ->
+              Process.put(:"$callers", callers)
+              send(guardian, {tag, execute(fun)})
+            end,
+            [
+              :monitor,
+              :link,
+              max_heap_size: %{size: words, kill: true, error_logger: false}
+            ]
+          )
+
+        outcome = supervise(worker, wref, pref, tag)
+        release(gate_ref)
+        if outcome != :caller_gone, do: send(parent, {tag, outcome})
+    end
 
     :ok
+  end
+
+  # Exactly one event decides the outcome. A result precedes the worker's own DOWN in the
+  # mailbox, so it always wins over it.
+  defp supervise(worker, wref, pref, tag) do
+    receive do
+      {^tag, result} ->
+        Process.demonitor(wref, [:flush])
+        {:result, result}
+
+      {:DOWN, ^wref, :process, ^worker, reason} ->
+        {:down, reason}
+
+      {:DOWN, ^pref, :process, _, _} ->
+        kill_and_reap(worker, wref)
+        :caller_gone
+
+      {:timeout, ^tag} ->
+        kill_and_reap(worker, wref)
+        :timeout
+    end
+  end
+
+  # Kill, then wait for the DOWN so the slot is only freed once the worker is really gone.
+  defp kill_and_reap(worker, wref) do
+    Process.exit(worker, :kill)
+
+    receive do
+      {:DOWN, ^wref, :process, ^worker, _} -> :ok
+    end
   end
 
   defp execute(fun) do
@@ -221,14 +335,6 @@ defmodule AshR2RML.OBDA.Worker do
     end
 
     :ok
-  end
-
-  defp flush(tag) do
-    receive do
-      {^tag, _} -> :ok
-    after
-      0 -> :ok
-    end
   end
 
   defp crash_error(kind, reason, stack \\ []) do

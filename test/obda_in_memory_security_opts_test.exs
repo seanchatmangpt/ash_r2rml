@@ -164,15 +164,15 @@ defmodule AshR2RML.OBDA.InMemorySecurityOptsTest do
     end
 
     test "explicit authorize?: false is refused without allow_unauthorized" do
-      assert {:error, %Refusal{code: :REFUSED_UNSUPPORTED_SPARQL_FEATURE}} =
+      assert {:error, %Refusal{code: :REFUSED_UNAUTHORIZED}} =
                InMemory.query(Guarded, guarded_mapping(), @select, domain: Domain, authorize?: false)
 
-      assert {:error, %Refusal{code: :REFUSED_UNSUPPORTED_SPARQL_FEATURE}} =
+      assert {:error, %Refusal{code: :REFUSED_UNAUTHORIZED}} =
                InMemory.materialize(Guarded, guarded_mapping(), domain: Domain, authorize?: false)
     end
 
     test "explicit authorize?: false is refused even on a resource with no authorizer" do
-      assert {:error, %Refusal{code: :REFUSED_UNSUPPORTED_SPARQL_FEATURE}} =
+      assert {:error, %Refusal{code: :REFUSED_UNAUTHORIZED}} =
                InMemory.query(Plain, plain_mapping(), @select, domain: Domain, authorize?: false)
     end
 

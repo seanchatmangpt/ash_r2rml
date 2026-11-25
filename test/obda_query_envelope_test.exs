@@ -13,7 +13,7 @@ defmodule AshR2RML.OBDAQueryEnvelopeTest do
   alias AshR2RML.Mapping.{LogicalTable, ObjectMap, PredicateObjectMap, Resource, SubjectMap}
   alias AshR2RML.OBDA
   alias AshR2RML.OBDA.Result
-  alias AshR2RML.Refusal
+  alias AshR2RML.Error
 
   doctest AshR2RML.OBDA.Result
 
@@ -132,7 +132,7 @@ defmodule AshR2RML.OBDAQueryEnvelopeTest do
   test "max_triples refuses an oversized graph with a typed refusal" do
     create!(%{pid: "p1", name: "Ann"})
 
-    assert {:error, %Refusal{code: :REFUSED_TRIPLE_LIMIT_EXCEEDED, evidence: %{limit: 1}}} =
+    assert {:error, %Error{code: :REFUSED_TRIPLE_LIMIT_EXCEEDED, details: %{limit: 1}}} =
              OBDA.query(specs(), @select, domain: Dom, max_triples: 1)
   end
 
@@ -140,19 +140,19 @@ defmodule AshR2RML.OBDAQueryEnvelopeTest do
     create!(%{pid: "p1", name: "Ann"})
     create!(%{pid: "p2", name: "Bob"})
 
-    assert {:error, %Refusal{code: :REFUSED_RESULT_LIMIT_EXCEEDED}} =
+    assert {:error, %Error{code: :REFUSED_RESULT_LIMIT_EXCEEDED}} =
              OBDA.query(specs(), @select, domain: Dom, max_rows: 1)
   end
 
   test "authorize?: false without allow_unauthorized is refused fail-closed" do
-    assert {:error, %Refusal{}} = OBDA.query(specs(), @select, domain: Dom, authorize?: false)
+    assert {:error, %Error{}} = OBDA.query(specs(), @select, domain: Dom, authorize?: false)
 
     assert {:ok, %Result{bindings: []}} =
              OBDA.query(specs(), @select, domain: Dom, authorize?: false, allow_unauthorized: true)
   end
 
   test "an unmapped source is a typed refusal" do
-    assert {:error, %Refusal{}} = OBDA.query([], @select)
+    assert {:error, %Error{}} = OBDA.query([], @select)
   end
 
   test "telemetry emits start then stop with result metadata" do
@@ -187,7 +187,7 @@ defmodule AshR2RML.OBDAQueryEnvelopeTest do
     :telemetry.attach(id, [:ash_r2rml, :obda, :query, :stop], &__MODULE__.forward/4, self())
     on_exit(fn -> :telemetry.detach(id) end)
 
-    assert {:error, %Refusal{}} = OBDA.query([], @select)
+    assert {:error, %Error{}} = OBDA.query([], @select)
 
     assert_received {:telemetry, [:ash_r2rml, :obda, :query, :stop], _, %{result: :error, code: code}}
     assert code == :REFUSED_UNSUPPORTED_SPARQL_FEATURE

@@ -15,7 +15,7 @@ defmodule AshR2RML.FollowupRescueSparqlTest do
   end
 
   test "admit refuses invalid query text with a typed refusal" do
-    assert {:error, %Refusal{code: :REFUSED_UNPROVEN_EQUIVALENCE}} =
+    assert {:error, %Refusal{code: :REFUSED_UNSUPPORTED_SPARQL_FEATURE}} =
              AshR2RML.SPARQL.Query.admit("SELEC nonsense {")
   end
 

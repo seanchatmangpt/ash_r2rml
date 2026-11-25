@@ -16,9 +16,8 @@ defmodule AshR2RML.SPARQL.Protocol.Host do
       iex> AshR2RML.SPARQL.Protocol.Host.private_ip?({93, 184, 216, 34})
       false
 
-  Residual risk: the HTTP client resolves again at connect time, so a DNS rebind
-  inside that window is not closed by vetting alone; use a pinned-IP URL for
-  hostile networks.
+  `vet/1` returns the vetted addresses so `AshR2RML.SPARQL.Protocol` can pin the
+  outbound connection to one of them (no second resolution).
   """
 
   @dns_timeout_ms 2_000
@@ -31,6 +30,19 @@ defmodule AshR2RML.SPARQL.Protocol.Host do
   """
   @spec vet_host(String.t()) :: :ok | {:private, [:inet.ip_address()]} | :unresolved
   def vet_host(host) do
+    case vet(host) do
+      {:ok, _addrs} -> :ok
+      other -> other
+    end
+  end
+
+  @doc """
+  Like `vet_host/1`, but returns the vetted addresses (`{:ok, addrs}`) so the
+  caller can pin transport to exactly the addresses that were vetted instead of
+  resolving the hostname a second time.
+  """
+  @spec vet(String.t()) :: {:ok, [:inet.ip_address()]} | {:private, [:inet.ip_address()]} | :unresolved
+  def vet(host) do
     h =
       host
       |> String.trim_leading("[")
@@ -56,7 +68,7 @@ defmodule AshR2RML.SPARQL.Protocol.Host do
 
   defp vet_addrs(addrs) do
     case Enum.filter(addrs, &private_ip?/1) do
-      [] -> :ok
+      [] -> {:ok, addrs}
       private -> {:private, private}
     end
   end

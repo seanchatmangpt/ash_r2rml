@@ -16,7 +16,8 @@ defmodule AshR2RML.R2RML.Terms do
   alias AshR2RML.Mapping.{Bundle, GraphMap, ObjectMap, Resource}
   alias AshR2RML.Refusal
 
-  @invalid_iri_chars ~r/[\x00-\x20<>"{}|^`\\\x7f]/
+  # C0 controls and space, IRIREF-forbidden characters, DEL and the C1 controls (U+0080-U+009F).
+  @invalid_iri_chars ~r/[\x00-\x20<>"{}|^`\\\x7f\x{80}-\x{9f}]/u
 
   @langtag ~r/\A[A-Za-z]+(-[A-Za-z0-9]+)*\z/
 
@@ -27,7 +28,8 @@ defmodule AshR2RML.R2RML.Terms do
   def validate(%Bundle{resources: resources}) do
     case Enum.flat_map(resources, &refusals/1) do
       [] -> :ok
-      [first | _] -> {:error, first}
+      [first] -> {:error, first}
+      [first | rest] -> {:error, %{first | evidence: Map.put(first.evidence, :additional_refusals, rest)}}
     end
   end
 
@@ -150,5 +152,8 @@ defmodule AshR2RML.R2RML.Terms do
     for %GraphMap{strategy: :constant, value: value} <- graph_maps, do: {:graph, value}
   end
 
-  defp valid_iri?(iri), do: is_binary(iri) and not Regex.match?(@invalid_iri_chars, iri)
+  defp valid_iri?(iri) when is_binary(iri) and iri != "",
+    do: String.valid?(iri) and not Regex.match?(@invalid_iri_chars, iri)
+
+  defp valid_iri?(_), do: false
 end

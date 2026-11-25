@@ -81,7 +81,7 @@ defmodule AshR2RML.OBDA.InMemory do
   content is already scoped to what that actor/tenant may see.
   """
 
-  alias AshR2RML.Mapping.{JoinCondition, ObjectMap, PredicateObjectMap, ReferenceObjectMap, Resource, SubjectMap}
+  alias AshR2RML.Mapping.{ObjectMap, PredicateObjectMap, ReferenceObjectMap, Resource, SubjectMap}
   alias AshR2RML.Refusal
   alias AshR2RML.Security
   alias AshR2RML.Mapping.GraphMap
@@ -206,11 +206,32 @@ defmodule AshR2RML.OBDA.InMemory do
 
     # guard options (:allow_unauthorized, :require_*) are consumed and stripped in read_rows/2
 
-    admitted_specs =
-      Enum.map(specs, fn {ash_resource, mapping_resource} ->
-        {ash_resource, Security.sanitize_in_memory_mapping(ash_resource, mapping_resource)}
-      end)
+    case admit_specs(specs) do
+      {:ok, admitted_specs} ->
+        read_admitted(admitted_specs, read_opts, allow_sensitive?, max_triples)
 
+      {:error, _refusal} = error ->
+        {error, %{rows_read: 0, triples_emitted: 0}}
+    end
+  end
+
+  # Typed admission: an inadmissible subject map is a returned refusal with its own code,
+  # never a raise and never a generic read failure.
+  defp admit_specs(specs) do
+    specs
+    |> Enum.reduce_while({:ok, []}, fn {ash_resource, mapping_resource}, {:ok, acc} ->
+      case Security.admit_in_memory_mapping(ash_resource, mapping_resource, allow_sensitive: true) do
+        {:ok, admitted} -> {:cont, {:ok, [{ash_resource, admitted} | acc]}}
+        {:error, _refusal} = error -> {:halt, error}
+      end
+    end)
+    |> case do
+      {:ok, acc} -> {:ok, Enum.reverse(acc)}
+      error -> error
+    end
+  end
+
+  defp read_admitted(admitted_specs, read_opts, allow_sensitive?, max_triples) do
     mapping_index = Map.new(admitted_specs)
 
     {first_result, stats, pending} =
@@ -300,18 +321,26 @@ defmodule AshR2RML.OBDA.InMemory do
           {{:ok, Observation.t()} | {:error, failure()},
            %{rows_read: non_neg_integer(), triples_emitted: non_neg_integer()}}
   def query_with_stats(specs, sparql, read_opts \\ []) when is_list(specs) and is_binary(sparql) do
+    # The query shape is planned first: a refused shape must not trigger any Ash read.
+    case AshR2RML.OBDA.InMemory.GraphQuery.plan(sparql) do
+      {:error, message, evidence} ->
+        refusal = Refusal.new(:REFUSED_UNSUPPORTED_SPARQL_FEATURE, :graph_pattern, message, evidence)
+        {{:error, refusal}, %{rows_read: 0, triples_emitted: 0}}
+
+      planned ->
+        execute_planned(planned, specs, sparql, read_opts)
+    end
+  end
+
+  defp execute_planned(planned, specs, sparql, read_opts) do
     case materialize_dataset_with_stats(specs, read_opts) do
       {{:ok, %RDF.Dataset{} = dataset}, stats} ->
-        case AshR2RML.OBDA.InMemory.GraphQuery.plan(sparql) do
+        case planned do
           :none ->
             query_with_stats_graph(union_graph(dataset), sparql, stats, local_opts(read_opts))
 
           {:ok, plan} ->
             query_graph_plan(dataset, plan, sparql, stats, local_opts(read_opts))
-
-          {:error, message, evidence} ->
-            refusal = Refusal.new(:REFUSED_UNSUPPORTED_SPARQL_FEATURE, :graph_pattern, message, evidence)
-            {{:error, refusal}, stats}
         end
 
       {{:error, _} = error, stats} ->
@@ -583,7 +612,7 @@ defmodule AshR2RML.OBDA.InMemory do
   # `for_read` query, so `actor`, `tenant`, `authorize?` and policies stay exactly as supplied.
   defp apply_query_pushdown(query, ash_resource, read_opts) do
     with %{resource: ^ash_resource, mapping: %Resource{} = mapping, plan: plan} <- read_opts[:query_pushdown],
-         %Ash.Query{} = built <-
+         {:ok, %Ash.Query{} = built} <-
            AshR2RML.QueryBuilder.pushdown_query(ash_resource, mapping, plan,
              actor: read_opts[:actor],
              tenant: read_opts[:tenant],
@@ -628,10 +657,20 @@ defmodule AshR2RML.OBDA.InMemory do
     end
   end
 
-  defp check_read_guards(ash_resource, guard_opts, read_opts) do
+  @doc false
+  # Shared by the read path and `AshR2RML.OBDA` preflight so guard semantics are identical whether
+  # or not a resource is later policy-pruned.
+  @spec check_read_guards(module(), keyword(), keyword()) :: :ok | {:error, Refusal.t()}
+  def check_read_guards(ash_resource, guard_opts, read_opts) do
     cond do
       read_opts[:authorize?] == false and guard_opts[:allow_unauthorized] != true ->
-        guard_refusal(ash_resource, "authorize?: false requires allow_unauthorized: true")
+        {:error,
+         Refusal.new(
+           :REFUSED_UNAUTHORIZED,
+           ash_resource,
+           "authorize?: false requires allow_unauthorized: true",
+           %{}
+         )}
 
       guard_opts[:require_authorizer] == true and
           Ash.Policy.Authorizer not in Ash.Resource.Info.authorizers(ash_resource) ->
@@ -679,7 +718,9 @@ defmodule AshR2RML.OBDA.InMemory do
           query |> apply_pushdown(read_opts[:pushdown]) |> Ash.Query.limit(limit)
       end
 
-    case Ash.read(query, Keyword.take(read_opts, [:actor, :tenant, :authorize?, :domain])) do
+    ash_opts = Keyword.take(read_opts, [:actor, :tenant, :authorize?, :domain])
+
+    case read_unpaginated(query, ash_opts, if(clamp?, do: triple_cap, else: max_rows + 1)) do
       {:ok, rows} when is_list(rows) and clamp? and length(rows) >= triple_cap ->
         # `limit` rows each emit at least `min_per_row` triples: the budget is provably exceeded.
         {:error,
@@ -722,7 +763,12 @@ defmodule AshR2RML.OBDA.InMemory do
              read_refusal(
                ash_resource,
                "fail-closed: could not read the real Ash resource for materialization (#{inspect(class)}, e.g. forbidden by policy)",
-               %{resource: ash_resource, action: read_opts[:action], error_class: inspect(class)}
+               %{
+                 resource: ash_resource,
+                 action: read_opts[:action],
+                 error_class: inspect(class),
+                 message: failure_message(error)
+               }
              )}
 
           {code, resource} ->
@@ -739,9 +785,76 @@ defmodule AshR2RML.OBDA.InMemory do
       {:error,
        AshR2RML.Error.new(:REFUSED_READ_FAILED,
          resource: ash_resource,
-         details: %{action: read_opts[:action], error_class: inspect(exception.__struct__)}
+         details: %{
+           action: read_opts[:action],
+           error_class: inspect(exception.__struct__),
+           message: failure_message(exception),
+           stacktrace: Exception.format_stacktrace(__STACKTRACE__)
+         }
        )}
   end
+
+  # Bounded message of a read failure so the real cause survives the refusal boundary.
+  defp failure_message(error) do
+    text = if is_exception(error), do: Exception.message(error), else: inspect(error, limit: 20)
+    String.slice(text, 0, 2000)
+  end
+
+  # A paginated read action would otherwise return an `Ash.Page.*` struct (default limit applied).
+  # Optional pagination is switched off (`page: false`, the query already carries the row bound);
+  # required pagination is paged through until `limit` rows or the last page.
+  defp read_unpaginated(query, ash_opts, limit) do
+    case query.action do
+      %{pagination: %{required?: true} = pagination} ->
+        start = if is_integer(query.offset), do: query.offset, else: 0
+        take = if is_integer(query.limit), do: min(query.limit, limit), else: limit
+        base = Ash.Query.unset(query, [:limit, :offset])
+        type = if pagination.offset?, do: :offset, else: :keyset
+        # Keyset pages cannot skip: read `start + take` rows and drop the first `start`.
+        want = if type == :offset, do: take, else: start + take
+        size = page_size(pagination, want)
+        plan = %{type: type, size: size, limit: want, start: start}
+        first = if type == :offset, do: [limit: size, offset: start], else: [limit: size]
+
+        with {:ok, rows} <- page_through(base, ash_opts, plan, first, [], 0) do
+          {:ok, if(type == :offset, do: rows, else: rows |> Enum.drop(start) |> Enum.take(take))}
+        end
+
+      _ ->
+        Ash.read(query, Keyword.put(ash_opts, :page, false))
+    end
+  end
+
+  defp page_size(%{max_page_size: max}, limit) when is_integer(max) and max > 0, do: max(min(limit, max), 1)
+  defp page_size(_pagination, limit), do: max(limit, 1)
+
+  # `acc` is reversed (newest page first); `count` is its length.
+  defp page_through(query, ash_opts, %{limit: limit} = plan, page_opts, acc, count) do
+    case Ash.read(query, Keyword.put(ash_opts, :page, page_opts)) do
+      {:ok, %{results: results, more?: more?}} ->
+        acc = Enum.reverse(results, acc)
+        count = count + length(results)
+
+        if results == [] or not more? or count >= limit do
+          {:ok, acc |> Enum.reverse() |> Enum.take(limit)}
+        else
+          next = next_page_opts(plan, results, count)
+          page_through(query, ash_opts, plan, next, acc, count)
+        end
+
+      {:ok, rows} when is_list(rows) ->
+        {:ok, Enum.take(rows, limit)}
+
+      {:error, _} = error ->
+        error
+    end
+  end
+
+  defp next_page_opts(%{type: :offset, size: size, start: start}, _results, count),
+    do: [limit: size, offset: start + count]
+
+  defp next_page_opts(%{type: :keyset, size: size}, results, _count),
+    do: [limit: size, after: List.last(results).__metadata__.keyset]
 
   # Templates, graph maps and join conditions name COLUMNS; the row is keyed by attribute names.
   # A renamed attribute (`source:`) is also reachable under its column name (never overriding a
@@ -850,25 +963,52 @@ defmodule AshR2RML.OBDA.InMemory do
         Map.update(acc, ash_resource, subjects, &(&1 ++ subjects))
       end)
 
+    indexes = parent_indexes(pending, visible)
+
     Enum.reduce_while(pending, {{:ok, graph}, stats}, fn {ash_resource, mapping, rows}, acc ->
       refs = mapping.reference_object_maps
 
       if refs == [] do
         {:cont, acc}
       else
-        reference_rows(rows, refs, ash_resource, mapping, mapping_index, visible, max_triples, acc)
+        reference_rows(rows, refs, ash_resource, mapping, mapping_index, indexes, max_triples, acc)
       end
     end)
   end
 
-  defp reference_rows(rows, refs, ash_resource, mapping, mapping_index, visible, max_triples, acc) do
+  # One hash index per distinct (parent resource, parent join columns): join values -> the
+  # lexically smallest parent subject IRI. Replaces a per-child scan of every parent row.
+  defp parent_indexes(pending, visible) do
+    pending
+    |> Enum.flat_map(fn {_ash, mapping, _rows} -> mapping.reference_object_maps end)
+    |> Enum.filter(&(&1.joins != []))
+    |> Enum.uniq_by(&index_key/1)
+    |> Map.new(fn ref ->
+      parents = Map.get(visible, ref.parent_resource, [])
+      {index_key(ref), build_index(Enum.map(ref.joins, & &1.parent), parents)}
+    end)
+  end
+
+  defp index_key(%ReferenceObjectMap{parent_resource: parent, joins: joins}),
+    do: {parent, Enum.map(joins, & &1.parent)}
+
+  defp build_index(columns, parents) do
+    Enum.reduce(parents, %{}, fn {iri, parent_row}, acc ->
+      case join_values(columns, parent_row) do
+        nil -> acc
+        values -> Map.update(acc, values, iri, &min(&1, iri))
+      end
+    end)
+  end
+
+  defp reference_rows(rows, refs, ash_resource, mapping, mapping_index, indexes, max_triples, acc) do
     Enum.reduce_while(rows, {:cont, acc}, fn row, {:cont, {{:ok, graph}, stats}} ->
       case subject_iri(mapping.subject_map, row) do
         nil ->
           {:cont, {:cont, {{:ok, graph}, stats}}}
 
         subject ->
-          case add_reference_triples(RDF.Dataset.new(), subject, row, refs, {mapping, mapping_index, visible}) do
+          case add_reference_triples(RDF.Dataset.new(), subject, row, refs, {mapping, mapping_index, indexes}) do
             {:ok, ref_graph} ->
               emitted = stats.triples_emitted + RDF.Dataset.statement_count(ref_graph)
               stats = %{stats | triples_emitted: emitted}
@@ -1200,9 +1340,9 @@ defmodule AshR2RML.OBDA.InMemory do
   # The one shape that is NOT silently skipped is `joins: []` -- the `:join_table`
   # many-to-many relationship shape (see moduledoc): that surfaces as a real
   # `{:error, refusal}` instead, propagated all the way out through `materialize_many/2`.
-  defp add_reference_triples(graph, subject, row, reference_object_maps, {mapping, mapping_index, visible}) do
+  defp add_reference_triples(graph, subject, row, reference_object_maps, {mapping, mapping_index, indexes}) do
     Enum.reduce_while(reference_object_maps, {:ok, graph}, fn reference, {:ok, acc} ->
-      case resolve_reference_object(reference, row, mapping_index, visible) do
+      case resolve_reference_object(reference, row, mapping_index, indexes) do
         {:ok, nil} ->
           {:cont, {:ok, acc}}
 
@@ -1221,7 +1361,7 @@ defmodule AshR2RML.OBDA.InMemory do
   # There is no bridge-table row data anywhere in `mapping_index` to resolve that join
   # against (the join table is never itself a mapped Ash resource passed to
   # `materialize_many/2`), so this is a typed refusal -- see moduledoc for the full rationale.
-  defp resolve_reference_object(%ReferenceObjectMap{joins: []} = reference, _row, _mapping_index, _visible) do
+  defp resolve_reference_object(%ReferenceObjectMap{joins: []} = reference, _row, _mapping_index, _indexes) do
     {:error,
      Refusal.new(
        :REFUSED_UNSUPPORTED_SPARQL_FEATURE,
@@ -1231,12 +1371,12 @@ defmodule AshR2RML.OBDA.InMemory do
      )}
   end
 
-  defp resolve_reference_object(%ReferenceObjectMap{joins: joins} = reference, row, mapping_index, visible)
+  defp resolve_reference_object(%ReferenceObjectMap{joins: joins} = reference, row, mapping_index, indexes)
        when joins != [] do
     case Map.fetch(mapping_index, reference.parent_resource) do
       {:ok, _parent_mapping} ->
-        parents = Map.get(visible, reference.parent_resource, [])
-        {:ok, match_parent_subject(joins, row, parents)}
+        index = Map.get(indexes, index_key(reference), %{})
+        {:ok, match_parent_subject(joins, row, index)}
 
       :error ->
         {:ok, nil}
@@ -1246,22 +1386,18 @@ defmodule AshR2RML.OBDA.InMemory do
   # The parent row is resolved by comparing each declared `JoinCondition.parent` column value
   # with the child's `child` column value; the matching parent row's own subject IRI is the
   # object. Ambiguous matches resolve to the lexically smallest subject (deterministic).
-  defp match_parent_subject(joins, row, parents) do
-    case child_join_values(joins, row) do
-      nil ->
-        nil
-
-      wanted ->
-        parents
-        |> Enum.filter(fn {_iri, parent_row} -> parent_matches?(joins, wanted, parent_row) end)
-        |> Enum.map(fn {iri, _} -> iri end)
-        |> Enum.min(fn -> nil end)
+  defp match_parent_subject(joins, row, index) do
+    case join_values(Enum.map(joins, & &1.child), row) do
+      nil -> nil
+      wanted -> Map.get(index, wanted)
     end
   end
 
-  defp child_join_values(joins, row) do
-    Enum.reduce_while(joins, [], fn %JoinCondition{child: child}, acc ->
-      with value when not is_nil(value) <- readable(Map.get(row, safe_atom(child))),
+  # Lexical values of the named columns in `row`, or nil when any is unreadable/nil/lexical-less.
+  defp join_values(columns, row) do
+    columns
+    |> Enum.reduce_while([], fn column, acc ->
+      with value when not is_nil(value) <- readable(Map.get(row, safe_atom(column))),
            {:ok, lex} <- lexical(value) do
         {:cont, [lex | acc]}
       else
@@ -1272,19 +1408,6 @@ defmodule AshR2RML.OBDA.InMemory do
       nil -> nil
       values -> Enum.reverse(values)
     end
-  end
-
-  defp parent_matches?(joins, wanted, parent_row) do
-    joins
-    |> Enum.zip(wanted)
-    |> Enum.all?(fn {%JoinCondition{parent: parent}, lex} ->
-      with value when not is_nil(value) <- readable(Map.get(parent_row, safe_atom(parent))),
-           {:ok, parent_lex} <- lexical(value) do
-        parent_lex == lex
-      else
-        _ -> false
-      end
-    end)
   end
 
   # The mapping's declared datatype wins: typed literals are what make numeric/temporal FILTERs and

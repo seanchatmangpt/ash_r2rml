@@ -312,8 +312,7 @@ defmodule AshR2RML.Subject do
       %{type: type, constraints: constraints} ->
         with {:ok, cast} when not is_nil(cast) <- Ash.Type.cast_input(type, value, constraints),
              {:ok, cast} <- Ash.Type.apply_constraints(type, cast, constraints),
-             {:ok, rendered} <- render_string(mapping, field, cast),
-             :ok <- check_exact(mapping, field, value, rendered) do
+             {:ok, rendered} <- render_typed(mapping, field, type, cast, value) do
           {:ok, rendered}
         else
           {:error, %Refusal{}} = error ->
@@ -329,6 +328,28 @@ defmodule AshR2RML.Subject do
              )}
         end
     end
+  end
+
+  # Types adopting AshR2RML.Type with lexical callbacks own their lexical form.
+  defp render_typed(mapping, field, type, cast, value) do
+    case lexical_module(type) do
+      nil ->
+        with {:ok, rendered} <- render_string(mapping, field, cast),
+             :ok <- check_exact(mapping, field, value, rendered),
+             do: {:ok, rendered}
+
+      module ->
+        non_empty(mapping, field, module.to_rdf_lexical(cast))
+    end
+  end
+
+  defp lexical_module(type) do
+    resolved = Ash.Type.get_type(type)
+
+    if is_atom(resolved) and not is_nil(resolved) and Code.ensure_loaded?(resolved) and
+         function_exported?(resolved, :to_rdf_lexical, 1) and
+         function_exported?(resolved, :from_rdf_lexical, 1),
+       do: resolved
   end
 
   # A binary input whose cast lexical differs from it was normalized (trim, case, ...):
@@ -499,12 +520,19 @@ defmodule AshR2RML.Subject do
         {:ok, raw}
 
       %{type: type, constraints: constraints} ->
-        with {:ok, value} when not is_nil(value) <- Ash.Type.cast_input(type, raw, constraints),
+        with {:ok, value} when not is_nil(value) <- parse_lexical(type, raw, constraints),
              {:ok, value} <- Ash.Type.apply_constraints(type, value, constraints) do
           {:ok, value}
         else
           _ -> :error
         end
+    end
+  end
+
+  defp parse_lexical(type, raw, constraints) do
+    case lexical_module(type) do
+      nil -> Ash.Type.cast_input(type, raw, constraints)
+      module -> module.from_rdf_lexical(raw)
     end
   end
 

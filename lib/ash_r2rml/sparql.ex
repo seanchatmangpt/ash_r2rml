@@ -13,7 +13,8 @@ defmodule AshR2RML.SPARQL.Query do
 
   Parsing is delegated to SPARQL.ex. The receipt identity covers the exact
   lexical query supplied by the caller; it is not a claim of canonical SPARQL
-  algebra equivalence.
+  algebra equivalence. Unparseable text is `:REFUSED_UNSUPPORTED_SPARQL_FEATURE`, an
+  unreadable file is `:REFUSED_READ_FAILED`.
   """
 
   alias AshR2RML.Refusal
@@ -31,7 +32,7 @@ defmodule AshR2RML.SPARQL.Query do
   @doc """
   Reads a SPARQL query from `file_path` and admits it.
 
-  An unreadable file returns `:REFUSED_UNPROVEN_EQUIVALENCE` with the path in
+  An unreadable file returns `:REFUSED_READ_FAILED` with the path in
   the evidence.
   """
   @spec load_file(String.t(), keyword()) :: {:ok, t()} | {:error, Refusal.t()}
@@ -43,7 +44,7 @@ defmodule AshR2RML.SPARQL.Query do
       {:error, reason} ->
         {:error,
          Refusal.new(
-           :REFUSED_UNPROVEN_EQUIVALENCE,
+           :REFUSED_READ_FAILED,
            :sparql_query,
            "failed to read SPARQL file from disk: #{inspect(reason)}",
            %{path: file_path}
@@ -55,8 +56,8 @@ defmodule AshR2RML.SPARQL.Query do
   Admits query text, a parsed `SPARQL.Query`, or an already admitted `t()`.
 
   The identity (`sha256`) covers the exact lexical query text. Text that
-  SPARQL.ex rejects, and any other input shape, returns
-  `:REFUSED_UNPROVEN_EQUIVALENCE`.
+  SPARQL.ex rejects return `:REFUSED_UNSUPPORTED_SPARQL_FEATURE`; any other
+  input shape returns `:REFUSED_UNPROVEN_EQUIVALENCE`.
   """
   @spec admit(t() | String.t() | Elixir.SPARQL.Query.t()) :: {:ok, t()} | {:error, Refusal.t()}
   def admit(%__MODULE__{} = admitted), do: {:ok, admitted}
@@ -85,7 +86,7 @@ defmodule AshR2RML.SPARQL.Query do
       {:error, reason} ->
         {:error,
          Refusal.new(
-           :REFUSED_UNPROVEN_EQUIVALENCE,
+           :REFUSED_UNSUPPORTED_SPARQL_FEATURE,
            :sparql_query,
            "SPARQL.ex refused the query during language admission",
            %{reason: inspect(reason)}
@@ -95,7 +96,7 @@ defmodule AshR2RML.SPARQL.Query do
     exception in [ArgumentError, FunctionClauseError, MatchError, RuntimeError, Protocol.UndefinedError] ->
       {:error,
        Refusal.new(
-         :REFUSED_UNPROVEN_EQUIVALENCE,
+         :REFUSED_UNSUPPORTED_SPARQL_FEATURE,
          :sparql_query,
          "SPARQL.ex raised during language admission",
          %{reason: Exception.message(exception), exception: inspect(exception.__struct__)}
@@ -209,17 +210,18 @@ defmodule AshR2RML.SPARQL.Result do
   end
 
   def normalize(data) do
-    rows = data |> RDF.Data.statements() |> Enum.map(&normalize_statement/1)
-    {:ok, :rdf, rows}
-  rescue
-    exception in [ArgumentError, FunctionClauseError, Protocol.UndefinedError] ->
+    if RDF.Data.Source.impl_for(data) do
+      rows = data |> RDF.Data.statements() |> Enum.map(&normalize_statement/1)
+      {:ok, :rdf, rows}
+    else
       {:error,
        Refusal.new(
          :REFUSED_UNPROVEN_EQUIVALENCE,
          :sparql_result,
          "unsupported SPARQL result shape",
-         %{result: inspect(data), exception: inspect(exception.__struct__)}
+         %{result: inspect(data), exception: "no RDF.Data implementation"}
        )}
+    end
   end
 
   @doc "SHA-256 (lowercase hex) over the multiset-normalized rows; row order does not matter."

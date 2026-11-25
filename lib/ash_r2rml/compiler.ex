@@ -60,55 +60,12 @@ defmodule AshR2RML.CompilationReceipt do
           blocked: list(),
           refusals: list()
         }
-end
 
-defmodule AshR2RML.Compiler do
-  @moduledoc """
-  Compiler from Ash resources to the canonical `AshR2RML.Mapping.Bundle` IR.
-
-  This is CONSTRUCT only. It neither applies migrations nor starts any query
-  runtime, and therefore cannot grant cutover standing by itself.
-
-  Domains are expanded to their R2RML-mapped resources, then the closure of
-  referenced parent resources is walked as a plain worklist (bounded by
-  #{10_000} resources).
-
-      {:ok, %AshR2RML.Mapping.Bundle{}} = AshR2RML.Compiler.compile(MyApp.Person)
-  """
-
-  alias AshR2RML.{CompilationReceipt, Refusal}
-
-  @max_closure_resources 10_000
-
-  @doc """
-  Compiles an Ash resource, a domain, or a list of them into a dependency-closed
-  `AshR2RML.Mapping.Bundle`.
-
-  Delegates to `compile_resources/1`; `opts` is currently ignored. Any other
-  input returns `{:error, %AshR2RML.Refusal{code: :REFUSED_MISSING_SUBJECT_MAP}}`.
-  """
-  @spec compile(module() | [module()], keyword()) ::
-          {:ok, AshR2RML.Mapping.Bundle.t()} | {:error, Refusal.t()}
-  def compile(resources, opts \\ [])
-
-  def compile(resources, _opts)
-      when (is_atom(resources) and not is_nil(resources)) or is_list(resources) do
-    compile_resources(resources)
-  end
-
-  def compile(other, _opts) do
-    {:error,
-     Refusal.new(
-       :REFUSED_MISSING_SUBJECT_MAP,
-       :compile,
-       "expected a resource, a domain, or a list of them, got #{inspect(other)}",
-       %{}
-     )}
-  end
+  alias AshR2RML.Refusal
 
   @doc "Cutover requires an observed query-parity witness and an explicit authority receipt."
   @spec cutover_ready?(term()) :: boolean()
-  def cutover_ready?(%CompilationReceipt{
+  def cutover_ready?(%__MODULE__{
         query_parity: :VERIFIED,
         cutover_authority: :AUTHORIZED,
         blocked: []
@@ -118,8 +75,8 @@ defmodule AshR2RML.Compiler do
   def cutover_ready?(_), do: false
 
   @doc "Attach an externally observed parity receipt without executing the compared systems."
-  @spec attach_parity_witness(CompilationReceipt.t(), term(), term()) :: CompilationReceipt.t()
-  def attach_parity_witness(%CompilationReceipt{} = receipt, kind, witness)
+  @spec attach_parity_witness(t(), term(), term()) :: t()
+  def attach_parity_witness(%__MODULE__{} = receipt, kind, witness)
       when kind == :sparql_sql and is_map(witness) do
     verified? = Map.get(witness, :verified?, Map.get(witness, "verified?", false))
     witness_id = Map.get(witness, :receipt_sha256, Map.get(witness, "receipt_sha256"))
@@ -146,7 +103,7 @@ defmodule AshR2RML.Compiler do
     end
   end
 
-  def attach_parity_witness(%CompilationReceipt{} = receipt, kind, witness) do
+  def attach_parity_witness(%__MODULE__{} = receipt, kind, witness) do
     refusal =
       Refusal.new(
         :REFUSED_UNPROVEN_EQUIVALENCE,
@@ -159,8 +116,8 @@ defmodule AshR2RML.Compiler do
   end
 
   @doc "Attach explicit cutover authority without conflating it with technical parity."
-  @spec authorize_cutover(CompilationReceipt.t(), term()) :: CompilationReceipt.t()
-  def authorize_cutover(%CompilationReceipt{} = receipt, authority) do
+  @spec authorize_cutover(t(), term()) :: t()
+  def authorize_cutover(%__MODULE__{} = receipt, authority) do
     {authorized?, authority_id} = authority_fields(authority)
 
     if authorized? == true and is_binary(authority_id) and authority_id != "" do
@@ -189,43 +146,103 @@ defmodule AshR2RML.Compiler do
   end
 
   defp authority_fields(_other), do: {false, nil}
+end
+
+defmodule AshR2RML.Compiler do
+  @moduledoc """
+  Compiler from Ash resources to the canonical `AshR2RML.Mapping.Bundle` IR.
+
+  This is CONSTRUCT only. It neither applies migrations nor starts any query
+  runtime, and therefore cannot grant cutover standing by itself (cutover helpers live on
+  `AshR2RML.CompilationReceipt`).
+
+  Domains are expanded to their R2RML-mapped resources, then the closure of
+  referenced parent resources is walked as a plain worklist (bounded by
+  #{10_000} resources).
+
+      {:ok, %AshR2RML.Mapping.Bundle{}} = AshR2RML.Compiler.compile(MyApp.Person)
+  """
+
+  alias AshR2RML.Refusal
+
+  @max_closure_resources 10_000
+
+  @doc """
+  Compiles an Ash resource, a domain, or a list of them into a dependency-closed
+  `AshR2RML.Mapping.Bundle`.
+
+  `compile/2` accepts no options: any option, a non-keyword `opts`, or an input that is not a
+  module (or a list of modules) returns `{:error, %AshR2RML.Refusal{code: :REFUSED_INVALID_OPTION}}`.
+  A module that carries no mapping returns `:REFUSED_MISSING_SUBJECT_MAP`.
+  """
+  @spec compile(module() | [module()], keyword()) ::
+          {:ok, AshR2RML.Mapping.Bundle.t()} | {:error, Refusal.t()}
+  def compile(resources, opts \\ []) do
+    with :ok <- validate_opts(opts),
+         :ok <- validate_input(resources) do
+      compile_resources(resources)
+    end
+  end
+
+  defp validate_opts([]), do: :ok
+
+  defp validate_opts(opts) do
+    detail =
+      if Keyword.keyword?(opts),
+        do: "compile/2 accepts no options, got #{inspect(opts)}",
+        else: "options must be a keyword list, got #{inspect(opts)}"
+
+    {:error, invalid_input(:opts, detail)}
+  end
+
+  defp validate_input(resources) when is_list(resources), do: :ok
+  defp validate_input(resources) when is_atom(resources) and not is_nil(resources), do: :ok
+
+  defp validate_input(other) do
+    {:error, invalid_input(:resources, "expected a resource, a domain, or a list of them, got #{inspect(other)}")}
+  end
+
+  defp invalid_input(option, detail) do
+    Refusal.new(:REFUSED_INVALID_OPTION, :compile, detail, %{option: option})
+  end
 
   @doc """
   Compiles resources and/or domains into a validated, normalized bundle.
 
-  Same contract as `compile/2`; `compile/2` is the public entry point.
+  Same contract as `compile/2`; `compile/2` is the public entry point. When validation yields
+  several refusals, the first is returned and the rest ride in `evidence.additional_refusals`.
   """
   @spec compile_resources(module() | [module()]) ::
           {:ok, AshR2RML.Mapping.Bundle.t()} | {:error, Refusal.t()}
   def compile_resources(resources) do
     with {:ok, resources} <- expand_domains(List.wrap(resources)),
-         {:ok, mappings} <- do_closure(resources, %{}, []) do
+         {:ok, mappings} <- do_closure(:queue.from_list(resources), %{}, []) do
       bundle = %AshR2RML.Mapping.Bundle{resources: mappings} |> AshR2RML.Mapping.normalize()
 
       case AshR2RML.Mapping.validate(bundle) do
         :ok -> {:ok, bundle}
-        {:error, [first | _]} -> {:error, first}
+        {:error, [first | rest]} -> {:error, with_additional(first, rest)}
       end
     end
   end
 
+  defp with_additional(first, []), do: first
+
+  defp with_additional(%Refusal{evidence: evidence} = first, rest) when is_map(evidence) do
+    %{first | evidence: Map.put(evidence, :additional_refusals, rest)}
+  end
+
   defp expand_domains(items) do
-    Enum.reduce_while(items, {:ok, []}, fn item, {:ok, acc} ->
-      if not is_atom(item) do
-        {:halt,
-         {:error,
-          Refusal.new(
-            :REFUSED_MISSING_SUBJECT_MAP,
-            :compile,
-            "expected resource or domain modules, got #{inspect(item)}",
-            %{}
-          )}}
-      else
+    items
+    |> Enum.reduce_while({:ok, []}, fn item, {:ok, acc} ->
+      if is_atom(item) and not is_nil(item) do
         expand_domain_or_resource(item, acc)
+      else
+        {:halt, {:error, invalid_input(:resources, "expected resource or domain modules, got #{inspect(item)}")}}
       end
     end)
     |> case do
-      {:ok, list} -> {:ok, Enum.uniq(list)}
+      {:ok, reversed} -> {:ok, reversed |> Enum.reverse() |> Enum.uniq()}
       error -> error
     end
   end
@@ -243,35 +260,41 @@ defmodule AshR2RML.Compiler do
             )}}
 
         mapped ->
-          {:cont, {:ok, acc ++ mapped}}
+          {:cont, {:ok, Enum.reverse(mapped, acc)}}
       end
     else
-      {:cont, {:ok, acc ++ [item]}}
+      {:cont, {:ok, [item | acc]}}
     end
   end
 
   defp domain?(m) when is_atom(m) do
-    Code.ensure_loaded?(m) and function_exported?(m, :spark_is, 0) and m.spark_is() == Ash.Domain
+    Code.ensure_loaded?(m) and Spark.Dsl.is?(m, Ash.Domain)
   end
 
-  defp do_closure([], _seen, acc), do: {:ok, Enum.reverse(acc)}
+  # Breadth-first worklist over a queue. Destinations already seen are dropped before they
+  # are enqueued, so the queue never grows with resources that are already mapped.
+  defp do_closure(queue, seen, acc) do
+    case :queue.out(queue) do
+      {:empty, _} ->
+        {:ok, Enum.reverse(acc)}
 
-  defp do_closure([resource | rest], seen, acc) do
-    cond do
-      Map.has_key?(seen, resource) ->
-        do_closure(rest, seen, acc)
+      {{:value, resource}, rest} ->
+        cond do
+          Map.has_key?(seen, resource) ->
+            do_closure(rest, seen, acc)
 
-      map_size(seen) >= @max_closure_resources ->
-        {:error,
-         Refusal.new(
-           :REFUSED_RESOURCE_BOUND,
-           :closure,
-           "resource closure exceeds #{@max_closure_resources} resources",
-           %{max_resources: @max_closure_resources}
-         )}
+          map_size(seen) >= @max_closure_resources ->
+            {:error,
+             Refusal.new(
+               :REFUSED_RESOURCE_BOUND,
+               :closure,
+               "resource closure exceeds #{@max_closure_resources} resources",
+               %{max_resources: @max_closure_resources}
+             )}
 
-      true ->
-        closure_step(resource, rest, seen, acc)
+          true ->
+            closure_step(resource, rest, seen, acc)
+        end
     end
   end
 
@@ -279,9 +302,15 @@ defmodule AshR2RML.Compiler do
     with {:ok, mapping} <- AshR2RML.Resource.Info.mapping_result(resource),
          mapping = AshR2RML.Security.sanitize_mapping(resource, mapping),
          :ok <- AshR2RML.Security.check_protected_dependencies(resource, mapping) do
-      destinations = Enum.map(mapping.reference_object_maps, & &1.parent_resource) |> Enum.reject(&is_nil/1)
+      seen = Map.put(seen, resource, true)
 
-      do_closure(rest ++ destinations, Map.put(seen, resource, true), [mapping | acc])
+      queue =
+        mapping.reference_object_maps
+        |> Enum.map(& &1.parent_resource)
+        |> Enum.reject(&(is_nil(&1) or Map.has_key?(seen, &1)))
+        |> Enum.reduce(rest, &:queue.in/2)
+
+      do_closure(queue, seen, [mapping | acc])
     end
   end
 

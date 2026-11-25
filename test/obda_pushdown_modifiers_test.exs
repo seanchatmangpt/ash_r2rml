@@ -274,8 +274,12 @@ defmodule AshR2RML.ObdaPushdownModifiersTest do
       sparql = "SELECT ?name WHERE { ?e <#{@s}name> ?name ; <#{@s}rank> ?r } ORDER BY ?name LIMIT 3 OFFSET 2"
       assert {:ok, pd} = QueryBuilder.lower(sparql, specs())
 
-      query = QueryBuilder.pushdown_query(pd.resource, pd.mapping, pd.plan, domain: Dom, authorize?: false)
-      assert %Ash.Query{} = query
+      assert {:ok, %Ash.Query{} = query} =
+               QueryBuilder.pushdown_query(pd.resource, pd.mapping, pd.plan,
+                 domain: Dom,
+                 authorize?: false,
+                 allow_unauthorized: true
+               )
 
       names = query |> Ash.read!(domain: Dom, authorize?: false) |> Enum.map(& &1.name)
       assert names == emp_rows() |> Enum.map(& &1.name) |> Enum.sort() |> Enum.take(6)

@@ -39,18 +39,35 @@ defmodule AshR2RML.Resource.Verify do
   def diagnostic(module, refusals) do
     Spark.Error.DslError.exception(
       module: module,
-      path: [:r2rml],
+      path: [:r2rml | subject_path(refusals)],
       message: render(refusals)
     )
   end
 
+  # The first refusal naming an attribute or relationship extends the path.
+  defp subject_path([%AshR2RML.Refusal{subject: subject} | _]), do: name_path(subject)
+  defp subject_path(_other), do: []
+
+  defp name_path({_resource, name}) when is_atom(name) and not is_nil(name), do: [name]
+
+  defp name_path(name) when is_atom(name) and not is_nil(name) do
+    if String.starts_with?(Atom.to_string(name), "Elixir."), do: [], else: [name]
+  end
+
+  defp name_path(_other), do: []
+
   defp render(text) when is_binary(text), do: text
   defp render(refusals), do: Enum.map_join(refusals, "; ", &render_one/1)
 
-  defp render_one(%AshR2RML.Refusal{code: code, detail: detail, evidence: evidence})
-       when evidence == %{} or is_nil(evidence),
-       do: "#{code}: #{detail}"
+  defp render_one(%AshR2RML.Refusal{} = refusal) do
+    base = "#{refusal.code}: #{refusal.detail}"
 
-  defp render_one(%AshR2RML.Refusal{code: code, detail: detail, evidence: evidence}),
-    do: "#{code}: #{detail} (evidence: #{inspect(evidence)})"
+    case name_path(refusal.subject) do
+      [name] -> base <> " [#{name}]" <> render_evidence(refusal.evidence)
+      [] -> base <> render_evidence(refusal.evidence)
+    end
+  end
+
+  defp render_evidence(evidence) when evidence == %{} or is_nil(evidence), do: ""
+  defp render_evidence(evidence), do: " (evidence: #{inspect(evidence)})"
 end
