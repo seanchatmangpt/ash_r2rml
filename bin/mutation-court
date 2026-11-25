@@ -97,6 +97,8 @@ EOF
     exit 1
   fi
 
+  # A deleted mutant source leaves its module in the stale .app modules list: rebuild before the baseline.
+  mix compile --force >/dev/null 2>&1
   mix test "$test_file" --seed 0 --max-failures 1
   local baseline_rc=$?
   if [ "$baseline_rc" -ne 0 ]; then
