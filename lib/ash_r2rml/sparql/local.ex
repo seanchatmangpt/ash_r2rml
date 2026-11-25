@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ash_r2rml contributors <https://github.com/seanchatmangpt/ash_r2rml/graphs/contributors>
+#
+# SPDX-License-Identifier: MIT
+
 defmodule AshR2RML.SPARQL.Local do
   @moduledoc "Explicit SPARQL.ex execution against an RDF.ex data structure."
 
