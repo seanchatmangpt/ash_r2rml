@@ -14,7 +14,7 @@ defmodule AshR2RML.Introspection.Manifest do
   existing direct `Ash.Resource.Info` introspection, which is per-resource
   and does not need a whole-application manifest. This module exists for
   the separate, additive use case of application-wide tooling (docs
-  generation, ggen pack scaffolding, debugging) that wants a single
+  generation, scaffolding, debugging) that wants a single
   resource-lookup map across every domain/resource reachable from an
   `:ash_domains` application config, or from an explicit action-entrypoint
   list when no `:ash_domains` config is present (e.g. a library's own test
