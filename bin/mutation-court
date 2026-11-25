@@ -309,5 +309,21 @@ mutate M17b "duplicate ash_resource refusal disabled" \
   lib/ash_r2rml/mapping/validate.ex test/refactor_w11_duplicate_resource_test.exs \
   's/duplicate_resources\(bundle.resources\)/[]/'
 
-echo "MUTATION_COURT_PASS: M1a-M17b (M16a retired) (M1abc M2ab M3ab M4ab M5 M6 M7 M8 M9ab M10ab M11ab M12abc M13abcd M14abc M15abcdef M16b M16c1 M16c2 M16d M16e M17a M17b) killed, tree clean"
+mutate M18a "private_ip? 172.16/12 range disabled" \
+  lib/ash_r2rml/sparql/protocol/host.ex test/sparql_private_network_test.exs \
+  's/def private_ip\?\(\{172, b, _, _\}\) when b in 16\.\.31, do: true/def private_ip?({172, b, _, _}) when b in 0..-1\/\/1, do: true/'
+
+mutate M18b "private_ip? link-local 169.254 disabled" \
+  lib/ash_r2rml/sparql/protocol/host.ex test/sparql_private_network_test.exs \
+  's/def private_ip\?\(\{169, 254, _, _\}\), do: true/def private_ip?({169, 254, _, _}), do: false/'
+
+mutate M18c "worker max_heap_size kill disabled" \
+  lib/ash_r2rml/obda/worker.ex test/obda_worker_test.exs \
+  's/max_heap_size: %\{size: words, kill: true, error_logger: false\}/max_heap_size: %{size: words * 1_000_000, kill: true, error_logger: false}/'
+
+mutate M18d "worker timeout validation disabled" \
+  lib/ash_r2rml/obda/worker.ex test/obda_worker_hardening_test.exs \
+  's/not \(is_integer\(timeout\) and timeout > 0\) -> invalid_opt/false -> invalid_opt/'
+
+echo "MUTATION_COURT_PASS: M1a-M18d (M16a retired) (M1abc M2ab M3ab M4ab M5 M6 M7 M8 M9ab M10ab M11ab M12abc M13abcd M14abc M15abcdef M16b M16c1 M16c2 M16d M16e M17a M17b M18a M18b M18c M18d) killed, tree clean"
 exit 0
