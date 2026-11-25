@@ -268,9 +268,14 @@ defmodule AshR2RML.Subject do
 
       %{type: type, constraints: constraints} ->
         with {:ok, cast} when not is_nil(cast) <- Ash.Type.cast_input(type, value, constraints),
-             {:ok, cast} <- Ash.Type.apply_constraints(type, cast, constraints) do
-          render_string(mapping, field, cast)
+             {:ok, cast} <- Ash.Type.apply_constraints(type, cast, constraints),
+             {:ok, rendered} <- render_string(mapping, field, cast),
+             :ok <- check_exact(mapping, field, value, rendered) do
+          {:ok, rendered}
         else
+          {:error, %Refusal{}} = error ->
+            error
+
           _ ->
             {:error,
              refuse(
@@ -282,6 +287,22 @@ defmodule AshR2RML.Subject do
         end
     end
   end
+
+  # A binary input whose cast lexical differs from it was normalized (trim, case, ...):
+  # distinct keys would collapse to one IRI, so the key is refused instead of aliased.
+  defp check_exact(_mapping, _field, value, rendered) when not is_binary(value) or value == rendered,
+    do: :ok
+
+  defp check_exact(mapping, field, value, rendered),
+    do:
+      {:error,
+       refuse(
+         mapping,
+         :REFUSED_INVALID_SUBJECT_IRI,
+         "subject template field #{inspect(field)} value #{inspect(value)} normalizes to " <>
+           "#{inspect(rendered)}; distinct keys must not collapse to one IRI",
+         %{field: field, input: value, normalized: rendered}
+       )}
 
   # Only the String.Chars call is guarded, and only against its own protocol error.
   defp render_string(mapping, field, value) do

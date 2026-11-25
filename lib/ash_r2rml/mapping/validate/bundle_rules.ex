@@ -9,6 +9,7 @@ defmodule AshR2RML.Mapping.Validate.BundleRules do
 
   alias AshR2RML.Mapping
   alias AshR2RML.Mapping.Resource
+  alias AshR2RML.Mapping.Validate.Shared
   alias AshR2RML.Refusal
 
   @doc "Refusals for reference targets absent from the bundle or lacking a stable subject identity."
@@ -46,7 +47,7 @@ defmodule AshR2RML.Mapping.Validate.BundleRules do
 
   defp parent_subject_identity(resource, reference, parent) do
     if Mapping.stable_subject_identity?(parent) do
-      []
+      parent_join_columns(resource, reference, parent)
     else
       [
         Refusal.new(
@@ -61,6 +62,36 @@ defmodule AshR2RML.Mapping.Validate.BundleRules do
         )
       ]
     end
+  end
+
+  # A reference joining a parent on columns the parent lacks dangles: refuse it. Joining on a
+  # non-identity parent column is lawful (has_many-style joins), so uniqueness is not required.
+  defp parent_join_columns(resource, reference, parent) do
+    columns =
+      reference.joins
+      |> Enum.filter(&match?(%Mapping.JoinCondition{}, &1))
+      |> Enum.map(& &1.parent)
+
+    available = Shared.available_columns(parent)
+    missing = columns |> Enum.reject(&MapSet.member?(available, &1)) |> Enum.uniq() |> Enum.sort()
+
+    missing_detail = "join parent column is not a column of the parent mapping"
+    refuse = &[join_refusal(resource, reference, parent, &1, &2)]
+
+    cond do
+      columns == [] -> []
+      missing != [] -> refuse.(missing_detail, missing)
+      true -> []
+    end
+  end
+
+  defp join_refusal(resource, reference, parent, detail, columns) do
+    Refusal.new(
+      :REFUSED_INVALID_JOIN_CONDITION,
+      {resource.ash_resource, reference.relationship},
+      detail,
+      %{parent_resource: parent.ash_resource, parent_columns: columns}
+    )
   end
 
   defp duplicate_contract_refusals(key, many) do

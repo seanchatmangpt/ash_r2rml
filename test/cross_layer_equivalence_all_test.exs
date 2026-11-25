@@ -99,6 +99,22 @@ if Code.ensure_loaded?(AshPostgres.DataLayer) do
   end
 end
 
+require AshR2RML.DataLayerContract.Shapes, as: Shapes
+
+Shapes.define(AshR2RML.CrossLayerEquivalenceAll.ShapeEts, :ets)
+
+if Code.ensure_loaded?(AshSqlite.DataLayer) do
+  Shapes.define(AshR2RML.CrossLayerEquivalenceAll.ShapeSqlite, :sqlite, AshR2RML.CrossLayerEquivalenceAll.SqliteRepo)
+end
+
+if Code.ensure_loaded?(AshPostgres.DataLayer) do
+  Shapes.define(
+    AshR2RML.CrossLayerEquivalenceAll.ShapePostgres,
+    :postgres,
+    AshR2RML.CrossLayerEquivalenceAll.PostgresRepo
+  )
+end
+
 defmodule AshR2RML.CrossLayerEquivalenceAllTest do
   @moduledoc """
   The same 50 Person rows, published through ETS, a manual-read Simple resource, CSV, SQLite and
@@ -323,6 +339,127 @@ defmodule AshR2RML.CrossLayerEquivalenceAllTest do
       Ecto.Adapters.SQL.query!(repo, "DELETE FROM xl_typed_people", [])
 
       assert_typed_equivalent(Xl.TypedPostgres)
+    end
+  end
+
+  # -- shape court: NULLs, float/time/naive/utc, reference join, ORDER BY / LIMIT / FILTER ------------
+
+  @xsd_double "http://www.w3.org/2001/XMLSchema#double"
+  @xsd_time "http://www.w3.org/2001/XMLSchema#time"
+
+  defp shape_reference do
+    Shapes.reseed!(Xl.ShapeEts)
+    Shapes.observe(Xl.ShapeEts)
+  end
+
+  # Any divergence in datatype IRI, lexical form, row order or refusal between a layer and the ETS
+  # reference is a real finding. No layer is declared to differ.
+  defp assert_shape_equivalent(layer) do
+    reference = shape_reference()
+    Shapes.reseed!(layer)
+    actual = Shapes.observe(layer)
+
+    assert Map.keys(actual) == Map.keys(reference)
+
+    for key <- Map.keys(reference) do
+      assert {key, actual[key]} == {key, reference[key]}
+    end
+  end
+
+  defp objects(triples, subject_iri, predicate_iri), do: object_of(triples, subject_iri, predicate_iri)
+
+  test "shape reference: NULLs publish no triple, temporal and float types keep their datatype" do
+    reference = shape_reference()
+    triples = reference.triples
+
+    assert [{:literal, @xsd_double, _, nil}] = objects(triples, "urn:uuid:p1", "http://schema.org/ratingValue")
+    assert [{:literal, @xsd_time, "03:04:05", nil}] = objects(triples, "urn:uuid:p1", "http://schema.org/startTime")
+    assert [{:literal, @xsd_datetime, naive, nil}] = objects(triples, "urn:uuid:p1", "http://schema.org/startDate")
+    assert [{:literal, @xsd_datetime, utc, nil}] = objects(triples, "urn:uuid:p1", "http://schema.org/dateModified")
+    assert String.starts_with?(naive, "2026-01-02T03:04:05")
+    assert String.starts_with?(utc, "2026-01-02T03:04:05")
+
+    # p3 has NULL score and NULL seen_at; p2 has NULL age; p5 is NULL everywhere but its name.
+    assert objects(triples, "urn:uuid:p3", "http://schema.org/ratingValue") == []
+    assert objects(triples, "urn:uuid:p3", "http://schema.org/dateModified") == []
+    assert objects(triples, "urn:uuid:p2", "http://schema.org/age") == []
+
+    assert [{:literal, @xsd_string, "Ed", nil}] = objects(triples, "urn:uuid:p5", "http://schema.org/name")
+
+    p5_predicates = for {{:iri, "urn:uuid:p5"}, {:iri, p}, _} <- triples, do: p
+    assert Enum.sort(p5_predicates) == ["http://schema.org/name", "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"]
+
+    # reference object map: org_code is published as the parent's subject IRI, NULL org_code as nothing
+    assert [{:iri, "urn:uuid:org/acme"}] = objects(triples, "urn:uuid:p1", "http://schema.org/memberOf")
+    assert objects(triples, "urn:uuid:p3", "http://schema.org/memberOf") == []
+  end
+
+  test "shape reference: ORDER BY, LIMIT, FILTER and join return the expected rows" do
+    shape_reference()
+    plain = &Shapes.plain_rows(Xl.ShapeEts, Keyword.fetch!(Shapes.shapes(), &1))
+
+    # LIMIT/OFFSET are applied by the OBDA envelope (obda.ex Modifiers.run), not by raw InMemory.query.
+    assert plain.(:order_limit) |> Enum.map(& &1["name"]) |> Enum.sort() == ["Ada", "Bob", "Di"]
+
+    # NULL age rows (p2, p5) never match; 29 is filtered out. Row order is the OBDA envelope's job.
+    assert plain.(:filter) |> Enum.map(&String.to_integer(&1["age"])) |> Enum.sort() == [36, 41]
+
+    assert plain.(:null_dropped) |> Enum.map(& &1["s"]) |> Enum.sort() == ["urn:uuid:p1", "urn:uuid:p3", "urn:uuid:p4"]
+
+    assert plain.(:join) |> Enum.map(&{&1["p"], &1["o"], &1["oname"]}) |> Enum.sort() == [
+             {"urn:uuid:p1", "urn:uuid:org/acme", "Acme"},
+             {"urn:uuid:p2", "urn:uuid:org/plain", "Plain Org"},
+             {"urn:uuid:p4", "urn:uuid:org/acme", "Acme"}
+           ]
+
+    observation = shape_reference()
+
+    for name <- Keyword.keys(Shapes.shapes()) do
+      assert {:ok, [_ | _]} = observation[name]
+    end
+  end
+
+  if Code.ensure_loaded?(AshSqlite.DataLayer) do
+    @tag :sqlite
+    test "SQLite shape court (NULLs, float, time, naive, utc, join, ORDER BY/LIMIT/FILTER) equals ETS" do
+      repo = Xl.SqliteRepo
+      path = Path.join(System.tmp_dir!(), "ash_r2rml_xl_shape_#{System.unique_integer([:positive])}.db")
+
+      {:ok, pid} = repo.start_link(database: path, pool_size: 1)
+
+      on_exit(fn ->
+        ref = Process.monitor(pid)
+        Process.exit(pid, :shutdown)
+
+        receive do
+          {:DOWN, ^ref, :process, ^pid, _} -> :ok
+        after
+          5_000 -> :ok
+        end
+
+        for suffix <- ["", "-shm", "-wal"], do: File.rm(path <> suffix)
+      end)
+
+      Shapes.reset_tables!(repo, Shapes.sqlite_ddl())
+      assert_shape_equivalent(Xl.ShapeSqlite)
+    end
+  end
+
+  if Code.ensure_loaded?(AshPostgres.DataLayer) do
+    @tag :postgres
+    test "Postgres shape court (NULLs, float, time, naive, utc, join, ORDER BY/LIMIT/FILTER) equals ETS" do
+      repo = Xl.PostgresRepo
+
+      url =
+        case System.get_env("ASH_R2RML_POSTGRES_URL") do
+          value when value in [nil, ""] -> flunk("ASH_R2RML_POSTGRES_URL is required for :postgres tests")
+          value -> value
+        end
+
+      start_supervised!(%{id: repo, start: {repo, :start_link, [[url: url, pool_size: 2]]}})
+
+      Shapes.reset_tables!(repo, Shapes.postgres_ddl())
+      assert_shape_equivalent(Xl.ShapePostgres)
     end
   end
 

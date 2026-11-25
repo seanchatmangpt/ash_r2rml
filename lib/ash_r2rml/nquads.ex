@@ -43,6 +43,7 @@ defmodule AshR2RML.NQuads do
   alias AshR2RML.Refusal
 
   @xsd_string "http://www.w3.org/2001/XMLSchema#string"
+  @langtag ~r/\A[a-zA-Z]+(-[a-zA-Z0-9]+)*\z/
 
   @type iri_term :: {:iri, String.t()}
   @type literal_term ::
@@ -66,17 +67,18 @@ defmodule AshR2RML.NQuads do
   """
   @spec lines([quad()]) :: {:ok, [String.t()]} | {:error, Refusal.t()}
   def lines(quads) when is_list(quads) do
-    quads
-    |> Enum.reduce_while({:ok, []}, fn quad, {:ok, acc} ->
+    with {:ok, acc} <- collect_lines(quads) do
+      {:ok, acc |> Enum.uniq() |> Enum.sort()}
+    end
+  end
+
+  defp collect_lines(quads) do
+    Enum.reduce_while(quads, {:ok, []}, fn quad, {:ok, acc} ->
       case line(quad) do
         {:ok, l} -> {:cont, {:ok, [l | acc]}}
         {:error, _} = err -> {:halt, err}
       end
     end)
-    |> case do
-      {:ok, acc} -> {:ok, acc |> Enum.uniq() |> Enum.sort()}
-      err -> err
-    end
   end
 
   @spec line(term()) :: {:ok, String.t()} | {:error, Refusal.t()}
@@ -130,8 +132,9 @@ defmodule AshR2RML.NQuads do
       else: refuse_term(t)
   end
 
-  defp literal({:literal, lex, {:lang, tag}} = t) when is_binary(tag) and tag != "" do
-    if String.valid?(tag),
+  # BCP47-shaped tag (RDF 1.1 N-Quads LANGTAG); anything else would emit an invalid line.
+  defp literal({:literal, lex, {:lang, tag}} = t) when is_binary(tag) do
+    if Regex.match?(@langtag, tag),
       do: {:ok, quote_lit(lex) <> "@" <> String.downcase(tag)},
       else: refuse_term(t)
   end

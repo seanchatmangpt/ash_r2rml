@@ -78,7 +78,8 @@ defmodule AshR2RML.Money do
   def project({:node, %{amount: %Decimal{} = amount, currency: currency}}, opts),
     do: build(amount, currency, opts)
 
-  def project({:node, %{amount: {:literal, lexical, @xsd_decimal}, currency: currency}}, opts) do
+  def project({:node, %{amount: {:literal, lexical, @xsd_decimal}, currency: currency}}, opts)
+      when is_binary(lexical) do
     case Decimal.parse(lexical) do
       {%Decimal{} = amount, ""} -> build(amount, currency, opts)
       _ -> refuse(lexical, "amount literal is not a Decimal lexical")

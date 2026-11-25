@@ -264,13 +264,41 @@ defmodule AshR2RML.DataLayerContract do
   defp norm(value), do: if(String.Chars.impl_for(value), do: to_string(value), else: inspect(value))
 
   @doc """
+  A result-row value with its identity intact: RDF terms in `typed_term/1` form; any other value
+  (a bare binary IRI/string, a native number) as `{:native, inspect(value)}`, so `7` and `"7"`
+  stay distinct.
+  """
+  @spec typed_value(term()) :: tuple()
+  def typed_value(%RDF.Literal{} = term), do: typed_term(term)
+  def typed_value(%RDF.IRI{} = term), do: typed_term(term)
+  def typed_value(%RDF.BlankNode{} = term), do: typed_term(term)
+  def typed_value(value), do: {:native, inspect(value)}
+
+  @doc "Result rows exactly as emitted (order preserved) with every value in `typed_value/1` form."
+  @spec typed_rows({:ok, struct()}) :: [map()]
+  def typed_rows({:ok, observation}) do
+    Enum.map(observation.rows, fn row -> Map.new(row, fn {k, v} -> {k, typed_value(v)} end) end)
+  end
+
+  @doc "Typed counterpart of `visible/1`: sorted rows, a typed refusal normalizes to `[]`."
+  @spec typed_visible({:ok, struct()} | {:error, Error.t()}) :: [map()]
+  def typed_visible({:ok, _} = ok), do: ok |> typed_rows() |> Enum.sort_by(&inspect/1)
+  def typed_visible({:error, %Error{}}), do: []
+
+  @doc "Typed counterpart of `visible_shape/1`: `{:ok, typed_rows}` or `{:error, refusal_code}`."
+  @spec typed_visible_shape({:ok, struct()} | {:error, Error.t()}) :: {:ok, [map()]} | {:error, atom()}
+  def typed_visible_shape({:ok, _} = ok), do: {:ok, typed_visible(ok)}
+  def typed_visible_shape({:error, %Error{code: code}}), do: {:error, code}
+
+  @doc """
   Everything the layer publishes, keyed deterministically: organization rows per tenant and,
-  per tenant and role, person rows and secret-note rows.
+  per tenant and role, person rows and secret-note rows. Values keep their RDF datatype and
+  lexical form (`typed_visible_shape/1`), so a layer that changes a datatype is not flattened away.
   """
   def snapshot(mod) do
     org =
       for tenant <- tenants(), into: %{} do
-        {tenant, visible_shape(run(mod, :org, org_sparql(), tenant: tenant))}
+        {tenant, typed_visible_shape(run(mod, :org, org_sparql(), tenant: tenant))}
       end
 
     people =
@@ -279,8 +307,8 @@ defmodule AshR2RML.DataLayerContract do
 
         {{tenant, role},
          %{
-           people: visible_shape(run(mod, :person, person_sparql(), opts)),
-           secrets: visible_shape(run(mod, :person, secret_sparql(), opts))
+           people: typed_visible_shape(run(mod, :person, person_sparql(), opts)),
+           secrets: typed_visible_shape(run(mod, :person, secret_sparql(), opts))
          }}
       end
 
@@ -684,6 +712,326 @@ defmodule AshR2RML.DataLayerContract.Cases do
                  )
 
         assert inspect(opted_in) =~ "TAX-ACME-WEST-0001"
+      end
+    end
+  end
+end
+
+defmodule AshR2RML.DataLayerContract.Shapes do
+  @moduledoc """
+  Typed-court fixtures: `<name>.Domain`, `<name>.Organization` and `<name>.Person` on one data layer,
+  with NULL attributes in some rows, float / time / naive_datetime / utc_datetime (no usec)
+  attributes, and a `belongs_to :organization` published as a reference (join) object map on
+  `org_code`. `observe/1` runs materialization and the ORDER BY / LIMIT / FILTER / join query shapes
+  and returns every result with RDF datatype + lexical form intact, so layers compare by
+  `==` over the whole observation.
+  """
+
+  alias AshR2RML.DataLayerContract, as: C
+  alias AshR2RML.OBDA.InMemory
+
+  @orgs [%{code: "acme", name: "Acme"}, %{code: "plain", name: "Plain Org"}]
+
+  @people [
+    %{
+      pid: "p1",
+      name: "Ada",
+      age: 36,
+      score: 1.5,
+      at_time: ~T[03:04:05],
+      local_at: ~N[2026-01-02 03:04:05],
+      seen_at: ~U[2026-01-02 03:04:05Z],
+      org_code: "acme"
+    },
+    %{
+      pid: "p2",
+      name: "Bob",
+      age: nil,
+      score: 2.25,
+      at_time: nil,
+      local_at: nil,
+      seen_at: ~U[2026-02-03 04:05:06Z],
+      org_code: "plain"
+    },
+    %{
+      pid: "p3",
+      name: "Cy",
+      age: 29,
+      score: nil,
+      at_time: ~T[05:06:07],
+      local_at: ~N[2026-03-04 05:06:07],
+      seen_at: nil,
+      org_code: nil
+    },
+    %{
+      pid: "p4",
+      name: "Di",
+      age: 41,
+      score: 3.0,
+      at_time: ~T[23:59:58],
+      local_at: ~N[2026-04-05 06:07:08],
+      seen_at: ~U[2026-04-05 06:07:08Z],
+      org_code: "acme"
+    },
+    %{pid: "p5", name: "Ed", age: nil, score: nil, at_time: nil, local_at: nil, seen_at: nil, org_code: nil}
+  ]
+
+  @sqlite_ddl [
+    "CREATE TABLE IF NOT EXISTS xl_shape_orgs (code TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL)",
+    "CREATE TABLE IF NOT EXISTS xl_shape_people (pid TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, " <>
+      "age INTEGER, score REAL, at_time TEXT, local_at TEXT, seen_at TEXT, org_code TEXT)"
+  ]
+
+  @postgres_ddl [
+    "CREATE TABLE IF NOT EXISTS xl_shape_orgs (code TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL)",
+    "CREATE TABLE IF NOT EXISTS xl_shape_people (pid TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, " <>
+      "age BIGINT, score DOUBLE PRECISION, at_time TIME(0), local_at TIMESTAMP(0), " <>
+      "seen_at TIMESTAMP(0), org_code TEXT)"
+  ]
+
+  @doc "DDL for the SQLite shape tables."
+  def sqlite_ddl, do: @sqlite_ddl
+
+  @doc "DDL for the Postgres shape tables."
+  def postgres_ddl, do: @postgres_ddl
+
+  @doc "Creates the shape tables on `repo` and empties them."
+  def reset_tables!(repo, ddl) do
+    Enum.each(ddl, &Ecto.Adapters.SQL.query!(repo, &1, []))
+
+    for table <- ["xl_shape_people", "xl_shape_orgs"] do
+      Ecto.Adapters.SQL.query!(repo, "DELETE FROM " <> table, [])
+    end
+
+    :ok
+  end
+
+  @doc "Seed people (maps with `:pid, :name, :age, :score, :at_time, :local_at, :seen_at, :org_code`)."
+  def people, do: @people
+
+  @doc "Seed organizations (maps with `:code, :name`)."
+  def orgs, do: @orgs
+
+  @doc "Resource module for `:org | :person` on shape layer `mod`."
+  def resource(mod, :org), do: Module.concat(mod, Organization)
+  def resource(mod, :person), do: Module.concat(mod, Person)
+
+  @doc "Domain module of shape layer `mod`."
+  def domain(mod), do: Module.concat(mod, Domain)
+
+  @doc "Destroys every row and inserts the seed rows (idempotent)."
+  def reseed!(mod) do
+    domain = domain(mod)
+
+    for kind <- [:person, :org] do
+      kind
+      |> then(&resource(mod, &1))
+      |> Ash.read!(domain: domain, authorize?: false)
+      |> Enum.each(&Ash.destroy!(&1, domain: domain, authorize?: false))
+    end
+
+    for {kind, rows} <- [org: @orgs, person: @people], attrs <- rows do
+      resource(mod, kind)
+      |> Ash.Changeset.for_create(:create, attrs, domain: domain)
+      |> Ash.create!(domain: domain, authorize?: false)
+    end
+
+    :ok
+  end
+
+  @doc "Mapping specs `[{org, mapping}, {person, mapping}]` for layer `mod`."
+  def specs(mod) do
+    for kind <- [:org, :person] do
+      resource = resource(mod, kind)
+      {resource, AshR2RML.Resource.Info.mapping!(resource)}
+    end
+  end
+
+  @doc "Runs `sparql` over both resources (so the reference object map resolves) in read-opts order."
+  def query(mod, sparql) do
+    InMemory.query_many(specs(mod), sparql, domain: domain(mod), authorize?: false, allow_unauthorized: true)
+  end
+
+  @doc "The query shapes asserted equal across layers, as `{name, sparql}`."
+  def shapes do
+    [
+      order_limit:
+        "SELECT ?s ?name ?score WHERE { ?s <http://schema.org/name> ?name ; " <>
+          "<http://schema.org/ratingValue> ?score } ORDER BY DESC(?score)",
+      filter: "SELECT ?s ?age WHERE { ?s <http://schema.org/age> ?age . FILTER(?age > 30) } ORDER BY ?age",
+      null_dropped: "SELECT ?s ?t WHERE { ?s <http://schema.org/startTime> ?t } ORDER BY ?s",
+      float_time:
+        "SELECT ?s ?score ?t WHERE { ?s <http://schema.org/ratingValue> ?score ; " <>
+          "<http://schema.org/startTime> ?t } ORDER BY ?s",
+      naive_utc:
+        "SELECT ?s ?naive ?utc WHERE { ?s <http://schema.org/startDate> ?naive ; " <>
+          "<http://schema.org/dateModified> ?utc } ORDER BY ?s",
+      join:
+        "SELECT ?p ?o ?oname WHERE { ?p <http://schema.org/memberOf> ?o . " <>
+          "?o <http://schema.org/name> ?oname } ORDER BY ?p"
+    ]
+  end
+
+  @doc """
+  The full typed observation of layer `mod`: `:triples` (every triple of both resources, typed,
+  sorted) and one typed, order-preserving row list per `shapes/0` entry.
+  """
+  def observe(mod) do
+    {:ok, graph} =
+      InMemory.materialize_many(specs(mod), domain: domain(mod), authorize?: false, allow_unauthorized: true)
+
+    triples =
+      graph
+      |> RDF.Graph.triples()
+      |> Enum.map(fn {s, p, o} -> {C.typed_term(s), C.typed_term(p), C.typed_term(o)} end)
+      |> Enum.sort()
+
+    Map.new([{:triples, triples} | for({name, sparql} <- shapes(), do: {name, shape_rows(mod, sparql)})])
+  end
+
+  @doc "Typed rows (emitted order) of one shape, or `{:error, code}` for a typed refusal."
+  def shape_rows(mod, sparql) do
+    case query(mod, sparql) do
+      {:ok, _} = ok -> {:ok, C.typed_rows(ok)}
+      {:error, %{code: code}} -> {:error, code}
+    end
+  end
+
+  @doc "String-normalized rows (emitted order) of one shape; used for readable positive controls."
+  def plain_rows(mod, sparql), do: mod |> query(sparql) |> C.emitted_rows()
+
+  @doc """
+  Defines `<name>.Domain`, `<name>.Organization`, `<name>.Person` on data-layer `kind`
+  (`:ets | :sqlite | :postgres`); `repo` is required for the SQL layers.
+  """
+  defmacro define(name, kind, repo \\ nil) do
+    name = Macro.expand(name, __CALLER__)
+    kind = Macro.expand(kind, __CALLER__)
+    repo = if repo, do: Macro.expand(repo, __CALLER__)
+    domain = Module.concat(name, Domain)
+    org = Module.concat(name, Organization)
+    person = Module.concat(name, Person)
+    data_layer = data_layer(kind)
+
+    quote do
+      defmodule unquote(domain) do
+        use Ash.Domain, validate_config_inclusion?: false
+
+        resources do
+          resource unquote(org)
+          resource unquote(person)
+        end
+      end
+
+      defmodule unquote(org) do
+        use Ash.Resource,
+          domain: unquote(domain),
+          data_layer: unquote(data_layer),
+          extensions: [AshR2RML.Resource]
+
+        unquote(layer_dsl(kind, repo, "xl_shape_orgs"))
+
+        r2rml do
+          table_name("xl_shape_orgs")
+          class("http://schema.org/Organization")
+          subject(template: "urn:uuid:org/{code}")
+          property(:name, "http://schema.org/name")
+        end
+
+        actions do
+          defaults [:read, :destroy]
+
+          create :create do
+            primary? true
+            accept [:code, :name]
+          end
+        end
+
+        attributes do
+          attribute :code, :string, primary_key?: true, allow_nil?: false, public?: true
+          attribute :name, :string, allow_nil?: false, public?: true
+        end
+      end
+
+      defmodule unquote(person) do
+        use Ash.Resource,
+          domain: unquote(domain),
+          data_layer: unquote(data_layer),
+          extensions: [AshR2RML.Resource]
+
+        unquote(layer_dsl(kind, repo, "xl_shape_people"))
+
+        r2rml do
+          table_name("xl_shape_people")
+          class("http://schema.org/Person")
+          subject(template: "urn:uuid:{pid}")
+          property(:name, "http://schema.org/name")
+          property(:age, "http://schema.org/age")
+          property(:score, "http://schema.org/ratingValue")
+          property(:at_time, "http://schema.org/startTime")
+          property(:local_at, "http://schema.org/startDate")
+          property(:seen_at, "http://schema.org/dateModified")
+          reference(:organization, "http://schema.org/memberOf")
+        end
+
+        actions do
+          defaults [:read, :destroy]
+
+          create :create do
+            primary? true
+            accept [:pid, :name, :age, :score, :at_time, :local_at, :seen_at, :org_code]
+          end
+        end
+
+        attributes do
+          attribute :pid, :string, primary_key?: true, allow_nil?: false, public?: true
+          attribute :name, :string, allow_nil?: false, public?: true
+          attribute :age, :integer, public?: true
+          attribute :score, :float, public?: true
+          attribute :at_time, :time, public?: true
+          attribute :local_at, :naive_datetime, public?: true
+          attribute :seen_at, :utc_datetime, public?: true
+          attribute :org_code, :string, public?: true
+        end
+
+        relationships do
+          belongs_to :organization, unquote(org) do
+            source_attribute :org_code
+            destination_attribute :code
+            define_attribute? false
+            public? true
+          end
+        end
+      end
+    end
+  end
+
+  defp data_layer(:ets), do: Ash.DataLayer.Ets
+  defp data_layer(:sqlite), do: AshSqlite.DataLayer
+  defp data_layer(:postgres), do: AshPostgres.DataLayer
+
+  defp layer_dsl(:ets, _repo, _table) do
+    quote do
+      ets do
+        private? false
+      end
+    end
+  end
+
+  defp layer_dsl(:sqlite, repo, table) do
+    quote do
+      sqlite do
+        table unquote(table)
+        repo(unquote(repo))
+      end
+    end
+  end
+
+  defp layer_dsl(:postgres, repo, table) do
+    quote do
+      postgres do
+        table unquote(table)
+        repo(unquote(repo))
       end
     end
   end

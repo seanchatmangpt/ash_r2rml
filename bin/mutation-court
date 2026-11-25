@@ -243,6 +243,31 @@ mutate M14c "triple-budget clamp refusal disabled" \
   "$IN_MEMORY" test/obda_in_memory_limits_test.exs \
   's/clamp\? and length\(rows\) >= triple_cap ->/clamp? and length(rows) >= triple_cap * 1_000_000 ->/'
 
+# M15: accumulation refusal, redirect pin, sensitive-attribute admission, OBDA option forwarding.
+mutate M15a "add_checked_rows max_triples accumulation refusal disabled" \
+  "$IN_MEMORY" test/followup_triple_clamp_test.exs \
+  's/^( {10})if emitted > max_triples do/$1if emitted > max_triples * 1_000_000 do/'
+
+mutate M15b "client_opts max_redirects no longer pinned to the opt-in value" \
+  "$PROTOCOL" test/sparql_protocol_hardening_test.exs \
+  's/Keyword\.put\(:max_redirects, max_redirects\)/Keyword.put(:max_redirects, max_redirects + 3)/'
+
+mutate M15c "sensitive subject check skipped (check_subject_sensitive always allowed)" \
+  "$IN_MEMORY" test/obda_in_memory_sensitive_coverage_test.exs \
+  's/check_subject_sensitive\(mapping_resource\.subject_map, ash_resource, allow_sensitive\?\)/check_subject_sensitive(mapping_resource.subject_map, ash_resource, true)/'
+
+mutate M15d "sensitive join child check skipped (check_joins_sensitive always allowed)" \
+  "$IN_MEMORY" test/obda_in_memory_sensitive_coverage_test.exs \
+  's/check_joins_sensitive\(mapping_resource\.reference_object_maps, ash_resource, allow_sensitive\?\)/check_joins_sensitive(mapping_resource.reference_object_maps, ash_resource, true)/'
+
+mutate M15e "sensitive predicate-object attribute refusal disabled" \
+  "$IN_MEMORY" test/obda_query_unauthorized_test.exs \
+  's/if not allow_sensitive\? and sensitive_attribute\?\(/if allow_sensitive? == :mutant and sensitive_attribute?(/'
+
+mutate M15f "OBDA @forwarded drops allow_unauthorized" \
+  "$OBDA" test/obda_query_envelope_test.exs \
+  's/\[:allow_unauthorized, :require_authorizer, :require_tenant, :max_rows/[:require_authorizer, :require_tenant, :max_rows/'
+
 if ! git diff --exit-code >/dev/null; then
   echo "FINAL_DIFF_NOT_EMPTY: tracked files differ after the court" >&2
   git diff --stat >&2
@@ -255,5 +280,5 @@ if ! porcelain_empty; then
   exit 4
 fi
 
-echo "MUTATION_COURT_PASS: M1a-M14c (M1abc M2ab M3ab M4ab M5 M6 M7 M8 M9ab M10ab M11ab M12abc M13abcd M14abc) killed, tree clean"
+echo "MUTATION_COURT_PASS: M1a-M15f (M1abc M2ab M3ab M4ab M5 M6 M7 M8 M9ab M10ab M11ab M12abc M13abcd M14abc M15abcdef) killed, tree clean"
 exit 0

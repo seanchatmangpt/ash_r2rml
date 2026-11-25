@@ -122,6 +122,13 @@ defmodule AshR2RML.Datatype.Registry do
     end
   end
 
+  defp lookup_contract(ash_type, _base, _normalized, rdf_override) when not is_nil(rdf_override) do
+    {:error,
+     Refusal.new(:REFUSED_UNMAPPED_DATATYPE, ash_type, "explicit RDF datatype must be an absolute IRI string", %{
+       rdf_datatype: rdf_override
+     })}
+  end
+
   defp lookup_contract(ash_type, base, normalized, _rdf_override) do
     case semantic_contract(ash_type, base) do
       {:literal, datatype} = contract ->

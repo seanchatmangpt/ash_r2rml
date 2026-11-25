@@ -58,6 +58,9 @@ Items marked UNVERIFIED have source present but no test run by the docs lane.
   bounded too (`REFUSED_RESULT_LIMIT_EXCEEDED`).
 
 ### Known gaps (accepted):
+- `AshR2RML.OBDA.InMemory.query*` (the raw engine) does not apply SPARQL `ORDER BY`/`LIMIT`/`OFFSET` row semantics; the OBDA envelope
+  (`AshR2RML.OBDA.query/3`) applies them. The cross-layer court compares raw-engine rows order-insensitively.
+- Gate extractor holes (split schemes such as a mid-word concat, non-listed foreign schemes) stay accepted.
 * Runtime deps are `ash`, `spark`, `rdf`, `sparql`, `sparql_client`, `jason`, `telemetry` (plus
   optional `igniter`) because RDF and SPARQL handling need them.
 * Sobelow is not verified clean for Mix tasks: `lib/mix` contains no `load_file` call (grep), only
