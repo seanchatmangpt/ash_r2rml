@@ -11,6 +11,42 @@ See [Conventional Commits](Https://conventionalcommits.org) for commit guideline
 
 <!-- changelog -->
 
+## v26.11.25 (2026-11-24)
+
+Bounded, Ash-mediated OBDA. Still zero Java, zero JDBC, and zero data-layer runtime dependencies
+(runtime deps: `ash`, `spark`, `rdf`, `sparql`, `sparql_client`, `jason`, `telemetry`; `igniter` optional).
+
+### Features:
+* `AshR2RML.OBDA.query/3` envelope: `%Result{bindings, triples, stats, digest}` with canonical
+  ordering, SHA-256 digest, and `:telemetry` (`[:ash_r2rml, :obda, :query, :start | :stop | :exception]`).
+* `AshR2RML.OBDA.Worker`: each query runs in a disposable process with `max_heap_size` (kill),
+  `timeout_ms`, and typed `REFUSED_MEMORY_LIMIT_EXCEEDED` / `REFUSED_QUERY_TIMEOUT`.
+* Bounds in `OBDA.InMemory`: `max_rows` (read limited to `max_rows + 1`), `max_triples`; the triple
+  bound clamps the single read from guaranteed triples per row, so oversized graphs refuse early.
+* Constant-subject point lookups push down to `Ash.Query` (1 row read); `OBDA.Preflight` prunes
+  resources the actor cannot read (`stats.resources_pruned_by_policy`) and refuses missing tenants.
+* `AshR2RML.Error` (code, resource, field, SPARQL clause, hint, details), `AshR2RML.Action.Query`,
+  `AshR2RML.QueryBuilder`, `AshR2RML.Domain` verifier, `Resource.Info.fetch_mapping/1` and `mapped?/1`.
+* `Subject.from_iri/2` casts through `Ash.Type.cast_input/3` and applies constraints; typed
+  `REFUSED_MISSING_SUBJECT_KEY`, `REFUSED_INVALID_SUBJECT_IRI`, `REFUSED_NON_INVERTIBLE_TEMPLATE`.
+* `rdf do predicate` on calculations and aggregates; `NewType`, enum and atom `one_of` datatypes.
+* Declared datatypes now materialize typed literals (numeric/temporal FILTER and ORDER BY were wrong before).
+* `OBDA.query` forwards `max_rows`/`max_triples`; `AshR2RML.Capability` probes `Ash.DataLayer.can?/2` so
+  layers without pushdown still get bounded reads; SPARQL ORDER BY/LIMIT/OFFSET applied by the envelope.
+* IRI object templates over non-attribute fields are refused (no calculation leakage into IRIs).
+* Template/constant `:iri` object maps now emit real IRIs; other template/constant object maps
+  refuse with `UNSUPPORTED_TERM_TYPE` instead of silently becoming literals.
+
+### Verification:
+* Contract suite on ETS, file-backed AshSqlite and AshPostgres (CI PostgreSQL 16 job);
+  `bin/mutation-court` kills 9/9 in-place mutations; `bench/` DFLSS suite (excluded from the
+  package) with measured baseline in `bench/BASELINE-26.11.25.md`.
+* Release workflow waits for the tag's own CI before gating on check runs.
+
+### Packaging:
+* `package[:files]` is file-only: no `lib/mix` (so `mix ash_r2rml.render/install` are repository-only), no `bench/`. `ash_sqlite`, `ash_postgres`, `benchee`
+  are test/dev only.
+
 ## v26.11.24 (2026-11-24)
 
 Zero-Java, zero-JDBC release. `AshR2RML.OBDA.InMemory` is the sole runtime OBDA backend.

@@ -2,6 +2,20 @@
 #
 # SPDX-License-Identifier: MIT
 
+defmodule AshR2RML.DslCalcAggregateTest.Line do
+  @moduledoc false
+  use Ash.Resource, domain: nil, data_layer: Ash.DataLayer.Ets
+
+  actions do
+    defaults [:read]
+  end
+
+  attributes do
+    uuid_primary_key :id
+    attribute :item_id, :uuid, public?: true
+  end
+end
+
 defmodule AshR2RML.DslCalcAggregateTest.Item do
   @moduledoc false
   use Ash.Resource, domain: nil, data_layer: Ash.DataLayer.Ets, extensions: [AshR2RML.Resource]
@@ -28,12 +42,18 @@ defmodule AshR2RML.DslCalcAggregateTest.Item do
     attribute :name, :string, public?: true
   end
 
+  relationships do
+    has_many :lines, AshR2RML.DslCalcAggregateTest.Line,
+      destination_attribute: :item_id,
+      public?: true
+  end
+
   calculations do
     calculate :shout, :string, expr(name <> "!"), public?: true
   end
 
   aggregates do
-    count :line_count, :id, public?: true
+    count :line_count, :lines, public?: true
   end
 end
 

@@ -397,7 +397,7 @@ Current surface:
 
 - `AshR2RML.Compiler.compile/2` accepts a resource, a list, or an `Ash.Domain` (expanded to the
   domain's resources carrying the extension).
-- `mix ash_r2rml.render MyApp.Person MyApp.Domain` renders R2RML Turtle for resources or domains.
+- `mix ash_r2rml.render MyApp.Person MyApp.Domain` renders R2RML Turtle for resources or domains. This task lives in the repository checkout only: the Hex package ships no `lib/mix` tasks, so consumers call `AshR2RML.R2RML.render/1` directly.
 - `AshR2RML.Subject.to_iri/2` and `from_iri/2` convert between records/keys and subject IRIs;
   `Subject.iri_only?/1` reports whether a mapping yields only IRI subjects (no blank nodes).
 - `OBDA.InMemory` reads run with `authorize?: true` by default. Weakening is explicit and refused

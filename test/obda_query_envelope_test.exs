@@ -124,7 +124,7 @@ defmodule AshR2RML.OBDAQueryEnvelopeTest do
   test "max_triples refuses an oversized graph with a typed refusal" do
     create!(%{pid: "p1", name: "Ann"})
 
-    assert {:error, %Refusal{code: :REFUSED_RESOURCE_BOUND, evidence: %{max_triples: 1, triples: 2}}} =
+    assert {:error, %Refusal{code: :REFUSED_TRIPLE_LIMIT_EXCEEDED, evidence: %{limit: 1}}} =
              OBDA.query(specs(), @select, domain: Dom, max_triples: 1)
   end
 
@@ -132,7 +132,7 @@ defmodule AshR2RML.OBDAQueryEnvelopeTest do
     create!(%{pid: "p1", name: "Ann"})
     create!(%{pid: "p2", name: "Bob"})
 
-    assert {:error, %Refusal{code: :REFUSED_RESOURCE_BOUND}} =
+    assert {:error, %Refusal{code: :REFUSED_RESULT_LIMIT_EXCEEDED}} =
              OBDA.query(specs(), @select, domain: Dom, max_rows: 1)
   end
 

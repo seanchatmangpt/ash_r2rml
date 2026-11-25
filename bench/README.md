@@ -20,6 +20,71 @@ mix run bench/stress/s1_s2.exs --seconds 10             # single script
 The umbrella runs `s1_s2`, `s3_s4`, `s5_storm`, `s6_soak` in sequence, each via its own
 `mix run` process, and writes `bench/results/stress.json` and `bench/results/stress.md`.
 
+## Layers
+
+A layer is one real data layer behind the same Person fixture. Each lives in
+`bench/stress/layers/<layer>.exs` and defines `Bench.Layer.<Camel>`:
+
+| callback | contract |
+|---|---|
+| `available?/0` | `:ok` or `{:skip, reason}` |
+| `setup/1` | `{:ok, ctx}` or `{:skip, reason}`; opts `rows` (default 10_000), `tenants`, `digest_rows` (default 500) |
+| `scenarios/0` | `[{id, description, fun}]`; `fun.(ctx)` returns `:ok` or `{:fail, why}` |
+| `canonical_digest/1` | digest of the shared healthy SPARQL result |
+
+`ctx` is `%{specs, domain, resource, seed_rows, teardown}`. `Bench.Layer.Common.code_of/1`
+normalizes `%AshR2RML.Refusal{}` and `%AshR2RML.Error{}` to a `REFUSED_*` code.
+
+### `--layers` semantics
+
+`--layers a,b,c` selects layers by name (the file basename under `bench/stress/layers/`).
+`--layers all` runs every file found there. A layer whose `available?/0` or `setup/1` returns
+`{:skip, reason}` prints `[SKIP] <layer>: <reason>` and counts as exit 3 for that layer. A
+named layer with no file is exit 2. Layers run independently; one layer's skip never hides
+another layer's result.
+
+### Service flags
+
+| variable | layer | effect |
+|---|---|---|
+| `ASH_R2RML_POSTGRES_URL` | postgres | connection URL; unset gives `[SKIP] postgres` |
+| `ASH_R2RML_MYSQL_URL` | mysql | connection URL; unset gives `[SKIP] mysql` |
+
+In-process layers (ETS, SQLite) need no flag; a missing dependency is a loud skip.
+
+### Scenario table
+
+Killer scenarios pass `max_rows`, `max_triples`, `timeout_ms`, `max_heap_words` to
+`AshR2RML.OBDA.query` and assert the typed refusal below. Every layer implements the same ids.
+
+| id | scenario | expected outcome |
+|---|---|---|
+| S1 | heap bomb | `REFUSED_MEMORY_LIMIT_EXCEEDED`, caller alive |
+| S2 | row sentinel | `REFUSED_RESULT_LIMIT_EXCEEDED` |
+| S3 | triple fan-out | `REFUSED_TRIPLE_LIMIT_EXCEEDED` |
+| S4 | timeout | `REFUSED_QUERY_TIMEOUT`, 0 leaked processes |
+| S5 | storm (killers + healthy) | 0 healthy failures, killers typed |
+| S6 | soak | no atom, ETS, or process leak |
+| S7-S14 | per-layer charter scenarios | each returns `:ok` or `{:fail, why}`; ids and descriptions come from the layer's `scenarios/0` |
+
+The per-layer cell for S1-S14 is: same expected outcome on ETS, SQLite, Postgres, MySQL, with
+data-layer-specific setup only. S7-S14 definitions are UNVERIFIED here until the charter ids
+are fixed in the layer files.
+
+### Digest equivalence
+
+Each layer seeds exactly `digest_rows` Person rows (pid `p1`..`pN`, name `Person i`, age `i`)
+and runs the shared SPARQL
+`SELECT ?s ?n ?a WHERE { ?s <https://schema.org/name> ?n ; <https://schema.org/age> ?a }`
+through `AshR2RML.OBDA.query`. The umbrella compares every layer's `canonical_digest/1`
+binary; any mismatch is FAIL (exit 1) naming the differing layers. Skipped layers are excluded
+from the comparison and reported.
+
+### Layer exit codes
+
+Per layer: 0 all scenarios and digest pass; 1 any `{:fail, _}`, crash, or digest mismatch;
+2 layer file missing; 3 loud skip. Aggregate precedence is unchanged: 1 > 2 > 3 > 0.
+
 ## CTQ / USL
 
 | script | scenario | CTQ (critical to quality) | USL (upper spec limit) |

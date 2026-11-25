@@ -95,15 +95,16 @@ defmodule AshR2RML.OBDA.InMemoryLimitsTest do
     assert {:ok, _graph} = InMemory.materialize(Item, mapping, domain: Domain, max_rows: 5)
   end
 
-  test "max_triples refuses before query execution and reports the overshoot count", %{mapping: mapping} do
+  test "max_triples refuses from the clamped read before any row is materialized", %{mapping: mapping} do
     assert {{:error, refusal}, stats} =
              InMemory.query_with_stats([{Item, mapping}], @select, domain: Domain, max_triples: 5)
 
     assert refusal.code == :REFUSED_TRIPLE_LIMIT_EXCEEDED
     assert refusal.evidence == %{resource: Item, limit: 5}
-    # halted at the first row whose triples pushed the total past 5: 3 rows x 2 triples
-    assert stats.triples_emitted == 6
-    assert stats.rows_read == 5
+    # 2 guaranteed triples per row -> a budget of 5 admits at most 2 rows; the read is clamped to 3,
+    # which provably exceeds the budget, so nothing is materialized.
+    assert stats.triples_emitted == 0
+    assert stats.rows_read == 0
   end
 
   test "max_triples equal to the emitted count is admitted", %{mapping: mapping} do

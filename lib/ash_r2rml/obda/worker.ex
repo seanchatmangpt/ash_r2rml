@@ -12,6 +12,10 @@ defmodule AshR2RML.OBDA.Worker do
   `:REFUSED_QUERY_TIMEOUT`, `:REFUSED_MEMORY_LIMIT_EXCEEDED`, or
   `:REFUSED_WORKER_CRASHED`.
 
+  A bare `:killed` exit of the worker is attributed to the heap cap: the runtime reports a
+  `max_heap_size` kill and an untrappable `:kill` signal identically. Any other exit reason
+  is a `:REFUSED_WORKER_CRASHED` with `details.kind == :exit`.
+
   Options: `:timeout_ms` (default #{5000}), `:max_heap_words` (default 50_000_000).
 
   ## Examples
@@ -45,9 +49,9 @@ defmodule AshR2RML.OBDA.Worker do
         Process.demonitor(mref, [:flush])
         {:ok, value}
 
-      {^tag, {:error, kind, reason}} ->
+      {^tag, {:error, kind, reason, stack}} ->
         Process.demonitor(mref, [:flush])
-        {:error, crash_error(kind, reason)}
+        {:error, crash_error(kind, reason, stack)}
 
       {:DOWN, ^mref, :process, ^pid, :killed} ->
         flush(tag)
@@ -80,9 +84,32 @@ defmodule AshR2RML.OBDA.Worker do
   end
 
   defp execute(fun) do
-    {:ok, fun.()}
-  catch
-    kind, reason -> {:error, kind, reason}
+    result =
+      try do
+        {:ok, fun.()}
+      catch
+        kind, reason -> {:error, kind, reason, __STACKTRACE__}
+      end
+
+    reap_links()
+
+    case result do
+      {:error, kind, reason, stack} -> {:error, kind, reason, stack}
+      ok -> ok
+    end
+  end
+
+  # A linked child survives a normal worker exit; kill every process still linked to the
+  # worker (never the caller: the worker is spawned unlinked) so none leak past the call.
+  defp reap_links do
+    {:links, links} = Process.info(self(), :links)
+
+    for pid <- links, is_pid(pid) do
+      Process.unlink(pid)
+      Process.exit(pid, :kill)
+    end
+
+    :ok
   end
 
   defp flush(tag) do
@@ -93,10 +120,15 @@ defmodule AshR2RML.OBDA.Worker do
     end
   end
 
-  defp crash_error(kind, reason) do
+  defp crash_error(kind, reason, stack \\ []) do
     Error.new(:REFUSED_WORKER_CRASHED,
       message: "worker crashed (#{kind}): #{inspect(reason)}",
-      details: %{kind: kind, reason: inspect(reason)}
+      details: %{
+        kind: kind,
+        reason: inspect(reason),
+        raw_reason: reason,
+        stacktrace: Exception.format_stacktrace(stack)
+      }
     )
   end
 end

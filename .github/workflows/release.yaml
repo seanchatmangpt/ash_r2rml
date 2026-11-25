@@ -32,7 +32,7 @@ jobs:
           # required check names may exist. Wait (bounded by an epoch deadline) until
           # none of them is queued/in_progress, then require: per name, at least one
           # success and zero non-success completed runs. Missing names fail closed.
-          names="test types release-security"
+          names="test test-postgres types release-security"
           deadline=$(( $(date +%s) + 1200 ))
           while :; do
             runs="$(gh api --paginate "repos/${{ github.repository }}/commits/${{ github.sha }}/check-runs?per_page=100" \

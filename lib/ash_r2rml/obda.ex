@@ -29,6 +29,14 @@ defmodule AshR2RML.OBDA do
   `:require_tenant` are forwarded to the read. Exceeding `:max_triples` yields
   `:REFUSED_RESOURCE_BOUND`; `:max_rows` is enforced by the SPARQL engine.
 
+  `:pushdown` (default `true`) enables root-resource pushdown of simple FILTERs, ORDER BY and
+  LIMIT/OFFSET (see `AshR2RML.QueryBuilder.Lowering`); `pushdown: false` forces the full read.
+  The narrowed read is handed to `AshR2RML.OBDA.InMemory` as the `:query_pushdown` read option
+  (`%{resource:, mapping:, plan:}`); a receiver that ignores it simply reads everything.
+
+  SPARQL.ex does not implement ORDER BY / LIMIT / OFFSET, so this module applies them to the
+  projected rows (`AshR2RML.QueryBuilder.Modifiers`).
+
   ## Stats
 
     * `rows_read` -- distinct subjects materialized into the graph.
@@ -44,18 +52,21 @@ defmodule AshR2RML.OBDA do
   `stacktrace`. Durations are in native time units per telemetry convention.
   """
 
+  alias AshR2RML.Error
   alias AshR2RML.Mapping.Bundle
   alias AshR2RML.OBDA.{InMemory, Result, Worker}
+  alias AshR2RML.QueryBuilder
+  alias AshR2RML.QueryBuilder.{Modifiers, Pushdown}
   alias AshR2RML.Refusal
   alias AshR2RML.SPARQL.Local
 
   @forwarded [:actor, :tenant, :authorize?, :context, :domain] ++
-               [:allow_unauthorized, :require_authorizer, :require_tenant]
+               [:allow_unauthorized, :require_authorizer, :require_tenant, :max_rows, :max_triples]
 
   @event [:ash_r2rml, :obda, :query]
 
   @spec query(module() | [module() | InMemory.spec()], String.t(), keyword()) ::
-          {:ok, Result.t()} | {:error, Refusal.t() | term()}
+          {:ok, Result.t()} | {:error, Error.t() | Refusal.t()}
   def query(resources_or_domain, sparql, opts \\ []) when is_binary(sparql) and is_list(opts) do
     started = System.monotonic_time()
     meta = %{sparql_bytes: byte_size(sparql)}
@@ -64,11 +75,10 @@ defmodule AshR2RML.OBDA do
 
     try do
       result =
-        case Worker.run(fn -> execute(resources_or_domain, sparql, opts, started) end, opts) do
+        case Worker.run(fn -> guarded_execute(resources_or_domain, sparql, opts, started) end, opts) do
           # Worker wraps the function's own {:ok, _} | {:error, _} return; flatten it.
-          {:ok, {:ok, _} = inner} -> inner
-          {:ok, {:error, _} = inner} -> inner
-          {:error, _} = worker_error -> worker_error
+          {:ok, inner} -> normalize_result(inner)
+          {:error, _} = worker_error -> normalize_result(worker_error)
         end
 
       :telemetry.execute(@event ++ [:stop], %{duration: System.monotonic_time() - started}, stop_meta(meta, result))
@@ -81,22 +91,119 @@ defmodule AshR2RML.OBDA do
           Map.merge(meta, %{kind: kind, reason: reason, stacktrace: __STACKTRACE__})
         )
 
-        :erlang.raise(kind, reason, __STACKTRACE__)
+        {:error, wrap_failure(kind, reason)}
     end
   end
+
+  @doc false
+  # Total error boundary: every non-ok outcome leaves `query/3` as `%Error{}` or `%Refusal{}`.
+  @spec normalize_result(term()) :: {:ok, Result.t()} | {:error, Error.t() | Refusal.t()}
+  def normalize_result({:ok, _} = ok), do: ok
+  def normalize_result({:error, %Error{} = e}), do: {:error, e}
+  def normalize_result({:error, %Refusal{} = r}), do: {:error, r}
+  def normalize_result({:error, other}), do: {:error, wrap_failure(:error, other)}
+  def normalize_result(other), do: {:error, wrap_failure(:error, {:unexpected_result, other})}
+
+  @doc false
+  @spec wrap_failure(atom(), term()) :: Error.t()
+  def wrap_failure(_kind, %Error{} = e), do: e
+  def wrap_failure(_kind, %Refusal{} = r), do: Error.from_refusal(r)
+
+  def wrap_failure(kind, reason) do
+    {code, resource} = classify(reason)
+
+    Error.new(code,
+      resource: resource,
+      message: nil,
+      details: %{kind: kind, class: class_of(reason), reason: inspect(reason, limit: 20, printable_limit: 500)}
+    )
+  end
+
+  defp classify(%{__struct__: mod} = reason) do
+    resource = resource_of(reason)
+
+    cond do
+      forbidden?(reason) -> {:REFUSED_UNAUTHORIZED, resource}
+      mod == Ash.Error.Invalid.TenantRequired -> {:REFUSED_MISSING_TENANT, resource}
+      true -> {:REFUSED_READ_FAILED, resource}
+    end
+  end
+
+  defp classify(_reason), do: {:REFUSED_READ_FAILED, nil}
+
+  defp forbidden?(%{__struct__: mod} = reason) do
+    mod |> Module.split() |> Enum.member?("Forbidden") or
+      (is_list(Map.get(reason, :errors)) and Enum.any?(reason.errors, &forbidden?/1))
+  rescue
+    _ -> false
+  end
+
+  defp forbidden?(_), do: false
+
+  defp resource_of(reason) do
+    case Map.get(reason, :resource) do
+      mod when is_atom(mod) and not is_nil(mod) -> mod
+      _ -> nil
+    end
+  end
+
+  defp class_of(%{__struct__: mod}), do: inspect(mod)
+  defp class_of(_), do: nil
 
   defp stop_meta(meta, {:ok, _}), do: Map.put(meta, :result, :ok)
   defp stop_meta(meta, {:error, %Refusal{code: code}}), do: meta |> Map.put(:result, :error) |> Map.put(:code, code)
   defp stop_meta(meta, _other), do: Map.put(meta, :result, :error)
 
+  # Raises/throws/exits inside the worker become typed errors with the real exception struct
+  # classified (Forbidden -> REFUSED_UNAUTHORIZED), instead of a generic worker crash.
+  defp guarded_execute(source, sparql, opts, started) do
+    execute(source, sparql, opts, started)
+  rescue
+    e -> {:error, wrap_failure(:error, e)}
+  catch
+    kind, reason -> {:error, wrap_failure(kind, reason)}
+  end
+
   defp execute(source, sparql, opts, started) do
     with {:ok, specs} <- resolve_specs(source),
          {:ok, readable, pruned} <- preflight(specs, opts),
-         {:ok, graph} <- InMemory.materialize_many(readable, materialize_opts(opts, specs, sparql)),
+         {:ok, graph, ttl, observation} <- run_with_pushdown(readable, specs, sparql, opts) do
+      {:ok, envelope(observation, graph, pruned, ttl, sparql, started)}
+    end
+  end
+
+  # Root-resource pushdown (filter / sort / limit) when the query lowers safely; any refusal, any
+  # failed post-read verification, or any unsure shape re-runs the unchanged full path.
+  defp run_with_pushdown(readable, specs, sparql, opts) do
+    case plan_pushdown(readable, sparql, opts) do
+      nil ->
+        run_pipeline(readable, specs, sparql, opts, nil)
+
+      %Pushdown{} = pushdown ->
+        with {:ok, graph, _ttl, observation} = ok <- run_pipeline(readable, specs, sparql, opts, pushdown),
+             :ok <- QueryBuilder.verify(pushdown, graph, length(observation.rows)) do
+          ok
+        else
+          _ -> run_pipeline(readable, specs, sparql, opts, nil)
+        end
+    end
+  end
+
+  defp plan_pushdown(readable, sparql, opts) do
+    if Keyword.get(opts, :pushdown, true) == true and is_nil(constant_subject(sparql)) do
+      case QueryBuilder.lower(sparql, readable) do
+        {:ok, %Pushdown{} = pushdown} -> pushdown
+        :fallback -> nil
+      end
+    end
+  end
+
+  defp run_pipeline(readable, specs, sparql, opts, pushdown) do
+    with {:ok, graph} <- InMemory.materialize_many(readable, materialize_opts(opts, specs, sparql, pushdown)),
          :ok <- check_max_triples(graph, readable, opts[:max_triples]),
          {:ok, ttl} <- AshR2RML.R2RML.render(%Bundle{resources: Enum.map(specs, &elem(&1, 1))}),
          {:ok, observation} <- Local.query(graph, sparql, local_opts(opts)) do
-      {:ok, envelope(observation, graph, pruned, ttl, sparql, started)}
+      {:ok, graph, ttl, observation}
     end
   end
 
@@ -166,17 +273,25 @@ defmodule AshR2RML.OBDA do
     }
   end
 
+  # SPARQL.ex ignores ORDER BY / LIMIT / OFFSET, so they are applied here, after projection.
   defp canonical_rows(%{result_kind: :bindings, rows: rows}, sparql) do
-    if Regex.match?(~r/\bORDER\s+BY\b/i, sparql), do: rows, else: Result.canonical_sort(rows)
+    rows = if Regex.match?(~r/\bORDER\s+BY\b/i, sparql), do: rows, else: Result.canonical_sort(rows)
+    Modifiers.run(rows, Modifiers.parse(sparql))
   end
 
   defp canonical_rows(%{rows: rows}, _sparql), do: Result.canonical_sort(rows)
 
-  defp materialize_opts(opts, specs, sparql) do
+  defp materialize_opts(opts, specs, sparql, pushdown) do
     base =
       opts
       |> Keyword.take(@forwarded)
       |> Keyword.put(:allow_sensitive, Keyword.get(opts, :allow_sensitive?, false))
+
+    base =
+      case pushdown do
+        %Pushdown{} -> Keyword.put(base, :query_pushdown, Pushdown.read_option(pushdown))
+        nil -> base
+      end
 
     case {specs, constant_subject(sparql)} do
       {_, iri} when is_binary(iri) -> base |> Keyword.put(:subject_iri, iri) |> Keyword.put(:pushdown_ok, true)

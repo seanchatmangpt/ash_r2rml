@@ -47,7 +47,7 @@ end
 
 ## Formatter and docs
 
-Add AshR2RML's Spark extension to formatter/cheat-sheet generation when the package installer has not already done so. Prefer the package's Igniter installer when available so formatter and documentation configuration stay synchronized with the installed version.
+Add AshR2RML's Spark extension to formatter/cheat-sheet generation when the package installer has not already done so. The Hex package ships no Igniter installer (`lib/mix` is excluded); add `AshR2RML.Resource` to `.formatter.exs` `import_deps`/`spark_locals_without_parens` by hand.
 
 ## R2RML output
 

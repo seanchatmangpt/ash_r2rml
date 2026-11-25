@@ -20,7 +20,8 @@ permissions:
 # - `release-security` is the AshR2RML package/release gate: deterministic dependency lock,
 #   formatting, compile, database-free suite (including the real AshCloak R2RML-109
 #   regression), and Hex build.
-# - `test` executes the complete suite against real Ash data layers.
+# - `test` executes the complete suite against ETS and file-backed AshSqlite.
+# - `test-postgres` runs the same contract against a PostgreSQL 16 service container.
 #
 # PR jobs explicitly checkout the PR head SHA rather than GitHub's synthetic merge ref,
 # binding receipts to the exact candidate. `deps/` and `_build/` are never cached: Rebar
@@ -115,5 +116,43 @@ jobs:
           rm -rf deps _build
           mix deps.get
 
-      - name: Test complete suite
-        run: mix test
+      - name: Test complete suite (ETS + file-backed AshSqlite)
+        run: mix test --include sqlite --warnings-as-errors
+
+  test-postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ash_r2rml_contract
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      ASH_R2RML_POSTGRES_URL: ecto://postgres:postgres@localhost:5432/ash_r2rml_contract
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Set up Elixir / Erlang (from .tool-versions)
+        uses: jdx/mise-action@v4
+        with:
+          minimum_release_age: 7d
+
+      - name: Resolve dependencies from clean state
+        run: |
+          set -euo pipefail
+          rm -rf deps _build
+          mix deps.get
+
+      - name: Postgres contract tier (AshPostgres, zero skips)
+        run: mix test --include sqlite --include postgres --warnings-as-errors

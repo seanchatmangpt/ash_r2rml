@@ -71,7 +71,7 @@ defmodule AshR2RML.OBDA.InMemory do
   or a silently-skipped triple, never a fabricated one.
   """
 
-  alias AshR2RML.Mapping.{JoinCondition, PredicateObjectMap, ReferenceObjectMap, Resource, SubjectMap}
+  alias AshR2RML.Mapping.{JoinCondition, ObjectMap, PredicateObjectMap, ReferenceObjectMap, Resource, SubjectMap}
   alias AshR2RML.Refusal
   alias AshR2RML.Security
   alias AshR2RML.SPARQL.{Local, Observation}
@@ -158,7 +158,9 @@ defmodule AshR2RML.OBDA.InMemory do
         admitted_specs,
         {{:ok, RDF.Graph.new()}, %{rows_read: 0, triples_emitted: 0}},
         fn {ash_resource, mapping_resource}, {{:ok, graph_acc}, stats} ->
-          case rows_for(ash_resource, mapping_resource, read_opts) do
+          budget_opts = Keyword.put(read_opts, :triple_budget, max_triples - stats.triples_emitted)
+
+          case rows_for(ash_resource, mapping_resource, budget_opts) do
             {:ok, rows} ->
               stats = %{stats | rows_read: stats.rows_read + length(rows)}
 
@@ -282,8 +284,74 @@ defmodule AshR2RML.OBDA.InMemory do
          )}
 
       _subject_map ->
-        read_rows(ash_resource, Keyword.put(read_opts, :pushdown, pushdown_keys(mapping_resource, read_opts)))
+        read_rows(
+          ash_resource,
+          read_opts
+          |> Keyword.put(:pushdown, pushdown_keys(mapping_resource, read_opts))
+          |> Keyword.put(:min_triples_per_row, min_triples_per_row(ash_resource, mapping_resource))
+        )
     end
+  end
+
+  # Triples every row is *guaranteed* to emit: its class triples plus one per non-nilable column
+  # property, provided the subject IRI can never be nil and no field policy can blank a value.
+  # Zero (no clamp) whenever any of that is not provable, so the derived read limit never drops a
+  # row that would have stayed inside max_triples.
+  defp min_triples_per_row(ash_resource, %Resource{} = mapping) do
+    with %SubjectMap{strategy: :template, value: template} <- mapping.subject_map,
+         true <- template_attrs_non_nil?(ash_resource, template),
+         [] <- Ash.Policy.Info.field_policies(ash_resource) do
+      guaranteed =
+        mapping.predicate_object_maps
+        |> Enum.uniq_by(& &1.predicate_iri)
+        |> Enum.count(fn
+          %PredicateObjectMap{attribute: attribute, object_map: %ObjectMap{strategy: :column}}
+          when not is_nil(attribute) ->
+            match?(%{allow_nil?: false, sensitive?: false}, Ash.Resource.Info.attribute(ash_resource, attribute))
+
+          _ ->
+            false
+        end)
+
+      length(Enum.uniq(mapping.class_iris)) + guaranteed
+    else
+      _ -> 0
+    end
+  rescue
+    _ -> 0
+  end
+
+  # Object-template placeholders must be real attributes: a calculation (e.g. an AshCloak
+  # decrypt-by-default calculation) would otherwise leak through an IRI without any sensitivity check.
+  defp check_object_template_fields(template, ash_resource) do
+    fields = Regex.scan(~r/\{([^}]+)\}/, template, capture: :all_but_first) |> List.flatten()
+    attribute_names = ash_resource |> Ash.Resource.Info.attributes() |> MapSet.new(&Atom.to_string(&1.name))
+
+    case Enum.reject(fields, &MapSet.member?(attribute_names, &1)) do
+      [] ->
+        :ok
+
+      non_attributes ->
+        {:error,
+         Refusal.new(
+           :REFUSED_SENSITIVE_ATTRIBUTE_MATERIALIZATION,
+           ash_resource,
+           "object template references non-attribute fields #{inspect(non_attributes)}; only real attributes may appear in IRI templates",
+           %{fields: non_attributes, template: template}
+         )}
+    end
+  end
+
+  defp template_attrs_non_nil?(ash_resource, template) do
+    fields = Regex.scan(~r/\{([^}]+)\}/, template, capture: :all_but_first) |> List.flatten()
+
+    fields != [] and
+      Enum.all?(fields, fn field ->
+        case Enum.find(Ash.Resource.Info.attributes(ash_resource), &(Atom.to_string(&1.name) == field)) do
+          %{allow_nil?: false} -> true
+          _ -> false
+        end
+      end)
   end
 
   # Trivial pushdown: a constant `:subject_iri` inverted through the template subject map
@@ -311,6 +379,30 @@ defmodule AshR2RML.OBDA.InMemory do
   end
 
   defp pushdown_keys(_mapping, _read_opts), do: nil
+
+  # SPARQL filter/sort/limit lowered by `AshR2RML.QueryBuilder` for the ROOT resource. The built
+  # query's filter, sort and (already bounded) limit/offset are layered onto the caller's own
+  # `for_read` query, so `actor`, `tenant`, `authorize?` and policies stay exactly as supplied.
+  defp apply_query_pushdown(query, ash_resource, read_opts) do
+    with %{resource: ^ash_resource, mapping: %Resource{} = mapping, plan: plan} <- read_opts[:query_pushdown],
+         %Ash.Query{} = built <-
+           AshR2RML.QueryBuilder.pushdown_query(ash_resource, mapping, plan,
+             actor: read_opts[:actor],
+             tenant: read_opts[:tenant],
+             max_rows: Keyword.get(read_opts, :max_rows, @default_max_rows)
+           ) do
+      pushed =
+        query
+        |> then(fn q -> if built.filter, do: Ash.Query.do_filter(q, built.filter), else: q end)
+        |> then(fn q -> if built.sort == [], do: q, else: Ash.Query.sort(q, built.sort) end)
+        |> then(fn q -> if built.offset > 0, do: Ash.Query.offset(q, built.offset), else: q end)
+        |> Ash.Query.limit(built.limit)
+
+      if pushed.valid?, do: {:ok, pushed}, else: :none
+    else
+      _ -> :none
+    end
+  end
 
   defp apply_pushdown(query, nil), do: query
 
@@ -370,12 +462,35 @@ defmodule AshR2RML.OBDA.InMemory do
 
     max_rows = Keyword.get(read_opts, :max_rows, @default_max_rows)
 
-    query =
-      query
-      |> apply_pushdown(read_opts[:pushdown])
-      |> Ash.Query.limit(max_rows + 1)
+    min_per_row = Keyword.get(read_opts, :min_triples_per_row, 0)
+    budget = Keyword.get(read_opts, :triple_budget)
+
+    triple_cap =
+      if is_integer(budget) and min_per_row > 0, do: div(max(budget, 0), min_per_row) + 1, else: nil
+
+    limit = if triple_cap && triple_cap < max_rows + 1, do: triple_cap, else: max_rows + 1
+
+    {query, limit} =
+      case apply_query_pushdown(query, ash_resource, read_opts) do
+        {:ok, pushed} ->
+          # QueryBuilder already bounded the read (`min(plan.limit, max_rows + 1)`).
+          {pushed, max_rows + 1}
+
+        :none ->
+          {query |> apply_pushdown(read_opts[:pushdown]) |> Ash.Query.limit(limit), limit}
+      end
 
     case Ash.read(query, Keyword.take(read_opts, [:actor, :tenant, :authorize?, :domain])) do
+      {:ok, rows} when is_list(rows) and limit != max_rows + 1 and length(rows) >= limit ->
+        # `limit` rows each emit at least `min_per_row` triples: the budget is provably exceeded.
+        {:error,
+         Refusal.new(
+           :REFUSED_TRIPLE_LIMIT_EXCEEDED,
+           ash_resource,
+           "materialization exceeded max_triples (budget #{budget}); refusing",
+           %{resource: ash_resource, limit: budget}
+         )}
+
       {:ok, rows} when is_list(rows) and length(rows) > max_rows ->
         {:error,
          Refusal.new(
@@ -622,10 +737,42 @@ defmodule AshR2RML.OBDA.InMemory do
   # bypassed.
   defp add_predicate_triples(graph, subject, row, predicate_object_maps, ash_resource, allow_sensitive?) do
     Enum.reduce_while(predicate_object_maps, {:ok, graph}, fn
+      %PredicateObjectMap{object_map: %ObjectMap{strategy: :template, term_type: :iri, value: template}} = pom,
+      {:ok, acc} ->
+        object_map_subject = %SubjectMap{strategy: :template, value: template}
+
+        with :ok <- check_object_template_fields(template, ash_resource),
+             :ok <- check_subject_sensitive(object_map_subject, ash_resource, allow_sensitive?) do
+          case subject_iri(object_map_subject, row) do
+            nil ->
+              {:cont, {:ok, acc}}
+
+            object_iri ->
+              {:cont, {:ok, RDF.Graph.add(acc, {RDF.iri(subject), RDF.iri(pom.predicate_iri), RDF.iri(object_iri)})}}
+          end
+        else
+          {:error, refusal} -> {:halt, {:error, refusal}}
+        end
+
+      %PredicateObjectMap{object_map: %ObjectMap{strategy: :constant, term_type: :iri, value: iri}} = pom, {:ok, acc} ->
+        {:cont, {:ok, RDF.Graph.add(acc, {RDF.iri(subject), RDF.iri(pom.predicate_iri), RDF.iri(iri)})}}
+
+      %PredicateObjectMap{object_map: %ObjectMap{strategy: strategy, term_type: term_type}} = pom, {:ok, _acc}
+      when strategy in [:template, :constant] ->
+        # Never silently literalize an object map this backend cannot render faithfully.
+        {:halt,
+         {:error,
+          Refusal.new(
+            :UNSUPPORTED_TERM_TYPE,
+            ash_resource,
+            "in-memory materialization supports only :iri template/constant object maps; got strategy #{inspect(strategy)} with term type #{inspect(term_type)}",
+            %{predicate: pom.predicate_iri, strategy: strategy, term_type: term_type}
+          )}}
+
       %PredicateObjectMap{attribute: nil}, {:ok, acc} ->
         {:cont, {:ok, acc}}
 
-      %PredicateObjectMap{attribute: attribute, predicate_iri: predicate_iri}, {:ok, acc} ->
+      %PredicateObjectMap{attribute: attribute, predicate_iri: predicate_iri, object_map: object_map}, {:ok, acc} ->
         case readable(Map.get(row, attribute)) do
           nil ->
             {:cont, {:ok, acc}}
@@ -641,7 +788,8 @@ defmodule AshR2RML.OBDA.InMemory do
                   %{attribute: attribute}
                 )}}
             else
-              {:cont, {:ok, RDF.Graph.add(acc, {RDF.iri(subject), RDF.iri(predicate_iri), rdf_literal(value)})}}
+              {:cont,
+               {:ok, RDF.Graph.add(acc, {RDF.iri(subject), RDF.iri(predicate_iri), rdf_literal(value, object_map)})}}
             end
         end
     end)
@@ -764,8 +912,28 @@ defmodule AshR2RML.OBDA.InMemory do
   defp substitute_field(%SubjectMap{strategy: :column}, _field, value), do: to_string(value)
   defp substitute_field(_subject_map, _field, _value), do: nil
 
-  defp rdf_literal(value) when is_binary(value), do: RDF.literal(value)
-  defp rdf_literal(value), do: RDF.literal(to_string(value))
+  # The mapping's declared datatype wins: typed literals are what make numeric/temporal FILTERs and
+  # ORDER BY semantically correct. Values with no declared datatype keep the plain-string form.
+  defp rdf_literal(value, %ObjectMap{language: language}) when is_binary(language) and language != "",
+    do: RDF.literal(lexical(value), language: language)
+
+  defp rdf_literal(value, %ObjectMap{datatype: %{rdf_datatype: datatype}}) when is_binary(datatype) do
+    if datatype == "http://www.w3.org/2001/XMLSchema#string" do
+      RDF.literal(lexical(value))
+    else
+      RDF.literal(lexical(value), datatype: RDF.iri(datatype))
+    end
+  end
+
+  defp rdf_literal(value, _object_map), do: RDF.literal(lexical(value))
+
+  defp lexical(value) when is_binary(value), do: value
+  defp lexical(%Decimal{} = value), do: Decimal.to_string(value, :normal)
+  defp lexical(%Date{} = value), do: Date.to_iso8601(value)
+  defp lexical(%DateTime{} = value), do: DateTime.to_iso8601(value)
+  defp lexical(%NaiveDateTime{} = value), do: NaiveDateTime.to_iso8601(value)
+  defp lexical(%Time{} = value), do: Time.to_iso8601(value)
+  defp lexical(value), do: to_string(value)
 
   defp safe_atom(value) when is_atom(value), do: value
   defp safe_atom(value) when is_binary(value), do: String.to_existing_atom(value)
