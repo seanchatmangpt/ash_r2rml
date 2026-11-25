@@ -420,10 +420,7 @@ defmodule AshR2RML.OBDA.InMemory do
 
   # The same `:max_rows` bound the OBDA envelope hands `Local.query/3`, for every graph execution.
   defp local_opts(read_opts) do
-    case Keyword.get(read_opts, :max_rows) do
-      nil -> []
-      max_rows -> [max_rows: max_rows]
-    end
+    [max_rows: Keyword.get(read_opts, :max_rows) || @default_max_rows]
   end
 
   defp query_with_stats_graph(graph, sparql, stats, local_opts) do

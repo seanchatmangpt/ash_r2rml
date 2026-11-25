@@ -40,6 +40,7 @@ defmodule AshR2RML do
 
       mapping = AshR2RML.mapping(MyApp.Person)
   """
+  @spec mapping(module()) :: AshR2RML.Mapping.Resource.t() | nil
   defdelegate mapping(resource), to: AshR2RML.Resource.Info
 
   @doc """
@@ -47,6 +48,7 @@ defmodule AshR2RML do
 
       {:ok, %AshR2RML.Mapping.Bundle{}} = AshR2RML.compile([MyApp.Person])
   """
+  @spec compile(module() | [module()]) :: {:ok, AshR2RML.Mapping.Bundle.t()} | {:error, AshR2RML.Refusal.t()}
   defdelegate compile(resources), to: AshR2RML.Compiler, as: :compile
 
   @doc """
@@ -55,6 +57,7 @@ defmodule AshR2RML do
 
       result = AshR2RML.mapping_result(MyApp.Person)
   """
+  @spec mapping_result(module()) :: {:ok, AshR2RML.Mapping.Resource.t()} | {:error, AshR2RML.Refusal.t()}
   defdelegate mapping_result(resource), to: AshR2RML.Resource.Info
 
   @doc """
@@ -62,6 +65,8 @@ defmodule AshR2RML do
 
       {:ok, turtle} = AshR2RML.render([MyApp.Person])
   """
+  @spec render(AshR2RML.Mapping.Bundle.t() | AshR2RML.Mapping.Resource.t() | module() | [module()]) ::
+          {:ok, String.t()} | {:error, term()}
   defdelegate render(resources_or_bundle), to: AshR2RML.R2RML
 
   @doc """
@@ -69,6 +74,8 @@ defmodule AshR2RML do
 
       {:ok, turtle} = AshR2RML.render_r2rml([MyApp.Person])
   """
+  @spec render_r2rml(AshR2RML.Mapping.Bundle.t() | AshR2RML.Mapping.Resource.t() | module() | [module()]) ::
+          {:ok, String.t()} | {:error, term()}
   defdelegate render_r2rml(resources_or_bundle), to: AshR2RML.R2RML, as: :render
 
   @doc """

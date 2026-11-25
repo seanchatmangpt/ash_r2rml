@@ -134,9 +134,8 @@ end
   Supports `materialize_many/2`/`query_many/3` for cross-resource joins via `reference_object_maps`,
   including composite-key (multi-column) `rr:joinCondition`s; a `:join_table` many-to-many shape is an explicit typed refusal, not a silent omission.
   `allow_sensitive: true` opts into materializing `sensitive?: true` attributes; the default refuses instead.
-- **`AshR2RML.Compiler.compile/2`** accepts `storage_backend: :postgres | :ets` (default
-  `:postgres`); `:ets` skips SQL DDL rendering (`Ash.DataLayer.Ets` needs none) without
-  blocking compilation.
+- **`AshR2RML.Compiler.compile/2`** compiles resources (or domains) into a `Mapping.Bundle`; its
+  second argument is reserved and currently ignored.
 
 ### Subject module contract
 

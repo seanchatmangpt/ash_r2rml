@@ -336,19 +336,17 @@ The exact Elixir error is a typed AshR2RML/Spark error. No mapping path silently
 
 ## Virtual RDF, not RDF synchronization
 
-AshR2RML generates mappings; an OBDA engine executes SPARQL against the relational database.
+AshR2RML generates mappings; `AshR2RML.OBDA.InMemory` executes SPARQL by reading through Ash
+(policies, field policies, tenants and the resource's own data layer), then evaluating in-process.
 
 ```text
 SPARQL
    │
    ▼
-OBDA / R2RML engine
-   │ rewrites
+OBDA.InMemory
+   │ Ash.read (policy, tenant, limits)
    ▼
- SQL
-   │
-   ▼
-PostgreSQL
+Ash data layer (ETS / SQLite / PostgreSQL)
 ```
 
 There is no RDF replication requirement and no dual-write protocol. The RDF graph is virtual unless the application deliberately materializes it elsewhere.

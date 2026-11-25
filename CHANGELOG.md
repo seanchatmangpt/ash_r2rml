@@ -45,7 +45,7 @@ Items marked UNVERIFIED have source present but no test run by the docs lane.
 * `ash_r2rml.install` targets `~> 26.11`, uses non-bang `find_and_update_module/3`, and its
   templates use only public IRIs. `ash_r2rml.render` compiles (not `app.start`), parses args with
   `OptionParser`, and resolves modules without minting atoms. Compile and run: UNVERIFIED.
-* The `sobelow --skip` alias was removed. Docs use the single `AshR2RML.Resource` extension and
+* The `sobelow --skip` alias is kept in `mix.exs` (a contract test asserts it). Docs use the single `AshR2RML.Resource` extension and
   public namespaces only.
 
 ### Wave-2 hardening:
