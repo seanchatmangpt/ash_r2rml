@@ -4,12 +4,14 @@
 
 defmodule AshR2RML.Formatter do
   @moduledoc """
-  Spark.Formatter plugin helper for AshR2RML DSL sections (the `r2rml` and `rdf` sections of `AshR2RML.Resource`).
+  Spark.Formatter plugin helper for AshR2RML DSL sections (the `r2rml` and `rdf`
+  sections of `AshR2RML.Resource`).
   """
 
   @behaviour Mix.Tasks.Format
 
   @doc "Returns the list of Spark extensions exported by AshR2RML."
+  @spec extensions() :: [module()]
   def extensions, do: [AshR2RML.Resource]
 
   @impl Mix.Tasks.Format

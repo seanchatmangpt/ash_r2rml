@@ -62,10 +62,9 @@ defmodule AshR2RML.Subject do
           {:ok, String.t()} | {:error, Refusal.t()}
   def to_iri(source, record_or_keys) do
     with {:ok, mapping, template} <- template(source),
-         {:ok, segments} <- parse(mapping, template) do
-      with {:ok, iri} <- render(mapping, segments, record_or_keys) do
-        check_invertible(mapping, segments, record_or_keys, iri)
-      end
+         {:ok, segments} <- parse(mapping, template),
+         {:ok, iri} <- render(mapping, segments, record_or_keys) do
+      check_invertible(mapping, segments, record_or_keys, iri)
     end
   end
 
@@ -264,11 +263,11 @@ defmodule AshR2RML.Subject do
         {:error, _} = error -> {:halt, error}
       end
     end)
-    |> case do
-      {:ok, acc} -> {:ok, acc |> Enum.reverse() |> IO.iodata_to_binary()}
-      {:error, _} = error -> error
-    end
+    |> with_ok(fn acc -> acc |> Enum.reverse() |> IO.iodata_to_binary() end)
   end
+
+  defp with_ok({:ok, value}, fun), do: {:ok, fun.(value)}
+  defp with_ok({:error, _} = error, _fun), do: error
 
   defp render_segment(_mapping, {:lit, text}, _record), do: {:ok, text}
 

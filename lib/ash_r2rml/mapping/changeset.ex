@@ -71,13 +71,33 @@ defmodule AshR2RML.Mapping.Changeset do
 
   def new(other), do: {:error, invalid_input(:options, other)}
 
+  # An unknown key (e.g. a typo such as `:ad`) is refused instead of silently dropped.
   defp build(opts) do
-    with {:ok, add} <- fetch_graph(opts, :add),
+    with :ok <- reject_unknown_keys(opts),
+         {:ok, add} <- fetch_graph(opts, :add),
          {:ok, update} <- fetch_graph(opts, :update),
          {:ok, replace} <- fetch_graph(opts, :replace),
          {:ok, remove} <- fetch_graph(opts, :remove) do
       validate(%__MODULE__{add: add, update: update, replace: replace, remove: remove})
     end
+  end
+
+  defp reject_unknown_keys(opts) do
+    keys = if is_list(opts), do: Keyword.keys(opts), else: Map.keys(opts)
+
+    case Enum.reject(keys, &(&1 in @action_fields)) do
+      [] -> :ok
+      unknown -> {:error, unknown_keys(unknown)}
+    end
+  end
+
+  defp unknown_keys(unknown) do
+    Refusal.new(
+      :REFUSED_CHANGESET_CONFLICT,
+      :mapping_changeset,
+      "Changeset options accept only #{inspect(@action_fields)}",
+      %{unknown_keys: Enum.map(unknown, &inspect/1)}
+    )
   end
 
   # A non-`RDF.Graph` value is refused rather than raising a CaseClauseError.

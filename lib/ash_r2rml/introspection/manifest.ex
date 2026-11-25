@@ -52,8 +52,17 @@ defmodule AshR2RML.Introspection.Manifest do
 
   defp fetch_otp_app(opts) do
     case Keyword.fetch(opts, :otp_app) do
-      {:ok, _otp_app} = ok ->
-        ok
+      {:ok, otp_app} when is_atom(otp_app) and not is_nil(otp_app) ->
+        {:ok, otp_app}
+
+      {:ok, other} ->
+        {:error,
+         Refusal.new(
+           :REFUSED_MANIFEST_GENERATION,
+           nil,
+           "Ash.Info.manifest/1 requires :otp_app to be a non-nil atom",
+           %{otp_app: other}
+         )}
 
       :error ->
         {:error,

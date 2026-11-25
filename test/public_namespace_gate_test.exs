@@ -206,6 +206,11 @@ defmodule AshR2RML.PublicNamespaceGateTest do
     refute admitted?(contributors <> "-evil")
     refute admitted?(contributors <> "/x")
     refute admitted?(contributors <> ".invented")
+
+    # every boundary character after the prefix ends the exact match
+    for suffix <- ["?x=1", "#frag", ":8080", "/", "_x", "2", "%2F", "\\x"] do
+      refute admitted?(contributors <> suffix), "#{suffix} smuggled past the contributors exception"
+    end
   end
 
   test "uppercase schemes are extracted and classified (non-vacuity)" do
