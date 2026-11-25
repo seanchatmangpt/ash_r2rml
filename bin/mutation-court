@@ -289,18 +289,6 @@ mutate M16e "check_graphs_sensitive skipped (always allowed)" \
   "$IN_MEMORY" test/refactor_w9_guard_tests_test.exs \
   's/check_graphs_sensitive\(mapping_resource, ash_resource, allow_sensitive\?\)/check_graphs_sensitive(mapping_resource, ash_resource, true)/'
 
-if ! git diff --exit-code >/dev/null; then
-  echo "FINAL_DIFF_NOT_EMPTY: tracked files differ after the court" >&2
-  git diff --stat >&2
-  exit 5
-fi
-
-if ! porcelain_empty; then
-  echo "FINAL_TREE_DIRTY after the court" >&2
-  git status --porcelain >&2
-  exit 4
-fi
-
 mutate M17a "VALUES refusal disabled" \
   lib/ash_r2rml/obda.ex test/refactor_w11_unsupported_shapes_test.exs \
   's/-> unsupported_shape\("VALUES"\)/-> :ok/'
@@ -325,5 +313,33 @@ mutate M18d "worker timeout validation disabled" \
   lib/ash_r2rml/obda/worker.ex test/refactor_w8_thin_codes_test.exs \
   's/not \(is_integer\(timeout\) and timeout > 0\) -> invalid_opt/false -> invalid_opt/'
 
-echo "MUTATION_COURT_PASS: M1a-M18d (M16a retired) (M1abc M2ab M3ab M4ab M5 M6 M7 M8 M9ab M10ab M11ab M12abc M13abcd M14abc M15abcdef M16b M16c1 M16c2 M16d M16e M17a M17b M18a M18b M18c M18d) killed, tree clean"
+mutate M19a "xsd:boolean false normalized through the string fallback" \
+  lib/ash_r2rml/sparql.ex test/refactor_w16_boolean_false_test.exs \
+  's/case RDF\.Literal\.value\(literal\) do/case nil do/'
+
+mutate M19b "property path detection disabled" \
+  lib/ash_r2rml/obda.ex test/refactor_w16_path_prefixed_test.exs \
+  's/defp property_path\?\(plain\), do: Enum\.any\?\(\@path_patterns, &Regex\.match\?\(&1, plain\)\)/defp property_path?(_plain), do: false/'
+
+mutate M19c "ghost identity admitted as an available column" \
+  lib/ash_r2rml/mapping/validate/shared.ex test/refactor_w16_identity_ghost_test.exs \
+  's/do: Enum\.filter\(all_identity_cols, &\(&1 in metadata_columns\)\),/do: all_identity_cols,/'
+
+mutate M19d "reference join ignores the parent join column" \
+  lib/ash_r2rml/obda_in_memory.ex test/refactor_w16_join_parent_test.exs \
+  's/\{:ok, match_parent_subject\(joins, row, parents\)\}/{:ok, nil}/'
+
+if ! git diff --exit-code >/dev/null; then
+  echo "FINAL_DIFF_NOT_EMPTY: tracked files differ after the court" >&2
+  git diff --stat >&2
+  exit 5
+fi
+
+if ! porcelain_empty; then
+  echo "FINAL_TREE_DIRTY after the court" >&2
+  git status --porcelain >&2
+  exit 4
+fi
+
+echo "MUTATION_COURT_PASS: M1a-M19d (M16a retired) (M1abc M2ab M3ab M4ab M5 M6 M7 M8 M9ab M10ab M11ab M12abc M13abcd M14abc M15abcdef M16b M16c1 M16c2 M16d M16e M17a M17b M18a M18b M18c M18d M19a M19b M19c M19d) killed, tree clean"
 exit 0

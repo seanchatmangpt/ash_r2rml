@@ -124,6 +124,14 @@ defmodule AshR2RML.Type do
     if function_exported?(module, callback, 0), do: apply(module, callback, []), else: nil
   end
 
+  @doc """
+  Adopts the `AshR2RML.Type` behaviour and injects the contract callbacks.
+
+  Options: `:semantic_kind` (default `:literal`), `:datatype_iri` (alias `:xsd_datatype`;
+  defaults to `xsd:string` for literals), `:class_iri`, `:concept_scheme_iri`, and
+  `:shacl_constraints` (default `[]`). `to_rdf_lexical/1` and `from_rdf_lexical/1` are not
+  injected; the implementer defines them.
+  """
   defmacro __using__(opts) do
     semantic_kind = Keyword.get(opts, :semantic_kind, :literal)
 

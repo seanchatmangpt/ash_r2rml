@@ -208,9 +208,15 @@ defmodule AshR2RML.PublicNamespaceGateTest do
     refute admitted?(contributors <> ".invented")
 
     # every boundary character after the prefix ends the exact match
-    for suffix <- ["?x=1", "#frag", ":8080", "/", "_x", "2", "%2F", "\\x"] do
+    suffixes = ["?x=1", "#frag", ":8080", "/", "_x", "2", "%2F", "\\x", ".", "-", "@h", ";x", "&x", ",x"]
+
+    for suffix <- suffixes do
       refute admitted?(contributors <> suffix), "#{suffix} smuggled past the contributors exception"
     end
+
+    # the path is compared exactly: a case change or a truncation is not the exception
+    refute admitted?(String.replace(contributors, "contributors", "Contributors"))
+    refute admitted?(String.trim_trailing(contributors, "s"))
   end
 
   test "uppercase schemes are extracted and classified (non-vacuity)" do

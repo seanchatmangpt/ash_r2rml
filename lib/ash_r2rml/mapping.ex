@@ -37,6 +37,10 @@ defmodule AshR2RML.Refusal do
           | :REFUSED_CHANGESET_CONFLICT
           | :REFUSED_MANIFEST_GENERATION
           | :REFUSED_RESOURCE_BOUND
+          | :REFUSED_RESULT_LIMIT_EXCEEDED
+          | :REFUSED_TRIPLE_LIMIT_EXCEEDED
+          | :REFUSED_INVALID_FEDERATION_ENVIRONMENT
+          | :REFUSED_MISSING_TENANT
 
   @type t :: %__MODULE__{
           code: code(),

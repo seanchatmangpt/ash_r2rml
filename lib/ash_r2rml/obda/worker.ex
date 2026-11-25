@@ -55,6 +55,11 @@ defmodule AshR2RML.OBDA.Worker do
 
   @type opts :: [timeout_ms: pos_integer(), max_heap_words: pos_integer()]
 
+  @doc """
+  Runs `fun` in a bounded worker and returns `{:ok, value}`. Never raises: a raise, throw or
+  exit inside `fun`, a timeout, a heap breach and an invalid option are all returned as
+  `{:error, %AshR2RML.Error{}}` (see the moduledoc for the codes).
+  """
   @spec run((-> term()), opts()) :: {:ok, term()} | {:error, Error.t()}
   def run(fun, opts \\ []) when is_function(fun, 0) and is_list(opts) do
     case call(fun, opts) do

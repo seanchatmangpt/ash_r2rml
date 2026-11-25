@@ -366,7 +366,8 @@ defmodule AshR2RML.Introspection do
        Refusal.new(
          :REFUSED_INVALID_LOGICAL_TABLE,
          resource,
-         "active Ash data layer does not expose a supported relational logical table; configure an explicit read-only logical table",
+         "active Ash data layer does not expose a supported relational logical table; " <>
+           "configure an explicit read-only logical table",
          %{data_layer: data_layer}
        )}
     end

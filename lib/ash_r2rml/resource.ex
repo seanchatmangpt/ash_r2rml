@@ -165,6 +165,8 @@ defmodule AshR2RML.Resource do
     entities: [@sparql_query]
   }
 
+  @doc "Returns the `r2rml` DSL section definition (a `Spark.Dsl.Section`)."
+  @spec section() :: Spark.Dsl.Section.t()
   def section, do: @r2rml
 
   use Spark.Dsl.Extension,

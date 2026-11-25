@@ -672,7 +672,17 @@ defmodule AshR2RML.DataLayerContract.Cases do
           C.emitted_rows(C.run(unquote(layer), :person, C.person_sparql(), tenant: "t1", actor: C.actor(:admin)))
 
         assert length(people) == 2
-        assert Enum.map(people, &String.to_integer(&1["age"])) == [36, 41]
+        assert people |> Enum.map(&String.to_integer(&1["age"])) |> Enum.sort() == [36, 41]
+
+        # canonical order is the engine's term order, independent of insertion order: the same
+        # rows in the same order after reseeding in the opposite direction.
+        C.clear!(unquote(layer))
+        C.seed!(unquote(layer), :forward)
+
+        people_forward =
+          C.emitted_rows(C.run(unquote(layer), :person, C.person_sparql(), tenant: "t1", actor: C.actor(:admin)))
+
+        assert people_forward == people
       end
 
       test "sensitive attributes never reach the default graph; mapping one refuses" do

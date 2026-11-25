@@ -42,7 +42,7 @@ defmodule AshR2RML.OBDA.InMemory do
   columns -- a genuine composite-key join (`joins: [%JoinCondition{}, %JoinCondition{}, ...]`)
   resolves the object IRI by substituting every child column's real value into the
   parent's own subject template in turn, producing an IRI only when every column pair
-  resolves and the resulting candidate is a valid IRI (see `resolve_composite_object_iri/3`).
+  resolves and the resulting candidate is a valid IRI (see `match_parent_subject/3`).
 
   An attribute marked `sensitive?: true` on the Ash resource (Ash core's own
   redaction flag, independent of any specific encryption library) is refused by
@@ -846,8 +846,8 @@ defmodule AshR2RML.OBDA.InMemory do
   defp add_reference_pass(pending, graph, stats, max_triples, mapping_index) do
     visible =
       Enum.reduce(pending, %{}, fn {ash_resource, mapping, rows}, acc ->
-        subjects = for row <- rows, iri = subject_iri(mapping.subject_map, row), into: MapSet.new(), do: iri
-        Map.update(acc, ash_resource, subjects, &MapSet.union(&1, subjects))
+        subjects = for row <- rows, iri = subject_iri(mapping.subject_map, row), do: {iri, row}
+        Map.update(acc, ash_resource, subjects, &(&1 ++ subjects))
       end)
 
     Enum.reduce_while(pending, {{:ok, graph}, stats}, fn {ash_resource, mapping, rows}, acc ->
@@ -1058,8 +1058,6 @@ defmodule AshR2RML.OBDA.InMemory do
   # (author-written) portion of the template is never encoded, only the substituted value.
   defp substitute_template(template, row), do: IriTemplate.substitute(template, row)
 
-  defp percent_encode_iri_value(value), do: IriTemplate.encode(value)
-
   # `:column` subject/object maps are different in kind from `:template`: the column's value
   # IS the entire IRI as stored (R2RML's `rr:column` term-type-iri semantics), not a value
   # embedded inside an author-written template. There is nothing to percent-encode without
@@ -1191,15 +1189,11 @@ defmodule AshR2RML.OBDA.InMemory do
   end
 
   # A single-column join and a genuine composite-key join (2+ `JoinCondition` entries) are
-  # resolved by the same mechanism: every column pair's real child value is substituted for
-  # its matching placeholder in the *parent* resource's own subject template, in order, so
-  # the object IRI is identical to the IRI that resource would materialize as a subject in
-  # its own right -- the same identity, reached two ways. This produces an object IRI only
-  # when every column pair's child value is present (`readable/1`) and every corresponding
-  # parent-field substitution succeeds (`substitute_field/3`) and the resulting candidate is
-  # a well-formed IRI (`valid_iri?/1`) -- see `resolve_composite_object_iri/3`. A join whose
-  # parent resource wasn't included in this call, or whose FK value is nil, or whose
-  # substitution/validation fails at any column, is silently skipped (not fabricated): the
+  # resolved by the same mechanism: the parent row whose `JoinCondition.parent` column values
+  # equal the child's `child` column values (all pairs) is located among the parent rows read,
+  # and that row's own subject IRI is the object -- see `match_parent_subject/3`. A join whose
+  # parent resource wasn't included in this call, or whose FK value is nil, or that matches
+  # no parent row, is silently skipped (not fabricated): the
   # relationship simply isn't traversable from the data given, exactly as it wouldn't be over
   # a real SQL LEFT JOIN with no matching row.
   #
@@ -1240,79 +1234,58 @@ defmodule AshR2RML.OBDA.InMemory do
   defp resolve_reference_object(%ReferenceObjectMap{joins: joins} = reference, row, mapping_index, visible)
        when joins != [] do
     case Map.fetch(mapping_index, reference.parent_resource) do
-      {:ok, parent_mapping} ->
-        iri = resolve_composite_object_iri(joins, row, parent_mapping.subject_map)
-        parent_subjects = Map.get(visible, reference.parent_resource, MapSet.new())
-
-        if iri != nil and MapSet.member?(parent_subjects, iri), do: {:ok, iri}, else: {:ok, nil}
+      {:ok, _parent_mapping} ->
+        parents = Map.get(visible, reference.parent_resource, [])
+        {:ok, match_parent_subject(joins, row, parents)}
 
       :error ->
         {:ok, nil}
     end
   end
 
-  # A `:template` parent subject map substitutes each join column's real child value, in
-  # turn, into the same placeholder-bearing template used to build that parent's own subject
-  # IRI -- this is what makes an N-column composite key differ from the single-column case
-  # only in "substitute N fields instead of one" rather than needing a parallel code path.
-  defp resolve_composite_object_iri(joins, row, %SubjectMap{strategy: :template} = parent_subject_map) do
-    joins
-    |> Enum.reduce_while(parent_subject_map.value, fn %JoinCondition{child: child, parent: parent}, template ->
-      with child_value when not is_nil(child_value) <- readable(Map.get(row, safe_atom(child))),
-           substituted when is_binary(substituted) <-
-             substitute_field(%{parent_subject_map | value: template}, parent, child_value) do
-        {:cont, substituted}
+  # The parent row is resolved by comparing each declared `JoinCondition.parent` column value
+  # with the child's `child` column value; the matching parent row's own subject IRI is the
+  # object. Ambiguous matches resolve to the lexically smallest subject (deterministic).
+  defp match_parent_subject(joins, row, parents) do
+    case child_join_values(joins, row) do
+      nil ->
+        nil
+
+      wanted ->
+        parents
+        |> Enum.filter(fn {_iri, parent_row} -> parent_matches?(joins, wanted, parent_row) end)
+        |> Enum.map(fn {iri, _} -> iri end)
+        |> Enum.min(fn -> nil end)
+    end
+  end
+
+  defp child_join_values(joins, row) do
+    Enum.reduce_while(joins, [], fn %JoinCondition{child: child}, acc ->
+      with value when not is_nil(value) <- readable(Map.get(row, safe_atom(child))),
+           {:ok, lex} <- lexical(value) do
+        {:cont, [lex | acc]}
       else
         _ -> {:halt, nil}
       end
     end)
     |> case do
       nil -> nil
-      candidate -> if valid_iri?(candidate), do: candidate, else: nil
+      values -> Enum.reverse(values)
     end
   end
 
-  # A `:column` parent subject map has exactly one meaningful field (the column value IS the
-  # whole IRI, R2RML `rr:column` term-type-iri semantics) -- only a single-column join
-  # resolves against it; 2+ join conditions against a `:column` parent are unresolvable and
-  # fall through to the fail-closed clause below.
-  defp resolve_composite_object_iri(
-         [%JoinCondition{child: child, parent: parent}],
-         row,
-         %SubjectMap{
-           strategy: :column
-         } = parent_subject_map
-       ) do
-    with child_value when not is_nil(child_value) <- readable(Map.get(row, safe_atom(child))),
-         object_iri when is_binary(object_iri) <- substitute_field(parent_subject_map, parent, child_value),
-         true <- valid_iri?(object_iri) do
-      object_iri
-    else
-      _ -> nil
-    end
+  defp parent_matches?(joins, wanted, parent_row) do
+    joins
+    |> Enum.zip(wanted)
+    |> Enum.all?(fn {%JoinCondition{parent: parent}, lex} ->
+      with value when not is_nil(value) <- readable(Map.get(parent_row, safe_atom(parent))),
+           {:ok, parent_lex} <- lexical(value) do
+        parent_lex == lex
+      else
+        _ -> false
+      end
+    end)
   end
-
-  defp resolve_composite_object_iri(_joins, _row, _parent_subject_map), do: nil
-
-  defp substitute_field(%SubjectMap{strategy: :template, value: template}, field, value) do
-    placeholder = "{#{field}}"
-
-    with true <- String.contains?(template, placeholder),
-         {:ok, lex} <- lexical(value) do
-      String.replace(template, placeholder, percent_encode_iri_value(lex))
-    else
-      _ -> nil
-    end
-  end
-
-  defp substitute_field(%SubjectMap{strategy: :column}, _field, value) do
-    case lexical(value) do
-      {:ok, lex} -> lex
-      :error -> nil
-    end
-  end
-
-  defp substitute_field(_subject_map, _field, _value), do: nil
 
   # The mapping's declared datatype wins: typed literals are what make numeric/temporal FILTERs and
   # ORDER BY semantically correct. Values with no declared datatype keep the plain-string form.

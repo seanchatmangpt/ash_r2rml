@@ -13,14 +13,13 @@ defmodule AshR2RML.RefactorW13ManifestOtpAppTest do
   alias AshR2RML.Refusal
 
   setup do
-    previous = Application.get_env(:ash_r2rml, :ash_domains)
+    previous = Application.fetch_env(:ash_r2rml, :ash_domains)
     Application.put_env(:ash_r2rml, :ash_domains, [Domain])
 
     on_exit(fn ->
-      if previous do
-        Application.put_env(:ash_r2rml, :ash_domains, previous)
-      else
-        Application.delete_env(:ash_r2rml, :ash_domains)
+      case previous do
+        {:ok, value} -> Application.put_env(:ash_r2rml, :ash_domains, value)
+        :error -> Application.delete_env(:ash_r2rml, :ash_domains)
       end
     end)
 

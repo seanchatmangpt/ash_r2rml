@@ -155,7 +155,8 @@ defmodule AshR2RML.Security do
 
       _ ->
         names = dropped |> Enum.map(&(&1.attribute || &1.object_map.value)) |> Enum.uniq()
-        %{mapping | predicate_object_maps: kept, metadata: Map.put(mapping.metadata, :cloak_excluded_attributes, names)}
+        metadata = Map.put(mapping.metadata, :cloak_excluded_attributes, names)
+        %{mapping | predicate_object_maps: kept, metadata: metadata}
     end
   end
 
@@ -249,7 +250,8 @@ defmodule AshR2RML.Security do
          AshR2RML.Refusal.new(
            :REFUSED_SENSITIVE_ATTRIBUTE_MATERIALIZATION,
            mapping.ash_resource,
-           "protected attribute #{inspect(to_string(field))} cannot be used in a #{where} of an external R2RML mapping",
+           "protected attribute #{inspect(to_string(field))} cannot be used in a #{where} " <>
+             "of an external R2RML mapping",
            %{field: to_string(field), where: where}
          )}
     end
@@ -383,7 +385,8 @@ defmodule AshR2RML.Security do
      AshR2RML.Refusal.new(
        :REFUSED_SENSITIVE_ATTRIBUTE_MATERIALIZATION,
        mapping.ash_resource,
-       "field #{inspect(to_string(field))} is not an admitted public attribute and cannot be used in the #{where} of an in-memory mapping",
+       "field #{inspect(to_string(field))} is not an admitted public attribute and cannot be used " <>
+         "in the #{where} of an in-memory mapping",
        %{field: to_string(field), where: where}
      )}
   end

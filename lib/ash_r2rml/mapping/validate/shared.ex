@@ -54,7 +54,13 @@ defmodule AshR2RML.Mapping.Validate.Shared do
   @spec available_columns(Resource.t()) :: MapSet.t(String.t())
   def available_columns(resource) do
     metadata_columns = resource.metadata |> Map.get(:attribute_columns, %{}) |> Map.values()
-    identity_cols = resource |> Mapping.identity_column_sets() |> List.flatten()
+    all_identity_cols = resource |> Mapping.identity_column_sets() |> List.flatten()
+
+    # With declared columns, an identity column must itself be a declared column.
+    identity_cols =
+      if columns_declared?(resource),
+        do: Enum.filter(all_identity_cols, &(&1 in metadata_columns)),
+        else: all_identity_cols
 
     # Self-admission of :column object values applies only when the mapping
     # declares no columns; a declared column set is authoritative.

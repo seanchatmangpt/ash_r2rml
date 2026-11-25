@@ -315,10 +315,21 @@ defmodule AshR2RML.OBDA do
     cond do
       Regex.match?(~r/\bVALUES\b/i, plain) -> unsupported_shape("VALUES")
       Regex.match?(~r/\{\s*SELECT\b/i, plain) -> unsupported_shape("sub-SELECT")
-      Regex.match?(~r/(<>|\w+:\w*)\s*[\/|]\s*(<>|\w+:)|\^\s*<>|<>[*+]/, plain) -> unsupported_shape("property path")
+      property_path?(plain) -> unsupported_shape("property path")
       true -> :ok
     end
   end
+
+  # Full-IRI (normalized to <>) and prefixed-name forms: sequence, alternative, inverse, and the
+  # * + ? modifiers glued to a predicate. `?x+1` (no prefix) and `^^xsd:t` are not paths.
+  @path_patterns [
+    ~r/(<>|[\w-]*:[\w-]*)\s*[\/|]\s*(<>|[\w-]*:)/,
+    ~r/(?<!\^)\^(?!\^)\s*(<>|[\w-]*:|\()/,
+    ~r/(<>|[\w-]*:[\w-]+)[*+?](?=[\s)]|$)/,
+    ~r/\(\s*(<>|[\w-]*:[\w-]*)\s*[\/|]/
+  ]
+
+  defp property_path?(plain), do: Enum.any?(@path_patterns, &Regex.match?(&1, plain))
 
   # Strings become "", IRIs become <>, comments are dropped, so keyword scans see only real tokens.
   defp normalize_sparql(sparql) do

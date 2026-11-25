@@ -276,7 +276,12 @@ defmodule AshR2RML.SPARQL.Result do
     if RDF.Literal.datatype_id(literal) == RDF.NS.XSD.decimal() do
       RDF.Literal.lexical(literal)
     else
-      normalize_rdf_value(literal)
+      # `RDF.Term.value/1` returns the lexical string "false" for an xsd:boolean false (a falsy
+      # `value || lexical` fallback); `RDF.Literal.value/1` keeps the boolean.
+      case RDF.Literal.value(literal) do
+        nil -> normalize_rdf_value(literal)
+        value -> value
+      end
     end
   end
 
