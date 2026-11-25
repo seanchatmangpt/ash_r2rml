@@ -22,17 +22,11 @@ defmodule AshR2RML.Resource.Persist do
   alias AshR2RML.Resource.Verify
   alias Spark.Dsl.Transformer
 
-  @impl true
-  def after?(module), do: resource_transformer?(module)
-
   # Every other resource transformer (Ash's own and any third-party extension's: attributes,
   # relationships, calculations, aggregates, primary keys) runs first, so `Ash.Resource.Info`
-  # is fully populated here. Only AshR2RML's own transformers are exempt from the ordering.
-  defp resource_transformer?(module) do
-    not match?(["AshR2RML" | _], Module.split(module))
-  rescue
-    ArgumentError -> false
-  end
+  # is fully populated here. Persist is the only AshR2RML transformer.
+  @impl true
+  def after?(module), do: module != __MODULE__
 
   # Every Ash/Spark lookup below receives `dsl`, never the module atom: the
   # module is still compiling while transformers run.
