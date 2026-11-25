@@ -61,8 +61,9 @@ Elixir `~> 1.17` required. `mix.exs` compiles `test/support` into `lib`/`test` p
 
 ## Working in this repo
 
-- Public DSL surface: `r2rml do ... end` and per-attribute/relationship `rdf do predicate ... end`
-  blocks, via the `AshR2RML` Spark extension on `use Ash.Resource, extensions: [AshR2RML.Resource]`.
+- Public DSL surface: `r2rml do class ...; subject template:/column:/constant:; property :attr, iri;
+  reference :rel, iri; graph ...; temporal start_attribute:, end_attribute: end` plus a `sparql`
+  section, via the `AshR2RML` Spark extension on `use Ash.Resource, extensions: [AshR2RML.Resource]`.
 - Runtime mapping/compile APIs return `{:error, %AshR2RML.Refusal{}}` with one of the typed
   `REFUSED_*` reasons listed in AGENTS.md — never a bare exception or silent fallback (e.g. no
   "unknown Ash type → string" coercion for datatypes).

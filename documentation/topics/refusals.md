@@ -60,7 +60,7 @@ the `Error` catalog. Only `:REFUSED_QUERY_TIMEOUT` is `retryable?/1`.
 | `:REFUSED_UNAUTHORIZED` | actor is not authorized by the resource policies |
 | `:REFUSED_READ_FAILED` | underlying Ash read failed; see `details.class` |
 | `:REFUSED_WORKER_CRASHED` | OBDA query worker crashed; see `details.class` and `details.stacktrace` |
-| `:REFUSED_INVALID_FEDERATION_ENVIRONMENT` | federation endpoint is not an absolute http or https URL with a public host |
+| `:REFUSED_INVALID_FEDERATION_ENVIRONMENT` | raised by the SPARQL.Protocol remote-endpoint client when the federation endpoint is not an absolute http or https URL with a public host |
 
 ## See Also
 

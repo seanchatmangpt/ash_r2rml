@@ -103,28 +103,27 @@ defmodule MyApp.Person do
   use Ash.Resource, extensions: [AshR2RML.Resource]
 
   r2rml do
-    class "https://schema.org/Person"
-    subject do
-      template "urn:uuid:{id}"
-      term_type :iri
-    end
+    class "http://schema.org/Person"
+    subject template: "urn:uuid:{id}", term_type: :iri
+    property :name, "http://schema.org/name"
+    reference :organization, "http://schema.org/memberOf"
+    # optional: graph "<iri>", scope: :subject
+    # optional: temporal start_attribute: :starts_at, end_attribute: :ends_at
   end
 
   attributes do
     uuid_primary_key :id
-    attribute :name, :string do
-      allow_nil? false
-      rdf do: predicate("http://xmlns.com/foaf/0.1/name")
-    end
+    attribute :name, :string, allow_nil?: false, public?: true
   end
 
   relationships do
-    belongs_to :organization, MyApp.Organization do
-      rdf do: predicate("https://schema.org/memberOf")
-    end
+    belongs_to :organization, MyApp.Organization
   end
 end
 ```
+
+`subject` takes exactly one of `template:`, `column:`, or `constant:`. A separate `sparql` section
+declares named SPARQL queries (see `lib/ash_r2rml/resource.ex`).
 
 ### Query-execution backend
 

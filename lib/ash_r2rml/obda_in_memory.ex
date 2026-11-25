@@ -335,18 +335,29 @@ defmodule AshR2RML.OBDA.InMemory do
   defp query_graph_plan(dataset, %{kind: :var, rewrite: rewrite}, sparql, stats, local_opts) do
     names = dataset |> RDF.Dataset.graph_names() |> Enum.reject(&is_nil/1) |> Enum.sort_by(&to_string/1)
 
+    max_rows = Keyword.get(local_opts, :max_rows)
+
     results =
-      Enum.reduce_while(names, {:ok, []}, fn name, {:ok, acc} ->
+      Enum.reduce_while(names, {:ok, [], 0}, fn name, {:ok, acc, count} ->
         graph = RDF.Dataset.graph(dataset, name)
 
         case query_with_stats_graph(graph, rewrite.(to_string(name)), stats, local_opts) do
-          {{:ok, observation}, _stats} -> {:cont, {:ok, [observation | acc]}}
-          {{:error, _} = error, _stats} -> {:halt, error}
+          {{:ok, observation}, _stats} ->
+            count = count + length(observation.rows)
+
+            if is_integer(max_rows) and count > max_rows do
+              {:halt, merged_limit_refusal(max_rows)}
+            else
+              {:cont, {:ok, [observation | acc], count}}
+            end
+
+          {{:error, _} = error, _stats} ->
+            {:halt, error}
         end
       end)
 
     case results do
-      {:ok, observations} ->
+      {:ok, observations, _count} ->
         merged = merge_observations(Enum.reverse(observations), sparql)
         {bound_merged(merged, local_opts), stats}
 
@@ -360,16 +371,20 @@ defmodule AshR2RML.OBDA.InMemory do
     max_rows = Keyword.get(local_opts, :max_rows)
 
     if is_integer(max_rows) and length(rows) > max_rows do
-      {:error,
-       Refusal.new(
-         :REFUSED_RESULT_LIMIT_EXCEEDED,
-         :graph_var,
-         "merged GRAPH ?g solutions exceed max_rows (#{max_rows}); refusing to return them",
-         %{limit: max_rows}
-       )}
+      merged_limit_refusal(max_rows)
     else
       {:ok, observation}
     end
+  end
+
+  defp merged_limit_refusal(max_rows) do
+    {:error,
+     Refusal.new(
+       :REFUSED_RESULT_LIMIT_EXCEEDED,
+       :graph_var,
+       "merged GRAPH ?g solutions exceed max_rows (#{max_rows}); refusing to return them",
+       %{limit: max_rows}
+     )}
   end
 
   defp reidentify(%Observation{} = observation, sparql, kind) do
@@ -686,7 +701,7 @@ defmodule AshR2RML.OBDA.InMemory do
          )}
 
       {:ok, rows} when is_list(rows) ->
-        {:ok, Enum.map(rows, &Map.from_struct/1)}
+        {:ok, Enum.map(rows, &row_map(&1, ash_resource))}
 
       {:ok, other} ->
         {:error,
@@ -727,6 +742,26 @@ defmodule AshR2RML.OBDA.InMemory do
          resource: ash_resource,
          details: %{action: read_opts[:action], error_class: inspect(exception.__struct__)}
        )}
+  end
+
+  # Templates, graph maps and join conditions name COLUMNS; the row is keyed by attribute names.
+  # A renamed attribute (`source:`) is also reachable under its column name (never overriding a
+  # real attribute of that name).
+  defp row_map(record, ash_resource) do
+    row = Map.from_struct(record)
+
+    ash_resource
+    |> Ash.Resource.Info.attributes()
+    |> Enum.reduce(row, fn
+      %{source: source, name: name}, acc when is_atom(source) and not is_nil(source) and source != name ->
+        case Map.fetch(row, name) do
+          {:ok, value} -> Map.put_new(acc, source, value)
+          :error -> acc
+        end
+
+      _attr, acc ->
+        acc
+    end)
   end
 
   defp read_refusal(ash_resource, message, evidence) do

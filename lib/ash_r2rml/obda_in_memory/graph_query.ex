@@ -63,11 +63,23 @@ defmodule AshR2RML.OBDA.InMemory.GraphQuery do
     enclosing = enclosing_open(masked, start)
     target = binary_part(sparql, t_start, t_len)
 
-    with {:ok, group_open} <- top_level_group(enclosing, start),
+    with :ok <- balanced(masked, close),
+         {:ok, group_open} <- top_level_group(enclosing, start),
          group_close = matching_close(masked, group_open),
+         :ok <- balanced(masked, group_close),
          :ok <- only_graph_in_group(masked, group_open, group_close, start, close),
          {:ok, kind} <- classify(sparql, masked, target) do
       build(kind, sparql, masked, {start, open, close})
+    end
+  end
+
+  # `matching_close/2` answers end-of-text for an unbalanced group; refuse instead of
+  # slicing past it (binary_part would raise on the negative remainder).
+  defp balanced(masked, close) do
+    if close < byte_size(masked) and :binary.at(masked, close) == ?} do
+      :ok
+    else
+      {:error, "GRAPH pattern has an unbalanced group", %{}}
     end
   end
 

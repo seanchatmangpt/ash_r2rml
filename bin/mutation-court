@@ -268,6 +268,31 @@ mutate M15f "OBDA @forwarded drops allow_unauthorized" \
   "$OBDA" test/obda_query_envelope_test.exs \
   's/\[:allow_unauthorized, :require_authorizer, :require_tenant, :max_rows/[:require_authorizer, :require_tenant, :max_rows/'
 
+# M16: reference-pass triple bound, bound nil-drop and validation, private-layer refusal, graph-map sensitivity.
+mutate M16a "reference-pass max_triples accumulation refusal disabled (14-space anchor)" \
+  "$IN_MEMORY" test/refactor_w9_guard_tests_test.exs \
+  's/^( {14})if emitted > max_triples do/$1if emitted > max_triples * 1_000_000 do/'
+
+mutate M16b "OBDA @bound_forwarded nil-drop disabled (nil bounds reach the engine)" \
+  "$OBDA" test/refactor_w6_bounds_nil_test.exs \
+  's/key in \@bound_forwarded and is_nil\(value\)/key in [] and is_nil(value)/'
+
+mutate M16c1 "OBDA @bound_keys no longer validates timeout_ms and max_heap_words" \
+  "$OBDA" test/obda_contract_fixes_test.exs \
+  's/\@bound_keys \[:max_rows, :max_triples, :timeout_ms, :max_heap_words\]/\@bound_keys [:max_rows, :max_triples]/'
+
+mutate M16c2 "OBDA validate_bounds admits non-positive integers" \
+  "$OBDA" test/obda_contract_fixes_test.exs \
+  's/or \(is_integer\(value\) and value > 0\)\)/or is_integer(value))/'
+
+mutate M16d "REFUSED_PRIVATE_DATA_LAYER refusal never fires (check_private_data_layers always :ok)" \
+  "$OBDA" test/followup_private_ets_failclosed_test.exs \
+  's/\[\{resource, verdict\} \| _\] <- non_confirmed_public\(specs\) do/[{resource, verdict} | _] <- Enum.drop(non_confirmed_public(specs), 1_000_000) do/'
+
+mutate M16e "check_graphs_sensitive skipped (always allowed)" \
+  "$IN_MEMORY" test/refactor_w9_guard_tests_test.exs \
+  's/check_graphs_sensitive\(mapping_resource, ash_resource, allow_sensitive\?\)/check_graphs_sensitive(mapping_resource, ash_resource, true)/'
+
 if ! git diff --exit-code >/dev/null; then
   echo "FINAL_DIFF_NOT_EMPTY: tracked files differ after the court" >&2
   git diff --stat >&2
@@ -280,5 +305,5 @@ if ! porcelain_empty; then
   exit 4
 fi
 
-echo "MUTATION_COURT_PASS: M1a-M15f (M1abc M2ab M3ab M4ab M5 M6 M7 M8 M9ab M10ab M11ab M12abc M13abcd M14abc M15abcdef) killed, tree clean"
+echo "MUTATION_COURT_PASS: M1a-M16e (M1abc M2ab M3ab M4ab M5 M6 M7 M8 M9ab M10ab M11ab M12abc M13abcd M14abc M15abcdef M16a M16b M16c1 M16c2 M16d M16e) killed, tree clean"
 exit 0

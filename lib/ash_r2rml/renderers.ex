@@ -11,6 +11,13 @@ defmodule AshR2RML.R2RML do
   validation lives in `AshR2RML.R2RML.Terms`, bridge naming in
   `AshR2RML.R2RML.Identity`, and Turtle quoting in `AshR2RML.R2RML.Turtle`.
 
+  ## Column-valued IRI term maps
+
+  An `rr:column` term map with `term_type: :iri` is rendered verbatim: the column is
+  taken to hold a complete IRI. R2RML 7.3 percent-encodes only `rr:template` values, and
+  `AshR2RML.OBDA.InMemory` likewise reads such a column as the whole IRI, so the renderer
+  and the runtime agree. Existing mappings pin this behavior, so it is not refused.
+
   ## Example
 
       {:ok, turtle} = AshR2RML.R2RML.render(MyApp.Person)
@@ -332,7 +339,7 @@ defmodule AshR2RML.R2RML do
 
     ([render_subject_term_map(bridge_subject)] ++
        render_term_type(subject.term_type, :subject) ++
-       Enum.flat_map(resource.graph_maps, &render_graph_map/1))
+       Enum.flat_map(resource.graph_maps ++ subject.graph_maps, &render_graph_map/1))
     |> Enum.join("; ")
   end
 

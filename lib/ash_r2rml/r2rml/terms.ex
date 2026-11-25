@@ -7,10 +7,10 @@ defmodule AshR2RML.R2RML.Terms do
   Term validation for the R2RML renderer.
 
   Checks that every constant IRI in a normalized `AshR2RML.Mapping.Bundle`
-  can be written as a Turtle IRIREF, and that no literal object map carries
-  both a language and a datatype, and that every language is a well-formed
-  Turtle LANGTAG. The first problem found is returned as a
-  typed `AshR2RML.Refusal`; nothing is rewritten or repaired.
+  can be written as a Turtle IRIREF, that no literal object map carries both a
+  language and a datatype, and that every language is a well-formed Turtle
+  LANGTAG. The first problem found is returned as a typed `AshR2RML.Refusal`;
+  nothing is rewritten or repaired.
   """
 
   alias AshR2RML.Mapping.{Bundle, GraphMap, ObjectMap, Resource}
@@ -35,10 +35,12 @@ defmodule AshR2RML.R2RML.Terms do
   defp refusals(%Resource{} = resource) do
     iri_refusals =
       for {kind, iri} <- iris(resource), not valid_iri?(iri) do
-        Refusal.new(:REFUSED_INVALID_TERM_MAP, resource.ash_resource, "#{kind} IRI is not serializable as an IRIREF", %{
-          kind: kind,
-          iri: iri
-        })
+        Refusal.new(
+          :REFUSED_INVALID_TERM_MAP,
+          resource.ash_resource,
+          "#{kind} IRI is not serializable as an IRIREF",
+          %{kind: kind, iri: iri}
+        )
       end
 
     conflict_refusals =

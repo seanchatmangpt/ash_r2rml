@@ -4,7 +4,7 @@
 
 defmodule AshR2RML.Formatter do
   @moduledoc """
-  Spark.Formatter plugin helper for AshR2RML DSL sections (`r2rml` and `sparql`).
+  Spark.Formatter plugin helper for AshR2RML DSL sections (the `r2rml` and `rdf` sections of `AshR2RML.Resource`).
   """
 
   @behaviour Mix.Tasks.Format

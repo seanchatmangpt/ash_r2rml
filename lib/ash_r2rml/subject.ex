@@ -156,10 +156,7 @@ defmodule AshR2RML.Subject do
   end
 
   defp template(resource) when is_atom(resource) do
-    case AshR2RML.Resource.Info.mapping_result(resource) do
-      {:ok, %MappingResource{} = mapping} -> template(mapping)
-      {:error, %Refusal{}} = error -> error
-    end
+    with {:ok, %MappingResource{} = mapping} <- resolve(resource), do: template(mapping)
   end
 
   # -- template parsing -----------------------------------------------------------------
@@ -217,21 +214,25 @@ defmodule AshR2RML.Subject do
   # -- rendering ------------------------------------------------------------------------
 
   defp render(mapping, segments, record) do
-    Enum.reduce_while(segments, {:ok, []}, fn
-      {:lit, text}, {:ok, acc} ->
-        {:cont, {:ok, [text | acc]}}
-
-      {:field, field}, {:ok, acc} ->
-        with {:ok, value} <- fetch_or_refuse(mapping, record, field),
-             {:ok, lexical} <- lexical(mapping, field, value) do
-          {:cont, {:ok, [percent_encode(lexical) | acc]}}
-        else
-          {:error, _} = error -> {:halt, error}
-        end
+    segments
+    |> Enum.reduce_while({:ok, []}, fn segment, {:ok, acc} ->
+      case render_segment(mapping, segment, record) do
+        {:ok, text} -> {:cont, {:ok, [text | acc]}}
+        {:error, _} = error -> {:halt, error}
+      end
     end)
     |> case do
       {:ok, acc} -> {:ok, acc |> Enum.reverse() |> IO.iodata_to_binary()}
       {:error, _} = error -> error
+    end
+  end
+
+  defp render_segment(_mapping, {:lit, text}, _record), do: {:ok, text}
+
+  defp render_segment(mapping, {:field, field}, record) do
+    with {:ok, value} <- fetch_or_refuse(mapping, record, field),
+         {:ok, lexical} <- lexical(mapping, field, value) do
+      {:ok, percent_encode(lexical)}
     end
   end
 

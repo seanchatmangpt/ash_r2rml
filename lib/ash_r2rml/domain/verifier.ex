@@ -165,8 +165,11 @@ defmodule AshR2RML.Domain.Verifier do
 
   # Constant IRIs are checked whole; IRI templates by their literal prefix (text
   # before the first placeholder). Column-valued terms are runtime data.
-  defp constant_iri(kind, %{strategy: :constant, term_type: :iri, value: v}), do: [{kind, v}]
-  defp constant_iri(kind, %{strategy: :template, term_type: :iri, value: v}), do: [{kind, literal_prefix(v)}]
+  defp constant_iri(kind, %{strategy: :constant, term_type: :iri, value: v}) when is_binary(v), do: [{kind, v}]
+
+  defp constant_iri(kind, %{strategy: :template, term_type: :iri, value: v}) when is_binary(v),
+    do: [{kind, literal_prefix(v)}]
+
   defp constant_iri(_kind, _map), do: []
 
   defp literal_prefix(template), do: template |> String.split("{") |> hd()
@@ -203,8 +206,8 @@ defmodule AshR2RML.Domain.Verifier do
 
   defp graph_uses(graph_maps) do
     Enum.flat_map(graph_maps, fn
-      %{strategy: :constant, value: v} -> [{:graph, v}]
-      %{strategy: :template, value: v} -> [{:graph, literal_prefix(v)}]
+      %{strategy: :constant, value: v} when is_binary(v) -> [{:graph, v}]
+      %{strategy: :template, value: v} when is_binary(v) -> [{:graph, literal_prefix(v)}]
       _ -> []
     end)
   end

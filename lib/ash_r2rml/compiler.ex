@@ -211,27 +211,42 @@ defmodule AshR2RML.Compiler do
 
   defp expand_domains(items) do
     Enum.reduce_while(items, {:ok, []}, fn item, {:ok, acc} ->
-      if domain?(item) do
-        case AshR2RML.Resource.Info.domain_resources(item) do
-          [] ->
-            {:halt,
-             {:error,
-              Refusal.new(
-                :REFUSED_MISSING_SUBJECT_MAP,
-                item,
-                "domain #{inspect(item)} has no resources carrying the AshR2RML extension"
-              )}}
-
-          mapped ->
-            {:cont, {:ok, acc ++ mapped}}
-        end
+      if not is_atom(item) do
+        {:halt,
+         {:error,
+          Refusal.new(
+            :REFUSED_MISSING_SUBJECT_MAP,
+            :compile,
+            "expected resource or domain modules, got #{inspect(item)}",
+            %{}
+          )}}
       else
-        {:cont, {:ok, acc ++ [item]}}
+        expand_domain_or_resource(item, acc)
       end
     end)
     |> case do
       {:ok, list} -> {:ok, Enum.uniq(list)}
       error -> error
+    end
+  end
+
+  defp expand_domain_or_resource(item, acc) do
+    if domain?(item) do
+      case AshR2RML.Resource.Info.domain_resources(item) do
+        [] ->
+          {:halt,
+           {:error,
+            Refusal.new(
+              :REFUSED_MISSING_SUBJECT_MAP,
+              item,
+              "domain #{inspect(item)} has no resources carrying the AshR2RML extension"
+            )}}
+
+        mapped ->
+          {:cont, {:ok, acc ++ mapped}}
+      end
+    else
+      {:cont, {:ok, acc ++ [item]}}
     end
   end
 

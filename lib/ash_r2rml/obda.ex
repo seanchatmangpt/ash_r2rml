@@ -309,17 +309,54 @@ defmodule AshR2RML.OBDA do
   @doc false
   @spec check_order_projected(String.t()) :: :ok | {:error, Refusal.t()}
   def check_order_projected(sparql) do
-    with {:ok, %{order: [_ | _] = order}} <- Modifiers.parse(sparql),
-         [_, select] <- Regex.run(~r/\bSELECT\b\s+(?:DISTINCT\s+|REDUCED\s+)?(.*?)\s*(?:\bWHERE\b|\{)/is, sparql),
-         false <- Regex.match?(~r/\A\s*\*/, select) do
-      projected = projected_variables(select)
-      missing = for {var, _dir} <- order, var not in projected, do: var
+    case Modifiers.parse(sparql) do
+      {:ok, %{order: [_ | _] = order}} -> check_select_order(sparql, order)
+      _ -> :ok
+    end
+  end
 
-      case missing do
+  @select_clause ~r/\bSELECT\b\s+(?:DISTINCT\s+|REDUCED\s+)?(.*?)\s*(?:\bWHERE\b|\{)/is
+  @query_form ~r/\A (?:\s* (?:\#[^\n]*(?:\n|\z) | PREFIX\s+[^\s<]*\s*<[^>]*> | BASE\s+<[^>]*>))*
+                  \s* (SELECT|ASK|CONSTRUCT|DESCRIBE)/xi
+
+  defp check_select_order(sparql, order) do
+    case Regex.run(@select_clause, sparql) do
+      [_, select] -> check_projected(select, order)
+      nil -> unmatched_select(sparql)
+    end
+  end
+
+  # A SELECT whose clause text cannot be matched must not fail open; other forms are untouched.
+  defp unmatched_select(sparql) do
+    case Regex.run(@query_form, sparql, capture: :all_but_first) do
+      [form] ->
+        if String.upcase(form) == "SELECT" do
+          {:error,
+           refusal(
+             "ORDER BY",
+             "SELECT clause could not be analyzed to verify ORDER BY variables are projected",
+             %{query_form: "SELECT"}
+           )}
+        else
+          :ok
+        end
+
+      _ ->
+        :ok
+    end
+  end
+
+  defp check_projected(select, order) do
+    if Regex.match?(~r/\A\s*\*/, select) do
+      :ok
+    else
+      projected = projected_variables(select)
+
+      case for({var, _dir} <- order, var not in projected, do: var) do
         [] ->
           :ok
 
-        _ ->
+        missing ->
           {:error,
            refusal(
              "ORDER BY",
@@ -327,8 +364,6 @@ defmodule AshR2RML.OBDA do
              %{unprojected: missing, projected: projected}
            )}
       end
-    else
-      _ -> :ok
     end
   end
 

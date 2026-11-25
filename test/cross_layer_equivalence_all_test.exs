@@ -119,7 +119,10 @@ defmodule AshR2RML.CrossLayerEquivalenceAllTest do
   @moduledoc """
   The same 50 Person rows, published through ETS, a manual-read Simple resource, CSV, SQLite and
   (under `:postgres`) Postgres, answer one SPARQL query through `AshR2RML.OBDA.query/3` with
-  byte-identical bindings and an identical envelope digest. ETS is the reference.
+  byte-identical bindings. The envelope digest seals the rendered R2RML, whose TriplesMap name embeds
+  the layer's module name, so raw digests differ per layer; the digest is asserted equal across layers
+  after that one name is normalized, and equal to a digest recomputed from the sealed inputs. ETS is
+  the reference.
   """
   use ExUnit.Case, async: false
 
@@ -167,12 +170,38 @@ defmodule AshR2RML.CrossLayerEquivalenceAllTest do
     run(layer)
   end
 
-  defp assert_equivalent(result, reference) do
+  # The rendered R2RML of a layer, plus its TriplesMap name (Module.split joined with "_", renderers.ex).
+  defp rendered(layer) do
+    resource = Module.concat(layer, Person)
+    mapping = AshR2RML.Resource.Info.mapping!(resource)
+    {:ok, ttl} = AshR2RML.R2RML.render(%AshR2RML.Mapping.Bundle{resources: [mapping]})
+    {ttl, "#" <> (resource |> Module.split() |> Enum.join("_"))}
+  end
+
+  # The digest seals frame(ttl) <> frame(sparql) <> frame(bindings). The only layer-dependent byte of
+  # the ttl is the TriplesMap name, so replacing it with a fixed token must make digests equal.
+  defp normalized_digest(layer, result) do
+    {ttl, name} = rendered(layer)
+    assert ttl =~ name
+    AshR2RML.OBDA.Result.digest(String.replace(ttl, name, "#NormalizedPerson"), @sparql, result.bindings)
+  end
+
+  defp assert_digest_equivalent(layer, result, reference) do
+    {ttl, _name} = rendered(layer)
+    assert result.digest == AshR2RML.OBDA.Result.digest(ttl, @sparql, result.bindings)
+    assert normalized_digest(layer, result) == normalized_digest(Xl.Ets, reference)
+
+    if layer != Xl.Ets do
+      # The digest differs across layers only through the TriplesMap name.
+      refute result.digest == reference.digest
+    end
+  end
+
+  defp assert_equivalent(layer, result, reference) do
     assert length(result.bindings) == @rows
     assert result.bindings == reference.bindings
-    # The digest seals the rendered R2RML too, whose TriplesMap names carry each layer's module name,
-    # so cross-layer equality is asserted over the canonical bindings, rows and triples instead.
     assert byte_size(result.digest) == 64
+    assert_digest_equivalent(layer, result, reference)
     assert result.stats.rows_read == reference.stats.rows_read
     assert result.stats.triples_emitted == reference.stats.triples_emitted
   end
@@ -505,7 +534,7 @@ defmodule AshR2RML.CrossLayerEquivalenceAllTest do
 
     on_exit(fn -> Application.delete_env(:ash_r2rml, :xl_all_simple_rows) end)
 
-    assert_equivalent(run(Xl.Simple), ref)
+    assert_equivalent(Xl.Simple, run(Xl.Simple), ref)
   end
 
   if Code.ensure_loaded?(AshCsv.DataLayer) do
@@ -520,7 +549,7 @@ defmodule AshR2RML.CrossLayerEquivalenceAllTest do
       on_exit(fn -> File.rm(path) end)
 
       seed!(resource, Module.concat(layer, Domain))
-      assert_equivalent(run(layer), ref)
+      assert_equivalent(layer, run(layer), ref)
     end
   end
 
@@ -554,7 +583,7 @@ defmodule AshR2RML.CrossLayerEquivalenceAllTest do
 
       layer = Xl.Sqlite
       seed!(Module.concat(layer, Person), Module.concat(layer, Domain))
-      assert_equivalent(run(layer), ref)
+      assert_equivalent(layer, run(layer), ref)
     end
   end
 
@@ -582,7 +611,7 @@ defmodule AshR2RML.CrossLayerEquivalenceAllTest do
 
       layer = Xl.Postgres
       seed!(Module.concat(layer, Person), Module.concat(layer, Domain))
-      assert_equivalent(run(layer), ref)
+      assert_equivalent(layer, run(layer), ref)
     end
   end
 end
