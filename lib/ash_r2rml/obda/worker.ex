@@ -21,6 +21,13 @@ defmodule AshR2RML.OBDA.Worker do
 
   Options: `:timeout_ms` (default #{5000}), `:max_heap_words` (default 50_000_000).
 
+  ## Message protocol
+
+  Worker to caller: `{tag, {:ok, value}}` or `{tag, {:error, kind, reason, stacktrace}}`, where
+  `tag` is a fresh reference. Runtime to caller: `{:DOWN, mref, :process, pid, reason}`. A
+  guardian process (two monitors, no links) kills the worker if the caller dies first. On
+  timeout the caller kills the worker, waits for its DOWN, and flushes any late result.
+
   ## Examples
 
       iex> AshR2RML.OBDA.Worker.run(fn -> 1 + 1 end)
@@ -62,9 +69,15 @@ defmodule AshR2RML.OBDA.Worker do
   end
 
   defp do_run(fun, timeout, words) do
+    worker = spawn_worker(fun, words)
+    await(worker, timeout, words)
+  end
+
+  # Spawn: the worker is unlinked and monitored by the caller, heap-capped by the runtime.
+  # Ash/Ecto sandbox-style ownership and telemetry lookups follow `:"$callers"`.
+  defp spawn_worker(fun, words) do
     parent = self()
     tag = make_ref()
-    # Ash/Ecto sandbox-style ownership and telemetry lookups follow `:"$callers"`.
     callers = [parent | Process.get(:"$callers", [])]
 
     {pid, mref} =
@@ -79,6 +92,11 @@ defmodule AshR2RML.OBDA.Worker do
         [:monitor, max_heap_size: %{size: words, kill: true, error_logger: false}]
       )
 
+    %{pid: pid, mref: mref, tag: tag}
+  end
+
+  # Await: exactly one of the protocol messages decides the outcome.
+  defp await(%{pid: pid, mref: mref, tag: tag}, timeout, words) do
     receive do
       {^tag, {:ok, value}} ->
         Process.demonitor(mref, [:flush])
@@ -100,21 +118,25 @@ defmodule AshR2RML.OBDA.Worker do
       {:DOWN, ^mref, :process, ^pid, reason} ->
         {:error, crash_error(:exit, reason)}
     after
-      timeout ->
-        Process.exit(pid, :kill)
-
-        receive do
-          {:DOWN, ^mref, :process, ^pid, _} -> :ok
-        end
-
-        flush(tag)
-
-        {:error,
-         Error.new(:REFUSED_QUERY_TIMEOUT,
-           message: "worker exceeded timeout of #{timeout} ms",
-           details: %{timeout_ms: timeout}
-         )}
+      timeout -> kill_and_reap(pid, mref, tag, timeout)
     end
+  end
+
+  # Kill, then wait for the DOWN so no late result or DOWN can leak into the caller's mailbox.
+  defp kill_and_reap(pid, mref, tag, timeout) do
+    Process.exit(pid, :kill)
+
+    receive do
+      {:DOWN, ^mref, :process, ^pid, _} -> :ok
+    end
+
+    flush(tag)
+
+    {:error,
+     Error.new(:REFUSED_QUERY_TIMEOUT,
+       message: "worker exceeded timeout of #{timeout} ms",
+       details: %{timeout_ms: timeout}
+     )}
   end
 
   # Owns nothing but two monitors: kills the worker if the caller dies first, exits when the

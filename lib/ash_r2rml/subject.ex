@@ -180,10 +180,7 @@ defmodule AshR2RML.Subject do
   defp to_segment(mapping, chunk) do
     case Regex.run(~r/\A\{([a-zA-Z0-9_]+)\}\z/, chunk, capture: :all_but_first) do
       [name] ->
-        case field_atom(mapping, name) do
-          {:ok, field} -> {:field, field}
-          :error -> :error
-        end
+        with {:ok, field} <- field_atom(mapping, name), do: {:field, field}
 
       nil ->
         {:lit, chunk}

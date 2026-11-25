@@ -44,7 +44,17 @@ defmodule AshR2RML.Introspection.Manifest do
   """
   @spec generate(keyword()) :: {:ok, Ash.Info.Manifest.t()} | {:error, Refusal.t()}
   def generate(opts) do
+    with {:ok, otp_app} <- fetch_otp_app(opts),
+         {:ok, manifest} <- run_manifest(otp_app, opts) do
+      {:ok, manifest}
+    end
+  end
+
+  defp fetch_otp_app(opts) do
     case Keyword.fetch(opts, :otp_app) do
+      {:ok, _otp_app} = ok ->
+        ok
+
       :error ->
         {:error,
          Refusal.new(
@@ -53,21 +63,22 @@ defmodule AshR2RML.Introspection.Manifest do
            "Ash.Info.manifest/1 requires an :otp_app option",
            %{opts: opts}
          )}
+    end
+  end
 
-      {:ok, otp_app} ->
-        case manifest_result(opts) do
-          {:ok, manifest} ->
-            {:ok, manifest}
+  defp run_manifest(otp_app, opts) do
+    case manifest_result(opts) do
+      {:ok, manifest} ->
+        {:ok, manifest}
 
-          {:error, reason} ->
-            {:error,
-             Refusal.new(
-               :REFUSED_MANIFEST_GENERATION,
-               otp_app,
-               "Ash.Info.manifest/1 failed to generate a manifest",
-               %{reason: reason, opts: opts}
-             )}
-        end
+      {:error, reason} ->
+        {:error,
+         Refusal.new(
+           :REFUSED_MANIFEST_GENERATION,
+           otp_app,
+           "Ash.Info.manifest/1 failed to generate a manifest",
+           %{reason: reason, opts: opts}
+         )}
     end
   end
 

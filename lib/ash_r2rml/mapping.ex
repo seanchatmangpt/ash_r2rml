@@ -857,13 +857,3 @@ defmodule AshR2RML.Mapping do
     if condition, do: acc ++ [fun.()], else: acc
   end
 end
-
-defmodule AshR2RML.AttributeMapping do
-  @moduledoc false
-  defstruct [:attribute, :column, :predicate_iri, :datatype_iri]
-end
-
-defmodule AshR2RML.RelationshipMapping do
-  @moduledoc false
-  defstruct [:relationship, :predicate_iri, :destination, :child_column, :parent_column]
-end

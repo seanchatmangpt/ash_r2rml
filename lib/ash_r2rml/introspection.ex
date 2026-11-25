@@ -100,9 +100,11 @@ defmodule AshR2RML.Introspection do
          )}
 
       attr ->
-        {:ok, to_string(attr.source || attr.name)}
+        {:ok, source_column(attr)}
     end
   end
+
+  defp source_column(attr), do: to_string(attr.source || attr.name)
 
   defp owner(dsl) when is_map(dsl), do: Spark.Dsl.Transformer.get_persisted(dsl, :module)
   defp owner(resource), do: resource
@@ -182,11 +184,16 @@ defmodule AshR2RML.Introspection do
   defp scope_to_tenant(keys, _all_tenants?, nil), do: keys
   defp scope_to_tenant(keys, _all_tenants?, tenant), do: Enum.uniq(keys ++ [tenant])
 
+  @doc """
+  True when the subject template's columns are exactly one globally unique key set
+  of `resource` (see `identities/1`). A column that maps to no attribute is never stable.
+  """
   @spec stable_subject_identity?(module(), [String.t()]) :: boolean()
   def stable_subject_identity?(resource, template_fields) do
     columns_by_attribute =
-      Ash.Resource.Info.attributes(resource)
-      |> Map.new(fn attribute -> {to_string(attribute.source || attribute.name), attribute.name} end)
+      resource
+      |> Ash.Resource.Info.attributes()
+      |> Map.new(fn attribute -> {source_column(attribute), attribute.name} end)
 
     template_keys = Enum.map(template_fields, &Map.get(columns_by_attribute, &1))
 

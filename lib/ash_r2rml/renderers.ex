@@ -20,7 +20,11 @@ defmodule AshR2RML.R2RML do
     SubjectMap
   }
 
+  alias AshR2RML.R2RML.Terms
   alias AshR2RML.Refusal
+
+  import AshR2RML.R2RML.Turtle, only: [literal: 1]
+  import AshR2RML.R2RML.Identity, only: [bridge_id: 3]
 
   @prefixes """
   @prefix rr: <http://www.w3.org/ns/r2rml#> .
@@ -34,7 +38,7 @@ defmodule AshR2RML.R2RML do
     bundle = AshR2RML.Mapping.normalize(bundle)
 
     with :ok <- AshR2RML.Mapping.validate(bundle),
-         :ok <- validate_terms(bundle),
+         :ok <- Terms.validate(bundle),
          {:ok, body} <- render_bundle(bundle) do
       {:ok, @prefixes <> body}
     end
@@ -49,72 +53,6 @@ defmodule AshR2RML.R2RML do
       render(bundle)
     end
   end
-
-  @invalid_iri_chars ~r/[\x00-\x20<>"{}|^`\\\x7f]/
-
-  defp validate_terms(%Bundle{resources: resources}) do
-    case Enum.flat_map(resources, &term_refusals/1) do
-      [] -> :ok
-      [first | _] -> {:error, first}
-    end
-  end
-
-  defp term_refusals(%Resource{} = resource) do
-    subject = resource.subject_map
-
-    iris =
-      Enum.map(resource.class_iris, &{:class, &1}) ++
-        if(subject.strategy == :constant, do: [{:subject_constant, subject.value}], else: []) ++
-        graph_iris(resource.graph_maps ++ subject.graph_maps) ++
-        Enum.flat_map(resource.predicate_object_maps, &property_iris/1) ++
-        Enum.flat_map(resource.reference_object_maps, fn ref ->
-          [{:predicate, ref.predicate_iri}] ++
-            if(ref.inverse_predicate, do: [{:inverse_predicate, ref.inverse_predicate}], else: []) ++
-            graph_iris(ref.graph_maps)
-        end)
-
-    iri_refusals =
-      for {kind, iri} <- iris, not valid_iri?(iri) do
-        Refusal.new(:REFUSED_INVALID_TERM_MAP, resource.ash_resource, "#{kind} IRI is not serializable as an IRIREF", %{
-          kind: kind,
-          iri: iri
-        })
-      end
-
-    conflict_refusals =
-      for property <- resource.predicate_object_maps, language_and_datatype?(property) do
-        Refusal.new(
-          :REFUSED_INVALID_TERM_MAP,
-          {resource.ash_resource, property.attribute},
-          "language and datatype are mutually exclusive on one literal object map"
-        )
-      end
-
-    iri_refusals ++ conflict_refusals
-  end
-
-  defp language_and_datatype?(%{object_map: %ObjectMap{language: language, datatype: datatype}}),
-    do: is_binary(language) and not is_nil(datatype)
-
-  defp language_and_datatype?(_), do: false
-
-  defp property_iris(property) do
-    object = property.object_map
-
-    [{:predicate, property.predicate_iri}] ++
-      if(object.strategy == :constant and object.term_type == :iri, do: [{:object_constant, object.value}], else: []) ++
-      case object.datatype do
-        %{rdf_datatype: iri} when is_binary(iri) -> [{:datatype, iri}]
-        _ -> []
-      end ++
-      graph_iris(property.graph_maps ++ object.graph_maps)
-  end
-
-  defp graph_iris(graph_maps) do
-    for %GraphMap{strategy: :constant, value: value} <- graph_maps, do: {:graph, value}
-  end
-
-  defp valid_iri?(iri), do: is_binary(iri) and not Regex.match?(@invalid_iri_chars, iri)
 
   defp render_bundle(%Bundle{resources: resources}) do
     by_resource = Map.new(resources, &{&1.ash_resource, &1})
@@ -546,32 +484,6 @@ defmodule AshR2RML.R2RML do
   defp predicate_suffix(values), do: ";\n" <> Enum.join(values, ";\n")
   defp pom_graph_suffix([]), do: ""
   defp pom_graph_suffix(values), do: "; " <> Enum.join(values, "; ")
-
-  defp bridge_id(resource, reference, direction) do
-    <<a::32, b::16, _::4, c::12, _::2, d::14, e::48, _rest::binary>> =
-      {AshR2RML.Mapping.mapping_identity(resource), reference.relationship, reference.predicate_iri, direction}
-      |> :erlang.term_to_binary([:deterministic])
-      |> then(&:crypto.hash(:sha256, &1))
-
-    # Deterministic name-based UUID (version 5 layout, variant 10) derived from the sha256 digest.
-    <<hex::binary-size(32)>> =
-      Base.encode16(<<a::32, b::16, 5::4, c::12, 2::2, d::14, e::48>>, case: :lower)
-
-    <<p1::binary-size(8), p2::binary-size(4), p3::binary-size(4), p4::binary-size(4), p5::binary-size(12)>> = hex
-    "urn:uuid:" <> Enum.join([p1, p2, p3, p4, p5], "-")
-  end
-
-  defp literal(value) do
-    escaped =
-      value
-      |> to_string()
-      |> String.replace("\\", "\\\\")
-      |> String.replace("\"", "\\\"")
-      |> String.replace("\r", "\\r")
-      |> String.replace("\n", "\\n")
-
-    "\"#{escaped}\""
-  end
 
   defp unwrap({:ok, value}), do: value
 end

@@ -125,6 +125,7 @@ defmodule AshR2RML.Parity do
   end
 
   @doc "Normalize an unordered result multiset while preserving duplicate cardinality."
+  @spec normalize_multiset(list(), keyword()) :: list()
   def normalize_multiset(rows, opts \\ []) do
     csv? = Keyword.get(opts, :csv?, false) == true
 
@@ -134,6 +135,7 @@ defmodule AshR2RML.Parity do
   end
 
   defp canonical(value), do: canonical(value, false)
+  # One-arity form is used for the receipt body, where CSV collapsing never applies.
 
   defp canonical(%Decimal{} = decimal, _csv?), do: Decimal.to_string(decimal, :normal)
   defp canonical(%DateTime{} = datetime, _csv?), do: DateTime.to_iso8601(datetime)

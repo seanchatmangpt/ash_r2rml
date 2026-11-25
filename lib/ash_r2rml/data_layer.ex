@@ -65,13 +65,9 @@ defmodule AshR2RML.DataLayer do
   end
 
   defp generic_table_name(resource) do
-    cond do
-      function_exported?(resource, :table, 0) ->
-        to_string(resource.table())
-
-      true ->
-        default_table_name(resource)
-    end
+    if function_exported?(resource, :table, 0),
+      do: to_string(resource.table()),
+      else: default_table_name(resource)
   end
 
   @doc "Extracts database schema name if configured on data layer."

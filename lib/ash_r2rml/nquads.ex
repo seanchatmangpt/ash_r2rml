@@ -85,7 +85,7 @@ defmodule AshR2RML.NQuads do
          {:ok, p} <- predicate(p),
          {:ok, o} <- object(o),
          {:ok, g} <- graph(g) do
-      {:ok, [s, p, o | g] |> Kernel.++(["."]) |> Enum.intersperse(?\s) |> IO.iodata_to_binary()}
+      {:ok, ([s, p, o] ++ g ++ ["."]) |> Enum.intersperse(?\s) |> IO.iodata_to_binary()}
     end
   end
 

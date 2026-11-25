@@ -67,6 +67,13 @@ defmodule AshR2RML.Datatype.Registry do
 
   @max_unwrap_depth 16
 
+  @doc """
+  Resolves an Ash type to an RDF datatype and storage type.
+
+  Pipeline: unwrap NewTypes, normalize to a builtin key, then look up the first
+  matching contract (explicit override, semantic literal, enum, money, builtin).
+  Anything else is a typed `Refusal`, never an implicit string.
+  """
   @spec resolve(term(), String.t() | nil, term() | nil) :: {:ok, Datatype.t()} | {:error, Refusal.t()}
   def resolve(ash_type, rdf_override \\ nil, storage_override \\ nil)
 
@@ -149,6 +156,7 @@ defmodule AshR2RML.Datatype.Registry do
     end
   end
 
+  @doc "True when `resolve/1` admits `ash_type` without overrides."
   @spec supported?(term()) :: boolean()
   def supported?(ash_type), do: match?({:ok, _}, resolve(ash_type))
 
@@ -203,6 +211,7 @@ defmodule AshR2RML.Datatype.Registry do
     if function_exported?(module, :subtype_constraints, 0), do: module.subtype_constraints() || [], else: []
   end
 
+  @doc "The builtin table: normalized type key to `{rdf_datatype, storage_type}`."
   @spec builtin_contracts() :: map()
   def builtin_contracts, do: @builtins
 

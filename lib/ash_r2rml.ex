@@ -14,24 +14,61 @@ defmodule AshR2RML do
   than alternate sources of truth.
 
   This module is the thin public API only; it is not a Spark extension.
+
+  ## Example
+
+  Given resources that `use Ash.Resource, extensions: [AshR2RML]`:
+
+      resources = [MyApp.Person, MyApp.Company]
+
+      {:ok, bundle} = AshR2RML.compile(resources)
+      {:ok, turtle} = AshR2RML.render(bundle)
+
+      %AshR2RML.CompilationReceipt{status: :PARTIAL_ALIVE} =
+        AshR2RML.validate(resources)
+
+  Every function returns `{:error, %AshR2RML.Refusal{}}` (or a `:REFUSED`
+  receipt) for input it cannot map; read the refusal's reason to see what to
+  change in the resource.
   """
 
   alias AshR2RML.{Compiler, CompilationReceipt, Refusal}
   alias AshR2RML.Mapping.Bundle
 
-  @doc "Compile one Ash resource into its normalized semantic mapping."
+  @doc """
+  Compile one Ash resource into its normalized semantic mapping.
+
+      mapping = AshR2RML.mapping(MyApp.Person)
+  """
   defdelegate mapping(resource), to: AshR2RML.Resource.Info
 
-  @doc "Compile one or more Ash resources into a closed bundle."
+  @doc """
+  Compile one or more Ash resources into a closed bundle.
+
+      {:ok, %AshR2RML.Mapping.Bundle{}} = AshR2RML.compile([MyApp.Person])
+  """
   defdelegate compile(resources), to: AshR2RML.Compiler, as: :compile
 
-  @doc "Inspect normalized AshR2RML resource mapping."
+  @doc """
+  Inspect normalized AshR2RML resource mapping, returning a typed result
+  instead of raising.
+
+      result = AshR2RML.mapping_result(MyApp.Person)
+  """
   defdelegate mapping_result(resource), to: AshR2RML.Resource.Info
 
-  @doc "Render standards-oriented R2RML Turtle from a bundle or Ash resource set."
+  @doc """
+  Render standards-oriented R2RML Turtle from a bundle or Ash resource set.
+
+      {:ok, turtle} = AshR2RML.render([MyApp.Person])
+  """
   defdelegate render(resources_or_bundle), to: AshR2RML.R2RML
 
-  @doc "Render standards-oriented R2RML Turtle from a bundle or Ash resource set."
+  @doc """
+  Alias of `render/1`, named for the format it produces.
+
+      {:ok, turtle} = AshR2RML.render_r2rml([MyApp.Person])
+  """
   defdelegate render_r2rml(resources_or_bundle), to: AshR2RML.R2RML, as: :render
 
   @doc """

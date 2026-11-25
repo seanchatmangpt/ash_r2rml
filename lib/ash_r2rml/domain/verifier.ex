@@ -80,24 +80,30 @@ defmodule AshR2RML.Domain.Verifier do
       parent = ref.parent_resource
       label = "#{inspect(resource)}.#{inspect(ref.relationship)}"
 
-      cond do
-        parent not in members ->
-          ["#{label}: parent resource #{inspect(parent)} is not in the domain"]
-
-        true ->
-          case Map.get(mappings, parent) do
-            %Mapping.Resource{} = parent_mapping ->
-              subject_errors(label, parent, parent_mapping) ++
-                column_errors(label, resource, mapping, parent, parent_mapping, ref)
-
-            nil ->
-              ["#{label}: parent resource #{inspect(parent)} carries no R2RML mapping"]
-
-            failure ->
-              ["#{label}: parent resource #{inspect(parent)} failed to map: #{describe(failure)}"]
-          end
+      if parent in members do
+        parent_errors(label, resource, mapping, ref, Map.get(mappings, parent))
+      else
+        ["#{label}: parent resource #{inspect(parent)} is not in the domain"]
       end
     end)
+  end
+
+  # Checks one reference object map against its parent's resolved mapping.
+  defp parent_errors(label, resource, mapping, ref, %Mapping.Resource{} = parent_mapping) do
+    parent = ref.parent_resource
+
+    subject_errors(label, parent, parent_mapping) ++
+      column_errors(label, resource, mapping, parent, parent_mapping, ref)
+  end
+
+  defp parent_errors(label, _resource, _mapping, ref, nil),
+    do: ["#{label}: parent resource #{inspect(ref.parent_resource)} carries no R2RML mapping"]
+
+  defp parent_errors(label, _resource, _mapping, ref, failure) do
+    [
+      "#{label}: parent resource #{inspect(ref.parent_resource)} failed to map: " <>
+        describe(failure)
+    ]
   end
 
   @doc """

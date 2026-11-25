@@ -2,74 +2,6 @@
 #
 # SPDX-License-Identifier: MIT
 
-defmodule AshR2RML.Dsl.Class do
-  @moduledoc false
-  @enforce_keys [:iri]
-  defstruct [:iri, :__identifier__, :__spark_metadata__]
-end
-
-defmodule AshR2RML.Dsl.Subject do
-  @moduledoc false
-  defstruct [:template, :column, :constant, :__identifier__, :__spark_metadata__, term_type: :iri]
-end
-
-defmodule AshR2RML.Dsl.Property do
-  @moduledoc false
-  @enforce_keys [:attribute, :predicate_iri]
-  defstruct [
-    :attribute,
-    :predicate_iri,
-    :datatype,
-    :language,
-    :language_column,
-    :constant,
-    :template,
-    :__identifier__,
-    :__spark_metadata__,
-    term_type: :literal
-  ]
-end
-
-defmodule AshR2RML.Dsl.Temporal do
-  @moduledoc false
-  defstruct [:start_attribute, :end_attribute, :__identifier__, :__spark_metadata__]
-end
-
-defmodule AshR2RML.Dsl.Reference do
-  @moduledoc false
-  @enforce_keys [:relationship, :predicate_iri]
-  defstruct [
-    :relationship,
-    :predicate_iri,
-    :inverse_predicate,
-    :guard_class,
-    :__identifier__,
-    :__spark_metadata__,
-    direction: :outgoing
-  ]
-end
-
-defmodule AshR2RML.Dsl.SparqlQuery do
-  @moduledoc false
-  @enforce_keys [:name]
-  defstruct [:name, form: :select, select: [], where: [], __identifier__: nil, __spark_metadata__: nil]
-
-  @type t :: %__MODULE__{
-          name: atom(),
-          form: :select | :construct | :ask | :describe,
-          select: [atom()],
-          where: term(),
-          __identifier__: term(),
-          __spark_metadata__: term()
-        }
-end
-
-defmodule AshR2RML.Dsl.Graph do
-  @moduledoc false
-  @enforce_keys [:iri]
-  defstruct [:iri, :__identifier__, :__spark_metadata__, scope: :resource]
-end
-
 defmodule AshR2RML.Resource do
   @moduledoc """
   Spark extension for Ash-first semantic mapping.
@@ -275,64 +207,78 @@ defmodule AshR2RML.Resource.Persist do
   @impl true
   def transform(dsl) do
     resource = Transformer.get_persisted(dsl, :module)
-
-    grouped =
-      dsl
-      |> Transformer.get_entities([:r2rml])
-      |> Enum.group_by(& &1.__struct__)
-
-    classes = Map.get(grouped, AshR2RML.Dsl.Class, [])
-    subjects = Map.get(grouped, AshR2RML.Dsl.Subject, [])
+    grouped = entities_by_kind(dsl)
     properties = Map.get(grouped, AshR2RML.Dsl.Property, [])
-    references = Map.get(grouped, AshR2RML.Dsl.Reference, [])
     graphs = Map.get(grouped, AshR2RML.Dsl.Graph, [])
-    temporals = Map.get(grouped, AshR2RML.Dsl.Temporal, [])
+    subject = grouped |> Map.get(AshR2RML.Dsl.Subject, []) |> List.first()
 
-    opts = [
-      table_name: Transformer.get_option(dsl, [:r2rml], :table_name, nil),
-      sql_query: Transformer.get_option(dsl, [:r2rml], :sql_query, nil),
-      schema: Transformer.get_option(dsl, [:r2rml], :schema, nil),
-      dsl: dsl
-    ]
-
-    with {:ok, logical_table} <- Introspection.logical_table(resource, opts),
-         {:ok, subject_map} <- compile_subject(resource, dsl, List.first(subjects), graphs),
+    with {:ok, logical_table} <- Introspection.logical_table(resource, table_options(dsl)),
+         {:ok, subject_map} <- compile_subject(resource, dsl, subject, graphs),
          {:ok, property_maps} <- compile_properties(resource, dsl, properties),
-         {:ok, temporal_maps} <- compile_temporals(dsl, temporals),
-         predicate_object_maps = property_maps ++ temporal_maps,
-         {:ok, reference_object_maps} <- compile_references(resource, dsl, references) do
-      attribute_columns =
-        dsl
-        |> Ash.Resource.Info.attributes()
-        |> Map.new(fn attribute -> {attribute.name, to_string(attribute.source || attribute.name)} end)
-
+         {:ok, temporal_maps} <- compile_temporals(dsl, Map.get(grouped, AshR2RML.Dsl.Temporal, [])),
+         {:ok, reference_object_maps} <-
+           compile_references(resource, dsl, Map.get(grouped, AshR2RML.Dsl.Reference, [])) do
       mapping =
-        %Resource{
-          ash_resource: resource,
-          class_iris: classes |> Enum.flat_map(&List.wrap(&1.iri)) |> Enum.uniq(),
+        build_mapping(dsl, resource, grouped, %{
           logical_table: logical_table,
           subject_map: subject_map,
-          predicate_object_maps: predicate_object_maps,
-          reference_object_maps: reference_object_maps,
-          graph_maps: compile_graphs(graphs, :resource),
-          identities: Introspection.identities(dsl),
-          metadata: %{
-            attribute_columns: attribute_columns,
-            data_layer: Ash.DataLayer.data_layer(dsl),
-            source: :ash_first,
-            derived_attributes:
-              dsl
-              |> derived_names()
-              |> Map.take(Enum.map(properties, & &1.attribute))
-          }
-        }
-        |> AshR2RML.Mapping.normalize()
+          predicate_object_maps: property_maps ++ temporal_maps,
+          reference_object_maps: reference_object_maps
+        })
 
       {:ok, Transformer.persist(dsl, :ash_r2rml_public_mapping, mapping)}
     else
       {:error, %Refusal{} = refusal} -> {:error, refusal.detail}
       {:error, other} -> {:error, inspect(other)}
     end
+  end
+
+  defp entities_by_kind(dsl) do
+    dsl
+    |> Transformer.get_entities([:r2rml])
+    |> Enum.group_by(& &1.__struct__)
+  end
+
+  defp table_options(dsl) do
+    [
+      table_name: Transformer.get_option(dsl, [:r2rml], :table_name, nil),
+      sql_query: Transformer.get_option(dsl, [:r2rml], :sql_query, nil),
+      schema: Transformer.get_option(dsl, [:r2rml], :schema, nil),
+      dsl: dsl
+    ]
+  end
+
+  defp build_mapping(dsl, resource, grouped, compiled) do
+    classes = Map.get(grouped, AshR2RML.Dsl.Class, [])
+    properties = Map.get(grouped, AshR2RML.Dsl.Property, [])
+    graphs = Map.get(grouped, AshR2RML.Dsl.Graph, [])
+
+    %Resource{
+      ash_resource: resource,
+      class_iris: classes |> Enum.flat_map(&List.wrap(&1.iri)) |> Enum.uniq(),
+      logical_table: compiled.logical_table,
+      subject_map: compiled.subject_map,
+      predicate_object_maps: compiled.predicate_object_maps,
+      reference_object_maps: compiled.reference_object_maps,
+      graph_maps: compile_graphs(graphs, :resource),
+      identities: Introspection.identities(dsl),
+      metadata: %{
+        attribute_columns: attribute_columns(dsl),
+        data_layer: Ash.DataLayer.data_layer(dsl),
+        source: :ash_first,
+        derived_attributes:
+          dsl
+          |> derived_names()
+          |> Map.take(Enum.map(properties, & &1.attribute))
+      }
+    }
+    |> AshR2RML.Mapping.normalize()
+  end
+
+  defp attribute_columns(dsl) do
+    dsl
+    |> Ash.Resource.Info.attributes()
+    |> Map.new(fn attribute -> {attribute.name, to_string(attribute.source || attribute.name)} end)
   end
 
   defp compile_subject(resource, _dsl, nil, _graphs) do
@@ -688,114 +634,4 @@ defmodule AshR2RML.Resource.Persist do
 
   defp reverse_ok({:ok, values}), do: {:ok, Enum.reverse(values)}
   defp reverse_ok(other), do: other
-end
-
-defmodule AshR2RML.Resource.Verify do
-  @moduledoc false
-  use Spark.Dsl.Verifier
-
-  alias Spark.Dsl.Verifier
-
-  @impl true
-  def verify(dsl) do
-    case Verifier.get_persisted(dsl, :ash_r2rml_public_mapping, nil) do
-      nil ->
-        {:error,
-         Spark.Error.DslError.exception(
-           message: "AshR2RML mapping was not persisted; semantic compilation did not complete"
-         )}
-
-      mapping ->
-        case AshR2RML.Mapping.validate(mapping) do
-          :ok ->
-            :ok
-
-          {:error, refusals} ->
-            {:error,
-             Spark.Error.DslError.exception(message: Enum.map_join(refusals, "; ", &"#{&1.code}: #{&1.detail}"))}
-        end
-    end
-  end
-end
-
-defmodule AshR2RML.Resource.Info do
-  @moduledoc "Public introspection over the normalized mapping IR."
-
-  alias AshR2RML.Refusal
-
-  @spec mapping(module()) :: AshR2RML.Mapping.Resource.t() | nil
-  def mapping(resource) do
-    case mapping_result(resource) do
-      {:ok, mapping} -> mapping
-      {:error, _} -> nil
-    end
-  end
-
-  @doc """
-  The persisted mapping of a resource, or a typed refusal when the module carries none
-  (plain Ash resources, non-Spark modules, resources without the extension).
-  """
-  @spec mapping_result(module()) ::
-          {:ok, AshR2RML.Mapping.Resource.t()} | {:error, Refusal.t()}
-  def mapping_result(resource) do
-    case Spark.Dsl.Extension.get_persisted(resource, :ash_r2rml_public_mapping, nil) do
-      %AshR2RML.Mapping.Resource{} = mapping -> {:ok, mapping}
-      _ -> {:error, not_mapped(resource)}
-    end
-  rescue
-    UndefinedFunctionError -> {:error, not_mapped(resource)}
-    ArgumentError -> {:error, not_mapped(resource)}
-  end
-
-  defp not_mapped(resource) do
-    Refusal.new(
-      :REFUSED_MISSING_SUBJECT_MAP,
-      resource,
-      "resource does not carry the AshR2RML extension mapping"
-    )
-  end
-
-  def mapping!(resource) do
-    case mapping_result(resource) do
-      {:ok, mapping} -> mapping
-      {:error, refusal} -> raise ArgumentError, "#{refusal.code}: #{refusal.detail}"
-    end
-  end
-
-  @doc "Resources of an Ash domain that carry the AshR2RML extension."
-  @spec domain_resources(module()) :: [module()]
-  def domain_resources(domain) do
-    domain
-    |> Ash.Domain.Info.resources()
-    |> Enum.filter(fn resource ->
-      extensions = Spark.extensions(resource)
-      AshR2RML in extensions or AshR2RML.Resource in extensions
-    end)
-  end
-
-  @doc "True when the module carries a mapping. Never raises, including on plain Ash resources."
-  @spec mapped?(term()) :: boolean()
-  def mapped?(resource), do: match?({:ok, _}, fetch_mapping(resource))
-
-  @doc """
-  Fetches the mapping for a module without raising.
-
-  Plain Ash resources, non-Spark modules, and non-atoms yield `{:error, :not_mapped}`.
-  """
-  @spec fetch_mapping(term()) :: {:ok, AshR2RML.Mapping.Resource.t()} | {:error, :not_mapped}
-  def fetch_mapping(resource) when is_atom(resource) and not is_nil(resource) do
-    case mapping_result(resource) do
-      {:ok, %AshR2RML.Mapping.Resource{} = mapping} -> {:ok, mapping}
-      {:error, %Refusal{}} -> {:error, :not_mapped}
-    end
-  end
-
-  def fetch_mapping(_), do: {:error, :not_mapped}
-
-  @spec sparql_queries(module()) :: [AshR2RML.Dsl.SparqlQuery.t()]
-  def sparql_queries(resource) do
-    Spark.Dsl.Extension.get_entities(resource, [:sparql])
-  rescue
-    UndefinedFunctionError -> []
-  end
 end

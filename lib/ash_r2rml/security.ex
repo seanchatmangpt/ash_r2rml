@@ -264,13 +264,17 @@ defmodule AshR2RML.Security do
       Enum.flat_map(mapping.reference_object_maps, & &1.graph_maps)
   end
 
-  defp graph_fields(%{strategy: :column, value: value}), do: [value]
-  defp graph_fields(%{strategy: :template, value: value}) when is_binary(value), do: template_columns(value)
-  defp graph_fields(_), do: []
+  defp graph_fields(term_map), do: term_map_fields(term_map)
 
-  defp object_fields(%{strategy: :column, value: value}), do: [value]
-  defp object_fields(%{strategy: :template, value: value}) when is_binary(value), do: template_columns(value)
-  defp object_fields(_), do: []
+  defp object_fields(term_map), do: term_map_fields(term_map)
+
+  # Columns read by a graph or object term map: the column itself or its template placeholders.
+  defp term_map_fields(%{strategy: :column, value: value}), do: [value]
+
+  defp term_map_fields(%{strategy: :template, value: value}) when is_binary(value),
+    do: template_columns(value)
+
+  defp term_map_fields(_), do: []
 
   # The single placeholder scanner for subject, graph and object templates.
   defp template_columns(template) do
@@ -306,13 +310,9 @@ defmodule AshR2RML.Security do
   """
   @spec sensitive_mapped_attributes(module(), Resource.t()) :: [atom()]
   def sensitive_mapped_attributes(ash_resource, %Resource{predicate_object_maps: predicate_object_maps}) do
-    attrs =
-      predicate_object_maps
-      |> Enum.map(& &1.attribute)
-      |> Enum.reject(&is_nil/1)
-      |> Enum.uniq()
-
-    Enum.filter(attrs, fn attribute ->
+    predicate_object_maps
+    |> mapped_attributes()
+    |> Enum.filter(fn attribute ->
       try do
         match?(%{sensitive?: true}, Ash.Resource.Info.attribute(ash_resource, attribute))
       rescue
@@ -476,19 +476,22 @@ defmodule AshR2RML.Security do
   """
   @spec non_attribute_mapped_fields(module(), Resource.t()) :: [atom()]
   def non_attribute_mapped_fields(ash_resource, %Resource{predicate_object_maps: predicate_object_maps}) do
+    attributes = mapped_attributes(predicate_object_maps)
+
+    try do
+      Enum.filter(attributes, &is_nil(Ash.Resource.Info.attribute(ash_resource, &1)))
+    rescue
+      # Fail closed: when lookup raises, no mapped attribute is admitted.
+      _ -> attributes
+    end
+  end
+
+  # Distinct, non-nil Ash attribute names referenced by predicate-object maps.
+  defp mapped_attributes(predicate_object_maps) do
     predicate_object_maps
     |> Enum.map(& &1.attribute)
     |> Enum.reject(&is_nil/1)
     |> Enum.uniq()
-    |> Enum.filter(fn attribute ->
-      is_nil(Ash.Resource.Info.attribute(ash_resource, attribute))
-    end)
-  rescue
-    _ ->
-      predicate_object_maps
-      |> Enum.map(& &1.attribute)
-      |> Enum.reject(&is_nil/1)
-      |> Enum.uniq()
   end
 
   @doc """
@@ -527,9 +530,7 @@ defmodule AshR2RML.Security do
   @spec unenforceable_attributes(module(), Resource.t()) :: [atom()]
   def unenforceable_attributes(ash_resource, %Resource{predicate_object_maps: predicate_object_maps}) do
     predicate_object_maps
-    |> Enum.map(& &1.attribute)
-    |> Enum.reject(&is_nil/1)
-    |> Enum.uniq()
+    |> mapped_attributes()
     |> Enum.filter(&field_policy_protected?(ash_resource, &1))
   end
 

@@ -2,6 +2,11 @@
 #
 # SPDX-License-Identifier: MIT
 
+# SPARQL value types: Query (admission), Observation (evidence) and Result
+# (normalization). Execution strategies live in sparql/local.ex
+# (AshR2RML.SPARQL.Local) and sparql/protocol.ex (AshR2RML.SPARQL.Protocol,
+# with host vetting in sparql/protocol/host.ex).
+
 defmodule AshR2RML.SPARQL.Query do
   @moduledoc """
   Admitted SPARQL query identity.
@@ -23,6 +28,12 @@ defmodule AshR2RML.SPARQL.Query do
           sha256: String.t()
         }
 
+  @doc """
+  Reads a SPARQL query from `file_path` and admits it.
+
+  An unreadable file returns `:REFUSED_UNPROVEN_EQUIVALENCE` with the path in
+  the evidence.
+  """
   @spec load_file(String.t(), keyword()) :: {:ok, t()} | {:error, Refusal.t()}
   def load_file(file_path, _opts \\ []) when is_binary(file_path) do
     case File.read(file_path) do
@@ -40,24 +51,25 @@ defmodule AshR2RML.SPARQL.Query do
     end
   end
 
+  @doc """
+  Admits query text, a parsed `SPARQL.Query`, or an already admitted `t()`.
+
+  The identity (`sha256`) covers the exact lexical query text. Text that
+  SPARQL.ex rejects, and any other input shape, returns
+  `:REFUSED_UNPROVEN_EQUIVALENCE`.
+  """
   @spec admit(t() | String.t() | Elixir.SPARQL.Query.t()) :: {:ok, t()} | {:error, Refusal.t()}
   def admit(%__MODULE__{} = admitted), do: {:ok, admitted}
 
   def admit(%Elixir.SPARQL.Query{query_string: source} = parsed) when is_binary(source) do
-    {:ok,
-     %__MODULE__{
-       source: source,
-       parsed: parsed,
-       form: parsed.form,
-       sha256: sha256(source)
-     }}
+    admit_parsed(parsed, source)
   end
 
   def admit(source) when is_binary(source) do
     try do
       case Elixir.SPARQL.Query.new(source, default_prefixes: nil) do
         %Elixir.SPARQL.Query{} = parsed ->
-          admit(parsed, source)
+          admit_parsed(parsed, source)
 
         {:error, reason} ->
           {:error,
@@ -90,7 +102,8 @@ defmodule AshR2RML.SPARQL.Query do
      )}
   end
 
-  def admit(%Elixir.SPARQL.Query{} = parsed, source) when is_binary(source) do
+  # Admits an already parsed `SPARQL.Query` under the lexical `source` it came from.
+  defp admit_parsed(%Elixir.SPARQL.Query{} = parsed, source) when is_binary(source) do
     {:ok,
      %__MODULE__{
        source: source,
@@ -166,6 +179,12 @@ defmodule AshR2RML.SPARQL.Result do
 
   def bound(other, _subject, _max_rows), do: other
 
+  @doc """
+  Normalizes a SPARQL.ex result into `{:ok, kind, rows}`.
+
+  `kind` is `:bindings` (SELECT), `:boolean` (ASK) or `:rdf` (graph results).
+  Unsupported shapes return `:REFUSED_UNPROVEN_EQUIVALENCE`.
+  """
   @spec normalize(term()) :: {:ok, atom(), list()} | {:error, Refusal.t()}
   def normalize(%Elixir.SPARQL.Query.Result{results: results}) when is_list(results) do
     {:ok, :bindings, Enum.map(results, &normalize_binding/1)}
@@ -191,6 +210,7 @@ defmodule AshR2RML.SPARQL.Result do
     end
   end
 
+  @doc "SHA-256 (lowercase hex) over the multiset-normalized rows; row order does not matter."
   @spec hash_rows(list()) :: String.t()
   def hash_rows(rows) do
     rows
@@ -254,454 +274,5 @@ defmodule AshR2RML.SPARQL.Result do
     if RDF.Term.term?(value), do: RDF.Term.value(value), else: value
   rescue
     _ -> value
-  end
-end
-
-defmodule AshR2RML.SPARQL.Local do
-  @moduledoc "Explicit SPARQL.ex execution against an RDF.ex data structure."
-
-  alias AshR2RML.Refusal
-  alias AshR2RML.SPARQL.{Observation, Query, Result}
-
-  @doc "Option `:max_rows` bounds the result (default 100_000), else `:REFUSED_RESOURCE_BOUND`."
-  @spec query(RDF.Data.Source.t(), String.t() | Query.t(), keyword()) ::
-          {:ok, Observation.t()} | {:error, Refusal.t()}
-  def query(data, query, opts \\ []) do
-    max_rows = Keyword.get(opts, :max_rows, Result.default_max_rows())
-
-    with {:ok, admitted} <- Query.admit(query) do
-      try do
-        result = Elixir.SPARQL.execute_query(data, admitted.parsed)
-
-        with {:ok, result_kind, rows} <-
-               admitted.form
-               |> normalize_local_result(result)
-               |> Result.bound(:local_sparql_execution, max_rows) do
-          {:ok,
-           %Observation{
-             strategy: :local_rdf,
-             query_sha256: admitted.sha256,
-             query_form: admitted.form,
-             status: :PARTIAL_ALIVE,
-             standing: :observed_local_rdf_execution,
-             evidence_kind: :in_memory_execution,
-             result_kind: result_kind,
-             result_sha256: Result.hash_rows(rows),
-             rows: rows,
-             metadata: %{engine: :sparql_ex}
-           }}
-        end
-      rescue
-        exception ->
-          {:error,
-           Refusal.new(
-             :REFUSED_UNPROVEN_EQUIVALENCE,
-             :local_sparql_execution,
-             "SPARQL.ex could not execute the admitted query against the supplied RDF data",
-             %{
-               query_form: admitted.form,
-               exception: Exception.message(exception),
-               engine_scope: :sparql_ex_local
-             }
-           )}
-      end
-    end
-  end
-
-  # SPARQL.ex 0.3.x represents local ASK truth as a solution sequence:
-  # one empty binding for true and an empty sequence for false. Normalize that
-  # engine-specific representation into the same boolean observation contract
-  # used by protocol ASK results before knowledge-hook evaluation sees it.
-  defp normalize_local_result(:ask, result) do
-    case Result.normalize(result) do
-      {:ok, :boolean, _rows} = normalized -> normalized
-      {:ok, :bindings, rows} -> {:ok, :boolean, [%{"ask" => rows != []}]}
-      other -> other
-    end
-  end
-
-  defp normalize_local_result(_form, result), do: Result.normalize(result)
-end
-
-defmodule AshR2RML.SPARQL.Protocol do
-  @moduledoc """
-  Read-only W3C SPARQL Protocol execution through SPARQL.Client.
-
-  SPARQL.Client also implements update operations, but this module deliberately
-  exposes queries only. Verification capability never manufactures remote
-  mutation authority.
-  """
-
-  alias AshR2RML.Refusal
-  alias AshR2RML.SPARQL.{Observation, Query, Result}
-
-  @default_timeout_ms 30_000
-
-  @doc """
-  Options: `:timeout` (ms, default 30_000, always merged into the httpc adapter
-  options as `:timeout` and `:connect_timeout`; `autoredirect: false` is always
-  set), `:max_rows` (default #{Result.default_max_rows()}; exceeding it
-  refuses with `:REFUSED_RESOURCE_BOUND`), `:allow_private_network`,
-  `:follow_redirects` (default 0; a positive integer opts in to redirects, which
-  are NOT re-vetted against the private-network guard), and the allowlisted
-  SPARQL.Client options `:request_method`, `:protocol_version`,
-  `:accept_header`, `:default_graph`, `:named_graph`, `:raw_mode`, plus
-  `:request_opts`. Any other option (e.g. `:logger`, `:max_redirects`,
-  `:headers`) is refused with `:REFUSED_INVALID_FEDERATION_ENVIRONMENT`
-  (`evidence.unknown_options`), never silently dropped. A 3xx
-  response with redirects disabled refuses with
-  `:REFUSED_INVALID_FEDERATION_ENVIRONMENT` ("redirects are not followed").
-
-  Private-network guard (`private_ip?/1`) covers: IPv4 0/8, 10/8, 100.64/10,
-  127/8, 169.254/16, 172.16/12, 192.0.0/24, 192.0.2/24, 192.88.99/24,
-  192.168/16, 198.18/15, 198.51.100/24, 203.0.113/24, 224/4 and 240/4; IPv6
-  `::`, `::1`, IPv4-mapped/compatible/translated (`::ffff:0:a.b.c.d`) and
-  NAT64 `64:ff9b::/96` (embedded v4 checked), NAT64 local-use `64:ff9b:1::/48`,
-  6to4 `2002::/16` (embedded v4 checked), Teredo `2001::/32`, documentation
-  `2001:db8::/32`, `fc00::/7`, `fe80::/10` through `fec0::/10` (to `feff`) and
-  multicast `ff00::/8`. A trailing dot on hostnames is ignored.
-
-  Endpoints carrying userinfo, a fragment or a query string are refused with
-  `:REFUSED_INVALID_FEDERATION_ENVIRONMENT`.
-  """
-  @spec query(String.t(), String.t() | Query.t(), keyword()) ::
-          {:ok, Observation.t()} | {:error, term()}
-  def query(endpoint, query, opts \\ []) when is_binary(endpoint) do
-    {allow_private, opts} = Keyword.pop(opts, :allow_private_network, false)
-
-    with :ok <- validate_options(endpoint, opts),
-         :ok <- validate_endpoint(endpoint, allow_private) do
-      client_opts = client_opts(opts)
-
-      do_query(
-        endpoint,
-        query,
-        client_opts,
-        &no_redirect_client/3,
-        :sparql_protocol,
-        :observed_remote_query
-      )
-    end
-  end
-
-  # SPARQL.Client.query/3 validates :max_redirects as :pos_integer, so 0 (no
-  # redirects) cannot be passed through it. This drives the same
-  # Request.build/Request.call pipeline directly (options are already
-  # allowlisted by client_opts/1) so Tesla's FollowRedirects runs with
-  # max_redirects: 0, which refuses to follow any 3xx.
-  @doc false
-  def no_redirect_client(%Elixir.SPARQL.Query{} = parsed, endpoint, opts) do
-    with {:ok, request} <-
-           Elixir.SPARQL.Client.Request.build(
-             Elixir.SPARQL.Client.Query,
-             parsed.form,
-             parsed.query_string,
-             endpoint,
-             opts
-           ) do
-      case Elixir.SPARQL.Client.Request.call(request, opts) do
-        {:ok, %{result: result}} ->
-          {:ok, result}
-
-        {:error, {Tesla.Middleware.FollowRedirects, :too_many_redirects}} ->
-          {:error, redirect_refusal(endpoint)}
-
-        {:error, %Elixir.SPARQL.Client.HTTPError{status: status}}
-        when is_integer(status) and status in 300..399 ->
-          {:error, redirect_refusal(endpoint)}
-
-        other ->
-          other
-      end
-    end
-  end
-
-  defp redirect_refusal(endpoint) do
-    Refusal.new(
-      :REFUSED_INVALID_FEDERATION_ENVIRONMENT,
-      redact_uri_string(endpoint),
-      "redirects are not followed",
-      %{redirect: true}
-    )
-  end
-
-  defp redact_uri_string(endpoint) do
-    case URI.parse(endpoint) do
-      %URI{} = uri -> redact_endpoint(uri)
-    end
-  end
-
-  @forwarded_opts [
-    :request_method,
-    :protocol_version,
-    :accept_header,
-    :default_graph,
-    :named_graph,
-    :raw_mode,
-    :max_rows
-  ]
-
-  @accepted_opts [:timeout, :follow_redirects, :request_opts] ++ @forwarded_opts
-
-  defp validate_options(endpoint, opts) do
-    case Keyword.keys(opts) -- @accepted_opts do
-      [] ->
-        :ok
-
-      unknown ->
-        {:error,
-         Refusal.new(
-           :REFUSED_INVALID_FEDERATION_ENVIRONMENT,
-           redact_uri_string(endpoint),
-           "unknown SPARQL protocol options are refused, not dropped",
-           %{unknown_options: Enum.uniq(unknown), accepted_options: @accepted_opts}
-         )}
-    end
-  end
-
-  @doc false
-  # Builds the option list handed to SPARQL.Client. Only allowlisted keys pass;
-  # redirects are disabled (max_redirects: 0) unless the caller opts in with
-  # `follow_redirects: n`; `:timeout` is always merged into request_opts.
-  @spec client_opts(keyword()) :: keyword()
-  def client_opts(opts) do
-    timeout = Keyword.get(opts, :timeout, @default_timeout_ms)
-
-    max_redirects =
-      case Keyword.get(opts, :follow_redirects, 0) do
-        n when is_integer(n) and n >= 0 -> n
-        _ -> 0
-      end
-
-    caller_request_opts =
-      case Keyword.get(opts, :request_opts, []) do
-        list when is_list(list) -> list
-        _ -> []
-      end
-
-    adapter =
-      caller_request_opts
-      |> Keyword.get(:adapter, [])
-      |> then(&if(Keyword.keyword?(&1), do: &1, else: []))
-      |> Keyword.put(:timeout, timeout)
-      |> Keyword.put(:connect_timeout, timeout)
-      |> Keyword.put(:autoredirect, false)
-
-    request_opts = Keyword.put(caller_request_opts, :adapter, adapter)
-
-    opts
-    |> Keyword.take(@forwarded_opts)
-    |> Keyword.put(:max_redirects, max_redirects)
-    |> Keyword.put(:request_opts, request_opts)
-  end
-
-  defp validate_endpoint(endpoint, allow_private) do
-    case URI.parse(endpoint) do
-      %URI{scheme: scheme, host: host, userinfo: userinfo, fragment: fragment, query: query} = uri
-      when scheme in ["http", "https"] and is_binary(host) and host != "" and
-             (userinfo != nil or fragment != nil or query != nil) ->
-        {:error,
-         Refusal.new(
-           :REFUSED_INVALID_FEDERATION_ENVIRONMENT,
-           redact_endpoint(uri),
-           "SPARQL endpoint must not carry userinfo, a fragment, or a query string",
-           %{
-             userinfo: userinfo != nil,
-             fragment: fragment != nil,
-             query: query != nil
-           }
-         )}
-
-      %URI{scheme: scheme, host: host}
-      when scheme in ["http", "https"] and is_binary(host) and host != "" ->
-        if allow_private == true do
-          :ok
-        else
-          case vet_host(host) do
-            :ok ->
-              :ok
-
-            {:private, addrs} ->
-              {:error,
-               Refusal.new(
-                 :REFUSED_INVALID_FEDERATION_ENVIRONMENT,
-                 endpoint,
-                 "SPARQL endpoint resolves to a private network address; " <>
-                   "pass allow_private_network: true to permit",
-                 %{private_network: true, resolved: Enum.map(addrs, &ip_string/1)}
-               )}
-
-            :unresolved ->
-              {:error,
-               Refusal.new(
-                 :REFUSED_INVALID_FEDERATION_ENVIRONMENT,
-                 endpoint,
-                 "SPARQL endpoint host did not resolve; refused fail-closed",
-                 %{private_network: false, dns_unresolved: true}
-               )}
-          end
-        end
-
-      _ ->
-        {:error,
-         Refusal.new(
-           :REFUSED_INVALID_FEDERATION_ENVIRONMENT,
-           redact_uri_string(endpoint),
-           "SPARQL endpoint must be an http or https URL with a non-empty host",
-           %{allowed_schemes: ["http", "https"]}
-         )}
-    end
-  end
-
-  # Drops userinfo, query and fragment so credentials never reach a Refusal.
-  defp redact_endpoint(%URI{} = uri),
-    do: URI.to_string(%URI{uri | userinfo: nil, query: nil, fragment: nil})
-
-  @dns_timeout_ms 2_000
-
-  # Vets the host the client is about to connect to. Literal IPs are checked
-  # directly; names are resolved (A and AAAA, bounded timeout) and refused if ANY
-  # resolved address is private/loopback/link-local/metadata. Resolution failure
-  # in both families is refused (fail-closed). Residual: the HTTP client resolves
-  # again at connect, so a rebind inside that window is not closed by vetting alone;
-  # use a pinned-IP URL for hostile networks.
-  @spec vet_host(String.t()) :: :ok | {:private, [:inet.ip_address()]} | :unresolved
-  defp vet_host(host) do
-    h =
-      host
-      |> String.trim_leading("[")
-      |> String.trim_trailing("]")
-      |> String.downcase()
-      |> String.trim_trailing(".")
-
-    cond do
-      h == "localhost" or String.ends_with?(h, ".localhost") ->
-        {:private, [{127, 0, 0, 1}]}
-
-      match?({:ok, _}, :inet.parse_address(String.to_charlist(h))) ->
-        {:ok, ip} = :inet.parse_address(String.to_charlist(h))
-        if private_ip?(ip), do: {:private, [ip]}, else: :ok
-
-      true ->
-        addrs = resolve_all(String.to_charlist(h))
-
-        cond do
-          addrs == [] -> :unresolved
-          Enum.any?(addrs, &private_ip?/1) -> {:private, Enum.filter(addrs, &private_ip?/1)}
-          true -> :ok
-        end
-    end
-  end
-
-  defp resolve_all(name) do
-    [:inet, :inet6]
-    |> Enum.flat_map(fn family ->
-      case :inet.getaddrs(name, family, @dns_timeout_ms) do
-        {:ok, addrs} -> addrs
-        {:error, _} -> []
-      end
-    end)
-    |> Enum.uniq()
-  end
-
-  defp ip_string(ip), do: ip |> :inet.ntoa() |> to_string()
-
-  @doc false
-  @spec private_ip?(:inet.ip_address()) :: boolean()
-  def private_ip?({0, _, _, _}), do: true
-  def private_ip?({100, b, _, _}) when b in 64..127, do: true
-  def private_ip?({127, _, _, _}), do: true
-  def private_ip?({10, _, _, _}), do: true
-  def private_ip?({172, b, _, _}) when b in 16..31, do: true
-  def private_ip?({192, 168, _, _}), do: true
-  def private_ip?({192, 0, 0, _}), do: true
-  def private_ip?({192, 0, 2, _}), do: true
-  def private_ip?({192, 88, 99, _}), do: true
-  def private_ip?({198, 51, 100, _}), do: true
-  def private_ip?({203, 0, 113, _}), do: true
-  def private_ip?({198, b, _, _}) when b in 18..19, do: true
-  def private_ip?({169, 254, _, _}), do: true
-  # multicast 224/4 and reserved 240/4 (includes 255.255.255.255)
-  def private_ip?({a, _, _, _}) when a >= 224, do: true
-  def private_ip?({0, 0, 0, 0, 0, 0, 0, 0}), do: true
-  def private_ip?({0, 0, 0, 0, 0, 0, 0, 1}), do: true
-
-  # IPv4-mapped ::ffff:a.b.c.d and IPv4-compatible ::a.b.c.d
-  def private_ip?({0, 0, 0, 0, 0, 0xFFFF, a, b}), do: private_ip?(v4(a, b))
-  # IPv4-translated ::ffff:0:a.b.c.d (RFC 2765)
-  def private_ip?({0, 0, 0, 0, 0xFFFF, 0, a, b}), do: private_ip?(v4(a, b))
-  # NAT64 local-use 64:ff9b:1::/48
-  def private_ip?({0x64, 0xFF9B, 1, _, _, _, _, _}), do: true
-  # Teredo 2001::/32 and documentation 2001:db8::/32
-  def private_ip?({0x2001, 0, _, _, _, _, _, _}), do: true
-  def private_ip?({0x2001, 0xDB8, _, _, _, _, _, _}), do: true
-  # multicast ff00::/8
-  def private_ip?({w, _, _, _, _, _, _, _}) when w >= 0xFF00, do: true
-  def private_ip?({0, 0, 0, 0, 0, 0, a, b}), do: private_ip?(v4(a, b))
-  # NAT64 64:ff9b::/96
-  def private_ip?({0x64, 0xFF9B, 0, 0, 0, 0, a, b}), do: private_ip?(v4(a, b))
-  # 6to4 2002::/16 embeds the v4 address in bits 16..47
-  def private_ip?({0x2002, a, b, _, _, _, _, _}), do: private_ip?(v4(a, b))
-  # link-local fe80::/10 and deprecated site-local fec0::/10
-  def private_ip?({w, _, _, _, _, _, _, _}) when w >= 0xFE80 and w <= 0xFEFF, do: true
-  def private_ip?({w, _, _, _, _, _, _, _}) when w >= 0xFC00 and w <= 0xFDFF, do: true
-  def private_ip?(_), do: false
-
-  defp v4(a, b), do: {div(a, 256), rem(a, 256), div(b, 256), rem(b, 256)}
-
-  @doc "Injected client path for deterministic unit tests. Never a remote-query witness."
-  @spec query_with(String.t(), String.t() | Query.t(), keyword(), function()) ::
-          {:ok, Observation.t()} | {:error, term()}
-  def query_with(endpoint, query, opts, client_fun)
-      when is_binary(endpoint) and is_function(client_fun, 3) do
-    do_query(endpoint, query, opts, client_fun, :injected_client, :test_double_only)
-  end
-
-  defp do_query(endpoint, query, opts, client_fun, evidence_kind, standing) do
-    {max_rows, opts} = Keyword.pop(opts, :max_rows, Result.default_max_rows())
-
-    with {:ok, admitted} <- Query.admit(query),
-         {:ok, result} <- client_fun.(admitted.parsed, endpoint, opts),
-         {:ok, result_kind, rows} <-
-           result |> Result.normalize() |> Result.bound(endpoint, max_rows) do
-      {:ok,
-       %Observation{
-         strategy: :protocol,
-         query_sha256: admitted.sha256,
-         query_form: admitted.form,
-         status: :PARTIAL_ALIVE,
-         standing: standing,
-         evidence_kind: evidence_kind,
-         endpoint: endpoint,
-         result_kind: result_kind,
-         result_sha256: Result.hash_rows(rows),
-         rows: rows,
-         metadata: %{client: :sparql_client}
-       }}
-    else
-      {:error, %Refusal{} = refusal} ->
-        {:error, refusal}
-
-      {:error, reason} ->
-        {:error, reason}
-
-      other ->
-        {:error,
-         Refusal.new(
-           :REFUSED_UNPROVEN_EQUIVALENCE,
-           endpoint,
-           "SPARQL protocol client returned an unrecognized result",
-           %{result: inspect(other)}
-         )}
-    end
-  rescue
-    exception ->
-      {:error,
-       Refusal.new(
-         :REFUSED_UNPROVEN_EQUIVALENCE,
-         endpoint,
-         "SPARQL protocol query raised",
-         %{exception: Exception.message(exception)}
-       )}
   end
 end

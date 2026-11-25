@@ -22,21 +22,40 @@ defmodule AshR2RML.Type do
           | {:iri, String.t()}
           | {:node, map()}
 
+  @doc "What kind of RDF term values of this type become. `use` defaults to `:literal`."
   @callback semantic_kind() :: semantic_kind()
+
+  @doc "Absolute datatype IRI for `:literal` types. `use` defaults literals to `xsd:string`."
   @callback datatype_iri() :: String.t() | nil
+
+  @doc "RDF class IRI for `:value_object` / `:resource` types; `nil` otherwise."
   @callback class_iri() :: String.t() | nil
+
+  @doc "SKOS concept scheme IRI for `:concept` types; `nil` otherwise."
   @callback concept_scheme_iri() :: String.t() | nil
+
+  @doc "SHACL constraints that describe admissible values. `use` defaults to `[]`."
   @callback shacl_constraints() :: keyword() | map()
+
+  @doc "Encodes a value as an RDF term, or returns a typed error."
   @callback to_rdf(term()) :: rdf_term() | {:error, term()}
+
+  @doc "Decodes an RDF term back to a value, or returns a typed error."
   @callback from_rdf(rdf_term()) :: {:ok, term()} | {:error, term()}
 
   # Backwards-compatible scalar datatype surface.
+  @doc "Alias of `c:datatype_iri/0` kept for the scalar datatype surface."
   @callback xsd_datatype() :: String.t() | nil
+
+  @doc "Lexical form of a value. Not injected by `use`; required for default `to_rdf/1`."
   @callback to_rdf_lexical(term()) :: String.t()
+
+  @doc "Parses a lexical form. Not injected by `use`; required for default `from_rdf/1`."
   @callback from_rdf_lexical(String.t()) :: {:ok, term()} | {:error, term()}
 
   @optional_callbacks from_rdf: 1, to_rdf_lexical: 1, from_rdf_lexical: 1
 
+  @doc "True when `module` exports the semantic contract (`semantic_kind/0` and `to_rdf/1`)."
   @spec semantic_type?(term()) :: boolean()
   def semantic_type?(module) when is_atom(module) do
     Code.ensure_loaded?(module) and
@@ -46,6 +65,7 @@ defmodule AshR2RML.Type do
 
   def semantic_type?(_), do: false
 
+  @doc "Reads the declared contract of a semantic type, or `:error` for any other module."
   @spec contract(module()) :: {:ok, map()} | :error
   def contract(module) when is_atom(module) do
     if semantic_type?(module) do
@@ -62,11 +82,13 @@ defmodule AshR2RML.Type do
     end
   end
 
+  @doc "Encodes `value` with `module`; `{:error, :not_semantic_type}` if it has no contract."
   @spec encode(module(), term()) :: rdf_term() | {:error, term()}
   def encode(module, value) when is_atom(module) do
     if semantic_type?(module), do: module.to_rdf(value), else: {:error, :not_semantic_type}
   end
 
+  @doc "Decodes `term` with `module`; typed error if there is no contract or no decoder."
   @spec decode(module(), rdf_term()) :: {:ok, term()} | {:error, term()}
   def decode(module, term) when is_atom(module) do
     cond do
