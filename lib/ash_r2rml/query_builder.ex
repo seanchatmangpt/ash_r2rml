@@ -137,7 +137,7 @@ defmodule AshR2RML.QueryBuilder do
       iex> AshR2RML.QueryBuilder.effective_limit(50, 10)
       11
   """
-  @spec effective_limit(non_neg_integer() | nil, pos_integer()) :: pos_integer() | 0
+  @spec effective_limit(non_neg_integer() | nil, pos_integer()) :: non_neg_integer()
   def effective_limit(nil, max_rows), do: max_rows + 1
   def effective_limit(limit, max_rows) when is_integer(limit), do: min(limit, max_rows + 1)
 

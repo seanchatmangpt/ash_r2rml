@@ -173,7 +173,7 @@ defmodule AshR2RML.RefactorW11TypedCoverageTest do
               assert repr in [inspect(lexical), lexical], "#{attribute}: #{repr}"
 
             {:native, repr} ->
-              assert is_binary(repr), "#{attribute}: #{inspect(row["v"])}"
+              assert repr != "", "#{attribute}: #{inspect(row["v"])}"
           end
       end
     end

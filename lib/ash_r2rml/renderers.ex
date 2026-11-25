@@ -46,6 +46,13 @@ defmodule AshR2RML.R2RML do
 
   """
 
+  @doc """
+  Renders a bundle, a single mapping resource, an Ash resource module, or a list of
+  Ash resource modules to R2RML Turtle.
+
+  Returns `{:ok, turtle}`, or `{:error, reason}` carrying the first typed
+  `AshR2RML.Refusal` from compilation, mapping validation, term validation or rendering.
+  """
   @spec render(Bundle.t() | Resource.t() | module() | [module()]) :: {:ok, String.t()} | {:error, term()}
   def render(%Bundle{} = bundle) do
     bundle = AshR2RML.Mapping.normalize(bundle)

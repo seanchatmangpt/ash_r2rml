@@ -254,8 +254,6 @@ defmodule AshR2RML.Compiler do
     Code.ensure_loaded?(m) and function_exported?(m, :spark_is, 0) and m.spark_is() == Ash.Domain
   end
 
-  defp domain?(_), do: false
-
   defp do_closure([], _seen, acc), do: {:ok, Enum.reverse(acc)}
 
   defp do_closure([resource | rest], seen, acc) do

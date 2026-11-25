@@ -138,9 +138,17 @@ defmodule AshR2RML.PublicNamespaceGateTest do
     iri = normalize_scheme(raw_iri)
     prefixes = @public_namespaces ++ Enum.map(@exceptions, &elem(&1, 0))
 
-    Enum.any?(prefixes, fn prefix ->
+    Enum.any?(prefixes, &prefix_admits?(iri, &1))
+  end
+
+  # A namespace prefix (ending in `/`, `#` or `:`) admits everything beneath it. Any other entry
+  # is a whole IRI and admits only itself, so `<iri>-suffix` is not smuggled in by prefix match.
+  defp prefix_admits?(iri, prefix) do
+    if String.ends_with?(prefix, ["/", "#", ":"]) do
       String.starts_with?(iri, prefix) or iri == String.trim_trailing(prefix, "/")
-    end)
+    else
+      iri == prefix
+    end
   end
 
   defp iris_in(line) do
@@ -189,6 +197,15 @@ defmodule AshR2RML.PublicNamespaceGateTest do
     refute admitted?(Enum.join(["https:", "//invented.test/thing"])), "CONCAT-GATE-FIXTURE"
     refute admitted?(Enum.join(["https:", "//schema.org.invented/"])), "CONCAT-GATE-FIXTURE"
     refute admitted?("ur" <> "n:invented:thing")
+  end
+
+  test "the contributors URL exception admits only that exact IRI (non-vacuity)" do
+    {contributors, _reason} = Enum.at(@exceptions, 2)
+
+    assert admitted?(contributors)
+    refute admitted?(contributors <> "-evil")
+    refute admitted?(contributors <> "/x")
+    refute admitted?(contributors <> ".invented")
   end
 
   test "uppercase schemes are extracted and classified (non-vacuity)" do

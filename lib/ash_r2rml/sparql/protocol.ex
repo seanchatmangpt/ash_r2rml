@@ -126,7 +126,7 @@ defmodule AshR2RML.SPARQL.Protocol do
   defp validate_options(endpoint, opts) do
     case Keyword.keys(opts) -- @accepted_opts do
       [] ->
-        :ok
+        validate_timeout(endpoint, Keyword.get(opts, :timeout, @default_timeout_ms))
 
       unknown ->
         {:error,
@@ -137,6 +137,20 @@ defmodule AshR2RML.SPARQL.Protocol do
            %{unknown_options: Enum.uniq(unknown), accepted_options: @accepted_opts}
          )}
     end
+  end
+
+  # A non-positive-integer timeout (nil, :infinity, 0) would disable the explicit
+  # request bound; refuse instead of forwarding it to httpc.
+  defp validate_timeout(_endpoint, timeout) when is_integer(timeout) and timeout > 0, do: :ok
+
+  defp validate_timeout(endpoint, timeout) do
+    {:error,
+     Refusal.new(
+       :REFUSED_INVALID_FEDERATION_ENVIRONMENT,
+       redact_uri_string(endpoint),
+       "SPARQL protocol :timeout must be a positive integer (ms)",
+       %{timeout: inspect(timeout)}
+     )}
   end
 
   @doc false

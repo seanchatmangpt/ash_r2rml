@@ -48,6 +48,15 @@ defmodule AshR2RML.Subject do
 
   Refuses when the subject map is not a template, a template field is missing or nil, or a
   value cannot be rendered as a string.
+
+  ## Collision risk
+
+  For templates that `from_iri/2` refuses with `:REFUSED_NON_INVERTIBLE_TEMPLATE` (adjacent
+  placeholders, or a separator between placeholders made only of URI-unreserved characters or
+  `%`), `to_iri/2` still renders an IRI. Distinct keys can then render to the same IRI (for
+  example `{a}{b}` with `a: "x", b: "yz"` and `a: "xy", b: "z"`). Callers that need an
+  injective key-to-IRI mapping must use templates with a reserved separator (such as `/`)
+  between placeholders.
   """
   @spec to_iri(source(), struct() | map() | keyword()) ::
           {:ok, String.t()} | {:error, Refusal.t()}

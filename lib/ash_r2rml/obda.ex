@@ -310,11 +310,7 @@ defmodule AshR2RML.OBDA do
   @doc false
   @spec check_supported_shapes(String.t()) :: :ok | {:error, Refusal.t()}
   def check_supported_shapes(sparql) do
-    plain =
-      sparql
-      |> String.replace(~r/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/s, "\"\"")
-      |> String.replace(~r/#[^\n]*/, "")
-      |> String.replace(~r/<[^>\s]*>/, "<>")
+    plain = normalize_sparql(sparql)
 
     cond do
       Regex.match?(~r/\bVALUES\b/i, plain) -> unsupported_shape("VALUES")
@@ -322,6 +318,14 @@ defmodule AshR2RML.OBDA do
       Regex.match?(~r/(<>|\w+:\w*)\s*[\/|]\s*(<>|\w+:)|\^\s*<>|<>[*+]/, plain) -> unsupported_shape("property path")
       true -> :ok
     end
+  end
+
+  # Strings become "", IRIs become <>, comments are dropped, so keyword scans see only real tokens.
+  defp normalize_sparql(sparql) do
+    sparql
+    |> String.replace(~r/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/s, "\"\"")
+    |> String.replace(~r/<[^>\s]*>/, "<>")
+    |> String.replace(~r/#[^\n]*/, "")
   end
 
   defp unsupported_shape(name) do
@@ -347,7 +351,7 @@ defmodule AshR2RML.OBDA do
                   \s* (SELECT|ASK|CONSTRUCT|DESCRIBE)/xi
 
   defp check_select_order(sparql, order) do
-    case Regex.run(@select_clause, sparql) do
+    case Regex.run(@select_clause, normalize_sparql(sparql)) do
       [_, select] -> check_projected(select, order)
       nil -> unmatched_select(sparql)
     end
