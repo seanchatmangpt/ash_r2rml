@@ -100,6 +100,14 @@ defmodule AshR2RML.PublicNamespaceGateTest do
   # slashes. Both defeat the literal scan above.
   @concat_pattern ~r{["'](?:https?|ftp|file|urn|tag|did|mailto):(?://)?["']\s*<>|<>\s*["']:?//}i
 
+  # IRIs assembled with Enum.join: a join whose first element is a scheme-only literal
+  # (`"https:"`, `"https://"`, `"urn:"`) followed by more parts.
+  @join_pattern ~r/Enum\.join\(\[\s*["'](?:https?|ftp|file|urn):(?:\/\/)?["']\s*,/i
+
+  # IRIs assembled by interpolation: an interpolated scheme directly followed by `://` (or `//`)
+  # and a dotted host-ish literal, e.g. scheme-var then `://host.test`.
+  @interp_pattern ~r/#\{[^}]*\}:?\/\/[A-Za-z0-9-]+\.[A-Za-z]/
+
   # A line carrying this marker is a deliberate rule fixture and is exempt from the concat rule.
   # The marker is honoured in this gate file only (non-vacuity fixtures that must build IRIs
   # from parts to avoid tripping the very scan they exercise).
@@ -107,7 +115,12 @@ defmodule AshR2RML.PublicNamespaceGateTest do
   @gate_file "test/public_namespace_gate_test.exs"
 
   # Documented exceptions to the concat rule outside the gate file: {file, exact line text, reason}.
-  @concat_exceptions []
+  # test/refactor_w6_strict_wiring_test.exs builds an off-list IRI with Enum.join on purpose: it
+  # is the fixture proving that strict mode refuses an IRI outside the allowed prefixes.
+  @concat_exceptions [
+    {"test/refactor_w6_strict_wiring_test.exs", "Enum.join([\"https:\", \"\", @offlist_host,",
+     "deliberate off-list IRI fixture for strict-mode refusal"}
+  ]
 
   defp scanned_files, do: Path.wildcard(Path.join(@root, "{lib,test}/**/*.{ex,exs}"))
 
@@ -141,7 +154,8 @@ defmodule AshR2RML.PublicNamespaceGateTest do
   defp foreign_scheme_exception?(relative_file), do: relative_file in @endpoint_test_files
 
   defp concat_hit?(relative_file, line) do
-    Regex.match?(@concat_pattern, line) and
+    (Regex.match?(@concat_pattern, line) or Regex.match?(@join_pattern, line) or
+       Regex.match?(@interp_pattern, line)) and
       not (relative_file == @gate_file and String.contains?(line, @fixture_marker)) and
       not Enum.any?(@concat_exceptions, fn {file, text, _reason} ->
         file == relative_file and String.contains?(line, text)
@@ -171,8 +185,8 @@ defmodule AshR2RML.PublicNamespaceGateTest do
     assert admitted?("urn:uuid:{id}")
     assert admitted?("urn:sha256:00")
     # built from parts so this file's own scan does not see invented IRIs
-    refute admitted?(Enum.join(["https:", "//invented.test/thing"]))
-    refute admitted?(Enum.join(["https:", "//schema.org.invented/"]))
+    refute admitted?(Enum.join(["https:", "//invented.test/thing"])), "CONCAT-GATE-FIXTURE"
+    refute admitted?(Enum.join(["https:", "//schema.org.invented/"])), "CONCAT-GATE-FIXTURE"
     refute admitted?("ur" <> "n:invented:thing")
   end
 
@@ -284,8 +298,33 @@ defmodule AshR2RML.PublicNamespaceGateTest do
     refute concat_hit?(@gate_file, marked)
     assert concat_hit?("lib/x.ex", marked)
 
-    # no documented exceptions are in force: every concat is a hit outside the gate file
-    assert @concat_exceptions == []
+    # the only documented exception is the strict-wiring off-list fixture, for that file alone
+    assert [{"test/refactor_w6_strict_wiring_test.exs", _text, reason}] = @concat_exceptions
+    assert String.length(reason) > 10
+  end
+
+  test "Enum.join and interpolation IRI assembly is detected (non-vacuity)" do
+    # each fixture line is built from pieces so this file's own scan never sees the pattern
+    join_line = Enum.join(["x = Enum.join([", ~s("https:"), ~s(, "", "h.test", "p"], "/")])
+    join_slashes = Enum.join(["x = Enum.join([", ~s("urn:"), ~s(, "a"])])
+    interp_line = Enum.join(["x = ", ~s("), "\#{scheme}", ~s(://h.test/p")])
+    interp_slashes = Enum.join(["x = ", ~s("), "\#{s}", ~s(//h.test")])
+
+    for line <- [join_line, join_slashes, interp_line, interp_slashes] do
+      assert concat_hit?("lib/x.ex", line), "#{line} not detected"
+    end
+
+    # the named exception covers exactly the strict-wiring file and its off-list line
+    strict = "test/refactor_w6_strict_wiring_test.exs"
+    offlist = Enum.join(["c = Enum.join([", ~s("https:"), ~s(, "", @offlist_host, "ns"], "/")])
+    refute concat_hit?(strict, offlist)
+    assert concat_hit?("test/other_test.exs", offlist)
+    assert concat_hit?(strict, join_line)
+
+    # legitimate joins and interpolations are not hits
+    refute concat_hit?("lib/x.ex", ~s|x = Enum.join(["a", "b"], "/")|)
+    refute concat_hit?("lib/x.ex", ~s|x = "urn:uuid:\#{id}"|)
+    refute concat_hit?("lib/x.ex", ~s|x = "\#{name}.test"|)
   end
 
   test "the gate sees the real source tree (non-vacuity)" do

@@ -11,7 +11,8 @@ SPDX-License-Identifier: MIT
 
 AshR2RML is an Ash extension that compiles Ash resources and relationships into standards-valid W3C R2RML mappings. It lets an Ash application persist through its normal data layer—typically AshPostgres—while exposing the same state as RDF through standards-valid R2RML Turtle and the Ash-mediated `AshR2RML.OBDA.InMemory` runtime (the only OBDA backend shipped; no external engine is verified).
 
-AshR2RML is **not** a graph database, **not** an `Ash.DataLayer`, and **not** a SPARQL engine.
+AshR2RML is **not** a graph database, **not** an `Ash.DataLayer`, and **not** a database-side SPARQL-to-SQL rewriting engine.
+SPARQL is evaluated in-process (`AshR2RML.SPARQL.Local`) over rows read through Ash.
 
 ### Scope (v26.11.24)
 
@@ -435,7 +436,7 @@ AshR2RML deliberately does not:
 
 - replace AshPostgres, AshSql, Ecto, or another Ash data layer;
 - store RDF triples itself;
-- implement a SPARQL optimizer;
+- rewrite SPARQL to SQL (only the bounded `Ash.Query` pushdown listed above ships);
 - infer arbitrary OWL semantics;
 - invent missing relationship or identity information;
 - make generated ontology facts executable with ambient authority.

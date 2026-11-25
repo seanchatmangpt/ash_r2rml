@@ -5,17 +5,38 @@
 defmodule AshR2RML.SparkEcosystemTest do
   use ExUnit.Case, async: true
 
-  test "AshR2RML.CheatSheet.generate/0 produces Spark DSL Markdown documentation" do
-    content = AshR2RML.CheatSheet.generate()
-    assert is_binary(content)
-    assert content =~ "AshR2RML.Resource"
-    assert content =~ "r2rml"
+  @doc_path "documentation/reference/dsl_cheatsheet.md"
+
+  defp sections, do: Map.new(AshR2RML.Resource.sections(), &{&1.name, &1})
+
+  test "the extension compiles the r2rml and sparql sections with their entities" do
+    sections = sections()
+    assert Enum.sort(Map.keys(sections)) == [:r2rml, :sparql]
+
+    r2rml_entities = Enum.map(sections.r2rml.entities, & &1.name)
+
+    for name <- [:class, :subject, :property, :temporal, :reference, :graph] do
+      assert name in r2rml_entities
+    end
+
+    assert Enum.map(sections.sparql.entities, & &1.name) == [:query]
   end
 
-  test "Mix.Tasks.AshR2rml.GenerateDocs runs successfully" do
+  test "the cheat sheet documents every compiled section and entity" do
+    content = AshR2RML.CheatSheet.generate()
+    assert byte_size(content) > 0
+
+    for section <- AshR2RML.Resource.sections() do
+      assert content =~ "#{section.name}"
+
+      for entity <- section.entities do
+        assert content =~ "#{entity.name}"
+      end
+    end
+  end
+
+  test "Mix.Tasks.AshR2rml.GenerateDocs writes exactly the generated cheat sheet" do
     assert :ok = Mix.Tasks.AshR2rml.GenerateDocs.run([])
-    assert File.exists?("documentation/reference/dsl_cheatsheet.md")
-    content = File.read!("documentation/reference/dsl_cheatsheet.md")
-    assert content =~ "AshR2RML.Resource"
+    assert File.read!(@doc_path) == AshR2RML.CheatSheet.generate()
   end
 end

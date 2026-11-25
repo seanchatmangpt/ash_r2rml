@@ -25,9 +25,9 @@ Semantic mapping metadata normalized into AshR2RML.Mapping
 ### Examples
 ```
 r2rml do
-  class "http://xmlns.com/foaf/0.1/Person"
+  class "http://schema.org/Person"
   subject template: "urn:uuid:{id}"
-  property :name, "http://xmlns.com/foaf/0.1/name"
+  property :name, "http://schema.org/name"
 end
 
 ```
@@ -57,11 +57,11 @@ Declares one or more rdf:type class IRIs asserted for every subject of this reso
 
 ### Examples
 ```
-class "http://xmlns.com/foaf/0.1/Person"
+class "http://schema.org/Person"
 ```
 
 ```
-class ["http://xmlns.com/foaf/0.1/Person", "http://schema.org/Person"]
+class ["http://schema.org/Person", "http://schema.org/Thing"]
 ```
 
 
@@ -123,11 +123,11 @@ Maps an Ash attribute to a predicate-object map with the given predicate IRI.
 
 ### Examples
 ```
-property :name, "http://xmlns.com/foaf/0.1/name"
+property :name, "http://schema.org/name"
 ```
 
 ```
-property :age, "http://xmlns.com/foaf/0.1/age", datatype: "http://www.w3.org/2001/XMLSchema#integer"
+property :age, "http://schema.org/age", datatype: "http://www.w3.org/2001/XMLSchema#integer"
 ```
 
 

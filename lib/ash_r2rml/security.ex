@@ -312,6 +312,9 @@ defmodule AshR2RML.Security do
   `ash_cloak` `decrypt_by_default` plaintext leak without depending on `ash_cloak` at runtime
   or guessing extension-specific names. The same law applies to any future extension that
   replaces an attribute with a calculation or other derived field.
+
+  Raises `ArgumentError` (carrying the refusal code) when the subject map itself is not
+  admissible; use `admit_in_memory_mapping/3` for the typed `{:error, %AshR2RML.Refusal{}}`.
   """
   @spec sanitize_in_memory_mapping(module(), Resource.t()) :: Resource.t()
   def sanitize_in_memory_mapping(ash_resource, %Resource{} = mapping) when is_atom(ash_resource) do

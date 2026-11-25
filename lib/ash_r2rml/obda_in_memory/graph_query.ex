@@ -40,8 +40,9 @@ defmodule AshR2RML.OBDA.InMemory.GraphQuery do
       iex> AshR2RML.OBDA.InMemory.GraphQuery.plan("SELECT * WHERE { ?s ?p ?o }")
       :none
 
-      iex> {:ok, plan} =
-      ...>   AshR2RML.OBDA.InMemory.GraphQuery.plan("SELECT * WHERE { GRAPH <urn:uuid:5f1c2a64-0000-4000-8000-000000000001> { ?s ?p ?o } }")
+      iex> sparql =
+      ...>   "SELECT * WHERE { GRAPH <urn:uuid:5f1c2a64-0000-4000-8000-000000000001> { ?s ?p ?o } }"
+      iex> {:ok, plan} = AshR2RML.OBDA.InMemory.GraphQuery.plan(sparql)
       iex> {plan.kind, to_string(plan.iri)}
       {:iri, "urn:uuid:5f1c2a64-0000-4000-8000-000000000001"}
   """

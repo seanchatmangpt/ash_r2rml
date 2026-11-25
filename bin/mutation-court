@@ -211,6 +211,25 @@ mutate M12c "per-graph local_opts drops max_rows" \
   "$IN_MEMORY" test/followup_graph_max_rows_test.exs \
   's/\[max_rows: Keyword\.get\(read_opts, :max_rows\) \|\| \@default_max_rows\]/[]/'
 
+# M13: federated protocol client hardening (no redirects, http/https only, host vet, row bound).
+PROTOCOL="lib/ash_r2rml/sparql/protocol.ex"
+
+mutate M13a "no-redirect client re-enables autoredirect" \
+  "$PROTOCOL" test/sparql_protocol_hardening_test.exs \
+  's/Keyword\.put\(:autoredirect, false\)/Keyword.put(:autoredirect, true)/'
+
+mutate M13b "endpoint scheme check admits ftp" \
+  "$PROTOCOL" test/sparql_protocol_hardening_test.exs \
+  's/^(\s*when scheme in \[)"http", "https"(\] and is_binary\(host\) and host != "" ->)/$1"http", "https", "ftp"$2/'
+
+mutate M13c "endpoint host vet skipped (private hosts always admitted)" \
+  "$PROTOCOL" test/sparql_private_network_test.exs \
+  's/if allow_private == true, do: :ok, else: vet_endpoint_host\(endpoint, host\)/:ok/'
+
+mutate M13d "federated Result.bound max_rows guard disabled" \
+  "$PROTOCOL" test/sparql_result_parity_test.exs \
+  's/Result\.bound\(endpoint, max_rows\)/Result.bound(endpoint, max_rows * 1_000_000)/'
+
 if ! git diff --exit-code >/dev/null; then
   echo "FINAL_DIFF_NOT_EMPTY: tracked files differ after the court" >&2
   git diff --stat >&2
@@ -223,5 +242,5 @@ if ! porcelain_empty; then
   exit 4
 fi
 
-echo "MUTATION_COURT_PASS: M1a-M12c (M1abc M2ab M3ab M4ab M5 M6 M7 M8 M9ab M10ab M11ab M12abc) killed, tree clean"
+echo "MUTATION_COURT_PASS: M1a-M13d (M1abc M2ab M3ab M4ab M5 M6 M7 M8 M9ab M10ab M11ab M12abc M13abcd) killed, tree clean"
 exit 0

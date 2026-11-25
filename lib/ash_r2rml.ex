@@ -113,6 +113,20 @@ defmodule AshR2RML do
           standing: :no_cutover,
           refusals: [refusal]
         }
+
+      {:error, other} ->
+        %CompilationReceipt{
+          status: :REFUSED,
+          standing: :no_cutover,
+          refusals: [
+            Refusal.new(
+              :REFUSED_MANIFEST_GENERATION,
+              :render,
+              "R2RML rendering failed with a non-refusal error",
+              %{error: inspect(other)}
+            )
+          ]
+        }
     end
   end
 end

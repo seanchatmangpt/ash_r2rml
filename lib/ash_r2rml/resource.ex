@@ -15,8 +15,8 @@ defmodule AshR2RML.Resource do
     name: :class,
     describe: "Declares one or more rdf:type class IRIs asserted for every subject of this resource.",
     examples: [
-      ~s|class "http://xmlns.com/foaf/0.1/Person"|,
-      ~s|class ["http://xmlns.com/foaf/0.1/Person", "http://schema.org/Person"]|
+      ~s|class "http://schema.org/Person"|,
+      ~s|class ["http://schema.org/Person", "http://schema.org/Thing"]|
     ],
     args: [:iri],
     target: AshR2RML.Dsl.Class,
@@ -46,8 +46,8 @@ defmodule AshR2RML.Resource do
     name: :property,
     describe: "Maps an Ash attribute to a predicate-object map with the given predicate IRI.",
     examples: [
-      ~s|property :name, "http://xmlns.com/foaf/0.1/name"|,
-      ~s|property :age, "http://xmlns.com/foaf/0.1/age", datatype: "http://www.w3.org/2001/XMLSchema#integer"|
+      ~s|property :name, "http://schema.org/name"|,
+      ~s|property :age, "http://schema.org/age", datatype: "http://www.w3.org/2001/XMLSchema#integer"|
     ],
     args: [:attribute, :predicate_iri],
     target: AshR2RML.Dsl.Property,
@@ -137,9 +137,9 @@ defmodule AshR2RML.Resource do
     examples: [
       """
       r2rml do
-        class "http://xmlns.com/foaf/0.1/Person"
+        class "http://schema.org/Person"
         subject template: "urn:uuid:{id}"
-        property :name, "http://xmlns.com/foaf/0.1/name"
+        property :name, "http://schema.org/name"
       end
       """
     ],

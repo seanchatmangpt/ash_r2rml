@@ -287,7 +287,7 @@ defmodule AshR2RML.Mapping do
       iex> AshR2RML.Mapping.template_fields("http://schema.org/{b}/{a}/{b}")
       ["a", "b"]
   """
-  @spec template_fields(String.t()) :: [String.t()]
+  @spec template_fields(term()) :: [String.t()]
   def template_fields(template) when is_binary(template) do
     ~r/\{([^{}]+)\}/
     |> Regex.scan(template, capture: :all_but_first)
