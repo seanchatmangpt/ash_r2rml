@@ -203,9 +203,9 @@ mutate M12a "Sparql.bound/3 max_rows guard disabled" \
   "lib/ash_r2rml/sparql.ex" test/sparql_result_parity_test.exs \
   's/if length\(rows\) > max_rows do/if length(rows) > max_rows * 1_000_000 do/'
 
-mutate M12b "merged GRAPH ?g bound_merged guard disabled" \
+mutate M12b "merged GRAPH ?g running and merged max_rows guards disabled" \
   "$IN_MEMORY" test/followup_graph_max_rows_test.exs \
-  's/is_integer\(max_rows\) and length\(rows\) > max_rows do/is_integer(max_rows) and length(rows) > max_rows * 1_000_000 do/'
+  's/is_integer\(max_rows\) and count > max_rows do/is_integer(max_rows) and count > max_rows * 1_000_000 do/; s/is_integer\(max_rows\) and length\(rows\) > max_rows do/is_integer(max_rows) and length(rows) > max_rows * 1_000_000 do/'
 
 mutate M12c "per-graph local_opts drops max_rows" \
   "$IN_MEMORY" test/followup_graph_max_rows_test.exs \
