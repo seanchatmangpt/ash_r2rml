@@ -82,10 +82,13 @@ defmodule AshR2RML.OBDA do
       result =
         with :ok <- validate_bounds(opts),
              :ok <- check_private_data_layers(resources_or_domain) do
-          case Worker.run(fn -> guarded_execute(resources_or_domain, sparql, opts, started) end, opts) do
+          case Worker.call(fn -> execute(resources_or_domain, sparql, opts, started) end, opts) do
             # Worker wraps the function's own {:ok, _} | {:error, _} return; flatten it.
             {:ok, inner} -> normalize_result(inner)
             {:error, _} = worker_error -> normalize_result(worker_error)
+            # Raises/throws/exits inside the worker keep their real reason, so a Forbidden is
+            # classified REFUSED_UNAUTHORIZED instead of a generic worker crash.
+            {:raised, kind, reason, _stack} -> {:error, wrap_failure(kind, reason)}
           end
         else
           {:error, _} = refused -> normalize_result(refused)
@@ -149,7 +152,8 @@ defmodule AshR2RML.OBDA do
   defp forbidden?(%{__struct__: mod} = reason) do
     mod |> Module.split() |> Enum.member?("Forbidden") or nested?(reason, &forbidden?/1)
   rescue
-    _ -> false
+    # Module.split/1 raises on a non-Elixir module name; that is simply "not a Forbidden".
+    ArgumentError -> false
   end
 
   defp forbidden?(_), do: false
@@ -223,16 +227,6 @@ defmodule AshR2RML.OBDA do
       Ash.DataLayer.Ets.Info.private?(resource) == true
   rescue
     _ -> false
-  end
-
-  # Raises/throws/exits inside the worker become typed errors with the real exception struct
-  # classified (Forbidden -> REFUSED_UNAUTHORIZED), instead of a generic worker crash.
-  defp guarded_execute(source, sparql, opts, started) do
-    execute(source, sparql, opts, started)
-  rescue
-    e -> {:error, wrap_failure(:error, e)}
-  catch
-    kind, reason -> {:error, wrap_failure(kind, reason)}
   end
 
   defp execute(source, sparql, opts, started) do

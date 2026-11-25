@@ -12,6 +12,17 @@ defmodule AshR2RML.Type do
   The public ontology remains authoritative. Implementing this behaviour only
   describes one executable Ash projection; it does not prove equivalence or
   grant persistence/actuation authority.
+
+  ## Example
+
+      defmodule MyApp.Sku do
+        use Ash.Type
+        use AshR2RML.Type, datatype_iri: "http://www.w3.org/2001/XMLSchema#string"
+        # ... Ash.Type callbacks, plus to_rdf_lexical/1 and from_rdf_lexical/1
+      end
+
+      AshR2RML.Type.contract(MyApp.Sku)
+      #=> {:ok, %{semantic_kind: :literal, datatype_iri: "http://www.w3.org/2001/XMLSchema#string", ...}}
   """
 
   @type semantic_kind :: :literal | :iri | :concept | :value_object | :resource

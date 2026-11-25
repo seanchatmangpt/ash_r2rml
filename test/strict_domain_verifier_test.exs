@@ -232,7 +232,7 @@ defmodule AshR2RML.StrictDomainVerifierTest do
             "https:schema.org/Thing",
             "https://schema.org" <> "%2FThing",
             "HTTPS://schema.org/Thing",
-            "https://" <> "/schema.org/Thing"
+            String.replace("https://schema.org/Thing", "//", "///")
           ] do
         assert [_] = strict(Good, with_class(iri), @default), "#{iri} was admitted"
       end

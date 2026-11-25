@@ -8,8 +8,9 @@ defmodule AshR2RML.Capability do
 
   `AshR2RML.QueryBuilder` consults `probe/1` instead of naming data-layer modules, so a layer
   that cannot push a filter, sort, limit or offset down is read without that pushdown and never
-  raises. The probe never raises either: a layer whose `can?/2` crashes or returns a non-boolean
-  reports `false` for that feature.
+  raises. The probe never raises for a module that is not an Ash resource (every feature reports `false`), and a
+  layer whose `can?/2` returns a non-boolean reports `false` for that feature. A crash inside a
+  real layer's `can?/2` is a bug and propagates.
 
   The one fact `can?/2` cannot express is string collation. `bytewise_string_order?/1` keeps an
   explicit allowlist (ETS and SQLite, whose default collation compares binaries bytewise) for
@@ -57,9 +58,7 @@ defmodule AshR2RML.Capability do
   """
   @spec bytewise_string_order?(module()) :: boolean()
   def bytewise_string_order?(resource) when is_atom(resource) do
-    Ash.Resource.Info.data_layer(resource) in @bytewise_collation_layers
-  rescue
-    _ -> false
+    ash_resource?(resource) and Ash.Resource.Info.data_layer(resource) in @bytewise_collation_layers
   end
 
   @doc """
@@ -69,9 +68,7 @@ defmodule AshR2RML.Capability do
   """
   @spec decimal_pushdown?(module()) :: boolean()
   def decimal_pushdown?(resource) when is_atom(resource) do
-    decimal_layer?(Ash.Resource.Info.data_layer(resource))
-  rescue
-    _ -> false
+    ash_resource?(resource) and decimal_layer?(Ash.Resource.Info.data_layer(resource))
   end
 
   @doc """
@@ -88,9 +85,11 @@ defmodule AshR2RML.Capability do
   @spec decimal_layer?(module() | nil) :: boolean()
   def decimal_layer?(layer), do: layer in @decimal_layers
 
+  # Fail-closed for modules that are not Ash resources; a crash inside a real layer's
+  # `can?/2` is a bug and surfaces instead of silently disabling pushdown.
   defp can?(feature, resource) do
-    Ash.DataLayer.can?(feature, resource) == true
-  rescue
-    _ -> false
+    ash_resource?(resource) and Ash.DataLayer.can?(feature, resource) == true
   end
+
+  defp ash_resource?(module), do: Ash.Resource.Info.resource?(module)
 end

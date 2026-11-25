@@ -76,6 +76,11 @@ defmodule AshR2RML do
 
   Both compilation and rendering refusals become a `:REFUSED` receipt carrying
   the typed `AshR2RML.Refusal`; nothing is raised.
+
+      case AshR2RML.validate([MyApp.Person]) do
+        %AshR2RML.CompilationReceipt{status: :PARTIAL_ALIVE} -> :mapped
+        %AshR2RML.CompilationReceipt{status: :REFUSED, refusals: refusals} -> {:refused, refusals}
+      end
   """
   @spec validate(term()) :: CompilationReceipt.t()
   def validate(resources) do

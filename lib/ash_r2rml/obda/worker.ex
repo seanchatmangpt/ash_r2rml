@@ -25,8 +25,22 @@ defmodule AshR2RML.OBDA.Worker do
 
   Worker to caller: `{tag, {:ok, value}}` or `{tag, {:error, kind, reason, stacktrace}}`, where
   `tag` is a fresh reference. Runtime to caller: `{:DOWN, mref, :process, pid, reason}`. A
-  guardian process (two monitors, no links) kills the worker if the caller dies first. On
-  timeout the caller kills the worker, waits for its DOWN, and flushes any late result.
+  guardian process (two monitors, linked to the worker only) kills the worker if the caller
+  dies first. On timeout the caller kills the worker, waits for its DOWN, and flushes any late
+  result.
+
+  ## Lifecycle: who dies when
+
+    * Caller dies: the guardian sees the caller's DOWN and kills the worker.
+    * Worker finishes or crashes: the caller receives the result or DOWN; the guardian sees the
+      worker's DOWN and exits. Links the worker opened during the call are killed on a normal
+      return.
+    * Timeout: the caller kills the worker and waits for its DOWN; the guardian then exits.
+    * Guardian is killed externally: the link takes the worker down with it (fail-closed).
+    * The worker is never linked to the caller, so no failure inside it can kill the caller.
+
+  `call/2` is `run/2` without the crash mapping: an exception raised by `fun` comes back as
+  `{:raised, kind, reason, stacktrace}` so the caller can classify the real reason.
 
   ## Examples
 
@@ -43,6 +57,23 @@ defmodule AshR2RML.OBDA.Worker do
 
   @spec run((-> term()), opts()) :: {:ok, term()} | {:error, Error.t()}
   def run(fun, opts \\ []) when is_function(fun, 0) and is_list(opts) do
+    case call(fun, opts) do
+      {:raised, kind, reason, stack} -> {:error, crash_error(kind, reason, stack)}
+      outcome -> outcome
+    end
+  end
+
+  @doc """
+  Like `run/2`, but a raise/throw/exit inside `fun` is returned as
+  `{:raised, kind, reason, stacktrace}` with the original reason intact, so the caller can
+  classify the real exception instead of the generic `:REFUSED_WORKER_CRASHED`. Bound
+  violations and abnormal worker death are still typed `{:error, %AshR2RML.Error{}}`.
+  """
+  @spec call((-> term()), opts()) ::
+          {:ok, term()}
+          | {:error, Error.t()}
+          | {:raised, :error | :exit | :throw, term(), Exception.stacktrace()}
+  def call(fun, opts \\ []) when is_function(fun, 0) and is_list(opts) do
     timeout = Keyword.get(opts, :timeout_ms, @default_timeout_ms)
     words = Keyword.get(opts, :max_heap_words, @default_max_heap_words)
 
@@ -104,7 +135,7 @@ defmodule AshR2RML.OBDA.Worker do
 
       {^tag, {:error, kind, reason, stack}} ->
         Process.demonitor(mref, [:flush])
-        {:error, crash_error(kind, reason, stack)}
+        {:raised, kind, reason, stack}
 
       {:DOWN, ^mref, :process, ^pid, :killed} ->
         # No flush: the worker's result message, if sent, precedes its DOWN in the mailbox and
@@ -140,9 +171,11 @@ defmodule AshR2RML.OBDA.Worker do
   end
 
   # Owns nothing but two monitors: kills the worker if the caller dies first, exits when the
-  # worker does. Unlinked from both so it never propagates exit signals.
+  # worker does. Linked to the worker only (a normal worker exit never signals the guardian; an
+  # abnormal one takes it down, and a guardian killed from outside takes the worker down), never
+  # to the caller, so it cannot propagate exit signals to it.
   defp start_guardian(parent, worker) do
-    spawn(fn ->
+    spawn_link(fn ->
       pref = Process.monitor(parent)
       wref = Process.monitor(worker)
 

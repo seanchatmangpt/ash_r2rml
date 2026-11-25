@@ -7,6 +7,7 @@ defmodule AshR2RML.Resource.Info do
 
   alias AshR2RML.Refusal
 
+  @doc "The persisted mapping of a resource, or `nil` when it carries none."
   @spec mapping(module()) :: AshR2RML.Mapping.Resource.t() | nil
   def mapping(resource) do
     case mapping_result(resource) do

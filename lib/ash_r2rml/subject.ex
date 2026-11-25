@@ -261,12 +261,12 @@ defmodule AshR2RML.Subject do
   defp lexical(mapping, field, value) do
     case attribute(mapping, field) do
       nil ->
-        non_empty(mapping, field, to_string(value))
+        render_string(mapping, field, value)
 
       %{type: type, constraints: constraints} ->
         with {:ok, cast} when not is_nil(cast) <- Ash.Type.cast_input(type, value, constraints),
              {:ok, cast} <- Ash.Type.apply_constraints(type, cast, constraints) do
-          non_empty(mapping, field, to_string(cast))
+          render_string(mapping, field, cast)
         else
           _ ->
             {:error,
@@ -278,9 +278,13 @@ defmodule AshR2RML.Subject do
              )}
         end
     end
+  end
+
+  # Only the String.Chars call is guarded, and only against its own protocol error.
+  defp render_string(mapping, field, value) do
+    non_empty(mapping, field, to_string(value))
   rescue
-    Protocol.UndefinedError ->
-      {:error, missing(mapping, field)}
+    Protocol.UndefinedError -> {:error, missing(mapping, field)}
   end
 
   # An empty lexical never inverts (from_iri refuses an empty capture), so to_iri refuses too.

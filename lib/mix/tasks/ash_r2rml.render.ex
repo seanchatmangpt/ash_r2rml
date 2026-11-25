@@ -9,7 +9,11 @@ defmodule Mix.Tasks.AshR2rml.Render do
 
       mix ash_r2rml.render MyApp.Person MyApp.Domain
 
-  Raises with the refusal detail when compilation or rendering is refused.
+  Each argument is the name of an already-compiled resource or domain module. Unknown or
+  unloadable names stop the task with the module name; a refusal stops it with the refusal
+  code and detail, so fix the named resource and rerun.
+
+  No options are accepted.
   """
   use Mix.Task
 

@@ -148,22 +148,33 @@ defmodule AshR2RML.Introspection do
       unique per tenant only, so the tenant attribute is added to its keys: a subject
       template must carry the tenant attribute or it is refused as unstable, which
       rejects cross-tenant subject IRI collisions at compile time
+    * under `:context` (schema) multitenancy the same key can exist in every tenant
+      schema, so neither the primary key nor an ordinary identity is globally unique;
+      only an identity declared `all_tenants?: true` is kept. A resource with no such
+      identity yields `[]` and its subject template is refused as unstable
   """
   @spec identities(module() | map()) :: [[atom()]]
-  def identities(source), do: extract_identities(source, tenant_attribute(source))
+  def identities(source), do: extract_identities(source, tenancy(source))
 
-  defp extract_identities(source, tenant) do
+  defp extract_identities(source, tenancy) do
     primary =
-      source
-      |> Ash.Resource.Info.attributes()
-      |> Enum.filter(&Map.get(&1, :primary_key?))
-      |> Enum.map(& &1.name)
+      case tenancy do
+        :context ->
+          []
+
+        _ ->
+          source
+          |> Ash.Resource.Info.attributes()
+          |> Enum.filter(&Map.get(&1, :primary_key?))
+          |> Enum.map(& &1.name)
+      end
 
     declared =
       source
       |> Ash.Resource.Info.identities()
       |> Enum.reject(&partial_identity?/1)
-      |> Enum.map(&scope_to_tenant(List.wrap(&1.keys), Map.get(&1, :all_tenants?, false), tenant))
+      |> Enum.filter(&(tenancy != :context or Map.get(&1, :all_tenants?, false)))
+      |> Enum.map(&scope_to_tenant(List.wrap(&1.keys), Map.get(&1, :all_tenants?, false), tenancy))
 
     [primary | declared]
     |> Enum.reject(&(&1 == []))
@@ -174,13 +185,15 @@ defmodule AshR2RML.Introspection do
 
   defp partial_identity?(identity), do: not is_nil(Map.get(identity, :where))
 
-  defp tenant_attribute(source) do
-    if Ash.Resource.Info.multitenancy_strategy(source) == :attribute,
-      do: Ash.Resource.Info.multitenancy_attribute(source),
-      else: nil
+  defp tenancy(source) do
+    case Ash.Resource.Info.multitenancy_strategy(source) do
+      :attribute -> Ash.Resource.Info.multitenancy_attribute(source)
+      :context -> :context
+      _ -> nil
+    end
   end
 
-  defp scope_to_tenant(keys, true, _tenant), do: keys
+  defp scope_to_tenant(keys, true, _tenancy), do: keys
   defp scope_to_tenant(keys, _all_tenants?, nil), do: keys
   defp scope_to_tenant(keys, _all_tenants?, tenant), do: Enum.uniq(keys ++ [tenant])
 
@@ -338,7 +351,9 @@ defmodule AshR2RML.Introspection do
       _ -> nil
     end
   rescue
-    _ -> nil
+    # Only a module that is not (yet) a Spark resource has no persisted state.
+    UndefinedFunctionError -> nil
+    ArgumentError -> nil
   end
 
   defp infer_logical_table_from_data_layer(resource, source) do

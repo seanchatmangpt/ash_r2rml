@@ -273,6 +273,6 @@ defmodule AshR2RML.SPARQL.Result do
   defp normalize_rdf_value(value) do
     if RDF.Term.term?(value), do: RDF.Term.value(value), else: value
   rescue
-    _ -> value
+    _error in [ArgumentError, FunctionClauseError, Protocol.UndefinedError] -> value
   end
 end

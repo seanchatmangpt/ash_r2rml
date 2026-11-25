@@ -96,36 +96,40 @@ defmodule AshR2RML.Datatype.Registry do
 
   defp resolve_base(ash_type, base, rdf_override, storage_override) do
     normalized = normalize(base)
-    semantic_contract = semantic_contract(ash_type, base)
 
-    cond do
-      is_binary(rdf_override) and absolute_iri?(rdf_override) ->
-        {:ok,
-         %Datatype{
-           ash_type: ash_type,
-           rdf_datatype: rdf_override,
-           storage_type: storage_override || builtin_storage(normalized)
-         }}
+    with {:ok, rdf_datatype, default_storage} <-
+           lookup_contract(ash_type, base, normalized, rdf_override) do
+      {:ok,
+       %Datatype{
+         ash_type: ash_type,
+         rdf_datatype: rdf_datatype,
+         storage_type: storage_override || default_storage
+       }}
+    end
+  end
 
-      is_binary(rdf_override) ->
-        {:error,
-         Refusal.new(:REFUSED_UNMAPPED_DATATYPE, ash_type, "explicit RDF datatype must be an absolute IRI", %{
-           rdf_datatype: rdf_override
-         })}
+  # First matching contract wins: explicit override, semantic literal,
+  # non-literal refusal, enum, money, builtin table.
+  # Returns `{:ok, rdf_datatype, default_storage_type}` or a typed refusal.
+  defp lookup_contract(ash_type, _base, normalized, rdf_override) when is_binary(rdf_override) do
+    if absolute_iri?(rdf_override) do
+      {:ok, rdf_override, builtin_storage(normalized)}
+    else
+      {:error,
+       Refusal.new(:REFUSED_UNMAPPED_DATATYPE, ash_type, "explicit RDF datatype must be an absolute IRI", %{
+         rdf_datatype: rdf_override
+       })}
+    end
+  end
 
-      semantic_literal?(semantic_contract) ->
-        {:literal, rdf_datatype} = semantic_contract
+  defp lookup_contract(ash_type, base, normalized, _rdf_override) do
+    case semantic_contract(ash_type, base) do
+      {:literal, datatype} = contract ->
+        if semantic_literal?(contract),
+          do: {:ok, datatype, semantic_storage(ash_type) || :text},
+          else: builtin_contract(ash_type, base, normalized)
 
-        {:ok,
-         %Datatype{
-           ash_type: ash_type,
-           rdf_datatype: rdf_datatype,
-           storage_type: storage_override || semantic_storage(ash_type) || :text
-         }}
-
-      match?({:non_literal, _}, semantic_contract) ->
-        {:non_literal, semantic_kind} = semantic_contract
-
+      {:non_literal, semantic_kind} ->
         {:error,
          Refusal.new(
            :REFUSED_NON_LITERAL_DATATYPE,
@@ -134,16 +138,22 @@ defmodule AshR2RML.Datatype.Registry do
            %{semantic_kind: semantic_kind}
          )}
 
+      :none ->
+        builtin_contract(ash_type, base, normalized)
+    end
+  end
+
+  defp builtin_contract(ash_type, base, normalized) do
+    cond do
       enum_type?(base) ->
-        {:ok, %Datatype{ash_type: ash_type, rdf_datatype: @xsd <> "string", storage_type: storage_override || :text}}
+        {:ok, @xsd <> "string", :text}
 
       AshR2RML.Money.money_type?(base) ->
-        {:ok,
-         %Datatype{ash_type: ash_type, rdf_datatype: @xsd <> "decimal", storage_type: storage_override || :decimal}}
+        {:ok, @xsd <> "decimal", :decimal}
 
       Map.has_key?(@builtins, normalized) ->
         {rdf_datatype, storage} = Map.fetch!(@builtins, normalized)
-        {:ok, %Datatype{ash_type: ash_type, rdf_datatype: rdf_datatype, storage_type: storage_override || storage}}
+        {:ok, rdf_datatype, storage}
 
       true ->
         {:error,
@@ -234,7 +244,6 @@ defmodule AshR2RML.Datatype.Registry do
   defp contract_of(_), do: :none
 
   defp semantic_literal?({:literal, datatype}), do: is_binary(datatype) and absolute_iri?(datatype)
-  defp semantic_literal?(_), do: false
 
   defp semantic_storage(ash_type) do
     if is_atom(ash_type) and not is_nil(ash_type) and Code.ensure_loaded?(ash_type) and

@@ -43,6 +43,7 @@ defmodule AshR2RML.Money do
           currency_iri: String.t() | nil
         }
 
+  @doc "IRI of the FIBO monetary-amount class every projected node carries."
   @spec monetary_amount_class() :: String.t()
   def monetary_amount_class, do: @class
 
@@ -63,12 +64,7 @@ defmodule AshR2RML.Money do
   @spec project(term(), keyword()) :: {:ok, node_t()} | {:error, Refusal.t()}
   def project(value, opts \\ [])
 
-  def project(%Decimal{} = amount, opts) do
-    case Keyword.get(opts, :currency) do
-      nil -> build(amount, nil, opts)
-      currency -> build(amount, currency, opts)
-    end
-  end
+  def project(%Decimal{} = amount, opts), do: build(amount, Keyword.get(opts, :currency), opts)
 
   def project(%{__struct__: struct, amount: %Decimal{} = amount, currency: currency}, opts)
       when is_atom(currency) or is_binary(currency) do

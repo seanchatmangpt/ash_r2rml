@@ -304,10 +304,10 @@ defmodule AshR2RML.OBDA.InMemory do
       {{:ok, %RDF.Dataset{} = dataset}, stats} ->
         case AshR2RML.OBDA.InMemory.GraphQuery.plan(sparql) do
           :none ->
-            query_with_stats_graph(union_graph(dataset), sparql, stats)
+            query_with_stats_graph(union_graph(dataset), sparql, stats, local_opts(read_opts))
 
           {:ok, plan} ->
-            query_graph_plan(dataset, plan, sparql, stats)
+            query_graph_plan(dataset, plan, sparql, stats, local_opts(read_opts))
 
           {:error, message, evidence} ->
             refusal = Refusal.new(:REFUSED_UNSUPPORTED_SPARQL_FEATURE, :graph_pattern, message, evidence)
@@ -320,10 +320,10 @@ defmodule AshR2RML.OBDA.InMemory do
   end
 
   # `GRAPH <iri> { P }`: one execution against that named graph (empty graph when absent).
-  defp query_graph_plan(dataset, %{kind: :iri, iri: iri, rewritten: rewritten}, sparql, stats) do
+  defp query_graph_plan(dataset, %{kind: :iri, iri: iri, rewritten: rewritten}, sparql, stats, local_opts) do
     graph = RDF.Dataset.graph(dataset, iri) || RDF.Graph.new()
 
-    case query_with_stats_graph(graph, rewritten, stats) do
+    case query_with_stats_graph(graph, rewritten, stats, local_opts) do
       {{:ok, observation}, stats} -> {{:ok, reidentify(observation, sparql, :graph_iri)}, stats}
       other -> other
     end
@@ -331,14 +331,14 @@ defmodule AshR2RML.OBDA.InMemory do
 
   # `GRAPH ?g { P }`: P is evaluated per named graph with `BIND(<g> AS ?g)` and the
   # per-graph observations are merged.
-  defp query_graph_plan(dataset, %{kind: :var, rewrite: rewrite}, sparql, stats) do
+  defp query_graph_plan(dataset, %{kind: :var, rewrite: rewrite}, sparql, stats, local_opts) do
     names = dataset |> RDF.Dataset.graph_names() |> Enum.reject(&is_nil/1) |> Enum.sort_by(&to_string/1)
 
     results =
       Enum.reduce_while(names, {:ok, []}, fn name, {:ok, acc} ->
         graph = RDF.Dataset.graph(dataset, name)
 
-        case query_with_stats_graph(graph, rewrite.(to_string(name)), stats) do
+        case query_with_stats_graph(graph, rewrite.(to_string(name)), stats, local_opts) do
           {{:ok, observation}, _stats} -> {:cont, {:ok, [observation | acc]}}
           {{:error, _} = error, _stats} -> {:halt, error}
         end
@@ -346,10 +346,28 @@ defmodule AshR2RML.OBDA.InMemory do
 
     case results do
       {:ok, observations} ->
-        {{:ok, merge_observations(Enum.reverse(observations), sparql)}, stats}
+        merged = merge_observations(Enum.reverse(observations), sparql)
+        {bound_merged(merged, local_opts), stats}
 
       {:error, _} = error ->
         {error, stats}
+    end
+  end
+
+  # Per-graph executions are each bounded; the merged `GRAPH ?g` solution set is bounded too.
+  defp bound_merged(%Observation{rows: rows} = observation, local_opts) do
+    max_rows = Keyword.get(local_opts, :max_rows)
+
+    if is_integer(max_rows) and length(rows) > max_rows do
+      {:error,
+       Refusal.new(
+         :REFUSED_RESULT_LIMIT_EXCEEDED,
+         :graph_var,
+         "merged GRAPH ?g solutions exceed max_rows (#{max_rows}); refusing to return them",
+         %{limit: max_rows}
+       )}
+    else
+      {:ok, observation}
     end
   end
 
@@ -399,8 +417,16 @@ defmodule AshR2RML.OBDA.InMemory do
     merged |> canonical_order(sparql) |> reidentify(sparql, :graph_var)
   end
 
-  defp query_with_stats_graph(graph, sparql, stats) do
-    case Local.query(graph, sparql) do
+  # The same `:max_rows` bound the OBDA envelope hands `Local.query/3`, for every graph execution.
+  defp local_opts(read_opts) do
+    case Keyword.get(read_opts, :max_rows) do
+      nil -> []
+      max_rows -> [max_rows: max_rows]
+    end
+  end
+
+  defp query_with_stats_graph(graph, sparql, stats, local_opts) do
+    case Local.query(graph, sparql, local_opts) do
       {:ok, observation} ->
         observation = canonical_order(observation, sparql)
         {{:ok, %{observation | metadata: Map.put(observation.metadata, :engine, :in_memory_ets)}}, stats}
@@ -469,7 +495,7 @@ defmodule AshR2RML.OBDA.InMemory do
       _ -> 0
     end
   rescue
-    _ -> 0
+    _error in [ArgumentError, KeyError] -> 0
   end
 
   # A graph map that fails to resolve for a row drops that row's triples, and a malformed stored
@@ -661,9 +687,14 @@ defmodule AshR2RML.OBDA.InMemory do
 
       {:ok, other} ->
         {:error,
-         read_refusal(ash_resource, "unexpected non-list read result", %{
-           result_type: if(is_struct(other), do: inspect(other.__struct__), else: "non-struct")
-         })}
+         AshR2RML.Error.new(:REFUSED_READ_FAILED,
+           resource: ash_resource,
+           details: %{
+             action: read_opts[:action],
+             error_class: "non-list read result",
+             result_type: if(is_struct(other), do: inspect(other.__struct__), else: "non-struct")
+           }
+         )}
 
       {:error, error} ->
         class = if is_exception(error), do: error.__struct__, else: error
@@ -689,10 +720,9 @@ defmodule AshR2RML.OBDA.InMemory do
   rescue
     exception in [ArgumentError, RuntimeError, KeyError] ->
       {:error,
-       read_refusal(
-         ash_resource,
-         "fail-closed: could not read the real Ash resource for materialization (#{inspect(exception.__struct__)})",
-         %{resource: ash_resource, error_class: inspect(exception.__struct__)}
+       AshR2RML.Error.new(:REFUSED_READ_FAILED,
+         resource: ash_resource,
+         details: %{action: read_opts[:action], error_class: inspect(exception.__struct__)}
        )}
   end
 
@@ -1006,7 +1036,7 @@ defmodule AshR2RML.OBDA.InMemory do
   defp valid_iri?(value) when is_binary(value) do
     value |> RDF.iri() |> RDF.IRI.valid?()
   rescue
-    _ -> false
+    _error in [ArgumentError, RDF.IRI.InvalidError] -> false
   end
 
   defp valid_iri?(_value), do: false
@@ -1311,7 +1341,7 @@ defmodule AshR2RML.OBDA.InMemory do
   defp lexical(value) when is_struct(value) do
     if String.Chars.impl_for(value), do: {:ok, to_string(value)}, else: :error
   rescue
-    _ -> :error
+    _error in [ArgumentError, Protocol.UndefinedError] -> :error
   end
 
   defp lexical(_value), do: :error

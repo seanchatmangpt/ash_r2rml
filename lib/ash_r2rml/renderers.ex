@@ -7,7 +7,13 @@ defmodule AshR2RML.R2RML do
   Deterministic W3C R2RML renderer over `AshR2RML.Mapping.Bundle`.
 
   The renderer performs serialization only. All semantic and relational
-  decisions must already be explicit in the normalized mapping IR.
+  decisions must already be explicit in the normalized mapping IR. Term
+  validation lives in `AshR2RML.R2RML.Terms`, bridge naming in
+  `AshR2RML.R2RML.Identity`, and Turtle quoting in `AshR2RML.R2RML.Turtle`.
+
+  ## Example
+
+      {:ok, turtle} = AshR2RML.R2RML.render(MyApp.Person)
   """
 
   alias AshR2RML.Mapping.{
@@ -58,25 +64,8 @@ defmodule AshR2RML.R2RML do
     by_resource = Map.new(resources, &{&1.ash_resource, &1})
     base_maps = Enum.map(resources, &render_resource(&1, by_resource))
 
-    bridge_maps =
-      Enum.flat_map(resources, fn resource ->
-        Enum.flat_map(resource.reference_object_maps, fn reference ->
-          case bridge_maps(resource, reference, by_resource) do
-            {:ok, values} -> values
-            {:error, refusal} -> [{:error, refusal}]
-          end
-        end)
-      end)
-
-    inverse_maps =
-      Enum.flat_map(resources, fn resource ->
-        Enum.flat_map(resource.reference_object_maps, fn reference ->
-          case inverse_maps(resource, reference, by_resource) do
-            {:ok, values} -> values
-            {:error, refusal} -> [{:error, refusal}]
-          end
-        end)
-      end)
+    bridge_maps = flat_reference_maps(resources, by_resource, &bridge_maps/3)
+    inverse_maps = flat_reference_maps(resources, by_resource, &inverse_maps/3)
 
     all = base_maps ++ bridge_maps ++ inverse_maps
 
@@ -94,6 +83,18 @@ defmodule AshR2RML.R2RML do
         {:ok, rendered}
     end
   end
+
+  # Runs `fun` over every reference of every resource; refusals stay in the
+  # list as `{:error, refusal}` so the caller reports the first one in order.
+  defp flat_reference_maps(resources, by_resource, fun) do
+    for resource <- resources,
+        reference <- resource.reference_object_maps,
+        entry <- unwrap_maps(fun.(resource, reference, by_resource)),
+        do: entry
+  end
+
+  defp unwrap_maps({:ok, values}), do: values
+  defp unwrap_maps({:error, refusal}), do: [{:error, refusal}]
 
   defp render_resource(%Resource{} = resource, by_resource) do
     references =
@@ -154,26 +155,16 @@ defmodule AshR2RML.R2RML do
   end
 
   defp render_reference(%ReferenceObjectMap{} = reference, by_resource) do
-    case Map.get(by_resource, reference.parent_resource) do
-      nil ->
-        {:error,
-         Refusal.new(
-           :REFUSED_RELATIONSHIP_TARGET_UNMAPPED,
-           reference.relationship,
-           "reference parent mapping is absent from bundle",
-           %{parent_resource: reference.parent_resource}
-         )}
+    with {:ok, parent} <- fetch_parent(reference, by_resource) do
+      joins = Enum.map(reference.joins, &render_join/1)
+      object_terms = ["rr:parentTriplesMap <#{triples_map_name(parent)}>" | joins]
+      graphs = Enum.flat_map(reference.graph_maps, &render_graph_map/1)
 
-      parent ->
-        joins = Enum.map(reference.joins, &render_join/1)
-        object_terms = ["rr:parentTriplesMap <#{triples_map_name(parent)}>" | joins]
-        graphs = Enum.flat_map(reference.graph_maps, &render_graph_map/1)
-
-        {:ok,
-         "  rr:predicateObjectMap [ rr:predicate <#{reference.predicate_iri}>; " <>
-           "rr:objectMap [ #{Enum.join(object_terms, "; ")} ]" <>
-           pom_graph_suffix(graphs) <>
-           " ]"}
+      {:ok,
+       "  rr:predicateObjectMap [ rr:predicate <#{reference.predicate_iri}>; " <>
+         "rr:objectMap [ #{Enum.join(object_terms, "; ")} ]" <>
+         pom_graph_suffix(graphs) <>
+         " ]"}
     end
   end
 

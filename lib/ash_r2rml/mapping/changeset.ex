@@ -151,10 +151,13 @@ defmodule AshR2RML.Mapping.Changeset do
   def merged_graph(%__MODULE__{} = changeset) do
     @action_fields
     |> Enum.map(&Map.get(changeset, &1))
-    |> Enum.reject(&is_nil/1)
-    |> case do
-      [] -> Graph.new()
-      [graph] -> graph
+    |> union_or(Graph.new())
+  end
+
+  # Union of the non-nil graphs, or `empty` when there are none.
+  defp union_or(graphs, empty) do
+    case Enum.reject(graphs, &is_nil/1) do
+      [] -> empty
       [first | rest] -> Enum.reduce(rest, first, &Graph.add(&2, &1))
     end
   end
@@ -165,13 +168,7 @@ defmodule AshR2RML.Mapping.Changeset do
   """
   @spec inserts(t()) :: Graph.t()
   def inserts(%__MODULE__{} = changeset) do
-    [changeset.add, changeset.update, changeset.replace]
-    |> Enum.reject(&is_nil/1)
-    |> case do
-      [] -> Graph.new()
-      [graph] -> graph
-      [first | rest] -> Enum.reduce(rest, first, &Graph.add(&2, &1))
-    end
+    union_or([changeset.add, changeset.update, changeset.replace], Graph.new())
   end
 
   @doc "The graph of statements this changeset would remove if applied."
@@ -188,14 +185,7 @@ defmodule AshR2RML.Mapping.Changeset do
   """
   @spec invert(t()) :: t()
   def invert(%__MODULE__{} = changeset) do
-    folded_remove =
-      [changeset.add, changeset.update, changeset.replace]
-      |> Enum.reject(&is_nil/1)
-      |> case do
-        [] -> nil
-        [graph] -> graph
-        [first | rest] -> Enum.reduce(rest, first, &Graph.add(&2, &1))
-      end
+    folded_remove = union_or([changeset.add, changeset.update, changeset.replace], nil)
 
     %__MODULE__{
       add: changeset.remove,

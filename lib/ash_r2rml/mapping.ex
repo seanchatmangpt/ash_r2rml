@@ -3,7 +3,12 @@
 # SPDX-License-Identifier: MIT
 
 defmodule AshR2RML.Refusal do
-  @moduledoc "Typed fail-closed result for expected semantic mapping failures."
+  @moduledoc """
+  Typed fail-closed result for expected semantic mapping failures.
+
+      iex> AshR2RML.Refusal.new(:REFUSED_INVALID_CLASS_IRI, MyApp.Person, "class IRI must be absolute").code
+      :REFUSED_INVALID_CLASS_IRI
+  """
 
   @enforce_keys [:code, :subject, :detail]
   defstruct [:code, :subject, :detail, evidence: %{}]
@@ -260,35 +265,37 @@ defmodule AshR2RML.Mapping do
     by_resource = Map.new(bundle.resources, &{&1.ash_resource, &1})
 
     refusals =
-      Enum.flat_map(bundle.resources, fn resource ->
-        own =
-          case validate(resource) do
-            :ok -> []
-            {:error, values} -> values
-          end
-
-        targets =
-          Enum.flat_map(resource.reference_object_maps, fn reference ->
-            case Map.get(by_resource, reference.parent_resource) do
-              nil ->
-                [
-                  Refusal.new(
-                    :REFUSED_RELATIONSHIP_TARGET_UNMAPPED,
-                    {resource.ash_resource, reference.relationship},
-                    "reference object map target is absent from the dependency-closed mapping bundle",
-                    %{parent_resource: reference.parent_resource}
-                  )
-                ]
-
-              parent ->
-                validate_parent_subject_identity(resource, reference, parent)
-            end
-          end)
-
-        own ++ targets
-      end) ++ validate_duplicate_subject_contracts(bundle.resources)
+      Enum.flat_map(bundle.resources, &validate_bundled_resource(&1, by_resource)) ++
+        validate_duplicate_subject_contracts(bundle.resources)
 
     if refusals == [], do: :ok, else: {:error, refusals}
+  end
+
+  defp validate_bundled_resource(resource, by_resource) do
+    own =
+      case validate(resource) do
+        :ok -> []
+        {:error, values} -> values
+      end
+
+    own ++ Enum.flat_map(resource.reference_object_maps, &validate_reference_target(resource, &1, by_resource))
+  end
+
+  defp validate_reference_target(resource, reference, by_resource) do
+    case Map.fetch(by_resource, reference.parent_resource) do
+      {:ok, parent} ->
+        validate_parent_subject_identity(resource, reference, parent)
+
+      :error ->
+        [
+          Refusal.new(
+            :REFUSED_RELATIONSHIP_TARGET_UNMAPPED,
+            {resource.ash_resource, reference.relationship},
+            "reference object map target is absent from the dependency-closed mapping bundle",
+            %{parent_resource: reference.parent_resource}
+          )
+        ]
+    end
   end
 
   @spec mapping_identity(Resource.t()) :: String.t()
@@ -384,18 +391,14 @@ defmodule AshR2RML.Mapping do
     [Refusal.new(:REFUSED_INVALID_LOGICAL_TABLE, resource.ash_resource, "mapping logical_table is missing")]
   end
 
-  defp validate_classes(resource) do
-    cond do
-      resource.class_iris == [] ->
-        [Refusal.new(:REFUSED_INVALID_CLASS_IRI, resource.ash_resource, "at least one RDF class IRI is required")]
+  defp validate_classes(%Resource{class_iris: [], ash_resource: subject}) do
+    [Refusal.new(:REFUSED_INVALID_CLASS_IRI, subject, "at least one RDF class IRI is required")]
+  end
 
-      true ->
-        resource.class_iris
-        |> Enum.reject(&absolute_iri?/1)
-        |> Enum.map(fn iri ->
-          Refusal.new(:REFUSED_INVALID_CLASS_IRI, resource.ash_resource, "class IRI must be absolute", %{iri: iri})
-        end)
-    end
+  defp validate_classes(%Resource{class_iris: iris, ash_resource: subject}) do
+    iris
+    |> Enum.reject(&absolute_iri?/1)
+    |> Enum.map(&Refusal.new(:REFUSED_INVALID_CLASS_IRI, subject, "class IRI must be absolute", %{iri: &1}))
   end
 
   defp validate_subject(%Resource{subject_map: nil} = resource) do
@@ -437,21 +440,13 @@ defmodule AshR2RML.Mapping do
   end
 
   defp validate_subject_columns(resource, %SubjectMap{strategy: :template, value: template}) do
-    available = available_columns(resource)
-    missing = Enum.reject(template_fields(template), &MapSet.member?(available, &1))
-
-    if missing == [] do
-      []
-    else
-      [
-        Refusal.new(
-          :REFUSED_MISSING_SUBJECT_MAP,
-          resource.ash_resource,
-          "subject template references columns absent from the admitted resource mapping",
-          %{missing: missing, template: template}
-        )
-      ]
-    end
+    template_refusals(
+      resource,
+      template,
+      :REFUSED_MISSING_SUBJECT_MAP,
+      resource.ash_resource,
+      "subject template references columns absent from the admitted resource mapping"
+    )
   end
 
   defp validate_subject_columns(resource, %SubjectMap{strategy: :column, value: column}) do
@@ -471,45 +466,39 @@ defmodule AshR2RML.Mapping do
 
   defp validate_subject_columns(resource, %SubjectMap{strategy: :blank_node, value: template})
        when is_binary(template) do
-    available = available_columns(resource)
-    missing = Enum.reject(template_fields(template), &MapSet.member?(available, &1))
-
-    if missing == [] do
-      []
-    else
-      [
-        Refusal.new(
-          :REFUSED_MISSING_SUBJECT_MAP,
-          resource.ash_resource,
-          "blank-node subject template references columns absent from the admitted resource mapping",
-          %{missing: missing, template: template}
-        )
-      ]
-    end
+    template_refusals(
+      resource,
+      template,
+      :REFUSED_MISSING_SUBJECT_MAP,
+      resource.ash_resource,
+      "blank-node subject template references columns absent from the admitted resource mapping"
+    )
   end
 
   defp validate_subject_columns(_resource, _subject), do: []
 
   defp validate_object_template(resource, mapping, %ObjectMap{strategy: :template, value: value})
        when is_binary(value) do
-    available = available_columns(resource)
-    missing = Enum.reject(template_fields(value), &MapSet.member?(available, &1))
-
-    if missing == [] do
-      []
-    else
-      [
-        Refusal.new(
-          :REFUSED_INVALID_TERM_MAP,
-          {resource.ash_resource, mapping.attribute},
-          "object template references columns absent from the admitted resource mapping",
-          %{missing: missing, template: value}
-        )
-      ]
-    end
+    template_refusals(
+      resource,
+      value,
+      :REFUSED_INVALID_TERM_MAP,
+      {resource.ash_resource, mapping.attribute},
+      "object template references columns absent from the admitted resource mapping"
+    )
   end
 
   defp validate_object_template(_resource, _mapping, _object), do: []
+
+  # One refusal naming every template field the resource mapping cannot supply.
+  defp template_refusals(resource, template, code, subject, detail) do
+    available = available_columns(resource)
+
+    case Enum.reject(template_fields(template), &MapSet.member?(available, &1)) do
+      [] -> []
+      missing -> [Refusal.new(code, subject, detail, %{missing: missing, template: template})]
+    end
+  end
 
   defp validate_duplicate_properties(resource) do
     resource.predicate_object_maps
@@ -601,6 +590,8 @@ defmodule AshR2RML.Mapping do
   end
 
   defp validate_datatype(resource, mapping) do
+    subject = {resource.ash_resource, mapping.attribute}
+
     case mapping.object_map.datatype do
       nil ->
         []
@@ -609,23 +600,11 @@ defmodule AshR2RML.Mapping do
         if absolute_iri?(iri),
           do: [],
           else: [
-            Refusal.new(
-              :REFUSED_UNMAPPED_DATATYPE,
-              {resource.ash_resource, mapping.attribute},
-              "RDF datatype IRI must be absolute",
-              %{datatype: iri}
-            )
+            Refusal.new(:REFUSED_UNMAPPED_DATATYPE, subject, "RDF datatype IRI must be absolute", %{datatype: iri})
           ]
 
       value ->
-        [
-          Refusal.new(
-            :REFUSED_UNMAPPED_DATATYPE,
-            {resource.ash_resource, mapping.attribute},
-            "invalid datatype mapping",
-            %{datatype: inspect(value)}
-          )
-        ]
+        [Refusal.new(:REFUSED_UNMAPPED_DATATYPE, subject, "invalid datatype mapping", %{datatype: inspect(value)})]
     end
   end
 
@@ -784,25 +763,24 @@ defmodule AshR2RML.Mapping do
     resources
     |> Enum.group_by(fn resource -> {resource.logical_table, resource.subject_map} end)
     |> Enum.flat_map(fn
-      {_key, [_one]} ->
-        []
-
-      {key, many} ->
-        class_sets = Enum.map(many, &MapSet.new(&1.class_iris))
-
-        if pairwise_overlap?(class_sets) do
-          [
-            Refusal.new(
-              :REFUSED_NON_UNIQUE_SEMANTIC_IDENTITY,
-              Enum.map(many, & &1.ash_resource),
-              "multiple mappings with overlapping RDF classes manufacture the same subject contract",
-              %{subject_contract: key}
-            )
-          ]
-        else
-          []
-        end
+      {_key, [_one]} -> []
+      {key, many} -> duplicate_contract_refusals(key, many)
     end)
+  end
+
+  defp duplicate_contract_refusals(key, many) do
+    if many |> Enum.map(&MapSet.new(&1.class_iris)) |> pairwise_overlap?() do
+      [
+        Refusal.new(
+          :REFUSED_NON_UNIQUE_SEMANTIC_IDENTITY,
+          Enum.map(many, & &1.ash_resource),
+          "multiple mappings with overlapping RDF classes manufacture the same subject contract",
+          %{subject_contract: key}
+        )
+      ]
+    else
+      []
+    end
   end
 
   defp identity_column_sets(resource) do
@@ -840,14 +818,7 @@ defmodule AshR2RML.Mapping do
   defp iri_forbidden?(value), do: Regex.match?(~r/[\x00-\x20\x7f<>"{}|^`\\]/, value)
 
   defp absolute_iri?(value) when is_binary(value) do
-    if iri_forbidden?(value) do
-      false
-    else
-      case URI.parse(value) do
-        %URI{scheme: scheme} when is_binary(scheme) and scheme != "" -> true
-        _ -> false
-      end
-    end
+    not iri_forbidden?(value) and match?(%URI{scheme: scheme} when is_binary(scheme) and scheme != "", URI.parse(value))
   end
 
   defp absolute_iri?(_), do: false

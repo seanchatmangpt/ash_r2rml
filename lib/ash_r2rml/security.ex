@@ -94,7 +94,7 @@ defmodule AshR2RML.Security do
       _ -> :error
     end
   rescue
-    _ -> :error
+    _ in [ArgumentError, UndefinedFunctionError, FunctionClauseError] -> :error
   end
 
   # Column names (attribute names and `source` renames) that hold plaintext or ciphertext.
@@ -125,7 +125,7 @@ defmodule AshR2RML.Security do
       :error -> true
     end
   rescue
-    _ -> true
+    _ in [ArgumentError, UndefinedFunctionError, FunctionClauseError] -> true
   end
 
   @doc """
@@ -301,7 +301,7 @@ defmodule AshR2RML.Security do
         (AshR2RML.DataLayer.backend(resource) != :ets and field_policy_protected?(resource, attr.name))
     end)
   rescue
-    _ -> true
+    _ in [ArgumentError, UndefinedFunctionError, FunctionClauseError] -> true
   end
 
   @doc """
@@ -316,7 +316,7 @@ defmodule AshR2RML.Security do
       try do
         match?(%{sensitive?: true}, Ash.Resource.Info.attribute(ash_resource, attribute))
       rescue
-        _ -> true
+        _ in [ArgumentError, UndefinedFunctionError, FunctionClauseError] -> true
       end
     end)
   end
@@ -466,7 +466,7 @@ defmodule AshR2RML.Security do
   defp attribute_column?(ash_resource, column) do
     not cloaked_column?(ash_resource, column) and resolve_attributes(ash_resource, column) != []
   rescue
-    _ -> false
+    _ in [ArgumentError, UndefinedFunctionError, FunctionClauseError] -> false
   end
 
   @doc """
@@ -482,7 +482,7 @@ defmodule AshR2RML.Security do
       Enum.filter(attributes, &is_nil(Ash.Resource.Info.attribute(ash_resource, &1)))
     rescue
       # Fail closed: when lookup raises, no mapped attribute is admitted.
-      _ -> attributes
+      _ in [ArgumentError, UndefinedFunctionError, FunctionClauseError] -> attributes
     end
   end
 
@@ -540,6 +540,6 @@ defmodule AshR2RML.Security do
     Code.ensure_loaded?(Ash.Policy.Info) and
       match?([_ | _], Ash.Policy.Info.field_policies_for_field(ash_resource, attribute))
   rescue
-    _ -> true
+    _ in [ArgumentError, UndefinedFunctionError, FunctionClauseError] -> true
   end
 end

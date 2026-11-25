@@ -68,6 +68,12 @@ defmodule AshR2RML.Compiler do
 
   This is CONSTRUCT only. It neither applies migrations nor starts any query
   runtime, and therefore cannot grant cutover standing by itself.
+
+  Domains are expanded to their R2RML-mapped resources, then the closure of
+  referenced parent resources is walked as a plain worklist (bounded by
+  #{10_000} resources).
+
+      {:ok, %AshR2RML.Mapping.Bundle{}} = AshR2RML.Compiler.compile(MyApp.Person)
   """
 
   alias AshR2RML.{CompilationReceipt, Refusal}

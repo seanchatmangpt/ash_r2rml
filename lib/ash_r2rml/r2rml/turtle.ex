@@ -5,6 +5,9 @@
 defmodule AshR2RML.R2RML.Turtle do
   @moduledoc """
   Turtle string-literal quoting for the R2RML renderer.
+
+      iex> AshR2RML.R2RML.Turtle.literal("a\\"b")
+      ~S("a\\"b")
   """
 
   @doc """

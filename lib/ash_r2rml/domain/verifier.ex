@@ -37,30 +37,31 @@ defmodule AshR2RML.Domain.Verifier do
 
     errors =
       mappings
-      |> Enum.flat_map(fn
-        {resource, %Mapping.Resource{} = mapping} ->
-          check(resource, mapping, members, mappings) ++
-            if(strict?, do: strict_check(resource, mapping, strict_prefixes), else: [])
-
-        {_resource, _failure} ->
-          []
-      end)
+      |> Enum.flat_map(&member_errors(&1, members, mappings, strict?, strict_prefixes))
       |> Kernel.++(prefix_errors)
       |> Enum.uniq()
       |> Enum.sort()
 
-    case errors do
-      [] ->
-        :ok
+    to_result(errors, domain)
+  end
 
-      [_ | _] ->
-        {:error,
-         Spark.Error.DslError.exception(
-           module: domain,
-           path: [:resources],
-           message: Enum.join(errors, "\n")
-         )}
-    end
+  # Members whose own mapping failed are reported by their own verifier.
+  defp member_errors({resource, %Mapping.Resource{} = mapping}, members, mappings, strict?, prefixes) do
+    check(resource, mapping, members, mappings) ++
+      if(strict?, do: strict_check(resource, mapping, prefixes), else: [])
+  end
+
+  defp member_errors({_resource, _failure}, _members, _mappings, _strict?, _prefixes), do: []
+
+  defp to_result([], _domain), do: :ok
+
+  defp to_result(errors, domain) do
+    {:error,
+     Spark.Error.DslError.exception(
+       module: domain,
+       path: [:resources],
+       message: Enum.join(errors, "\n")
+     )}
   end
 
   # A member resolves to its mapping, or to the real %Refusal{} so the parent's
