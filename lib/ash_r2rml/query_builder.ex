@@ -408,7 +408,10 @@ defmodule AshR2RML.QueryBuilder.Lowering do
          true <- om.graph_maps in [nil, []] and pom.graph_maps in [nil, []],
          true <- to_string(om.value) == Atom.to_string(attribute),
          {:ok, declared} <- declared_datatype(om.datatype),
-         %{sensitive?: false} = ash_attr <- Ash.Resource.Info.attribute(resource, attribute) do
+         %{sensitive?: false} = ash_attr <- Ash.Resource.Info.attribute(resource, attribute),
+         # A field-policy-gated attribute must never be filtered/sorted in the data layer: the
+         # row count would act as an oracle on the hidden value.
+         false <- AshR2RML.Security.field_policy_protected?(resource, attribute) do
       kind = kind(declared, ash_attr.type)
 
       {:ok,

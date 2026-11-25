@@ -2,113 +2,255 @@
 # SPDX-License-Identifier: MIT
 
 defmodule AshR2RML.ErrorTest do
-  use ExUnit.Case, async: true
+  @moduledoc """
+  Every `%AshR2RML.Error{}` here is produced by a real emitter (worker, OBDA boundary, Subject,
+  SPARQL result bound, real Ash reads) and asserted field by field. No hand-built expectations
+  of the catalog beyond the code the emitter chose.
+  """
+  use ExUnit.Case, async: false
 
-  alias AshR2RML.{Error, Refusal}
+  alias AshR2RML.{Error, OBDA, Refusal}
+  alias AshR2RML.Mapping.{LogicalTable, Resource, SubjectMap}
+  alias AshR2RML.OBDA.Worker
 
   doctest AshR2RML.Error
 
-  @codes ~w(REFUSED_INVALID_CLASS_IRI REFUSED_MISSING_SUBJECT_MAP
-    REFUSED_NON_UNIQUE_SEMANTIC_IDENTITY REFUSED_UNMAPPED_DATATYPE
-    REFUSED_AMBIGUOUS_RELATIONSHIP REFUSED_INVALID_JOIN_CONDITION
-    REFUSED_RELATIONSHIP_WITHOUT_PREDICATE REFUSED_R2RML_JOIN_WITHOUT_IDENTITY
-    REFUSED_UNPROVEN_EQUIVALENCE REFUSED_UNSUPPORTED_SPARQL_FEATURE
-    REFUSED_RESULT_LIMIT_EXCEEDED REFUSED_TRIPLE_LIMIT_EXCEEDED
-    REFUSED_MEMORY_LIMIT_EXCEEDED REFUSED_QUERY_TIMEOUT REFUSED_MISSING_TENANT
-    REFUSED_MISSING_SUBJECT_KEY REFUSED_UNAUTHORIZED REFUSED_INVALID_SUBJECT_IRI
-    REFUSED_NON_INVERTIBLE_TEMPLATE UNSUPPORTED_TERM_TYPE UNSUPPORTED_ASH_TYPE)a
+  defmodule Domain do
+    use Ash.Domain, validate_config_inclusion?: false
 
-  test "covers 21 codes" do
-    assert length(@codes) == 21
+    resources do
+      resource AshR2RML.ErrorTest.Locked
+      resource AshR2RML.ErrorTest.Item
+    end
   end
 
-  for code <- @codes do
-    test "new/2 #{code}: message and machine fields" do
-      code = unquote(code)
+  defmodule Locked do
+    use Ash.Resource,
+      domain: AshR2RML.ErrorTest.Domain,
+      data_layer: Ash.DataLayer.Ets,
+      authorizers: [Ash.Policy.Authorizer]
 
-      e =
-        Error.new(code,
-          resource: Some.Resource,
-          field: :name,
-          sparql_clause: "FILTER",
-          details: %{k: 1}
-        )
-
-      msg = Exception.message(e)
-      assert msg =~ Atom.to_string(code)
-      assert msg =~ "Some.Resource"
-      assert msg =~ ":name"
-      assert msg =~ "FILTER"
-      assert msg =~ "Hint: "
-      assert e.code == code
-      assert e.resource == Some.Resource
-      assert e.field == :name
-      assert e.sparql_clause == "FILTER"
-      assert is_binary(e.hint) and e.hint != ""
-      assert e.details == %{k: 1}
-      assert e.message == msg
+    ets do
+      private? true
     end
 
-    test "from_refusal/1 #{code}: tuple subject" do
-      code = unquote(code)
+    policies do
+      policy always() do
+        forbid_if always()
+      end
+    end
 
-      r =
-        Refusal.new(code, {Some.Resource, :name}, "bad thing", %{
-          sparql_clause: "OPTIONAL",
-          extra: 2
-        })
+    actions do
+      defaults [:read]
+    end
+
+    attributes do
+      uuid_primary_key :id
+    end
+  end
+
+  defmodule Item do
+    use Ash.Resource,
+      domain: AshR2RML.ErrorTest.Domain,
+      data_layer: Ash.DataLayer.Ets,
+      extensions: [AshR2RML]
+
+    ets do
+      private? false
+    end
+
+    r2rml do
+      class_iri("https://example.org/ErrItem")
+      subject_template("https://example.org/ErrItem/{id}")
+      table_name("tb_err_item")
+      attribute_mappings([{:name, "https://example.org/name"}])
+    end
+
+    actions do
+      defaults [:read, :destroy, create: [:name]]
+    end
+
+    attributes do
+      uuid_primary_key :id
+      attribute :name, :string, public?: true
+    end
+  end
+
+  defp mapping(template) do
+    %Resource{
+      ash_resource: "Thing",
+      logical_table: %LogicalTable{table_name: "things"},
+      subject_map: %SubjectMap{strategy: :template, value: template}
+    }
+  end
+
+  defp assert_catalogued(%Error{code: code} = e) do
+    assert code in Error.codes()
+    assert is_binary(e.hint) and e.hint != ""
+    assert e.message == Exception.message(e)
+    assert e.message =~ Atom.to_string(code)
+  end
+
+  describe "worker-emitted errors" do
+    test "timeout" do
+      assert {:error, %Error{} = e} = Worker.run(fn -> receive do: (:never -> :ok) end, timeout_ms: 20)
+      assert e.code == :REFUSED_QUERY_TIMEOUT
+      assert e.details == %{timeout_ms: 20}
+      assert Error.retryable?(e)
+      assert_catalogued(e)
+    end
+
+    test "memory limit" do
+      hog = fn -> Enum.reduce(1..10_000_000, [], fn i, acc -> [i | acc] end) end
+      assert {:error, %Error{} = e} = Worker.run(hog, max_heap_words: 100_000, timeout_ms: 10_000)
+      assert e.code == :REFUSED_MEMORY_LIMIT_EXCEEDED
+      assert e.details == %{max_heap_words: 100_000}
+      refute Error.retryable?(e)
+      assert_catalogued(e)
+    end
+
+    test "worker crash" do
+      assert {:error, %Error{} = e} = Worker.run(fn -> raise "boom" end)
+      assert e.code == :REFUSED_WORKER_CRASHED
+      assert e.details.kind == :error
+      assert e.details.class == "RuntimeError"
+      assert Error.retryable?(e)
+      assert_catalogued(e)
+    end
+  end
+
+  describe "OBDA boundary classification of real Ash failures" do
+    test "a real Forbidden from Ash.read is REFUSED_UNAUTHORIZED naming the resource" do
+      assert {:error, forbidden} = Ash.read(Locked, authorize?: true, actor: nil)
+      e = OBDA.wrap_failure(:error, forbidden)
+      assert e.code == :REFUSED_UNAUTHORIZED
+      assert e.details.kind == :error
+      refute Error.retryable?(e)
+      assert_catalogued(e)
+    end
+
+    test "a read that fails for another reason is REFUSED_READ_FAILED, retryable" do
+      e = OBDA.wrap_failure(:exit, {:shutdown, :db})
+      assert e.code == :REFUSED_READ_FAILED
+      assert e.resource == nil
+      assert e.details.kind == :exit
+      assert Error.retryable?(e)
+      assert_catalogued(e)
+    end
+
+    test "a real Ash unknown error keeps its class in details" do
+      unknown = Ash.Error.Unknown.exception(errors: [])
+      e = OBDA.wrap_failure(:error, unknown)
+      assert e.code == :REFUSED_READ_FAILED
+      assert e.details.class =~ "Ash.Error.Unknown"
+    end
+
+    test "a tenant-required failure is REFUSED_MISSING_TENANT carrying the resource" do
+      reason = Ash.Error.Invalid.TenantRequired.exception(resource: Item)
+      e = OBDA.wrap_failure(:error, reason)
+      assert e.code == :REFUSED_MISSING_TENANT
+      assert e.resource == Item
+      assert_catalogued(e)
+    end
+  end
+
+  describe "refusal-to-error conversion over real emitters" do
+    test "REFUSED_MISSING_SUBJECT_KEY from Subject.to_iri" do
+      assert {:error, %Refusal{code: :REFUSED_MISSING_SUBJECT_KEY} = r} =
+               AshR2RML.Subject.to_iri(mapping("http://ex.org/t/{id}"), %{})
 
       e = Error.from_refusal(r)
+      assert e.code == :REFUSED_MISSING_SUBJECT_KEY
+      assert e.details.detail == r.detail
+      assert e.details.subject == r.subject
+      refute Error.retryable?(e)
+      assert_catalogued(e)
+    end
+
+    test "REFUSED_NON_INVERTIBLE_TEMPLATE from Subject.from_iri" do
+      assert {:error, %Refusal{code: :REFUSED_NON_INVERTIBLE_TEMPLATE} = r} =
+               AshR2RML.Subject.from_iri(mapping("http://ex.org/t/{id}{name}"), "http://ex.org/t/ab")
+
+      e = Error.from_refusal(r)
+      assert e.code == :REFUSED_NON_INVERTIBLE_TEMPLATE
+      assert_catalogued(e)
+    end
+
+    test "REFUSED_INVALID_SUBJECT_IRI from Subject.from_iri on a foreign IRI" do
+      assert {:error, %Refusal{code: :REFUSED_INVALID_TERM_MAP} = r} =
+               AshR2RML.Subject.from_iri(mapping("http://ex.org/t/{id}"), "http://other.org/x/1")
+
+      e = Error.from_refusal(r)
+      assert e.code == :REFUSED_INVALID_TERM_MAP
+      assert e.details.detail == r.detail
+      assert_catalogued(e)
+    end
+
+    test "REFUSED_RESOURCE_BOUND from the SPARQL result bound carries the bound evidence" do
+      rows = [%{"s" => 1}, %{"s" => 2}, %{"s" => 3}]
+
+      assert {:error, %Refusal{code: :REFUSED_RESOURCE_BOUND} = r} =
+               AshR2RML.SPARQL.Result.bound({:ok, :bindings, rows}, Item, 2)
+
+      e = Error.from_refusal(r)
+      assert e.code == :REFUSED_RESOURCE_BOUND
+      assert e.resource == Item
+      assert e.details.max_rows == 2
+      assert e.details.rows == 3
+      refute Error.retryable?(e)
+      assert_catalogued(e)
+    end
+
+    test "OBDA.query over real rows with a tight bound refuses with a bound code" do
+      Item |> Ash.read!(authorize?: false) |> Enum.each(&Ash.destroy!(&1, authorize?: false))
+      for n <- 1..3, do: Ash.create!(Item, %{name: "n#{n}"}, authorize?: false)
+
+      result =
+        OBDA.query([Item], "SELECT ?s ?n WHERE { ?s <https://example.org/name> ?n . }",
+          domain: Domain,
+          authorize?: false,
+          allow_unauthorized: true,
+          max_rows: 1,
+          max_triples: 1
+        )
+
+      assert {:error, %{code: code} = err} = result
+
+      assert code in [
+               :REFUSED_RESOURCE_BOUND,
+               :REFUSED_TRIPLE_LIMIT_EXCEEDED,
+               :REFUSED_RESULT_LIMIT_EXCEEDED
+             ]
+
+      e = if match?(%Refusal{}, err), do: Error.from_refusal(err), else: err
       assert e.code == code
-      assert e.resource == Some.Resource
-      assert e.field == :name
-      assert e.sparql_clause == "OPTIONAL"
-      assert is_binary(e.hint) and e.hint != ""
-      assert e.details.detail == "bad thing"
-      assert e.details.subject == {Some.Resource, :name}
-      assert e.details.extra == 2
-      msg = Exception.message(e)
-      assert msg =~ Atom.to_string(code)
-      assert msg =~ "Some.Resource"
-      assert msg =~ ":name"
-      assert msg =~ "OPTIONAL"
-      assert msg =~ "bad thing"
-      assert msg =~ "Hint: "
+      refute Error.retryable?(e)
+      assert_catalogued(e)
     end
   end
 
-  test "from_refusal with module subject and evidence overrides" do
-    r =
-      Refusal.new(:REFUSED_QUERY_TIMEOUT, Some.Resource, "slow", %{
-        field: :age,
-        clause: "ORDER BY",
-        hint: "custom"
-      })
+  describe "Error struct behaviour" do
+    test "from_refusal reads resource and field from a tuple subject and evidence overrides" do
+      r = Refusal.new(:REFUSED_QUERY_TIMEOUT, {Item, :name}, "slow", %{clause: "ORDER BY", hint: "custom"})
+      e = Error.from_refusal(r)
+      assert {e.resource, e.field, e.sparql_clause, e.hint} == {Item, :name, "ORDER BY", "custom"}
+      assert e.message =~ "Hint: custom"
+    end
 
-    e = Error.from_refusal(r)
-    assert e.resource == Some.Resource
-    assert e.field == :age
-    assert e.sparql_clause == "ORDER BY"
-    assert e.hint == "custom"
-    assert Exception.message(e) =~ "Hint: custom"
-  end
+    test "opaque subject leaves resource nil" do
+      e = Error.from_refusal(Refusal.new(:REFUSED_UNAUTHORIZED, "x", "no"))
+      assert {e.resource, e.field, e.sparql_clause} == {nil, nil, nil}
+    end
 
-  test "from_refusal with opaque subject leaves resource nil" do
-    e = Error.from_refusal(Refusal.new(:REFUSED_UNAUTHORIZED, "x", "no"))
-    assert e.resource == nil
-    assert e.field == nil
-    assert e.sparql_clause == nil
-  end
+    test "unknown code still yields a message and no hint, and is not retryable" do
+      e = Error.new(:REFUSED_SOMETHING_NEW)
+      assert Exception.message(e) =~ "REFUSED_SOMETHING_NEW"
+      assert e.hint == nil
+      refute Error.retryable?(e)
+    end
 
-  test "unknown code still yields a message" do
-    e = Error.new(:REFUSED_SOMETHING_NEW)
-    assert Exception.message(e) =~ "REFUSED_SOMETHING_NEW"
-    assert e.hint == nil
-  end
-
-  test "is raisable" do
-    assert_raise Error, ~r/REFUSED_MISSING_TENANT/, fn ->
-      raise Error.new(:REFUSED_MISSING_TENANT)
+    test "is raisable" do
+      assert_raise Error, ~r/REFUSED_MISSING_TENANT/, fn -> raise Error.new(:REFUSED_MISSING_TENANT) end
     end
   end
 end

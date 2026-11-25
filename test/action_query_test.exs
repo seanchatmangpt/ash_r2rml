@@ -7,7 +7,7 @@ defmodule AshR2RML.ActionQueryTest do
   `AshR2RML.Action.Query` wired as a real generic action in a real Ash domain, reading real
   `Ash.DataLayer.Ets` rows.
   """
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias AshR2RML.Mapping.{LogicalTable, ObjectMap, PredicateObjectMap, Resource, SubjectMap}
 
@@ -25,7 +25,7 @@ defmodule AshR2RML.ActionQueryTest do
     use Ash.Resource, domain: AshR2RML.ActionQueryTest.Dom, data_layer: Ash.DataLayer.Ets
 
     actions do
-      defaults [:read]
+      defaults [:read, :destroy]
 
       create :create do
         primary? true
@@ -85,8 +85,15 @@ defmodule AshR2RML.ActionQueryTest do
     ]
   end
 
+  # Table owner is Ash's long-lived TableManager; warm once, never `Ets.stop/1` (async kill
+  # races the next lookup). Rows are cleared per test via the real destroy action.
+  setup_all do
+    Ash.read!(Thing, domain: Dom)
+    :ok
+  end
+
   setup do
-    Ash.DataLayer.Ets.stop(Thing)
+    Thing |> Ash.read!(domain: Dom) |> Ash.bulk_destroy!(:destroy, %{}, domain: Dom)
     :ok
   end
 

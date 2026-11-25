@@ -474,6 +474,7 @@ defmodule AshR2RML.OBDA.InMemory do
       case apply_query_pushdown(query, ash_resource, read_opts) do
         {:ok, pushed} ->
           # QueryBuilder already bounded the read (`min(plan.limit, max_rows + 1)`).
+          pushed = if pushed.limit, do: pushed, else: Ash.Query.limit(pushed, max_rows + 1)
           {pushed, max_rows + 1}
 
         :none ->
@@ -516,7 +517,7 @@ defmodule AshR2RML.OBDA.InMemory do
          read_refusal(
            ash_resource,
            "fail-closed: could not read the real Ash resource for materialization (#{inspect(class)}, e.g. forbidden by policy)",
-           %{error_class: inspect(class), exception: error_message(error)}
+           %{resource: ash_resource, action: read_opts[:action], error_class: inspect(class)}
          )}
     end
   rescue
@@ -525,16 +526,13 @@ defmodule AshR2RML.OBDA.InMemory do
        read_refusal(
          ash_resource,
          "fail-closed: could not read the real Ash resource for materialization (#{inspect(exception.__struct__)})",
-         %{error_class: inspect(exception.__struct__), exception: Exception.message(exception)}
+         %{resource: ash_resource, error_class: inspect(exception.__struct__)}
        )}
   end
 
   defp read_refusal(ash_resource, message, evidence) do
     Refusal.new(:REFUSED_UNSUPPORTED_SPARQL_FEATURE, ash_resource, message, evidence)
   end
-
-  defp error_message(error) when is_exception(error), do: Exception.message(error)
-  defp error_message(error), do: inspect(error)
 
   # Returns `{:ok, graph}` | `{:error, refusal}` -- a `:join_table` reference object map
   # (see `add_reference_triples/4`) surfaces as a real refusal now, so every caller between

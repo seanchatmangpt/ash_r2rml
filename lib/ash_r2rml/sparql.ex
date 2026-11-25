@@ -366,17 +366,32 @@ defmodule AshR2RML.SPARQL.Protocol do
     case URI.parse(endpoint) do
       %URI{scheme: scheme, host: host}
       when scheme in ["http", "https"] and is_binary(host) and host != "" ->
-        if allow_private == true or not private_host?(host) do
+        if allow_private == true do
           :ok
         else
-          {:error,
-           Refusal.new(
-             :REFUSED_INVALID_FEDERATION_ENVIRONMENT,
-             endpoint,
-             "SPARQL endpoint resolves to a private network address; " <>
-               "pass allow_private_network: true to permit",
-             %{private_network: true}
-           )}
+          case vet_host(host) do
+            :ok ->
+              :ok
+
+            {:private, addrs} ->
+              {:error,
+               Refusal.new(
+                 :REFUSED_INVALID_FEDERATION_ENVIRONMENT,
+                 endpoint,
+                 "SPARQL endpoint resolves to a private network address; " <>
+                   "pass allow_private_network: true to permit",
+                 %{private_network: true, resolved: Enum.map(addrs, &ip_string/1)}
+               )}
+
+            :unresolved ->
+              {:error,
+               Refusal.new(
+                 :REFUSED_INVALID_FEDERATION_ENVIRONMENT,
+                 endpoint,
+                 "SPARQL endpoint host did not resolve; refused fail-closed",
+                 %{private_network: false, dns_unresolved: true}
+               )}
+          end
         end
 
       _ ->
@@ -390,22 +405,52 @@ defmodule AshR2RML.SPARQL.Protocol do
     end
   end
 
-  defp private_host?(host) do
+  @dns_timeout_ms 2_000
+
+  # Vets the host the client is about to connect to. Literal IPs are checked
+  # directly; names are resolved (A and AAAA, bounded timeout) and refused if ANY
+  # resolved address is private/loopback/link-local/metadata. Resolution failure
+  # in both families is refused (fail-closed). Residual: the HTTP client resolves
+  # again at connect, so a rebind inside that window is not closed by vetting alone;
+  # use a pinned-IP URL for hostile networks.
+  @spec vet_host(String.t()) :: :ok | {:private, [:inet.ip_address()]} | :unresolved
+  defp vet_host(host) do
     h = host |> String.trim_leading("[") |> String.trim_trailing("]") |> String.downcase()
 
     cond do
       h == "localhost" or String.ends_with?(h, ".localhost") ->
-        true
+        {:private, [{127, 0, 0, 1}]}
+
+      match?({:ok, _}, :inet.parse_address(String.to_charlist(h))) ->
+        {:ok, ip} = :inet.parse_address(String.to_charlist(h))
+        if private_ip?(ip), do: {:private, [ip]}, else: :ok
 
       true ->
-        case :inet.parse_address(String.to_charlist(h)) do
-          {:ok, ip} -> private_ip?(ip)
-          {:error, _} -> false
+        addrs = resolve_all(String.to_charlist(h))
+
+        cond do
+          addrs == [] -> :unresolved
+          Enum.any?(addrs, &private_ip?/1) -> {:private, Enum.filter(addrs, &private_ip?/1)}
+          true -> :ok
         end
     end
   end
 
-  defp private_ip?({0, 0, 0, 0}), do: true
+  defp resolve_all(name) do
+    [:inet, :inet6]
+    |> Enum.flat_map(fn family ->
+      case :inet.getaddrs(name, family, @dns_timeout_ms) do
+        {:ok, addrs} -> addrs
+        {:error, _} -> []
+      end
+    end)
+    |> Enum.uniq()
+  end
+
+  defp ip_string(ip), do: ip |> :inet.ntoa() |> to_string()
+
+  defp private_ip?({0, _, _, _}), do: true
+  defp private_ip?({100, b, _, _}) when b in 64..127, do: true
   defp private_ip?({127, _, _, _}), do: true
   defp private_ip?({10, _, _, _}), do: true
   defp private_ip?({172, b, _, _}) when b in 16..31, do: true

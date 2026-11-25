@@ -72,7 +72,7 @@ defmodule Bench.Layer.Custom do
 
     try do
       case AshR2RML.OBDA.query(ctx.specs, @healthy, [domain: ctx.domain, timeout_ms: 60_000] ++ actor_opts(ctx)) do
-        {:ok, %{digest: digest}} when is_binary(digest) -> digest
+        {:ok, %AshR2RML.OBDA.Result{} = result} -> Bench.Layer.Common.digest_of(result)
         other -> raise "canonical_digest: healthy query failed: #{inspect(other, limit: 5)}"
       end
     after

@@ -8,7 +8,7 @@ defmodule AshR2RML.OBDAQueryEnvelopeTest do
   bounds and telemetry over real `Ash.DataLayer.Ets` rows (public table, since the query
   runs inside `AshR2RML.OBDA.Worker`).
   """
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias AshR2RML.Mapping.{LogicalTable, ObjectMap, PredicateObjectMap, Resource, SubjectMap}
   alias AshR2RML.OBDA
@@ -29,7 +29,7 @@ defmodule AshR2RML.OBDAQueryEnvelopeTest do
     use Ash.Resource, domain: AshR2RML.OBDAQueryEnvelopeTest.Dom, data_layer: Ash.DataLayer.Ets
 
     actions do
-      defaults [:read]
+      defaults [:read, :destroy]
 
       create :create do
         primary? true
@@ -72,8 +72,17 @@ defmodule AshR2RML.OBDAQueryEnvelopeTest do
 
   @select "SELECT ?name WHERE { ?s <#{@name}> ?name }"
 
+  # The public ETS table is owned by Ash's long-lived TableManager GenServer, started on
+  # first access. It is warmed once here and never stopped (`Ets.stop/1` kills the manager
+  # asynchronously, which races the next test's table lookup). Rows are cleared per test
+  # through the real destroy action.
+  setup_all do
+    Ash.read!(Person, domain: Dom)
+    :ok
+  end
+
   setup do
-    Ash.DataLayer.Ets.stop(Person)
+    Person |> Ash.read!(domain: Dom) |> Ash.bulk_destroy!(:destroy, %{}, domain: Dom)
     :ok
   end
 

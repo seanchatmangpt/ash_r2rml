@@ -122,13 +122,17 @@ defmodule AshR2RML.OBDA.Worker do
 
   defp crash_error(kind, reason, stack \\ []) do
     Error.new(:REFUSED_WORKER_CRASHED,
-      message: "worker crashed (#{kind}): #{inspect(reason)}",
+      message: "worker crashed (#{kind})",
       details: %{
         kind: kind,
-        reason: inspect(reason),
-        raw_reason: reason,
+        class: crash_class(reason),
         stacktrace: Exception.format_stacktrace(stack)
       }
     )
   end
+
+  defp crash_class(%{__struct__: mod}), do: inspect(mod)
+  defp crash_class({reason, _}) when is_atom(reason), do: Atom.to_string(reason)
+  defp crash_class(reason) when is_atom(reason), do: Atom.to_string(reason)
+  defp crash_class(_), do: nil
 end

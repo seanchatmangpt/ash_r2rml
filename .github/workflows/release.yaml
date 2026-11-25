@@ -114,11 +114,13 @@ jobs:
       - name: Build Hex package
         run: mix hex.build
 
-      - name: Warn when HEX_API_KEY is absent
+      - name: Fail when HEX_API_KEY is absent
         env:
           HEX_API_KEY: ${{ secrets.HEX_API_KEY }}
         if: env.HEX_API_KEY == ''
-        run: echo "::warning title=Hex publish skipped::HEX_API_KEY is empty; package was built but NOT published"
+        run: |
+          echo "::error title=Hex publish blocked::HEX_API_KEY is empty; package was built but NOT published"
+          exit 1
 
       - name: Publish to Hex.pm
         env:

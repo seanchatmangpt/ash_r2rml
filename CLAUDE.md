@@ -8,7 +8,7 @@ Full architecture, DSL, semantic-correspondence table, and refusal vocabulary li
 `Ash.DataLayer`; it compiles Ash resource metadata + semantic annotations into a normalized
 mapping IR (`AshR2RML.Mapping.*`), then renders that IR to standards-valid W3C R2RML Turtle and
 native `Ash.Type` representations. `AshPostgres` (or other data layers) still owns persistence;
-`AshR2RML.OBDA.InMemory` (Ash-mediated reads, no JDBC) is the sole runtime OBDA backend. **Normalize to IR first, verify second, render third** —
+`AshR2RML.OBDA.InMemory` (Ash-mediated reads) is the sole runtime OBDA backend. **Normalize to IR first, verify second, render third** —
 never generate R2RML Turtle directly from ad-hoc resource introspection.
 
 v26.11.24 is stripped to the DSL, mapping IR, R2RML rendering and OBDA; earlier surfaces

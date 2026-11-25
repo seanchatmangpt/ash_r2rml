@@ -11,10 +11,26 @@ See [Conventional Commits](Https://conventionalcommits.org) for commit guideline
 
 <!-- changelog -->
 
-## v26.11.25 (2026-11-24)
+## v26.11.24 (2026-11-24)
 
-Bounded, Ash-mediated OBDA. Still zero Java, zero JDBC, and zero data-layer runtime dependencies
-(runtime deps: `ash`, `spark`, `rdf`, `sparql`, `sparql_client`, `jason`, `telemetry`; `igniter` optional).
+Zero-Java, zero-JDBC release with bounded, Ash-mediated OBDA. `AshR2RML.OBDA.InMemory` is the sole
+runtime OBDA backend; the Ontop/JDBC adapter is removed. Runtime deps: `ash`, `spark`, `rdf`, `sparql`,
+`sparql_client`, `jason`, `telemetry`; `igniter` optional.
+
+### Breaking changes:
+* Stripped to the core: `r2rml`/`rdf` DSL, mapping IR, R2RML rendering, typed refusals, and OBDA
+  (`AshR2RML.OBDA.InMemory`, `AshR2RML.SPARQL.*`).
+* Removed the Ontop/JDBC adapter (`AshR2RML.OBDA.Ontop`, `OntopConfig`, compliance catalog, live
+  crowns, docker harness, bench, CI `obda` job): the Hex tarball contains zero Java, JDBC, Ontop,
+  jar or Docker files. Recoverable from commit `26f5f49`.
+* Removed (recoverable from commit `5defc87`): ontology-first ingestion/admission/semantic types,
+  ggen packs and runtime, GraphQL projection, Reactor steps/pipeline, OCEL telemetry, knowledge
+  hooks, VKG, federation, DfCM, production admission, JSON-LD.
+* `AshR2RML.Compiler.compile/2` accepts Ash resources (or domains) only; profile maps are no
+  longer compiled.
+* The `AshGraphql` auto-extension is no longer added by `AshR2RML.Resource`.
+* Removed deps: `ash_graphql`, `absinthe`, `json_ld`, `ash_state_machine`, `ex_check`.
+  `reactor` arrives through `ash`; `simple_sat` and `benchee` are test/dev only.
 
 ### Features:
 * `AshR2RML.OBDA.query/3` envelope: `%Result{bindings, triples, stats, digest}` with canonical
@@ -37,36 +53,6 @@ Bounded, Ash-mediated OBDA. Still zero Java, zero JDBC, and zero data-layer runt
 * Template/constant `:iri` object maps now emit real IRIs; other template/constant object maps
   refuse with `UNSUPPORTED_TERM_TYPE` instead of silently becoming literals.
 
-### Verification:
-* Contract suite on ETS, file-backed AshSqlite and AshPostgres (CI PostgreSQL 16 job);
-  `bin/mutation-court` kills 9/9 in-place mutations; `bench/` DFLSS suite (excluded from the
-  package) with measured baseline in `bench/BASELINE-26.11.25.md`.
-* Release workflow waits for the tag's own CI before gating on check runs.
-
-### Packaging:
-* `package[:files]` is file-only: no `lib/mix` (so `mix ash_r2rml.render/install` are repository-only), no `bench/`. `ash_sqlite`, `ash_postgres`, `benchee`
-  are test/dev only.
-
-## v26.11.24 (2026-11-24)
-
-Zero-Java, zero-JDBC release. `AshR2RML.OBDA.InMemory` is the sole runtime OBDA backend.
-
-### Breaking changes:
-* Stripped to the core: `r2rml`/`rdf` DSL, mapping IR, R2RML rendering, typed refusals, and OBDA
-  (`AshR2RML.OBDA.InMemory`, `AshR2RML.SPARQL.*`).
-* Removed the Ontop/JDBC adapter (`AshR2RML.OBDA.Ontop`, `OntopConfig`, compliance catalog, live
-  crowns, docker harness, bench, CI `obda` job): the Hex tarball contains zero Java, JDBC, Ontop,
-  jar or Docker files. Recoverable from commit `26f5f49`.
-* Removed (recoverable from commit `5defc87`): ontology-first ingestion/admission/semantic types,
-  ggen packs and runtime, GraphQL projection, Reactor steps/pipeline, OCEL telemetry, knowledge
-  hooks, VKG, federation, DfCM, production admission, JSON-LD.
-* `AshR2RML.Compiler.compile/2` accepts Ash resources (or domains) only; profile maps are no
-  longer compiled.
-* The `AshGraphql` auto-extension is no longer added by `AshR2RML.Resource`.
-* Removed deps: `ash_graphql`, `absinthe`, `json_ld`, `ash_state_machine`, `benchee`, `ex_check`.
-  `reactor` arrives through `ash`; `simple_sat` is test/dev only.
-
-### Features:
 * **`AshR2RML.Subject`**: `to_iri/2`, `from_iri/2` (strict unreserved percent-encoding),
   `iri_only?/1`, `check_iri_only/1`; typed refusals for non-template and invalid terms.
 * **Domain compilation**: `AshR2RML.Compiler.compile/2` accepts an `Ash.Domain` and expands it to
@@ -89,12 +75,34 @@ Zero-Java, zero-JDBC release. `AshR2RML.OBDA.InMemory` is the sole runtime OBDA 
 * Refusal evidence no longer carries result rows.
 * SELECT rows are canonically sorted when the query has no `ORDER BY`.
 
+### Verification:
+* Contract suite on ETS, file-backed AshSqlite and AshPostgres (CI PostgreSQL 16 job);
+  `bin/mutation-court` kills 9/9 in-place mutations; `bench/` DFLSS suite (excluded from the
+  package) with measured baseline in `bench/BASELINE-26.11.24.md`; the per-layer stress matrix is
+  UNVERIFIED (not executed).
+* Release workflow waits for the tag's own CI before gating on check runs.
+
 ### Packaging & Release:
 * Version `26.11.24`. Release workflow runs format + tests, requires the tag on `main` ancestry,
   serialises with a concurrency group, and gates on green CI check runs for the exact SHA.
 * `RELEASE_CHECKLIST.md` lists gates, the mutation court and accepted gaps.
-* Verification: 431 tests + 1 doctest, `mix dialyzer` clean (documented ignores),
-  `mix compile --warnings-as-errors`, tarball inspected for zero JDBC/Ontop/jar files.
+* `package[:files]` is file-only: no `lib/mix` (so `mix ash_r2rml.render/install` are repository-only),
+  no `bench/`. `ash_sqlite`, `ash_postgres`, `benchee` are test/dev only.
+
+### Known gaps (accepted, not hidden):
+* `mix credo --strict` is not clean.
+* No OBDA verification against an external SPARQL-to-SQL engine (UNVERIFIED by design).
+* `SPARQL.Protocol` resolves DNS and refuses private addresses, but cannot pin the connection to the
+  vetted IP: a DNS rebind between check and connect is still possible.
+* File-wide dialyzer ignores (`.dialyzer_ignore.exs`) hide an unproven root cause (`Local.query`
+  error-only inference).
+* Workers are not linked to the caller; a killed caller leaves its worker running until its heap cap.
+  `max_heap_size` does not count refc binaries; SPARQL LIMIT/OFFSET apply after evaluation.
+* Constant-subject pushdown on templates with unreserved separators between fields
+  (e.g. `{a}-{b}`) can invert ambiguously.
+* The per-layer stress matrix (Mnesia, embedded, CSV, custom, MySQL, Postgres S8, SQLite S7) was
+  written but not executed for this release.
+
 
 ## v26.11.11 (2026-11-11)
 

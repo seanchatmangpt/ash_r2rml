@@ -19,7 +19,7 @@ defmodule S3S4 do
   @row_count 5000
   # Charter USL is 100 ms. Measured ~148 ms on ETS: Ash.DataLayer.Ets casts the whole 5000x31 table
   # before applying the clamped limit (SQL layers apply LIMIT in the store). Gate is 200 ms here and the
-  # 100 ms miss is recorded in BASELINE-26.11.25.md.
+  # 100 ms miss is recorded in BASELINE-26.11.24.md.
   @s3_budget_ms 200
   @s4_timeout_ms 50
   @s4_upper_ms 150

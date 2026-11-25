@@ -191,7 +191,7 @@ defmodule AshR2RML.OBDA.InMemoryRowPolicyTenantTest do
                InMemory.query(TenantNote, tenant_mapping(), @select, domain: Domain)
 
       assert refusal.detail =~ "fail-closed"
-      assert refusal.evidence.exception =~ "tenant"
+      assert refusal.evidence.error_class =~ "Invalid"
     end
   end
 end

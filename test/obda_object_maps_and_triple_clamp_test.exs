@@ -67,7 +67,9 @@ defmodule AshR2RML.ObdaObjectMapsAndTripleClampTest do
     }
   end
 
-  setup do
+  # Read-only suite: seed once from setup_all so its long-lived process owns the table.
+  # No test mutates rows, so no per-test cleanup is needed.
+  setup_all do
     Ash.DataLayer.Ets.stop(Item)
 
     for i <- 1..50 do

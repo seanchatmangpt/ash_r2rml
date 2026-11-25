@@ -351,4 +351,46 @@ defmodule AshR2RML.RefusalCodesCoverageTest do
       assert refusal.evidence == %{strategy: :constant}
     end
   end
+
+  describe "Error catalog completeness" do
+    @lib Path.expand("../lib", __DIR__)
+
+    defp source_codes do
+      @lib
+      |> Path.join("**/*.ex")
+      |> Path.wildcard()
+      |> Enum.reject(&(Path.basename(&1) == "error.ex"))
+      |> Enum.flat_map(fn path ->
+        ~r/\b(?:REFUSED|UNSUPPORTED)_[A-Z0-9_]+\b/
+        |> Regex.scan(File.read!(path))
+        |> Enum.map(fn [code] -> {String.to_atom(code), Path.relative_to(path, @lib)} end)
+      end)
+    end
+
+    test "the scan is not vacuous" do
+      codes = source_codes()
+      assert length(codes) > 50
+      assert Enum.any?(codes, fn {c, _} -> c == :REFUSED_READ_FAILED end)
+      assert Enum.any?(codes, fn {c, _} -> c == :REFUSED_RESOURCE_BOUND end)
+    end
+
+    test "every code named in lib/ is in AshR2RML.Error's catalog" do
+      catalog = AshR2RML.Error.codes()
+
+      missing =
+        source_codes()
+        |> Enum.reject(fn {code, _} -> code in catalog end)
+        |> Enum.group_by(&elem(&1, 0), &elem(&1, 1))
+
+      assert missing == %{},
+             "codes emitted or referenced in lib/ but missing from the Error catalog: " <>
+               inspect(Map.new(missing, fn {c, files} -> {c, Enum.uniq(files)} end))
+    end
+
+    test "every catalog code is emitted or referenced somewhere in lib/ outside error.ex" do
+      used = source_codes() |> Enum.map(&elem(&1, 0)) |> MapSet.new()
+      stale = Enum.reject(AshR2RML.Error.codes(), &MapSet.member?(used, &1))
+      assert stale == [], "catalog codes no emitter references: #{inspect(stale)}"
+    end
+  end
 end

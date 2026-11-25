@@ -117,8 +117,8 @@ defmodule Bench.Layer.Simple do
 
   def canonical_digest(ctx) do
     case OBDA.query(ctx.digest_specs, @sparql, domain: ctx.domain) do
-      {:ok, %{digest: digest}} when is_binary(digest) ->
-        digest
+      {:ok, %AshR2RML.OBDA.Result{} = result} ->
+        Bench.Layer.Common.digest_of(result)
 
       other ->
         raise "simple layer canonical_digest failed: #{inspect(other, limit: 5)}"
@@ -183,7 +183,8 @@ defmodule Bench.Layer.Simple do
 
     bad =
       Enum.flat_map(outcomes, fn
-        {:ok, {:healthy, {:ok, %{digest: ^expected}}}} -> []
+        {:ok, {:healthy, {:ok, %AshR2RML.OBDA.Result{} = r}}} ->
+          if Bench.Layer.Common.digest_of(r) == expected, do: [], else: [r.stats]
         {:ok, {:killer, result}} -> if expect_code(result, :REFUSED_RESULT_LIMIT_EXCEEDED) == :ok, do: [], else: [result]
         other -> [other]
       end)

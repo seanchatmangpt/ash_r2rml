@@ -36,9 +36,7 @@ defmodule AshR2RML.Bench.Fixtures.Org do
     table_name("bench_orgs")
     class("https://www.w3.org/ns/org#Organization")
 
-    subject do
-      template("https://bench.example.test/org/{id}")
-    end
+    subject template: "https://bench.example.test/org/{id}"
 
     property(:code, "https://bench.example.test/ontology/code")
     property(:name, "http://xmlns.com/foaf/0.1/name")
@@ -106,9 +104,7 @@ defmodule AshR2RML.Bench.Fixtures.Person do
     table_name("bench_people")
     class("https://schema.org/Person")
 
-    subject do
-      template("https://bench.example.test/person/{org_code}/{ext_id}")
-    end
+    subject template: "https://bench.example.test/person/{org_code}/{ext_id}"
 
     property(:org_code, "https://bench.example.test/ontology/orgCode")
     property(:ext_id, "https://bench.example.test/ontology/extId")
@@ -127,6 +123,7 @@ defmodule AshR2RML.Bench.Fixtures.SlowRead do
 
   @impl true
   def read(query, _data_layer_query, _opts, _context) do
+    # SLEEP-CLASS: SCHEDULING (bench stressor: a real slow data source, never synchronization)
     :timer.sleep(Application.get_env(:ash_r2rml, :bench_slow_ms, 50))
     rows = Application.get_env(:ash_r2rml, :bench_slow_rows, 3)
 
@@ -160,9 +157,7 @@ defmodule AshR2RML.Bench.Fixtures.SlowResource do
     table_name("bench_slow")
     class("https://bench.example.test/ontology/Slow")
 
-    subject do
-      template("https://bench.example.test/slow/{id}")
-    end
+    subject template: "https://bench.example.test/slow/{id}"
 
     property(:name, "http://xmlns.com/foaf/0.1/name")
   end
@@ -191,9 +186,7 @@ defmodule AshR2RML.Bench.Fixtures.HeapBomb do
     table_name("bench_heap_bomb")
     class("https://bench.example.test/ontology/HeapBomb")
 
-    subject do
-      template("https://bench.example.test/bomb/{id}")
-    end
+    subject template: "https://bench.example.test/bomb/{id}"
 
     property(:blob_a, "https://bench.example.test/ontology/blobA")
     property(:blob_b, "https://bench.example.test/ontology/blobB")
@@ -259,9 +252,7 @@ defmodule AshR2RML.Bench.Fixtures.Wide30 do
     table_name("bench_wide30")
     class("https://bench.example.test/ontology/Wide30")
 
-    subject do
-      template("https://bench.example.test/wide/{id}")
-    end
+    subject template: "https://bench.example.test/wide/{id}"
 
     property(:f01, "https://bench.example.test/ontology/f01")
     property(:f02, "https://bench.example.test/ontology/f02")

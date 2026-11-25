@@ -16,8 +16,11 @@ defmodule AshR2RML.OBDA.Preflight do
 
   Tenant is checked before policy, so a missing tenant is refused rather than pruned.
 
-  Options: `:actor`, `:tenant`, `:action` (read action name, default: primary read),
-  `:domain`.
+  Options: `:actor`, `:tenant`, `:context`, `:action` (read action name, default: primary
+  read), `:domain`. `:actor`, `:tenant`, `:context` and `:domain` are forwarded to `Ash.can?/3`
+  exactly as the read path forwards them to `Ash.read/2`, so context-dependent policies
+  answer identically in preflight and read. (`:authorize?` is not forwarded: the caller skips
+  preflight when it is `false`.)
   """
 
   alias AshR2RML.Refusal
@@ -66,11 +69,15 @@ defmodule AshR2RML.OBDA.Preflight do
       name ->
         can_opts =
           [tenant: tenant, maybe_is: true]
+          |> put_context(Keyword.get(opts, :context))
           |> put_domain(Keyword.get(opts, :domain))
 
         if Ash.can?({resource, name}, actor, can_opts), do: :ok, else: :pruned
     end
   end
+
+  defp put_context(opts, nil), do: opts
+  defp put_context(opts, context), do: Keyword.put(opts, :context, context)
 
   defp put_domain(opts, nil), do: opts
   defp put_domain(opts, domain), do: Keyword.put(opts, :domain, domain)

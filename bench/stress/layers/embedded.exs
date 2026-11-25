@@ -75,7 +75,7 @@ defmodule Bench.Layer.Embedded do
     {:ok, result} =
       AshR2RML.OBDA.query(ctx.digest_specs, @sparql, domain: ctx.digest_domain, authorize?: false)
 
-    result.digest
+    Bench.Layer.Common.digest_of(result)
   end
 
   # -- scenarios ----------------------------------------------------------
@@ -141,7 +141,7 @@ defmodule Bench.Layer.Embedded do
     bad =
       Enum.reject(results, fn
         {:killer, outcome} -> code_of(outcome) == :REFUSED_RESULT_LIMIT_EXCEEDED
-        {:healthy, {:ok, %{digest: d}}} -> d == expected
+        {:healthy, {:ok, _} = ok} -> Bench.Layer.Common.digest_of(ok) == expected
         _ -> false
       end)
 
@@ -299,9 +299,7 @@ defmodule Bench.Layer.Embedded do
           table_name("person")
           class("https://ex.org/Person")
 
-          subject do
-            template("https://ex.org/person/{pid}")
-          end
+          subject template: "https://ex.org/person/{pid}"
 
           property(:name, unquote(schema <> "name"))
           property(:age, unquote(schema <> "age"))

@@ -201,13 +201,7 @@ defmodule Bench.Layer.Mysql do
   defp base_opts(ctx, extra \\ []),
     do: [domain: ctx.domain, authorize?: false, allow_unauthorized: true, timeout_ms: 60_000] ++ extra
 
-  defp digest(%{bindings: bindings}) do
-    bindings
-    |> Enum.map(&:erlang.term_to_binary(Enum.sort(Map.to_list(&1))))
-    |> Enum.sort()
-    |> then(&:crypto.hash(:sha256, &1))
-    |> Base.encode16(case: :lower)
-  end
+  defp digest(%AshR2RML.OBDA.Result{} = result), do: Bench.Layer.Common.digest_of(result)
 
   defp data_layer, do: Module.concat(["AshMysql", "DataLayer"])
   defp repo_base, do: Module.concat(["AshMysql", "Repo"])

@@ -41,15 +41,15 @@ Semantic publication has its own authority boundary. **Readable by an Ash proces
 
 `AshR2RML.OBDA.InMemory` is Ash-mediated (`Ash.read!/2`), so denied fields (`%Ash.ForbiddenField{}`) are omitted and row-derived IRIs are validated or percent-encoded. That is necessary but not sufficient: an Ash extension can replace an admitted attribute with a derived field that an ordinary read loads automatically. `ash_cloak` is the observed falsifier — it replaces a cloaked attribute with a sensitive decrypting calculation under the same public name, and `decrypt_by_default` causes ordinary reads to carry plaintext. Therefore `AshR2RML.Security.sanitize_in_memory_mapping/2` is an obligatory pre-materialization admission transform. Any mapped scalar name that no longer resolves through `Ash.Resource.Info.attribute/2` is removed before graph construction and recorded in `mapping.metadata[:in_memory_non_attribute_excluded_attributes]`. Calculations, aggregates, or extension-manufactured fields have no ambient RDF-publication authority merely because their values are loaded into the record struct.
 
-`AshR2RML.Security.sanitize_mapping/2` (wired into `AshR2RML.Compiler.compile_resources/1`) strips any R2RML-mapped attribute that carries an explicit `field_policy` from the mapping *before* it can be rendered — the exclusion is recorded in `mapping.metadata[:field_policy_excluded_attributes]` for auditability. This is a structural exclusion, not a refusal gate: it never blocks compilation, and it deliberately does not attempt to distinguish an unconditional `authorize_if always()` policy from a genuinely conditional one.
+`AshR2RML.Security.sanitize_mapping/2` (wired into `AshR2RML.Compiler.compile_resources/1`) exists so that rendered R2RML does not leak field-policy-gated attributes: rendered R2RML is consumed by readers that bypass Ash and have no actor with which to enforce a `field_policy`. For `AshPostgres.DataLayer`-backed resources it strips any R2RML-mapped attribute that carries an explicit `field_policy` before rendering, recording the exclusion in `mapping.metadata[:field_policy_excluded_attributes]`. For every data layer it also strips mapped attributes marked `sensitive?: true` (`mapping.metadata[:sensitive_excluded_attributes]`). This is a structural exclusion, not a refusal gate: it never blocks compilation, and it deliberately does not attempt to distinguish an unconditional `authorize_if always()` policy from a genuinely conditional one.
 
 ## Work / verification
 
 Follow `parse → orient → resolve → materialize → read doctrine → inspect → admit/refuse → diagnose/repair → construct → actuate → receipt → replay → standing`. Prefer the existing lawful path and smallest coherent diff. No fabricated evidence, weakened tests, acceptance mocks for real DB/OBDA claims, unrelated refactors, or unresolved production placeholders.
 
-Acceptance precedence: exact user behavior/command → live documented repository command → narrowest equivalent. Discover the current ladder from `mix.exs`, tests, CI, and release workflow at the admitted SHA rather than freezing it here. Preserve the intended progression across formatting/compilation, pure IR tests, adversarial/refusal tests, enterprise/policy cases, OBDA integration (in-process `AshR2RML.OBDA.InMemory`; no JDBC), package build, and release gates when those surfaces exist. CI supplements local execution; it is not truth.
+Acceptance precedence: exact user behavior/command → live documented repository command → narrowest equivalent. Discover the current ladder from `mix.exs`, tests, CI, and release workflow at the admitted SHA rather than freezing it here. Preserve the intended progression across formatting/compilation, pure IR tests, adversarial/refusal tests, enterprise/policy cases, OBDA integration (in-process `AshR2RML.OBDA.InMemory`, the sole OBDA backend), package build, and release gates when those surfaces exist. CI supplements local execution; it is not truth.
 
-As of this writing that ladder is: `mix format --check-formatted` → `mix compile --warnings-as-errors` → `mix test test/unit/` → `mix test test/adversarial/ test/negative/` → `mix test test/fortune5/` → `mix hex.build` → GitHub Actions `v*` tags trigger CalVer publication to Hex.pm (`.github/workflows/release.yaml`). Re-derive this from the repository rather than trusting it once it goes stale.
+As of this writing that ladder is: `mix format --check-formatted` → `mix compile --warnings-as-errors` → `mix test test/unit/` → `mix test test/adversarial/ test/negative/` → `mix test test/fortune5/` → full `mix test` (plus `mix test --include sqlite`; the postgres tier runs with `--include postgres` and `ASH_R2RML_POSTGRES_URL` set) → `mix dialyzer` → `mix hex.build` → `bin/mutation-court` → tag `v*`, which triggers CalVer publication to Hex.pm (`.github/workflows/release.yaml`). Re-derive this from the repository rather than trusting it once it goes stale.
 
 ## GitHub / receipt
 
@@ -120,7 +120,7 @@ defmodule MyApp.Person do
 end
 ```
 
-### Two query-execution backends
+### Query-execution backend
 
 - **`AshR2RML.OBDA.InMemory`** materializes resources from any real Ash data layer reachable by
   `Ash.read!/2` into a real `RDF.Graph`, after `sanitize_in_memory_mapping/2` closes derived-field
@@ -128,8 +128,6 @@ end
   Supports `materialize_many/2`/`query_many/3` for cross-resource joins via `reference_object_maps`,
   including composite-key (multi-column) `rr:joinCondition`s; a `:join_table` many-to-many shape is an explicit typed refusal, not a silent omission.
   `allow_sensitive: true` opts into materializing `sensitive?: true` attributes; the default refuses instead.
-- **Zero JDBC**: the Ontop/JDBC adapter was removed in v26.11.24 (recoverable from `26f5f49`);
-  `test/zero_jdbc_guard_test.exs` enforces it.
 - **`AshR2RML.Compiler.compile/2`** accepts `storage_backend: :postgres | :ets` (default
   `:postgres`); `:ets` skips SQL DDL rendering (`Ash.DataLayer.Ets` needs none) without
   blocking compilation.
@@ -179,9 +177,8 @@ refuses private-network hosts with `REFUSED_INVALID_FEDERATION_ENVIRONMENT` unle
 `REFUSED_INVALID_CLASS_IRI`, `REFUSED_MISSING_SUBJECT_MAP`, `REFUSED_NON_UNIQUE_SEMANTIC_IDENTITY`,
 `REFUSED_UNMAPPED_DATATYPE`, `REFUSED_AMBIGUOUS_RELATIONSHIP`, `REFUSED_INVALID_JOIN_CONDITION`,
 `REFUSED_RELATIONSHIP_WITHOUT_PREDICATE`, `REFUSED_R2RML_JOIN_WITHOUT_IDENTITY`,
-`REFUSED_UNPROVEN_EQUIVALENCE`, `REFUSED_SEMANTIC_TYPE_INVALID`,
-`REFUSED_SEMANTIC_TYPE_ASH_MISMATCH`, `REFUSED_SEMANTIC_TYPE_REQUIRES_RESOURCE_PROJECTION`,
-`REFUSED_SEMANTIC_ROUND_TRIP`, `REFUSED_UNSUPPORTED_SPARQL_FEATURE`.
+`REFUSED_UNPROVEN_EQUIVALENCE`, `REFUSED_UNSUPPORTED_SPARQL_FEATURE`,
+`REFUSED_INVALID_FEDERATION_ENVIRONMENT`, plus `:UNSUPPORTED_TERM_TYPE` (unprefixed).
 
 Mapping-shape codes: `REFUSED_INVALID_LOGICAL_TABLE`, `REFUSED_UNKNOWN_ATTRIBUTE`,
 `REFUSED_INVALID_TERM_MAP`, `REFUSED_INVALID_GRAPH_MAP`, `REFUSED_NON_LITERAL_DATATYPE`,
@@ -192,5 +189,11 @@ Policy, generation and conflict codes: `REFUSED_SENSITIVE_ATTRIBUTE_MATERIALIZAT
 generation failed), `REFUSED_CHANGESET_CONFLICT` (conflicting changeset).
 
 Resource-bound code: `REFUSED_RESOURCE_BOUND` (a request, row or size bound was exceeded;
-fail closed, never truncate silently). `OBDA.InMemory` is the sole OBDA backend; there is no
-external-engine execution refusal.
+fail closed, never truncate silently).
+
+OBDA runtime codes (`AshR2RML.Error`): `REFUSED_RESULT_LIMIT_EXCEEDED`,
+`REFUSED_TRIPLE_LIMIT_EXCEEDED`, `REFUSED_MEMORY_LIMIT_EXCEEDED`, `REFUSED_QUERY_TIMEOUT`,
+`REFUSED_MISSING_TENANT`, `REFUSED_UNAUTHORIZED`, `REFUSED_READ_FAILED`,
+`REFUSED_WORKER_CRASHED`; subject codes `REFUSED_MISSING_SUBJECT_KEY`,
+`REFUSED_INVALID_SUBJECT_IRI`, `REFUSED_NON_INVERTIBLE_TEMPLATE`. `OBDA.InMemory` is the sole
+OBDA backend.

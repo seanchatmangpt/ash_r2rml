@@ -6,7 +6,7 @@ defmodule AshR2RML.MixProject do
   @moduledoc false
   use Mix.Project
 
-  @version "26.11.25"
+  @version "26.11.24"
   @name "AshR2RML"
   @description "W3C R2RML and RDF semantic mapping compiler for Ash Framework"
   @github_url "https://github.com/seanchatmangpt/ash_r2rml"
@@ -117,7 +117,7 @@ defmodule AshR2RML.MixProject do
       |> Enum.reject(&String.starts_with?(&1, "lib/mix/"))
 
     docs =
-      ["usage-rules/**/*.md", "README*", "LICENSE*", "CHANGELOG*"]
+      ["usage-rules/**/*.md", "README*", "LICENSE*", "LICENSES/*.md", "CHANGELOG*"]
       |> Enum.flat_map(&Path.wildcard/1)
 
     (lib ++ docs ++ [".formatter.exs", "mix.exs", "AGENTS.md", "usage-rules.md"])

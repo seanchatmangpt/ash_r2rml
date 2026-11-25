@@ -221,7 +221,9 @@ defmodule AshR2RML.Security do
     |> Enum.filter(&field_policy_protected?(ash_resource, &1))
   end
 
-  defp field_policy_protected?(ash_resource, attribute) do
+  @doc false
+  @spec field_policy_protected?(module(), atom()) :: boolean()
+  def field_policy_protected?(ash_resource, attribute) do
     Code.ensure_loaded?(Ash.Policy.Info) and
       match?([_ | _], Ash.Policy.Info.field_policies_for_field(ash_resource, attribute))
   rescue

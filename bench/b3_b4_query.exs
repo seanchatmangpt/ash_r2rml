@@ -79,7 +79,7 @@ defmodule Bench.B3B4 do
   @b3_p99_ms 50.0 # CTQ-3 USL; Ash.DataLayer.Ets filters scan the table, p99 target 15ms not reachable
   # Charter USL for B4 is 50 ms on ETS; measured ~110 ms because Ash.DataLayer.Ets filters and sorts
   # 10k records in Elixir (no index). Gate held at the charter's 150 ms SQLite USL; breach of 50 ms is
-  # recorded in BASELINE-26.11.25.md, not hidden.
+  # recorded in BASELINE-26.11.24.md, not hidden.
   @b4_p99_ms 150.0
   @sqlite_b3_p99_ms 150.0
   @sqlite_b4_p99_ms 150.0

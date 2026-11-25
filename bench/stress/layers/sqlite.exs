@@ -157,8 +157,10 @@ defmodule Bench.Layer.Sqlite do
 
   @spec canonical_digest(map()) :: binary()
   def canonical_digest(ctx) do
-    {:ok, result} = AshR2RML.OBDA.query(ctx.specs, @sparql, healthy_opts(ctx))
-    digest_of(result.bindings, Map.get(ctx, :digest_rows, @digest_rows))
+    limit = Map.get(ctx, :digest_rows, @digest_rows)
+    sparql = String.replace_suffix(@sparql, " }", " . FILTER(?a <= #{limit}) }")
+    {:ok, result} = AshR2RML.OBDA.query(ctx.specs, sparql, healthy_opts(ctx))
+    Bench.Layer.Common.digest_of(result)
   end
 
   # -- scenarios ------------------------------------------------------------------------------

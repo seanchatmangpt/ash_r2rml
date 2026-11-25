@@ -13,14 +13,20 @@ AshR2RML is an Ash extension that compiles Ash resources and relationships into 
 
 AshR2RML is **not** a graph database, **not** an `Ash.DataLayer`, and **not** a SPARQL engine.
 
-### Scope (v26.11.25)
+### Scope (v26.11.24)
 
 **Shipped**
 
-- Bounded, Ash-mediated OBDA (`AshR2RML.OBDA.InMemory`): `max_rows`, `max_triples`,
-  `max_heap_size` (worker-process isolation), and `timeout_ms` bound every evaluation.
-- `Ash.Query` pushdown for constant-subject lookups.
-- Zero Java, zero JDBC; all reads go through Ash actions.
+- Sole runtime OBDA backend: `AshR2RML.OBDA.InMemory` (Ash-mediated `Ash.read/2` under the
+  caller's actor/tenant). `AshR2RML.OBDA.query/3` bounds every evaluation with `max_rows`,
+  `max_triples`, `max_heap_size` (worker-process isolation), and `timeout_ms`.
+- `Ash.Query` pushdown (constant-subject lookups; simple FILTER, ORDER BY, LIMIT/OFFSET on the
+  root resource) and resource preflight pruning.
+- A read-only HTTP SPARQL protocol client (`AshR2RML.SPARQL.Protocol`).
+- Runtime deps: `ash`, `spark`, `rdf`, `sparql`, `sparql_client`, `jason`, `telemetry`
+  (`igniter` optional). Zero Java, zero JDBC, no data-layer dependency; all reads go through Ash
+  actions. `lib/mix` tasks are not shipped in the Hex package.
+- No external-engine OBDA is verified; the earlier Ontop/JDBC adapter was removed.
 - R2RML Turtle from `AshR2RML.R2RML.render/1` is the frozen wire contract for a future
   PurRDF/graphlaw backend.
 
@@ -97,13 +103,13 @@ Add AshR2RML beside the Ash data layer you already use:
 def deps do
   [
     {:ash, "~> 3.0"},
-    {:ash_postgres, "~> 2.0"},
+    {:ash_postgres, "~> 2.0"},  # your own data layer; not a dependency of ash_r2rml
     {:ash_r2rml, "~> 26.11"}
   ]
 end
 ```
 
-AshR2RML does not replace AshPostgres. A resource continues to use its normal data layer:
+AshR2RML has no data-layer dependency and does not replace AshPostgres. A resource continues to use its normal data layer:
 
 ```elixir
 defmodule MyApp.Person do
@@ -370,21 +376,19 @@ R2RML should name and expose relationships the relational model already preserve
 
 AshR2RML treats compile success as a checkpoint, not the crown.
 
-The integration contract is:
+The verified path is in-process:
 
 ```text
 Ash resources
     ↓
-PostgreSQL fixture
+AshR2RML mapping IR
     ↓
-AshR2RML-generated R2RML
+OBDA.InMemory (Ash.read/2, actor/tenant)
     ↓
-real R2RML/OBDA engine
-    ↓
-SPARQL
+SPARQL.Local
 ```
 
-The semantic identity and required relationships returned through SPARQL must match the subject visible through Ash.
+The semantic identity and required relationships returned through SPARQL must match the subject visible through Ash. Rendered R2RML Turtle for an external R2RML engine is not exercised against any such engine.
 
 ## Status
 

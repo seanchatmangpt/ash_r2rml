@@ -27,7 +27,7 @@ defmodule AshR2RML.OBDAPushdownPreflightTest do
     use Ash.Resource, domain: AshR2RML.OBDAPushdownPreflightTest.Dom, data_layer: Ash.DataLayer.Ets
 
     actions do
-      defaults [:read]
+      defaults [:read, :destroy]
 
       create :create do
         primary? true
@@ -49,7 +49,7 @@ defmodule AshR2RML.OBDAPushdownPreflightTest do
       authorizers: [Ash.Policy.Authorizer]
 
     actions do
-      defaults [:read]
+      defaults [:read, :destroy]
 
       create :create do
         primary? true
@@ -90,14 +90,22 @@ defmodule AshR2RML.OBDAPushdownPreflightTest do
     }
   end
 
-  setup do
+  # The setup_all process lives for the whole module, so it owns both ETS tables; per-test
+  # processes never create or delete a table.
+  setup_all do
     Ash.DataLayer.Ets.stop(Person)
     Ash.DataLayer.Ets.stop(Secret)
+    Ash.read!(Person, domain: Dom, authorize?: false)
+    Ash.read!(Secret, domain: Dom, authorize?: false)
+    :ok
+  end
 
-    on_exit(fn ->
-      Ash.DataLayer.Ets.stop(Person)
-      Ash.DataLayer.Ets.stop(Secret)
-    end)
+  # Per-test isolation via real Ash destroys, not table lifecycle.
+  setup do
+    for resource <- [Person, Secret],
+        row <- Ash.read!(resource, domain: Dom, authorize?: false) do
+      Ash.destroy!(row, domain: Dom, authorize?: false)
+    end
 
     :ok
   end

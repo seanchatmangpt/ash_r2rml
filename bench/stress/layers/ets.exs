@@ -211,8 +211,8 @@ defmodule Bench.Layer.Ets do
            domain: ctx.domain,
            max_rows: max(ctx.digest_rows * 2, 1_000)
          ) do
-      {:ok, %Result{digest: digest}} when is_binary(digest) ->
-        digest
+      {:ok, %Result{} = result} ->
+        Bench.Layer.Common.digest_of(result)
 
       other ->
         raise "ets canonical_digest: query did not return {:ok, %Result{}}: " <>

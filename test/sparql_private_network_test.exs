@@ -24,6 +24,32 @@ defmodule AshR2RML.SPARQLPrivateNetworkTest do
     end
   end
 
+  test "refuses IPv4-mapped IPv6 loopback and metadata, and IPv6 unspecified" do
+    for host <- ["[::ffff:127.0.0.1]", "[::ffff:169.254.169.254]", "[::ffff:10.0.0.1]", "[::]"] do
+      assert {:error, %Refusal{evidence: %{private_network: true}}} =
+               Protocol.query("http://#{host}/sparql", @q)
+    end
+  end
+
+  test "refuses 172.16/12 boundaries, 10/8 and 192.168/16 edges" do
+    for host <- ~w(172.31.255.255 10.255.255.255 192.168.255.255 100.64.0.1) do
+      assert {:error, %Refusal{evidence: %{private_network: true}}} =
+               Protocol.query("http://#{host}/sparql", @q)
+    end
+  end
+
+  test "mixed-case localhost and *.localhost are refused" do
+    for host <- ["LOCALHOST", "foo.localhost"] do
+      assert {:error, %Refusal{evidence: %{private_network: true}}} =
+               Protocol.query("http://#{host}:8080/sparql", @q)
+    end
+  end
+
+  test "unresolvable host is refused fail-closed, not passed through" do
+    assert {:error, %Refusal{code: :REFUSED_INVALID_FEDERATION_ENVIRONMENT, evidence: %{dns_unresolved: true}}} =
+             Protocol.query("http://no-such-host.invalid/sparql", @q, timeout: 1_000)
+  end
+
   test "allow_private_network: true lifts the guard (connection then fails, not the guard)" do
     {:ok, listen} = :gen_tcp.listen(0, [:binary, ip: {127, 0, 0, 1}])
     {:ok, port} = :inet.port(listen)

@@ -4,12 +4,12 @@ SPDX-FileCopyrightText: 2026 ash_r2rml contributors <https://github.com/seanchat
 SPDX-License-Identifier: MIT
 -->
 
-# Baseline 26.11.25
+# Baseline 26.11.24
 
 Standing: PARTIAL
 
 Measured with `MIX_ENV=test mix run bench/<script>.exs` on one developer machine (Darwin, single run per
-row; S5 at the full 60 s). Numbers are from actual runs on the working tree that became v26.11.25; none are
+row; S5 at the full 60 s). Numbers are from actual runs on the working tree that became v26.11.24; none are
 projected. Gates marked "relaxed" differ from the charter USL and the charter value is stated.
 
 | Bench | Result | Gate | Verdict |
@@ -40,7 +40,7 @@ the rendered R2RML, whose TriplesMap names carry the module name, so digests dif
 
 ## Per-layer matrix
 
-Standing: UNVERIFIED. Every cell awaits a coordinator run; no number below is measured.
+Standing: UNVERIFIED. Not executed; every cell awaits a coordinator run, no number below is measured.
 
 | Scenario | ETS | SQLite | Postgres | MySQL |
 |---|---|---|---|---|

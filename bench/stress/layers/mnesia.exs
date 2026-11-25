@@ -65,7 +65,7 @@ defmodule Bench.Layer.Mnesia do
 
   def canonical_digest(ctx) do
     case AshR2RML.OBDA.query(ctx.digest_specs, @sparql, query_opts(ctx)) do
-      {:ok, %{digest: digest}} when is_binary(digest) -> digest
+      {:ok, %AshR2RML.OBDA.Result{} = result} -> Bench.Layer.Common.digest_of(result)
       other -> raise "mnesia canonical_digest: query failed: #{inspect(other, limit: 20)}"
     end
   end
@@ -297,8 +297,13 @@ defmodule Bench.Layer.Mnesia do
     else
       fails =
         case AshR2RML.OBDA.query(ctx.digest_specs, @sparql, query_opts(ctx)) do
-          {:ok, %{digest: ^expected, bindings: b}} when length(b) == ctx.digest_rows -> fails
-          other -> [{:healthy_wrong, summarize(other)} | fails]
+          {:ok, %{bindings: b} = r} when length(b) == ctx.digest_rows ->
+            if Bench.Layer.Common.digest_of(r) == expected,
+              do: fails,
+              else: [{:healthy_digest_mismatch, length(b)} | fails]
+
+          other ->
+            [{:healthy_wrong, summarize(other)} | fails]
         end
 
       healthy_loop(ctx, expected, deadline, fails)

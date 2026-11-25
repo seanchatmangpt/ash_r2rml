@@ -70,7 +70,7 @@ mapping = AshR2RML.Resource.Info.mapping!(MyApp.Person)
 {:ok, obs} = AshR2RML.OBDA.InMemory.query(MyApp.Person, mapping, sparql, actor: actor, tenant: tenant)
 ```
 
-`authorize?: false` needs `allow_unauthorized: true`; `sensitive?: true` attributes need `allow_sensitive: true`. See [obda.md](obda.md). No Ontop or JDBC engine is shipped.
+`authorize?: false` needs `allow_unauthorized: true`; `sensitive?: true` attributes need `allow_sensitive: true`. See [obda.md](obda.md). For the bounded envelope (`%Result{bindings, triples, stats, digest}`, `max_rows`, `max_triples`, `timeout_ms`, `max_heap_words`) use `AshR2RML.OBDA.query/3`.
 
 ## Subject IRIs
 

@@ -169,8 +169,8 @@ defmodule Bench.Layer.Postgres do
 
   def canonical_digest(ctx) do
     case OBDA.query(ctx.specs, @sparql, base_opts(@digest_tenant) ++ [timeout_ms: 60_000]) do
-      {:ok, %{digest: digest}} when is_binary(digest) -> digest
-      other -> "ERROR: " <> inspect(other, limit: 5)
+      {:ok, %AshR2RML.OBDA.Result{} = result} -> Common.digest_of(result)
+      other -> raise "postgres canonical_digest: query failed: " <> inspect(other, limit: 5)
     end
   end
 

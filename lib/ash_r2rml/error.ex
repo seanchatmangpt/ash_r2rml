@@ -63,9 +63,53 @@ defmodule AshR2RML.Error do
       {"subject IRI does not match the resource template", "use an IRI produced by AshR2RML.Subject.to_iri/2"},
     REFUSED_NON_INVERTIBLE_TEMPLATE:
       {"subject template cannot be inverted", "use a template with delimited, distinct placeholders"},
+    REFUSED_READ_FAILED:
+      {"underlying Ash read failed", "inspect details.reason and the data layer; retry once the read source is healthy"},
+    REFUSED_RESOURCE_BOUND: {"resource bound exceeded", "narrow the query or raise the max_rows / max_triples bound"},
+    REFUSED_WORKER_CRASHED:
+      {"query worker crashed", "inspect details.reason and details.stacktrace; retry if the failure was transient"},
+    REFUSED_INVALID_LOGICAL_TABLE:
+      {"logical table is invalid", "set a non-empty table_name or a valid SQL query for the mapping"},
+    REFUSED_UNKNOWN_ATTRIBUTE:
+      {"mapping references an unknown Ash attribute", "map only attributes declared on the Ash resource"},
+    REFUSED_INVALID_GRAPH_MAP:
+      {"graph map is invalid", "use a non-empty template, column or an absolute constant graph IRI"},
+    REFUSED_INVALID_TERM_MAP:
+      {"term map is invalid", "use a supported strategy with a non-empty value and a compatible term type"},
+    REFUSED_RELATIONSHIP_TARGET_UNMAPPED:
+      {"relationship target resource has no mapping", "add an r2rml block to the relationship destination resource"},
+    REFUSED_SENSITIVE_ATTRIBUTE_MATERIALIZATION:
+      {"sensitive attribute cannot be materialized", "remove the mapping or pass allow_sensitive?: true deliberately"},
+    REFUSED_NON_LITERAL_DATATYPE:
+      {"datatype cannot be a literal", "map the attribute as an IRI or use a literal-capable type"},
+    REFUSED_CHANGESET_CONFLICT:
+      {"mapping changeset conflicts with current state", "rebuild the changeset from the current mapping and retry"},
+    REFUSED_MANIFEST_GENERATION:
+      {"manifest generation failed", "fix the refused mapping reported in details and regenerate"},
+    REFUSED_INVALID_FEDERATION_ENVIRONMENT:
+      {"federation endpoint environment is invalid", "use an absolute http or https endpoint with a public host"},
     UNSUPPORTED_TERM_TYPE: {"term type is unsupported", "use iri, literal or blank_node term types"},
     UNSUPPORTED_ASH_TYPE: {"Ash type is unsupported", "implement AshR2RML.Type for the custom type"}
   }
+
+  @retryable [:REFUSED_READ_FAILED, :REFUSED_QUERY_TIMEOUT, :REFUSED_WORKER_CRASHED]
+
+  @doc "Every code in the catalog."
+  @spec codes() :: [atom()]
+  def codes, do: @catalog |> Map.keys() |> Enum.sort()
+
+  @doc """
+  True when the refusal reflects a transient condition (read failure, timeout, worker crash)
+  where the identical call may succeed later. Bound, policy and mapping refusals are not retryable.
+
+      iex> AshR2RML.Error.retryable?(:REFUSED_QUERY_TIMEOUT)
+      true
+      iex> AshR2RML.Error.retryable?(:REFUSED_UNAUTHORIZED)
+      false
+  """
+  @spec retryable?(atom() | t()) :: boolean()
+  def retryable?(%__MODULE__{code: code}), do: retryable?(code)
+  def retryable?(code) when is_atom(code), do: code in @retryable
 
   @doc "Builds an error. Options: `:resource`, `:field`, `:sparql_clause`, `:hint`, `:details`, `:message`."
   @spec new(atom(), keyword()) :: t()

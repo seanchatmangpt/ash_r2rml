@@ -101,6 +101,7 @@ defmodule AshR2RML.OBDA do
   def normalize_result({:ok, _} = ok), do: ok
   def normalize_result({:error, %Error{} = e}), do: {:error, e}
   def normalize_result({:error, %Refusal{} = r}), do: {:error, r}
+  def normalize_result({:error, [%Refusal{} = r | _]}), do: {:error, r}
   def normalize_result({:error, other}), do: {:error, wrap_failure(:error, other)}
   def normalize_result(other), do: {:error, wrap_failure(:error, {:unexpected_result, other})}
 
@@ -115,7 +116,7 @@ defmodule AshR2RML.OBDA do
     Error.new(code,
       resource: resource,
       message: nil,
-      details: %{kind: kind, class: class_of(reason), reason: inspect(reason, limit: 20, printable_limit: 500)}
+      details: %{kind: kind, class: class_of(reason)}
     )
   end
 
@@ -165,10 +166,39 @@ defmodule AshR2RML.OBDA do
   end
 
   defp execute(source, sparql, opts, started) do
-    with {:ok, specs} <- resolve_specs(source),
+    with :ok <- check_order_projected(sparql),
+         {:ok, specs} <- resolve_specs(source),
          {:ok, readable, pruned} <- preflight(specs, opts),
          {:ok, graph, ttl, observation} <- run_with_pushdown(readable, specs, sparql, opts) do
       {:ok, envelope(observation, graph, pruned, ttl, sparql, started)}
+    end
+  end
+
+  # SPARQL.ex projects before this module sorts, so an ORDER BY variable that is not in the SELECT
+  # list cannot be honored; it is refused loudly instead of being silently ignored.
+  @doc false
+  @spec check_order_projected(String.t()) :: :ok | {:error, Refusal.t()}
+  def check_order_projected(sparql) do
+    with {:ok, %{order: [_ | _] = order}} <- Modifiers.parse(sparql),
+         [_, select] <- Regex.run(~r/\bSELECT\b\s+(?:DISTINCT\s+|REDUCED\s+)?(.*?)\s*(?:\bWHERE\b|\{)/is, sparql),
+         false <- String.contains?(select, "*") do
+      projected = ~r/[?$](\w+)/ |> Regex.scan(select, capture: :all_but_first) |> List.flatten()
+      missing = for {var, _dir} <- order, var not in projected, do: var
+
+      case missing do
+        [] ->
+          :ok
+
+        _ ->
+          {:error,
+           refusal(
+             "ORDER BY",
+             "ORDER BY variable is not projected by the SELECT clause",
+             %{unprojected: missing, projected: projected}
+           )}
+      end
+    else
+      _ -> :ok
     end
   end
 
@@ -214,7 +244,7 @@ defmodule AshR2RML.OBDA do
     if Keyword.get(opts, :authorize?, true) == false do
       {:ok, specs, 0}
     else
-      pre_opts = Keyword.take(opts, [:actor, :tenant, :domain])
+      pre_opts = Keyword.take(opts, [:actor, :tenant, :context, :domain])
 
       Enum.reduce_while(specs, {:ok, [], 0}, fn {resource, _mapping} = spec, {:ok, keep, pruned} ->
         case AshR2RML.OBDA.Preflight.check(resource, pre_opts) do
@@ -273,7 +303,8 @@ defmodule AshR2RML.OBDA do
     }
   end
 
-  # SPARQL.ex ignores ORDER BY / LIMIT / OFFSET, so they are applied here, after projection.
+  # SPARQL.ex ignores ORDER BY / LIMIT / OFFSET, so they are applied here, after projection
+  # (ORDER BY variables outside the projection are refused up front by `check_order_projected/1`).
   defp canonical_rows(%{result_kind: :bindings, rows: rows}, sparql) do
     rows = if Regex.match?(~r/\bORDER\s+BY\b/i, sparql), do: rows, else: Result.canonical_sort(rows)
     Modifiers.run(rows, Modifiers.parse(sparql))

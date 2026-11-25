@@ -42,22 +42,22 @@ defmodule AshR2RML.OBDAWorkerHardeningTest do
   test "raise is returned with class and reason in details" do
     e = crashed(fn -> raise ArgumentError, "boom" end)
     assert e.details.kind == :error
-    assert e.details.raw_reason == %ArgumentError{message: "boom"}
+    assert e.details.class == "ArgumentError"
     assert e.details.stacktrace =~ "OBDAWorkerHardeningTest"
   end
 
   test "exit, throw and badarg are typed" do
-    assert crashed(fn -> exit({:aborted, :mnesia}) end).details.raw_reason == {:aborted, :mnesia}
+    assert crashed(fn -> exit({:aborted, :mnesia}) end).details.class == "aborted"
     assert crashed(fn -> exit({:aborted, :mnesia}) end).details.kind == :exit
     e = crashed(fn -> throw(:ball) end)
-    assert {e.details.kind, e.details.raw_reason} == {:throw, :ball}
+    assert {e.details.kind, e.details.class} == {:throw, "ball"}
     e = crashed(fn -> :erlang.binary_to_atom(1, :utf8) end)
-    assert {e.details.kind, e.details.raw_reason} == {:error, :badarg}
+    assert {e.details.kind, e.details.class} == {:error, "badarg"}
   end
 
   test "exit(:killed) inside fun is a crash, not a memory refusal" do
     e = crashed(fn -> exit(:killed) end)
-    assert e.details.raw_reason == :killed
+    assert e.details.class == "killed"
   end
 
   test "externally killed worker is typed" do
@@ -65,7 +65,7 @@ defmodule AshR2RML.OBDAWorkerHardeningTest do
     # the external-termination premise is pinned with a catchable-by-runtime non-kill reason.
     e = crashed(fn -> Process.exit(self(), :shutdown) end)
     assert e.details.kind == :exit
-    assert e.details.raw_reason == :shutdown
+    assert e.details.class == "shutdown"
   end
 
   test "timeout and heap refusals still typed" do

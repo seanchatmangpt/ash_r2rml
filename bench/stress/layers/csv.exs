@@ -177,7 +177,7 @@ defmodule Bench.Layer.Csv do
            max_rows: max(ctx.digest_rows * 2, 1_000),
            timeout_ms: 60_000
          ) do
-      {:ok, %{digest: digest}} when is_binary(digest) -> digest
+      {:ok, %AshR2RML.OBDA.Result{} = result} -> Bench.Layer.Common.digest_of(result)
       other -> raise "csv canonical_digest failed: #{inspect(other, limit: 5)}"
     end
   end
