@@ -209,24 +209,42 @@ defmodule AshR2RML.OBDA do
   # created it, so the worker would silently read an empty table.
   defp check_private_data_layers(source) do
     with {:ok, specs} <- resolve_specs(source),
-         [resource | _] <- for({resource, _} <- specs, private_ets?(resource), do: resource) do
+         [{resource, verdict} | _] <- non_confirmed_public(specs) do
       {:error,
        Error.new(:REFUSED_PRIVATE_DATA_LAYER,
          resource: resource,
-         details: %{detail: "#{inspect(resource)} is backed by a private ETS table"}
+         details: %{detail: private_detail(resource, verdict)}
        )}
     else
       _ -> :ok
     end
   end
 
-  defp private_ets?(resource) do
-    Code.ensure_loaded?(Ash.DataLayer.Ets.Info) and
-      function_exported?(Ash.DataLayer.Ets.Info, :private?, 1) and
-      Ash.DataLayer.data_layer(resource) == Ash.DataLayer.Ets and
-      Ash.DataLayer.Ets.Info.private?(resource) == true
+  defp non_confirmed_public(specs) do
+    for {resource, _} <- specs,
+        verdict = private_ets(resource),
+        verdict != false,
+        do: {resource, verdict}
+  end
+
+  defp private_detail(resource, :private),
+    do: "#{inspect(resource)} is backed by a private ETS table"
+
+  defp private_detail(resource, :unknown),
+    do: "#{inspect(resource)} data layer could not be introspected; refusing (fail closed)"
+
+  # Fail closed: only a positively introspected non-private (or non-ETS) layer yields `false`.
+  defp private_ets(resource) do
+    cond do
+      Ash.DataLayer.data_layer(resource) != Ash.DataLayer.Ets -> false
+      not Code.ensure_loaded?(Ash.DataLayer.Ets.Info) -> :unknown
+      not function_exported?(Ash.DataLayer.Ets.Info, :private?, 1) -> :unknown
+      Ash.DataLayer.Ets.Info.private?(resource) == true -> :private
+      Ash.DataLayer.Ets.Info.private?(resource) == false -> false
+      true -> :unknown
+    end
   rescue
-    _ -> false
+    _e in [UndefinedFunctionError, ArgumentError, FunctionClauseError, KeyError] -> :unknown
   end
 
   defp execute(source, sparql, opts, started) do

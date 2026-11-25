@@ -174,7 +174,6 @@ defmodule AshR2RML.Compiler do
       case AshR2RML.Mapping.validate(bundle) do
         :ok -> {:ok, bundle}
         {:error, [first | _]} -> {:error, first}
-        {:error, []} -> {:ok, bundle}
       end
     end
   end

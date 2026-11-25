@@ -85,6 +85,7 @@ defmodule AshR2RML.OBDA.InMemory do
   alias AshR2RML.Refusal
   alias AshR2RML.Security
   alias AshR2RML.Mapping.GraphMap
+  alias AshR2RML.OBDA.InMemory.IriTemplate
   alias AshR2RML.SPARQL.{Local, Observation, Query, Result}
 
   @type spec :: {ash_resource :: module(), mapping_resource :: Resource.t()}
@@ -887,7 +888,7 @@ defmodule AshR2RML.OBDA.InMemory do
       template |> substitute_template(row) |> valid_iri_or_nil()
     end
   rescue
-    ArgumentError -> nil
+    _error in [ArgumentError, Protocol.UndefinedError] -> nil
   end
 
   defp resolve_graph(%GraphMap{strategy: :column, value: column}, row) do
@@ -896,7 +897,7 @@ defmodule AshR2RML.OBDA.InMemory do
       value -> value |> to_string() |> valid_iri_or_nil()
     end
   rescue
-    ArgumentError -> nil
+    _error in [ArgumentError, Protocol.UndefinedError] -> nil
   end
 
   defp resolve_graph(_other, _row), do: nil
@@ -988,7 +989,7 @@ defmodule AshR2RML.OBDA.InMemory do
       nil
     end
   rescue
-    ArgumentError -> nil
+    _error in [ArgumentError, Protocol.UndefinedError] -> nil
   end
 
   defp subject_iri(%SubjectMap{strategy: :column, value: column}, row) do
@@ -996,6 +997,8 @@ defmodule AshR2RML.OBDA.InMemory do
       nil -> nil
       value -> value |> to_string() |> valid_iri_or_nil()
     end
+  rescue
+    _error in [ArgumentError, Protocol.UndefinedError] -> nil
   end
 
   defp subject_iri(_subject_map, _row), do: nil
@@ -1015,13 +1018,9 @@ defmodule AshR2RML.OBDA.InMemory do
   # behavior with `URI.char_unreserved?/1` so a malicious value is neutralized *and the row is
   # preserved* -- matching that projection instead of only failing safe. The static
   # (author-written) portion of the template is never encoded, only the substituted value.
-  defp substitute_template(template, row) do
-    Regex.replace(~r/\{([a-zA-Z0-9_]+)\}/, template, fn _whole, field ->
-      row |> Map.get(String.to_existing_atom(field)) |> to_string() |> percent_encode_iri_value()
-    end)
-  end
+  defp substitute_template(template, row), do: IriTemplate.substitute(template, row)
 
-  defp percent_encode_iri_value(value), do: URI.encode(value, &URI.char_unreserved?/1)
+  defp percent_encode_iri_value(value), do: IriTemplate.encode(value)
 
   # `:column` subject/object maps are different in kind from `:template`: the column's value
   # IS the entire IRI as stored (R2RML's `rr:column` term-type-iri semantics), not a value
@@ -1029,33 +1028,17 @@ defmodule AshR2RML.OBDA.InMemory do
   # changing already-valid stored IRIs, so this path stays fail-closed: a malformed stored
   # value means the row's own data is not a well-formed IRI, and is skipped rather than
   # rewritten.
-  defp valid_iri_or_nil(candidate) do
-    if valid_iri?(candidate), do: candidate, else: nil
-  end
+  defp valid_iri_or_nil(candidate), do: IriTemplate.valid_iri_or_nil(candidate)
 
-  defp valid_iri?(value) when is_binary(value) do
-    value |> RDF.iri() |> RDF.IRI.valid?()
-  rescue
-    _error in [ArgumentError, RDF.IRI.InvalidError] -> false
-  end
-
-  defp valid_iri?(_value), do: false
+  defp valid_iri?(value), do: IriTemplate.valid_iri?(value)
 
   # A denied/unloaded field inside a subject template (unusual, but the mapping IR does not
   # forbid it) would otherwise crash `to_string/1` on the sentinel struct; that must fail
   # closed (no subject at all -- the row is simply not materializable for this actor) rather
   # than leak a stringified struct into an IRI.
-  defp template_fields_readable?(template, row) do
-    ~r/\{([a-zA-Z0-9_]+)\}/
-    |> Regex.scan(template, capture: :all_but_first)
-    |> Enum.all?(fn [field] -> readable(Map.get(row, String.to_existing_atom(field))) != nil end)
-  rescue
-    ArgumentError -> false
-  end
+  defp template_fields_readable?(template, row), do: IriTemplate.fields_readable?(template, row)
 
-  defp readable(%Ash.ForbiddenField{}), do: nil
-  defp readable(%Ash.NotLoaded{}), do: nil
-  defp readable(value), do: value
+  defp readable(value), do: IriTemplate.readable(value)
 
   defp add_class_triples(graph, subject, class_iris, graphs) do
     Enum.reduce(class_iris, graph, fn class_iri, acc ->

@@ -47,6 +47,24 @@ Items marked UNVERIFIED have source present but no test run by the docs lane.
 * The `sobelow --skip` alias was removed. Docs use the single `AshR2RML.Resource` extension and
   public namespaces only.
 
+### Wave-2 hardening:
+* Rescues narrowed in `AshR2RML.OBDA`, `AshR2RML.OBDA.InMemory` and the SPARQL modules; the
+  remaining ones are for programmer errors, not for hiding read failures.
+* Failed Ash reads classify to the typed refusal `REFUSED_READ_FAILED` (details carry the class).
+* `AshR2RML.OBDA.Worker` is guardian-linked: a guardian process monitors caller and worker and
+  kills the worker if the caller dies; the worker is never linked to the caller.
+* `max_rows` is enforced per named-graph execution, and the merged `GRAPH ?g` solution set is
+  bounded too (`REFUSED_RESULT_LIMIT_EXCEEDED`).
+
+### Known gaps (accepted):
+* `mix credo --strict` is not clean.
+* No external OBDA engine is verified; `OBDA.InMemory` and `SPARQL.Local` are the evidence.
+* SSRF DNS-rebind window in the SPARQL protocol client: host vetting resolves before the request,
+  so a rebind between vetting and connect is not closed (use a pinned-IP URL on hostile networks).
+* `.dialyzer_ignore.exs` uses file-wide ignores by file and warning class (Unnecessary Skips: 4).
+* `max_heap_size` does not bound reference-counted (refc) binaries.
+* A `GRAPH ?g` merged result is bounded by `max_rows` only after per-graph execution completes.
+
 ### Frozen handoff contract (downstream `ash_graphlaw` / `ash_affidavit`):
 * Deterministic R2RML: the same resources render byte-identical Turtle.
 * Canonical N-Quads: `AshR2RML.NQuads` output is invariant under input order.
