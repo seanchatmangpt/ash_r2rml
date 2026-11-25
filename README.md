@@ -9,7 +9,7 @@ SPDX-License-Identifier: MIT
 
 **Semantic mappings for Ash. Keep PostgreSQL relational; expose the same admitted subject as RDF.**
 
-AshR2RML is an Ash extension that compiles Ash resources and relationships into standards-valid W3C R2RML mappings. It lets an Ash application persist through its normal data layer—typically AshPostgres—while exposing the same relational state as a virtual RDF graph through any compatible OBDA/R2RML engine.
+AshR2RML is an Ash extension that compiles Ash resources and relationships into standards-valid W3C R2RML mappings. It lets an Ash application persist through its normal data layer—typically AshPostgres—while exposing the same state as RDF through standards-valid R2RML Turtle and the Ash-mediated `AshR2RML.OBDA.InMemory` runtime (the only OBDA backend shipped; no external engine is verified).
 
 AshR2RML is **not** a graph database, **not** an `Ash.DataLayer`, and **not** a SPARQL engine.
 
@@ -19,7 +19,9 @@ AshR2RML is **not** a graph database, **not** an `Ash.DataLayer`, and **not** a 
 
 - Sole runtime OBDA backend: `AshR2RML.OBDA.InMemory` (Ash-mediated `Ash.read/2` under the
   caller's actor/tenant). `AshR2RML.OBDA.query/3` bounds every evaluation with `max_rows`,
-  `max_triples`, `max_heap_size` (worker-process isolation), and `timeout_ms`.
+  `max_triples`, `max_heap_words` (worker-process isolation), and `timeout_ms`. Attributes marked
+  `sensitive?: true` are refused unless `allow_sensitive?: true` (`allow_sensitive: true` is also
+  accepted by `OBDA.query/3`; `OBDA.InMemory` takes `allow_sensitive`).
 - `Ash.Query` pushdown (constant-subject lookups; simple FILTER, ORDER BY, LIMIT/OFFSET on the
   root resource) and resource preflight pruning.
 - A read-only HTTP SPARQL protocol client (`AshR2RML.SPARQL.Protocol`).
@@ -139,10 +141,9 @@ defmodule MyApp.Person do
   r2rml do
     class "http://xmlns.com/foaf/0.1/Person"
 
-    subject do
-      template "https://example.org/people/{id}"
-      term_type :iri
-    end
+    subject template: "https://example.org/people/{id}", term_type: :iri
+
+    property :name, "http://xmlns.com/foaf/0.1/name"
   end
 
   attributes do
@@ -151,10 +152,6 @@ defmodule MyApp.Person do
     attribute :name, :string do
       allow_nil? false
       public? true
-
-      rdf do
-        predicate "http://xmlns.com/foaf/0.1/name"
-      end
     end
   end
 end
@@ -198,13 +195,13 @@ The resulting triples map is equivalent in shape to:
 Ash relationships are first-class inputs to the mapping compiler.
 
 ```elixir
+r2rml do
+  reference :organization, "https://schema.org/memberOf"
+end
+
 relationships do
   belongs_to :organization, MyApp.Organization do
     allow_nil? false
-
-    rdf do
-      predicate "https://schema.org/memberOf"
-    end
   end
 end
 ```
@@ -252,10 +249,7 @@ Example:
 r2rml do
   class "https://schema.org/Organization"
 
-  subject do
-    template "https://example.org/org/{tenant_id}/{id}"
-    term_type :iri
-  end
+  subject template: "https://example.org/org/{tenant_id}/{id}", term_type: :iri
 end
 ```
 
@@ -300,12 +294,15 @@ This representation is deliberately close to R2RML terminology. It is inspectabl
 
 ```elixir
 %AshR2RML.Mapping.Resource{
-  resource: MyApp.Person,
-  class_iris: ["http://xmlns.com/foaf/0.1/Person"],
-  logical_table: "people",
+  ash_resource: MyApp.Person,
+  logical_table: %AshR2RML.Mapping.LogicalTable{table_name: "people"},
   subject_map: %AshR2RML.Mapping.SubjectMap{...},
-  properties: [...],
-  relationships: [...]
+  class_iris: ["http://xmlns.com/foaf/0.1/Person"],
+  predicate_object_maps: [...],
+  reference_object_maps: [...],
+  graph_maps: [],
+  identities: [],
+  metadata: %{}
 }
 ```
 

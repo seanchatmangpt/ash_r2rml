@@ -418,6 +418,14 @@ defmodule AshR2RML.Resource.Persist do
       end
 
     cond do
+      conflict = term_map_conflict(property) ->
+        {:error,
+         Refusal.new(
+           :REFUSED_INVALID_TERM_MAP,
+           property.attribute,
+           "conflicting term map options: #{conflict}"
+         )}
+
       property.language && property.term_type != :literal ->
         {:error,
          Refusal.new(
@@ -469,12 +477,30 @@ defmodule AshR2RML.Resource.Persist do
     end
   end
 
+  defp term_map_conflict(property) do
+    cond do
+      is_binary(property.constant) and is_binary(property.template) -> "constant and template"
+      property.language && property.datatype -> "language and datatype"
+      property.language && property.language_column -> "language and language_column"
+      property.language_column && property.datatype -> "language_column and datatype"
+      property.datatype && property.term_type in [:iri, :blank_node] -> "datatype with term_type #{property.term_type}"
+      true -> nil
+    end
+  end
+
   defp compile_references(resource, dsl, references) do
     Enum.reduce_while(references, {:ok, []}, fn reference, {:ok, acc} ->
       rel_result =
         case Introspection.relationship(resource, reference.relationship) do
-          {:ok, metadata} -> {:ok, metadata}
-          {:error, _} -> compile_dsl_relationship(resource, dsl, reference.relationship)
+          {:ok, metadata} ->
+            {:ok, metadata}
+
+          {:error, refusal} ->
+            if ash_relationship(resource, reference.relationship) do
+              {:error, refusal}
+            else
+              compile_dsl_relationship(resource, dsl, reference.relationship)
+            end
         end
 
       case rel_result do
@@ -506,20 +532,19 @@ defmodule AshR2RML.Resource.Persist do
       if Map.get(rel, :type) == :many_to_many do
         Introspection.many_to_many_metadata(resource, rel)
       else
-        source_attr = to_string(rel.source_attribute || "#{rel_name}_id")
-        dest_attr = to_string(rel.destination_attribute || "id")
-
-        {:ok,
-         %{
-           kind: rel.type,
-           cardinality: Map.get(rel, :cardinality, :one),
-           source: resource,
-           destination: rel.destination,
-           source_attribute: rel.source_attribute,
-           destination_attribute: rel.destination_attribute,
-           joins: [%AshR2RML.Mapping.JoinCondition{child: source_attr, parent: dest_attr}],
-           through: nil
-         }}
+        with {:ok, source_attr, dest_attr} <- dsl_join_columns(resource, rel_name, rel) do
+          {:ok,
+           %{
+             kind: rel.type,
+             cardinality: Map.get(rel, :cardinality, :one),
+             source: resource,
+             destination: rel.destination,
+             source_attribute: rel.source_attribute,
+             destination_attribute: rel.destination_attribute,
+             joins: [%AshR2RML.Mapping.JoinCondition{child: source_attr, parent: dest_attr}],
+             through: nil
+           }}
+        end
       end
     else
       {:error,
@@ -529,6 +554,39 @@ defmodule AshR2RML.Resource.Persist do
          "Ash relationship does not exist"
        )}
     end
+  end
+
+  # belongs_to: Ash defaults are source "<rel>_id", destination "id".
+  # has_one/has_many: Ash defaults source to :id; the destination attribute is
+  # never guessed. Explicit DSL values win, then the compiled Ash relationship,
+  # otherwise refuse.
+  defp dsl_join_columns(_resource, rel_name, %{type: :belongs_to} = rel) do
+    {:ok, to_string(rel.source_attribute || "#{rel_name}_id"), to_string(rel.destination_attribute || "id")}
+  end
+
+  defp dsl_join_columns(resource, rel_name, rel) do
+    {source, destination} =
+      case ash_relationship(resource, rel_name) do
+        %{source_attribute: s, destination_attribute: d} -> {rel.source_attribute || s, rel.destination_attribute || d}
+        _ -> {rel.source_attribute || :id, rel.destination_attribute}
+      end
+
+    if is_nil(destination) do
+      {:error,
+       Refusal.new(
+         :REFUSED_AMBIGUOUS_RELATIONSHIP,
+         {resource, rel_name},
+         "#{rel.type} relationship has no resolvable destination_attribute; declare it explicitly"
+       )}
+    else
+      {:ok, to_string(source), to_string(destination)}
+    end
+  end
+
+  defp ash_relationship(resource, rel_name) do
+    Ash.Resource.Info.relationship(resource, rel_name)
+  rescue
+    _ -> nil
   end
 
   defp compile_graphs(graphs, scope) do
@@ -641,7 +699,10 @@ defmodule AshR2RML.Resource.Info do
   def domain_resources(domain) do
     domain
     |> Ash.Domain.Info.resources()
-    |> Enum.filter(&(AshR2RML in Spark.extensions(&1)))
+    |> Enum.filter(fn resource ->
+      extensions = Spark.extensions(resource)
+      AshR2RML in extensions or AshR2RML.Resource in extensions
+    end)
   end
 
   @doc "True when the module carries a mapping. Never raises, including on plain Ash resources."

@@ -66,7 +66,7 @@ defmodule AshR2RML.Bench.StressUmbrella do
     digest_ok = digests |> Enum.map(&elem(&1, 1)) |> Enum.uniq() |> length() <= 1
 
     IO.puts("\nCanonical digests:")
-    Enum.each(digests, fn {l, d} -> IO.puts("  #{String.pad_trailing(l, 10)} #{Base.encode16(d, case: :lower)}") end)
+    Enum.each(digests, fn {l, d} -> IO.puts("  #{String.pad_trailing(l, 10)} #{d}") end)
     IO.puts("  equal across layers: #{digest_ok}")
 
     code = layers_exit(results, digest_ok)
@@ -233,7 +233,7 @@ defmodule AshR2RML.Bench.StressUmbrella do
       end)
 
     drows =
-      Enum.map_join(digests, "\n", fn {l, d} -> "| #{l} | #{Base.encode16(d, case: :lower)} |" end)
+      Enum.map_join(digests, "\n", fn {l, d} -> "| #{l} | #{d} |" end)
 
     """
     # Stress layers scorecard
@@ -264,7 +264,8 @@ defmodule AshR2RML.Bench.StressUmbrella do
 
         digest =
           case r.digest do
-            d when is_binary(d) -> Base.encode16(d, case: :lower)
+            # digest_of/1 already returns lowercase hex; never re-encode.
+            d when is_binary(d) -> d
             _ -> nil
           end
 

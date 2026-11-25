@@ -1,9 +1,41 @@
 # SPDX-License-Identifier: MIT
 
 defmodule AshR2RML.WS2.EtsNoDdlTest do
+  @moduledoc """
+  An `Ash.DataLayer.Ets` resource compiles and renders to R2RML; the output is a mapping
+  document and never carries SQL DDL.
+  """
   use ExUnit.Case, async: true
 
-  test "ETS backend skips SQL DDL without blocking compilation" do
-    assert File.read!("AGENTS.md") =~ "`:ets` skips SQL DDL rendering"
+  defmodule Gadget do
+    use Ash.Resource,
+      domain: nil,
+      data_layer: Ash.DataLayer.Ets,
+      extensions: [AshR2RML.Resource]
+
+    attributes do
+      uuid_primary_key :id
+      attribute :label, :string, allow_nil?: false, public?: true
+    end
+
+    r2rml do
+      table_name("ws2_gadgets")
+      class("https://example.test/ontology/Gadget")
+
+      subject do
+        template("https://example.test/ws2/gadget/{id}")
+      end
+
+      property(:label, "http://www.w3.org/2000/01/rdf-schema#label")
+    end
+  end
+
+  test "ETS resource compiles and renders without SQL DDL" do
+    assert {:ok, bundle} = AshR2RML.Compiler.compile(Gadget)
+    assert {:ok, ttl} = AshR2RML.R2RML.render(bundle)
+
+    assert ttl =~ "rr:TriplesMap"
+    assert ttl =~ ~s(rr:tableName "ws2_gadgets")
+    refute ttl =~ ~r/CREATE\s+TABLE/i
   end
 end

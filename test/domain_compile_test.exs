@@ -70,6 +70,55 @@ defmodule AshR2RML.DomainCompileTest.Org do
   end
 end
 
+defmodule AshR2RML.DomainCompileTest.ResDomain do
+  @moduledoc false
+  use Ash.Domain, validate_config_inclusion?: false
+
+  resources do
+    resource AshR2RML.DomainCompileTest.ViaResourceExt
+    resource AshR2RML.DomainCompileTest.Plain3
+  end
+end
+
+defmodule AshR2RML.DomainCompileTest.ViaResourceExt do
+  @moduledoc false
+  use Ash.Resource,
+    domain: AshR2RML.DomainCompileTest.ResDomain,
+    data_layer: Ash.DataLayer.Ets,
+    extensions: [AshR2RML.Resource]
+
+  r2rml do
+    table_name("dc_via_res")
+    class "https://schema.org/Thing"
+    subject template: "https://schema.org/Thing/{id}"
+    property :name, "https://schema.org/name"
+  end
+
+  actions do
+    defaults [:read]
+  end
+
+  attributes do
+    uuid_primary_key :id
+    attribute :name, :string, public?: true
+  end
+end
+
+defmodule AshR2RML.DomainCompileTest.Plain3 do
+  @moduledoc false
+  use Ash.Resource,
+    domain: AshR2RML.DomainCompileTest.ResDomain,
+    data_layer: Ash.DataLayer.Ets
+
+  actions do
+    defaults [:read]
+  end
+
+  attributes do
+    uuid_primary_key :id
+  end
+end
+
 defmodule AshR2RML.DomainCompileTest.Plain do
   @moduledoc false
   use Ash.Resource,
@@ -109,6 +158,13 @@ defmodule AshR2RML.DomainCompileTest do
 
   test "domain_resources returns only extension-carrying resources" do
     assert Enum.sort(AshR2RML.Resource.Info.domain_resources(Domain)) == Enum.sort([Person, Org])
+  end
+
+  test "domain whose resources use extensions: [AshR2RML.Resource] expands and compiles" do
+    alias AshR2RML.DomainCompileTest.{ResDomain, ViaResourceExt}
+    assert AshR2RML.Resource.Info.domain_resources(ResDomain) == [ViaResourceExt]
+    assert {:ok, bundle} = AshR2RML.Compiler.compile(ResDomain)
+    assert modules(bundle) == [ViaResourceExt]
   end
 
   test "a domain compiles to a bundle of exactly its mapped resources" do

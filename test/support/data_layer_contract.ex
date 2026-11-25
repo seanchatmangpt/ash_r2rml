@@ -213,6 +213,23 @@ defmodule AshR2RML.DataLayerContract do
 
   def visible({:error, %Refusal{}}), do: []
 
+  @doc """
+  Like `visible/1` but keeps refusal and empty-ok distinct: `{:ok, sorted_rows}` or
+  `{:error, refusal_code}`.
+  """
+  @spec visible_shape({:ok, struct()} | {:error, Refusal.t()}) :: {:ok, [map()]} | {:error, atom()}
+  def visible_shape({:ok, _} = ok), do: {:ok, visible(ok)}
+  def visible_shape({:error, %Refusal{code: code}}), do: {:error, code}
+
+  @doc """
+  Result rows exactly as emitted (term-normalized, NOT re-sorted), so tests can observe the
+  engine's own row order. `InMemory` promises canonical order for SELECT without ORDER BY.
+  """
+  @spec emitted_rows({:ok, struct()}) :: [map()]
+  def emitted_rows({:ok, observation}) do
+    Enum.map(observation.rows, fn row -> Map.new(row, fn {k, v} -> {k, norm(v)} end) end)
+  end
+
   defp norm(value) when is_binary(value), do: value
   defp norm(value), do: if(String.Chars.impl_for(value), do: to_string(value), else: inspect(value))
 
@@ -223,7 +240,7 @@ defmodule AshR2RML.DataLayerContract do
   def snapshot(mod) do
     org =
       for tenant <- tenants(), into: %{} do
-        {tenant, visible(run(mod, :org, org_sparql(), tenant: tenant))}
+        {tenant, visible_shape(run(mod, :org, org_sparql(), tenant: tenant))}
       end
 
     people =
@@ -232,8 +249,8 @@ defmodule AshR2RML.DataLayerContract do
 
         {{tenant, role},
          %{
-           people: visible(run(mod, :person, person_sparql(), opts)),
-           secrets: visible(run(mod, :person, secret_sparql(), opts))
+           people: visible_shape(run(mod, :person, person_sparql(), opts)),
+           secrets: visible_shape(run(mod, :person, secret_sparql(), opts))
          }}
       end
 
@@ -477,17 +494,18 @@ defmodule AshR2RML.DataLayerContract.Cases do
         assert forward == via_domain
         assert forward =~ "rr:predicate <#{C.pred(:org_name)}>"
 
-        # Intentional, documented layer divergence: AshPostgres columns are reachable by external SQL
-        # engines that would bypass Ash policies, so Security.sanitize_mapping/2 strips every
-        # field-policy-gated attribute from the rendered R2RML. Non-SQL layers keep them.
-        if unquote(layer) == AshR2RML.DataLayerContract.Postgres do
+        # Intentional, documented layer divergence: every non-ETS layer (AshPostgres, AshSqlite, ...)
+        # exposes columns reachable by external engines that would bypass Ash policies, so
+        # Security.sanitize_mapping/2 strips every field-policy-gated attribute from the rendered
+        # R2RML. Only the Ash-mediated ETS layer keeps them.
+        if unquote(layer) != AshR2RML.DataLayerContract.Ets do
           refute forward =~ "rr:predicate <#{C.pred(:born_on)}>"
         else
           assert forward =~ "rr:predicate <#{C.pred(:born_on)}>"
         end
 
         # secret_note is field-policy gated at read time (see the security cases).
-        if unquote(layer) != AshR2RML.DataLayerContract.Postgres do
+        if unquote(layer) == AshR2RML.DataLayerContract.Ets do
           assert forward =~ C.pred(:secret_note)
         end
 
@@ -568,7 +586,8 @@ defmodule AshR2RML.DataLayerContract.Cases do
 
         for role <- [:outsider, nil] do
           result = C.run(unquote(layer), :person, C.person_sparql(), tenant: "t1", actor: C.actor(role))
-          assert C.visible(result) == []
+          # Denial is either a typed refusal or an empty ok; never rows. The shape is pinned explicitly.
+          assert denied_shape?(C.visible_shape(result))
           refute inspect(result) =~ "Ada"
         end
 
@@ -577,9 +596,30 @@ defmodule AshR2RML.DataLayerContract.Cases do
 
         for role <- [:member, :outsider, nil] do
           result = C.run(unquote(layer), :person, C.secret_sparql(), tenant: "t1", actor: C.actor(role))
-          assert C.visible(result) == []
+          assert denied_shape?(C.visible_shape(result))
           refute inspect(result) =~ "SECRET"
         end
+      end
+
+      # Denial is a typed refusal or an explicit empty-ok, never rows; the shape is observed, not folded.
+      defp denied_shape?({:ok, []}), do: true
+      defp denied_shape?({:error, code}) when is_atom(code), do: true
+      defp denied_shape?(_), do: false
+
+      test "SELECT without ORDER BY is emitted in canonical order regardless of insertion order" do
+        C.clear!(unquote(layer))
+        C.seed!(unquote(layer), :reverse)
+
+        orgs = C.emitted_rows(C.run(unquote(layer), :org, C.org_sparql(), tenant: "t1"))
+        # positive control: the result is non-empty, so ordering is actually observed
+        assert length(orgs) == 2
+        assert Enum.map(orgs, & &1["code"]) == ["acme/west #1", "plain"]
+
+        people =
+          C.emitted_rows(C.run(unquote(layer), :person, C.person_sparql(), tenant: "t1", actor: C.actor(:admin)))
+
+        assert length(people) == 2
+        assert Enum.map(people, &String.to_integer(&1["age"])) == [36, 41]
       end
 
       test "sensitive attributes never reach the default graph; mapping one refuses" do

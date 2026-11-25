@@ -229,13 +229,20 @@ defmodule AshR2RML.Compiler do
       case AshR2RML.Resource.Info.mapping_result(resource) do
         {:ok, mapping} ->
           mapping = AshR2RML.Security.sanitize_mapping(resource, mapping)
-          destinations = Enum.map(mapping.reference_object_maps, & &1.parent_resource) |> Enum.reject(&is_nil/1)
 
-          do_closure(
-            rest ++ destinations,
-            [resource | seen],
-            [mapping | acc]
-          )
+          case AshR2RML.Security.check_protected_dependencies(resource, mapping) do
+            :ok ->
+              destinations = Enum.map(mapping.reference_object_maps, & &1.parent_resource) |> Enum.reject(&is_nil/1)
+
+              do_closure(
+                rest ++ destinations,
+                [resource | seen],
+                [mapping | acc]
+              )
+
+            {:error, refusal} ->
+              {:error, refusal}
+          end
 
         {:error, refusal} ->
           {:error, refusal}

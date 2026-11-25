@@ -74,6 +74,10 @@ defmodule AshR2RML.OBDA.InMemoryFieldPolicyDenialTest do
       assert {:ok, obs} = run(unquote(Macro.escape(actor)), @secret_pred)
       assert obs.rows == []
       refute inspect(obs) =~ @secret
+
+      # Same-test positive control: the same actor reads the permitted attribute of the same row.
+      assert {:ok, control} = run(unquote(Macro.escape(actor)), @name_pred)
+      assert control.rows != []
     end
   end
 

@@ -20,6 +20,8 @@ defmodule AshR2RML.Capability do
 
   @bytewise_collation_layers [Ash.DataLayer.Ets, Module.concat(["AshSqlite", "DataLayer"])]
 
+  @decimal_layers [Ash.DataLayer.Ets, Module.concat(["AshPostgres", "DataLayer"])]
+
   @type t :: %{
           filter: boolean(),
           sort: boolean(),
@@ -59,6 +61,32 @@ defmodule AshR2RML.Capability do
   rescue
     _ -> false
   end
+
+  @doc """
+  True when `resource`'s data layer compares decimals numerically (ETS, Postgres `numeric`).
+
+  Allowlist: AshSqlite may store decimals as TEXT/REAL, so comparisons are never pushed there.
+  """
+  @spec decimal_pushdown?(module()) :: boolean()
+  def decimal_pushdown?(resource) when is_atom(resource) do
+    decimal_layer?(Ash.Resource.Info.data_layer(resource))
+  rescue
+    _ -> false
+  end
+
+  @doc """
+  Pure decision over a data-layer module.
+
+  ## Examples
+
+      iex> AshR2RML.Capability.decimal_layer?(Ash.DataLayer.Ets)
+      true
+
+      iex> AshR2RML.Capability.decimal_layer?(AshSqlite.DataLayer)
+      false
+  """
+  @spec decimal_layer?(module() | nil) :: boolean()
+  def decimal_layer?(layer), do: layer in @decimal_layers
 
   defp can?(feature, resource) do
     Ash.DataLayer.can?(feature, resource) == true

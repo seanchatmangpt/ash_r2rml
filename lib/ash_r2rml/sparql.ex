@@ -338,9 +338,29 @@ defmodule AshR2RML.SPARQL.Protocol do
   @default_timeout_ms 30_000
 
   @doc """
-  Options: `:timeout` (ms, default 30_000, passed to the HTTP adapter) and
-  `:max_rows` (default #{Result.default_max_rows()}); exceeding it refuses with
-  `:REFUSED_RESOURCE_BOUND`.
+  Options: `:timeout` (ms, default 30_000, always merged into the httpc adapter
+  options as `:timeout` and `:connect_timeout`; `autoredirect: false` is always
+  set), `:max_rows` (default #{Result.default_max_rows()}; exceeding it
+  refuses with `:REFUSED_RESOURCE_BOUND`), `:allow_private_network`,
+  `:follow_redirects` (default 0; a positive integer opts in to redirects, which
+  are NOT re-vetted against the private-network guard), and the allowlisted
+  SPARQL.Client options `:request_method`, `:protocol_version`,
+  `:accept_header`, `:default_graph`, `:named_graph`, `:raw_mode`. All other
+  options (e.g. `:logger`, `:max_redirects`, `:headers`) are dropped. A 3xx
+  response with redirects disabled refuses with
+  `:REFUSED_INVALID_FEDERATION_ENVIRONMENT` ("redirects are not followed").
+
+  Private-network guard (`private_ip?/1`) covers: IPv4 0/8, 10/8, 100.64/10,
+  127/8, 169.254/16, 172.16/12, 192.0.0/24, 192.0.2/24, 192.88.99/24,
+  192.168/16, 198.18/15, 198.51.100/24, 203.0.113/24, 224/4 and 240/4; IPv6
+  `::`, `::1`, IPv4-mapped/compatible/translated (`::ffff:0:a.b.c.d`) and
+  NAT64 `64:ff9b::/96` (embedded v4 checked), NAT64 local-use `64:ff9b:1::/48`,
+  6to4 `2002::/16` (embedded v4 checked), Teredo `2001::/32`, documentation
+  `2001:db8::/32`, `fc00::/7`, `fe80::/10` through `fec0::/10` (to `feff`) and
+  multicast `ff00::/8`. A trailing dot on hostnames is ignored.
+
+  Endpoints carrying userinfo, a fragment or a query string are refused with
+  `:REFUSED_INVALID_FEDERATION_ENVIRONMENT`.
   """
   @spec query(String.t(), String.t() | Query.t(), keyword()) ::
           {:ok, Observation.t()} | {:error, term()}
@@ -348,22 +368,129 @@ defmodule AshR2RML.SPARQL.Protocol do
     {allow_private, opts} = Keyword.pop(opts, :allow_private_network, false)
 
     with :ok <- validate_endpoint(endpoint, allow_private) do
-      {timeout, opts} = Keyword.pop(opts, :timeout, @default_timeout_ms)
-      client_opts = Keyword.put_new(opts, :request_opts, adapter: [recv_timeout: timeout])
+      client_opts = client_opts(opts)
 
       do_query(
         endpoint,
         query,
         client_opts,
-        &Elixir.SPARQL.Client.query/3,
+        &no_redirect_client/3,
         :sparql_protocol,
         :observed_remote_query
       )
     end
   end
 
+  # SPARQL.Client.query/3 validates :max_redirects as :pos_integer, so 0 (no
+  # redirects) cannot be passed through it. This drives the same
+  # Request.build/Request.call pipeline directly (options are already
+  # allowlisted by client_opts/1) so Tesla's FollowRedirects runs with
+  # max_redirects: 0, which refuses to follow any 3xx.
+  @doc false
+  def no_redirect_client(%Elixir.SPARQL.Query{} = parsed, endpoint, opts) do
+    with {:ok, request} <-
+           Elixir.SPARQL.Client.Request.build(
+             Elixir.SPARQL.Client.Query,
+             parsed.form,
+             parsed.query_string,
+             endpoint,
+             opts
+           ) do
+      case Elixir.SPARQL.Client.Request.call(request, opts) do
+        {:ok, %{result: result}} ->
+          {:ok, result}
+
+        {:error, {Tesla.Middleware.FollowRedirects, :too_many_redirects}} ->
+          {:error, redirect_refusal(endpoint)}
+
+        {:error, %Elixir.SPARQL.Client.HTTPError{status: status}}
+        when is_integer(status) and status in 300..399 ->
+          {:error, redirect_refusal(endpoint)}
+
+        other ->
+          other
+      end
+    end
+  end
+
+  defp redirect_refusal(endpoint) do
+    Refusal.new(
+      :REFUSED_INVALID_FEDERATION_ENVIRONMENT,
+      redact_uri_string(endpoint),
+      "redirects are not followed",
+      %{redirect: true}
+    )
+  end
+
+  defp redact_uri_string(endpoint) do
+    case URI.parse(endpoint) do
+      %URI{} = uri -> redact_endpoint(uri)
+    end
+  end
+
+  @forwarded_opts [
+    :request_method,
+    :protocol_version,
+    :accept_header,
+    :default_graph,
+    :named_graph,
+    :raw_mode,
+    :max_rows
+  ]
+
+  @doc false
+  # Builds the option list handed to SPARQL.Client. Only allowlisted keys pass;
+  # redirects are disabled (max_redirects: 0) unless the caller opts in with
+  # `follow_redirects: n`; `:timeout` is always merged into request_opts.
+  @spec client_opts(keyword()) :: keyword()
+  def client_opts(opts) do
+    timeout = Keyword.get(opts, :timeout, @default_timeout_ms)
+
+    max_redirects =
+      case Keyword.get(opts, :follow_redirects, 0) do
+        n when is_integer(n) and n >= 0 -> n
+        _ -> 0
+      end
+
+    caller_request_opts =
+      case Keyword.get(opts, :request_opts, []) do
+        list when is_list(list) -> list
+        _ -> []
+      end
+
+    adapter =
+      caller_request_opts
+      |> Keyword.get(:adapter, [])
+      |> then(&if(Keyword.keyword?(&1), do: &1, else: []))
+      |> Keyword.put(:timeout, timeout)
+      |> Keyword.put(:connect_timeout, timeout)
+      |> Keyword.put(:autoredirect, false)
+
+    request_opts = Keyword.put(caller_request_opts, :adapter, adapter)
+
+    opts
+    |> Keyword.take(@forwarded_opts)
+    |> Keyword.put(:max_redirects, max_redirects)
+    |> Keyword.put(:request_opts, request_opts)
+  end
+
   defp validate_endpoint(endpoint, allow_private) do
     case URI.parse(endpoint) do
+      %URI{scheme: scheme, host: host, userinfo: userinfo, fragment: fragment, query: query} = uri
+      when scheme in ["http", "https"] and is_binary(host) and host != "" and
+             (userinfo != nil or fragment != nil or query != nil) ->
+        {:error,
+         Refusal.new(
+           :REFUSED_INVALID_FEDERATION_ENVIRONMENT,
+           redact_endpoint(uri),
+           "SPARQL endpoint must not carry userinfo, a fragment, or a query string",
+           %{
+             userinfo: userinfo != nil,
+             fragment: fragment != nil,
+             query: query != nil
+           }
+         )}
+
       %URI{scheme: scheme, host: host}
       when scheme in ["http", "https"] and is_binary(host) and host != "" ->
         if allow_private == true do
@@ -398,12 +525,16 @@ defmodule AshR2RML.SPARQL.Protocol do
         {:error,
          Refusal.new(
            :REFUSED_INVALID_FEDERATION_ENVIRONMENT,
-           endpoint,
+           redact_uri_string(endpoint),
            "SPARQL endpoint must be an http or https URL with a non-empty host",
            %{allowed_schemes: ["http", "https"]}
          )}
     end
   end
+
+  # Drops userinfo, query and fragment so credentials never reach a Refusal.
+  defp redact_endpoint(%URI{} = uri),
+    do: URI.to_string(%URI{uri | userinfo: nil, query: nil, fragment: nil})
 
   @dns_timeout_ms 2_000
 
@@ -415,7 +546,12 @@ defmodule AshR2RML.SPARQL.Protocol do
   # use a pinned-IP URL for hostile networks.
   @spec vet_host(String.t()) :: :ok | {:private, [:inet.ip_address()]} | :unresolved
   defp vet_host(host) do
-    h = host |> String.trim_leading("[") |> String.trim_trailing("]") |> String.downcase()
+    h =
+      host
+      |> String.trim_leading("[")
+      |> String.trim_trailing("]")
+      |> String.downcase()
+      |> String.trim_trailing(".")
 
     cond do
       h == "localhost" or String.ends_with?(h, ".localhost") ->
@@ -449,22 +585,48 @@ defmodule AshR2RML.SPARQL.Protocol do
 
   defp ip_string(ip), do: ip |> :inet.ntoa() |> to_string()
 
-  defp private_ip?({0, _, _, _}), do: true
-  defp private_ip?({100, b, _, _}) when b in 64..127, do: true
-  defp private_ip?({127, _, _, _}), do: true
-  defp private_ip?({10, _, _, _}), do: true
-  defp private_ip?({172, b, _, _}) when b in 16..31, do: true
-  defp private_ip?({192, 168, _, _}), do: true
-  defp private_ip?({169, 254, _, _}), do: true
-  defp private_ip?({0, 0, 0, 0, 0, 0, 0, 0}), do: true
-  defp private_ip?({0, 0, 0, 0, 0, 0, 0, 1}), do: true
+  @doc false
+  @spec private_ip?(:inet.ip_address()) :: boolean()
+  def private_ip?({0, _, _, _}), do: true
+  def private_ip?({100, b, _, _}) when b in 64..127, do: true
+  def private_ip?({127, _, _, _}), do: true
+  def private_ip?({10, _, _, _}), do: true
+  def private_ip?({172, b, _, _}) when b in 16..31, do: true
+  def private_ip?({192, 168, _, _}), do: true
+  def private_ip?({192, 0, 0, _}), do: true
+  def private_ip?({192, 0, 2, _}), do: true
+  def private_ip?({192, 88, 99, _}), do: true
+  def private_ip?({198, 51, 100, _}), do: true
+  def private_ip?({203, 0, 113, _}), do: true
+  def private_ip?({198, b, _, _}) when b in 18..19, do: true
+  def private_ip?({169, 254, _, _}), do: true
+  # multicast 224/4 and reserved 240/4 (includes 255.255.255.255)
+  def private_ip?({a, _, _, _}) when a >= 224, do: true
+  def private_ip?({0, 0, 0, 0, 0, 0, 0, 0}), do: true
+  def private_ip?({0, 0, 0, 0, 0, 0, 0, 1}), do: true
 
-  defp private_ip?({0, 0, 0, 0, 0, 0xFFFF, a, b}),
-    do: private_ip?({div(a, 256), rem(a, 256), div(b, 256), rem(b, 256)})
+  # IPv4-mapped ::ffff:a.b.c.d and IPv4-compatible ::a.b.c.d
+  def private_ip?({0, 0, 0, 0, 0, 0xFFFF, a, b}), do: private_ip?(v4(a, b))
+  # IPv4-translated ::ffff:0:a.b.c.d (RFC 2765)
+  def private_ip?({0, 0, 0, 0, 0xFFFF, 0, a, b}), do: private_ip?(v4(a, b))
+  # NAT64 local-use 64:ff9b:1::/48
+  def private_ip?({0x64, 0xFF9B, 1, _, _, _, _, _}), do: true
+  # Teredo 2001::/32 and documentation 2001:db8::/32
+  def private_ip?({0x2001, 0, _, _, _, _, _, _}), do: true
+  def private_ip?({0x2001, 0xDB8, _, _, _, _, _, _}), do: true
+  # multicast ff00::/8
+  def private_ip?({w, _, _, _, _, _, _, _}) when w >= 0xFF00, do: true
+  def private_ip?({0, 0, 0, 0, 0, 0, a, b}), do: private_ip?(v4(a, b))
+  # NAT64 64:ff9b::/96
+  def private_ip?({0x64, 0xFF9B, 0, 0, 0, 0, a, b}), do: private_ip?(v4(a, b))
+  # 6to4 2002::/16 embeds the v4 address in bits 16..47
+  def private_ip?({0x2002, a, b, _, _, _, _, _}), do: private_ip?(v4(a, b))
+  # link-local fe80::/10 and deprecated site-local fec0::/10
+  def private_ip?({w, _, _, _, _, _, _, _}) when w >= 0xFE80 and w <= 0xFEFF, do: true
+  def private_ip?({w, _, _, _, _, _, _, _}) when w >= 0xFC00 and w <= 0xFDFF, do: true
+  def private_ip?(_), do: false
 
-  defp private_ip?({w, _, _, _, _, _, _, _}) when w >= 0xFE80 and w <= 0xFEBF, do: true
-  defp private_ip?({w, _, _, _, _, _, _, _}) when w >= 0xFC00 and w <= 0xFDFF, do: true
-  defp private_ip?(_), do: false
+  defp v4(a, b), do: {div(a, 256), rem(a, 256), div(b, 256), rem(b, 256)}
 
   @doc "Injected client path for deterministic unit tests. Never a remote-query witness."
   @spec query_with(String.t(), String.t() | Query.t(), keyword(), function()) ::

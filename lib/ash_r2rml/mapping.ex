@@ -246,7 +246,9 @@ defmodule AshR2RML.Mapping do
         validate_classes(resource) ++
         validate_subject(resource) ++
         validate_properties(resource) ++
+        validate_duplicate_properties(resource) ++
         validate_references(resource) ++
+        validate_duplicate_references(resource) ++
         validate_graph_maps(resource)
 
     if refusals == [], do: :ok, else: {:error, refusals}
@@ -466,7 +468,82 @@ defmodule AshR2RML.Mapping do
     end
   end
 
+  defp validate_subject_columns(resource, %SubjectMap{strategy: :blank_node, value: template})
+       when is_binary(template) do
+    available = available_columns(resource)
+    missing = Enum.reject(template_fields(template), &MapSet.member?(available, &1))
+
+    if missing == [] do
+      []
+    else
+      [
+        Refusal.new(
+          :REFUSED_MISSING_SUBJECT_MAP,
+          resource.ash_resource,
+          "blank-node subject template references columns absent from the admitted resource mapping",
+          %{missing: missing, template: template}
+        )
+      ]
+    end
+  end
+
   defp validate_subject_columns(_resource, _subject), do: []
+
+  defp validate_object_template(resource, mapping, %ObjectMap{strategy: :template, value: value})
+       when is_binary(value) do
+    available = available_columns(resource)
+    missing = Enum.reject(template_fields(value), &MapSet.member?(available, &1))
+
+    if missing == [] do
+      []
+    else
+      [
+        Refusal.new(
+          :REFUSED_INVALID_TERM_MAP,
+          {resource.ash_resource, mapping.attribute},
+          "object template references columns absent from the admitted resource mapping",
+          %{missing: missing, template: value}
+        )
+      ]
+    end
+  end
+
+  defp validate_object_template(_resource, _mapping, _object), do: []
+
+  defp validate_duplicate_properties(resource) do
+    resource.predicate_object_maps
+    |> duplicate_keys(&{&1.attribute, &1.predicate_iri})
+    |> Enum.map(fn {attribute, predicate} = key ->
+      Refusal.new(
+        :REFUSED_INVALID_TERM_MAP,
+        {resource.ash_resource, attribute},
+        "duplicate (attribute, predicate) predicate-object map",
+        %{key: key, predicate_iri: predicate}
+      )
+    end)
+  end
+
+  defp validate_duplicate_references(resource) do
+    resource.reference_object_maps
+    |> duplicate_keys(&{&1.relationship, &1.predicate_iri})
+    |> Enum.map(fn {relationship, predicate} = key ->
+      Refusal.new(
+        :REFUSED_AMBIGUOUS_RELATIONSHIP,
+        {resource.ash_resource, relationship},
+        "duplicate (relationship, predicate) reference object map",
+        %{key: key, predicate_iri: predicate}
+      )
+    end)
+  end
+
+  defp duplicate_keys(items, key_fun) do
+    items
+    |> Enum.map(key_fun)
+    |> Enum.frequencies()
+    |> Enum.filter(fn {_key, count} -> count > 1 end)
+    |> Enum.map(&elem(&1, 0))
+    |> Enum.sort()
+  end
 
   defp validate_properties(resource) do
     Enum.flat_map(resource.predicate_object_maps, fn mapping ->
@@ -496,13 +573,25 @@ defmodule AshR2RML.Mapping do
           "object map value must be non-empty"
         )
       end)
-      |> maybe_add(object.language && object.datatype, fn ->
+      |> maybe_add(not is_nil(object.language) and not is_nil(object.datatype), fn ->
         Refusal.new(
           :REFUSED_INVALID_TERM_MAP,
           {resource.ash_resource, mapping.attribute},
           "language and datatype are mutually exclusive on one literal object map"
         )
       end)
+      |> maybe_add(
+        object.strategy == :constant and object.term_type == :iri and not absolute_iri?(object.value),
+        fn ->
+          Refusal.new(
+            :REFUSED_INVALID_TERM_MAP,
+            {resource.ash_resource, mapping.attribute},
+            "constant IRI object map must be an absolute IRI",
+            %{value: object.value}
+          )
+        end
+      )
+      |> Kernel.++(validate_object_template(resource, mapping, object))
       |> Kernel.++(validate_datatype(resource, mapping))
       |> Kernel.++(
         validate_graph_maps_list({resource.ash_resource, mapping.attribute}, mapping.graph_maps ++ object.graph_maps)
@@ -746,10 +835,17 @@ defmodule AshR2RML.Mapping do
   defp pairwise_overlap?([head | tail]),
     do: Enum.any?(tail, &(not MapSet.disjoint?(head, &1))) or pairwise_overlap?(tail)
 
+  # IRIREF forbids: control chars, space, < > " { } | ^ ` \
+  defp iri_forbidden?(value), do: Regex.match?(~r/[\x00-\x20\x7f<>"{}|^`\\]/, value)
+
   defp absolute_iri?(value) when is_binary(value) do
-    case URI.parse(value) do
-      %URI{scheme: scheme} when is_binary(scheme) and scheme != "" -> true
-      _ -> false
+    if iri_forbidden?(value) do
+      false
+    else
+      case URI.parse(value) do
+        %URI{scheme: scheme} when is_binary(scheme) and scheme != "" -> true
+        _ -> false
+      end
     end
   end
 

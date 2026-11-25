@@ -32,7 +32,7 @@ defmodule AshR2RML.MutationCourtScriptTest do
 
     ids = Enum.map(mutate_blocks, fn [_, id, _] -> id end)
 
-    for id <- ~w(M1a M1b M1c M2 M3a M3b M4a M4b M5) do
+    for id <- ~w(M1a M1b M1c M2a M2b M3a M3b M4a M4b M5 M6 M7 M8) do
       assert id in ids, "mutation #{id} missing from bin/mutation-court"
     end
 

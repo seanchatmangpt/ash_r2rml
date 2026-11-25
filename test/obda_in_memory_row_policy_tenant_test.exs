@@ -150,6 +150,12 @@ defmodule AshR2RML.OBDA.InMemoryRowPolicyTenantTest do
                InMemory.query(Note, note_mapping(), @select, domain: Domain, actor: %{name: "mallory"})
 
       assert observation.rows == []
+
+      # Positive control: same query, same data, an owning actor sees rows.
+      assert {:ok, control} =
+               InMemory.query(Note, note_mapping(), @select, domain: Domain, actor: %{name: "bob"})
+
+      assert subjects(control) == ["https://example.org/notes/gamma"]
     end
 
     test "materialize graph for alice contains only alice's subjects" do

@@ -64,10 +64,15 @@ defmodule AshR2RML.Error do
     REFUSED_NON_INVERTIBLE_TEMPLATE:
       {"subject template cannot be inverted", "use a template with delimited, distinct placeholders"},
     REFUSED_READ_FAILED:
-      {"underlying Ash read failed", "inspect details.reason and the data layer; retry once the read source is healthy"},
+      {"underlying Ash read failed", "inspect details.class and the data layer; fix the read source before retrying"},
+    REFUSED_PRIVATE_DATA_LAYER:
+      {"resource uses a process-private data layer that the query worker cannot read",
+       "set private?(false) in the resource ets block, or query it through a non-private data layer"},
     REFUSED_RESOURCE_BOUND: {"resource bound exceeded", "narrow the query or raise the max_rows / max_triples bound"},
+    REFUSED_INVALID_OPTION:
+      {"option value is invalid", "pass a positive integer for the option named in details.option"},
     REFUSED_WORKER_CRASHED:
-      {"query worker crashed", "inspect details.reason and details.stacktrace; retry if the failure was transient"},
+      {"query worker crashed", "inspect details.class and details.stacktrace; the failure is usually deterministic"},
     REFUSED_INVALID_LOGICAL_TABLE:
       {"logical table is invalid", "set a non-empty table_name or a valid SQL query for the mapping"},
     REFUSED_UNKNOWN_ATTRIBUTE:
@@ -92,15 +97,16 @@ defmodule AshR2RML.Error do
     UNSUPPORTED_ASH_TYPE: {"Ash type is unsupported", "implement AshR2RML.Type for the custom type"}
   }
 
-  @retryable [:REFUSED_READ_FAILED, :REFUSED_QUERY_TIMEOUT, :REFUSED_WORKER_CRASHED]
+  @retryable [:REFUSED_QUERY_TIMEOUT]
 
   @doc "Every code in the catalog."
   @spec codes() :: [atom()]
   def codes, do: @catalog |> Map.keys() |> Enum.sort()
 
   @doc """
-  True when the refusal reflects a transient condition (read failure, timeout, worker crash)
-  where the identical call may succeed later. Bound, policy and mapping refusals are not retryable.
+  True only for `:REFUSED_QUERY_TIMEOUT`, where the identical call may succeed under a larger
+  budget. Read failures and worker crashes are as often deterministic as transient, so they are
+  not retryable; bound, policy and mapping refusals are not either.
 
       iex> AshR2RML.Error.retryable?(:REFUSED_QUERY_TIMEOUT)
       true

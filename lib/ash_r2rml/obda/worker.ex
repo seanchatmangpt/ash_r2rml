@@ -9,8 +9,8 @@ defmodule AshR2RML.OBDA.Worker do
   `run/2` executes a zero-arity function in a monitored process capped by
   `max_heap_size` (kill on breach) and a wall-clock timeout. It never raises:
   every failure is returned as `{:error, %AshR2RML.Error{}}` with one of
-  `:REFUSED_QUERY_TIMEOUT`, `:REFUSED_MEMORY_LIMIT_EXCEEDED`, or
-  `:REFUSED_WORKER_CRASHED`.
+  `:REFUSED_QUERY_TIMEOUT`, `:REFUSED_MEMORY_LIMIT_EXCEEDED`, `:REFUSED_WORKER_CRASHED`, or
+  `:REFUSED_INVALID_OPTION` (a non-positive-integer `:timeout_ms` / `:max_heap_words`).
 
   A bare `:killed` exit of the worker is attributed to the heap cap: the runtime reports a
   `max_heap_size` kill and an untrappable `:kill` signal identically. Any other exit reason
@@ -35,12 +35,41 @@ defmodule AshR2RML.OBDA.Worker do
   def run(fun, opts \\ []) when is_function(fun, 0) and is_list(opts) do
     timeout = Keyword.get(opts, :timeout_ms, @default_timeout_ms)
     words = Keyword.get(opts, :max_heap_words, @default_max_heap_words)
+
+    case validate(timeout, words) do
+      :ok -> do_run(fun, timeout, words)
+      {:error, _} = error -> error
+    end
+  end
+
+  defp validate(timeout, words) do
+    cond do
+      not (is_integer(timeout) and timeout > 0) -> invalid_opt(:timeout_ms, timeout)
+      not (is_integer(words) and words > 0) -> invalid_opt(:max_heap_words, words)
+      true -> :ok
+    end
+  end
+
+  defp invalid_opt(key, value) do
+    {:error,
+     Error.new(:REFUSED_INVALID_OPTION,
+       message: "worker option #{key} must be a positive integer",
+       details: %{option: key, value: inspect(value)}
+     )}
+  end
+
+  defp do_run(fun, timeout, words) do
     parent = self()
     tag = make_ref()
 
     {pid, mref} =
       :erlang.spawn_opt(
-        fn -> send(parent, {tag, execute(fun)}) end,
+        fn ->
+          # The guardian is the worker's first act, so a worker that runs at all is guarded:
+          # a caller killed before this point yields an immediate DOWN (noproc) for the monitor.
+          start_guardian(parent, self())
+          send(parent, {tag, execute(fun)})
+        end,
         [:monitor, max_heap_size: %{size: words, kill: true, error_logger: false}]
       )
 
@@ -54,8 +83,8 @@ defmodule AshR2RML.OBDA.Worker do
         {:error, crash_error(kind, reason, stack)}
 
       {:DOWN, ^mref, :process, ^pid, :killed} ->
-        flush(tag)
-
+        # No flush: the worker's result message, if sent, precedes its DOWN in the mailbox and
+        # would have matched the clauses above first.
         {:error,
          Error.new(:REFUSED_MEMORY_LIMIT_EXCEEDED,
            message: "worker exceeded max heap of #{words} words",
@@ -63,7 +92,6 @@ defmodule AshR2RML.OBDA.Worker do
          )}
 
       {:DOWN, ^mref, :process, ^pid, reason} ->
-        flush(tag)
         {:error, crash_error(:exit, reason)}
     after
       timeout ->
@@ -83,7 +111,25 @@ defmodule AshR2RML.OBDA.Worker do
     end
   end
 
+  # Owns nothing but two monitors: kills the worker if the caller dies first, exits when the
+  # worker does. Unlinked from both so it never propagates exit signals.
+  defp start_guardian(parent, worker) do
+    spawn(fn ->
+      pref = Process.monitor(parent)
+      wref = Process.monitor(worker)
+
+      receive do
+        {:DOWN, ^pref, :process, _, _} -> Process.exit(worker, :kill)
+        {:DOWN, ^wref, :process, _, _} -> :ok
+      end
+    end)
+
+    :ok
+  end
+
   defp execute(fun) do
+    before_links = links()
+
     result =
       try do
         {:ok, fun.()}
@@ -91,20 +137,19 @@ defmodule AshR2RML.OBDA.Worker do
         kind, reason -> {:error, kind, reason, __STACKTRACE__}
       end
 
-    reap_links()
-
-    case result do
-      {:error, kind, reason, stack} -> {:error, kind, reason, stack}
-      ok -> ok
-    end
+    reap_links(before_links)
+    result
   end
 
-  # A linked child survives a normal worker exit; kill every process still linked to the
-  # worker (never the caller: the worker is spawned unlinked) so none leak past the call.
-  defp reap_links do
+  defp links do
     {:links, links} = Process.info(self(), :links)
+    links
+  end
 
-    for pid <- links, is_pid(pid) do
+  # A linked child survives a normal worker exit; kill only processes linked to the worker
+  # during the call (links present at entry are left alone; the worker is spawned unlinked).
+  defp reap_links(before_links) do
+    for pid <- links() -- before_links, is_pid(pid) do
       Process.unlink(pid)
       Process.exit(pid, :kill)
     end

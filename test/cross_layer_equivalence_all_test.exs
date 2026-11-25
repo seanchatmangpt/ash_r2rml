@@ -113,7 +113,15 @@ defmodule AshR2RML.CrossLayerEquivalenceAllTest do
 
   defp reference do
     layer = Xl.Ets
-    seed!(Module.concat(layer, Person), Module.concat(layer, Domain))
+    resource = Module.concat(layer, Person)
+    domain = Module.concat(layer, Domain)
+
+    # ETS here is non-private (shared across tests): clear before seeding so seeding is idempotent.
+    resource
+    |> Ash.read!(domain: domain, authorize?: false)
+    |> Enum.each(&Ash.destroy!(&1, domain: domain, authorize?: false))
+
+    seed!(resource, domain)
     run(layer)
   end
 
@@ -122,7 +130,6 @@ defmodule AshR2RML.CrossLayerEquivalenceAllTest do
     assert result.bindings == reference.bindings
     # The digest seals the rendered R2RML too, whose TriplesMap names carry each layer's module name,
     # so cross-layer equality is asserted over the canonical bindings, rows and triples instead.
-    assert :erlang.phash2(result.bindings) == :erlang.phash2(reference.bindings)
     assert byte_size(result.digest) == 64
     assert result.stats.rows_read == reference.stats.rows_read
     assert result.stats.triples_emitted == reference.stats.triples_emitted

@@ -8,10 +8,7 @@ The DSL describes semantic information that Ash and the active data layer cannot
 r2rml do
   class "https://schema.org/Person"
 
-  subject do
-    template "https://example.org/people/{id}"
-    term_type :iri
-  end
+  subject template: "https://example.org/people/{id}", term_type: :iri
 end
 ```
 
@@ -33,10 +30,8 @@ Subject identity is semantic identity, not merely Ash's primary key. AshR2RML ma
 ## Attribute mapping
 
 ```elixir
-attribute :name, :string do
-  rdf do
-    predicate "http://xmlns.com/foaf/0.1/name"
-  end
+r2rml do
+  property :name, "http://xmlns.com/foaf/0.1/name"
 end
 ```
 
@@ -45,10 +40,10 @@ AshR2RML derives the relational column/source and default RDF datatype when that
 Representative options:
 
 ```elixir
-rdf do
-  predicate "https://example.org/amount"
-  datatype "http://www.w3.org/2001/XMLSchema#decimal"
-  term_type :literal
+r2rml do
+  property :amount, "https://example.org/amount",
+    datatype: "http://www.w3.org/2001/XMLSchema#decimal",
+    term_type: :literal
 end
 ```
 
@@ -57,12 +52,12 @@ Language-tagged literals and constants are supported only through explicit mappi
 ## Relationship mapping
 
 ```elixir
-belongs_to :organization, MyApp.Organization do
-  rdf do
-    predicate "https://schema.org/memberOf"
-  end
+r2rml do
+  reference :organization, "https://schema.org/memberOf"
 end
 ```
+
+`reference` also accepts `inverse_predicate:`, `direction: :outgoing | :incoming`, and `guard_class:`.
 
 AshR2RML introspects the Ash relationship and data-layer metadata to derive a reference object map and join. Users should not repeat `source_attribute`, `destination_attribute`, or parent map identity unless inference is impossible or an explicit override is required.
 

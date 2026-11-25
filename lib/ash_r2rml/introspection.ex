@@ -17,19 +17,27 @@ defmodule AshR2RML.Introspection do
 
   @spec logical_table(module(), keyword()) :: {:ok, LogicalTable.t()} | {:error, Refusal.t()}
   def logical_table(resource, opts \\ []) do
-    explicit_table = Keyword.get(opts, :table_name)
-    explicit_query = Keyword.get(opts, :sql_query)
-    explicit_schema = Keyword.get(opts, :schema)
+    explicit_table = blank_to_nil(Keyword.get(opts, :table_name))
+    explicit_query = blank_to_nil(Keyword.get(opts, :sql_query))
+    explicit_schema = blank_to_nil(Keyword.get(opts, :schema))
 
     case {explicit_table, explicit_query} do
-      {table, nil} when is_binary(table) and table != "" ->
+      {table, nil} when is_binary(table) ->
         {:ok, %LogicalTable{table_name: table, schema: explicit_schema}}
 
-      {nil, query} when is_binary(query) and query != "" ->
-        {:ok, %LogicalTable{sql_query: query, schema: explicit_schema}}
+      {nil, query} when is_binary(query) and is_nil(explicit_schema) ->
+        {:ok, %LogicalTable{sql_query: query}}
 
       {nil, nil} ->
         infer_logical_table(resource)
+
+      {nil, _query} ->
+        {:error,
+         Refusal.new(
+           :REFUSED_INVALID_LOGICAL_TABLE,
+           resource,
+           "schema cannot be combined with sql_query"
+         )}
 
       _ ->
         {:error,
@@ -40,6 +48,15 @@ defmodule AshR2RML.Introspection do
          )}
     end
   end
+
+  defp blank_to_nil(value) when is_binary(value) do
+    case String.trim(value) do
+      "" -> nil
+      _ -> value
+    end
+  end
+
+  defp blank_to_nil(value), do: value
 
   @spec column(module(), atom()) :: {:ok, String.t()} | {:error, Refusal.t()}
   def column(resource, attribute_name) when is_atom(attribute_name) do

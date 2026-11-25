@@ -34,6 +34,7 @@ defmodule AshR2RML.R2RML do
     bundle = AshR2RML.Mapping.normalize(bundle)
 
     with :ok <- AshR2RML.Mapping.validate(bundle),
+         :ok <- validate_terms(bundle),
          {:ok, body} <- render_bundle(bundle) do
       {:ok, @prefixes <> body}
     end
@@ -48,6 +49,68 @@ defmodule AshR2RML.R2RML do
       render(bundle)
     end
   end
+
+  @invalid_iri_chars ~r/[\x00-\x20<>"{}|^`\\\x7f]/
+
+  defp validate_terms(%Bundle{resources: resources}) do
+    case Enum.flat_map(resources, &term_refusals/1) do
+      [] -> :ok
+      [first | _] -> {:error, first}
+    end
+  end
+
+  defp term_refusals(%Resource{} = resource) do
+    subject = resource.subject_map
+
+    iris =
+      Enum.map(resource.class_iris, &{:class, &1}) ++
+        if(subject.strategy == :constant, do: [{:subject_constant, subject.value}], else: []) ++
+        graph_iris(resource.graph_maps ++ subject.graph_maps) ++
+        Enum.flat_map(resource.predicate_object_maps, &property_iris/1) ++
+        Enum.flat_map(resource.reference_object_maps, fn ref ->
+          [{:predicate, ref.predicate_iri}] ++
+            if(ref.inverse_predicate, do: [{:inverse_predicate, ref.inverse_predicate}], else: []) ++
+            graph_iris(ref.graph_maps)
+        end)
+
+    iri_refusals =
+      for {kind, iri} <- iris, not valid_iri?(iri) do
+        Refusal.new(:REFUSED_INVALID_TERM_MAP, resource.ash_resource, "#{kind} IRI is not serializable as an IRIREF", %{
+          kind: kind,
+          iri: iri
+        })
+      end
+
+    conflict_refusals =
+      for %{object_map: %ObjectMap{language: language, datatype: datatype}} = property <- resource.predicate_object_maps,
+          is_binary(language) and not is_nil(datatype) do
+        Refusal.new(
+          :REFUSED_INVALID_TERM_MAP,
+          {resource.ash_resource, property.attribute},
+          "language and datatype are mutually exclusive on one literal object map"
+        )
+      end
+
+    iri_refusals ++ conflict_refusals
+  end
+
+  defp property_iris(property) do
+    object = property.object_map
+
+    [{:predicate, property.predicate_iri}] ++
+      if(object.strategy == :constant and object.term_type == :iri, do: [{:object_constant, object.value}], else: []) ++
+      case object.datatype do
+        %{rdf_datatype: iri} when is_binary(iri) -> [{:datatype, iri}]
+        _ -> []
+      end ++
+      graph_iris(property.graph_maps ++ object.graph_maps)
+  end
+
+  defp graph_iris(graph_maps) do
+    for %GraphMap{strategy: :constant, value: value} <- graph_maps, do: {:graph, value}
+  end
+
+  defp valid_iri?(iri), do: is_binary(iri) and not Regex.match?(@invalid_iri_chars, iri)
 
   defp render_bundle(%Bundle{resources: resources}) do
     by_resource = Map.new(resources, &{&1.ash_resource, &1})
@@ -138,7 +201,7 @@ defmodule AshR2RML.R2RML do
     object_terms =
       [render_object_term_map(object)] ++
         render_object_datatype(object) ++
-        render_term_type(object.term_type, :object)
+        render_object_term_type(object)
 
     graph_terms = Enum.flat_map(mapping.graph_maps ++ object.graph_maps, &render_graph_map/1)
 
@@ -193,7 +256,7 @@ defmodule AshR2RML.R2RML do
           "  rr:logicalTable [ #{render_logical_table(logical_table)} ] ;\n" <>
           "  rr:subjectMap [ #{bridge_subject} ] ;\n" <>
           "  rr:predicateObjectMap [ rr:predicate <#{reference.predicate_iri}>; " <>
-          "rr:objectMap [ rr:parentTriplesMap <#{AshR2RML.Mapping.mapping_identity(parent)}>; #{render_join(destination_join)} ]" <>
+          "rr:objectMap [ rr:parentTriplesMap <#{triples_map_name(parent)}>; #{render_join(destination_join)} ]" <>
           pom_graph_suffix(graphs) <>
           " ] .\n"
 
@@ -222,7 +285,7 @@ defmodule AshR2RML.R2RML do
           "  rr:logicalTable [ #{render_logical_table(logical_table)} ] ;\n" <>
           "  rr:subjectMap [ #{inverse_subject} ] ;\n" <>
           "  rr:predicateObjectMap [ rr:predicate <#{reference.inverse_predicate}>; " <>
-          "rr:objectMap [ rr:parentTriplesMap <#{AshR2RML.Mapping.mapping_identity(resource)}>; #{render_join(source_join)} ] ] .\n"
+          "rr:objectMap [ rr:parentTriplesMap <#{triples_map_name(resource)}>; #{render_join(source_join)} ] ] .\n"
 
       {:ok, [{:ok, body}]}
     end
@@ -451,6 +514,12 @@ defmodule AshR2RML.R2RML do
     do: ["rr:datatype <#{iri}>"]
 
   defp render_object_datatype(_), do: []
+
+  # rr:template defaults to rr:IRI, so a literal template object map must say so explicitly.
+  defp render_object_term_type(%ObjectMap{strategy: :template, term_type: :literal}),
+    do: ["rr:termType rr:Literal"]
+
+  defp render_object_term_type(%ObjectMap{term_type: term_type}), do: render_term_type(term_type, :object)
 
   defp render_term_type(:literal, _scope), do: []
   defp render_term_type(:iri, :subject), do: []

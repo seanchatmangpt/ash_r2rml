@@ -40,8 +40,9 @@ normalizes `%AshR2RML.Refusal{}` and `%AshR2RML.Error{}` to a `REFUSED_*` code.
 `--layers a,b,c` selects layers by name (the file basename under `bench/stress/layers/`).
 `--layers all` runs every file found there. A layer whose `available?/0` or `setup/1` returns
 `{:skip, reason}` prints `[SKIP] <layer>: <reason>` and counts as exit 3 for that layer. A
-named layer with no file is exit 2. Layers run independently; one layer's skip never hides
-another layer's result.
+named layer with no file under `bench/stress/layers/` is also a loud skip (exit 3); only a layer
+name outside the known set (`ets simple mnesia embedded sqlite csv custom postgres mysql`) exits
+2 immediately. Layers run independently; one layer's skip never hides another layer's result.
 
 ### Service flags
 
@@ -82,8 +83,10 @@ from the comparison and reported.
 
 ### Layer exit codes
 
-Per layer: 0 all scenarios and digest pass; 1 any `{:fail, _}`, crash, or digest mismatch;
-2 layer file missing; 3 loud skip. Aggregate precedence is unchanged: 1 > 2 > 3 > 0.
+Layered mode (`--layers`): 0 all scenarios pass and digests are equal; 1 any `{:fail, _}` or
+digest mismatch; 3 any layer skipped (unavailable service, crashed setup, or missing layer file),
+never a silent pass; 2 only for an unknown layer name. Failure outranks skip: 1 > 3 > 0.
+Legacy script mode keeps 1 > 2 > 3 > 0 (2 = script file missing).
 
 ## CTQ / USL
 
@@ -103,7 +106,7 @@ USL; the umbrella only aggregates exit codes.
 |---|---|
 | 0 | PASS |
 | 1 | FAIL (any USL breach or crash; any other nonzero code is treated as FAIL) |
-| 2 | SUBJECT MISSING (script or subject under test absent) |
+| 2 | SUBJECT MISSING (legacy: script file absent; layered: unknown layer name) |
 | 3 | LOUD SKIP (reason printed; never a silent pass) |
 
 Aggregate precedence: 1 > 2 > 3 > 0.

@@ -13,10 +13,12 @@ defmodule AshR2RML.Negative.IdentityNegativeTest do
   alias AshR2RML.Mapping
   alias AshR2RML.Refusal
 
-  defp extract_refusals({:error, refusals}) when is_list(refusals), do: refusals
-  defp extract_refusals({:error, %Refusal{} = refusal}), do: [refusal]
-  defp extract_refusals(refusals) when is_list(refusals), do: refusals
-  defp extract_refusals(_), do: []
+  defp extract_refusals(result), do: flatten_refusals(result)
+
+  defp flatten_refusals(%Refusal{} = r), do: [r]
+  defp flatten_refusals(t) when is_tuple(t), do: t |> Tuple.to_list() |> flatten_refusals()
+  defp flatten_refusals(l) when is_list(l), do: Enum.flat_map(l, &flatten_refusals/1)
+  defp flatten_refusals(_), do: []
 
   describe "REFUSED_INVALID_SUBJECT_TEMPLATE" do
     test "refuses subject template with unclosed template brace" do

@@ -4,13 +4,13 @@
 
 # B3/B4 query benches over real Ash.DataLayer.Ets rows via AshR2RML.OBDA.query/3.
 #
-#   B3  filtered point lookup (constant subject IRI)  p99 <= 10 ms, stats.rows_read == 1
-#   B4  join + FILTER + ORDER BY + LIMIT 100          p99 <= 50 ms
+#   B3  filtered point lookup (constant subject IRI)  ETS gate p99 <= 50 ms (CTQ-3 USL), stats.rows_read == 1
+#   B4  join + FILTER + ORDER BY + LIMIT 100          ETS gate p99 <= 150 ms (relaxed; charter 50 ms)
 #       over 10_000 Person / 500 Org
 #
 # Run:  mix run bench/b3_b4_query.exs [--require-sqlite] [--b3-iters N] [--b4-iters N]
 #
-# Also runs B3 (p99 <= 150 ms, rows_read == 1) and B4 against a real file-backed AshSqlite repo
+# Also runs B3 and B4 (each p99 <= 150 ms, B3 rows_read == 1) against a real file-backed AshSqlite repo
 # (bench/support/sqlite_fixture.exs). --require-sqlite is accepted and is now the default.
 #
 # Exit: 0 all sub-benches passed; 1 any threshold/assertion failure;

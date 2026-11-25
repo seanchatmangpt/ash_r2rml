@@ -59,6 +59,7 @@ jobs:
         run: mix hex.build
 
   release-security:
+    name: release-security (ci)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

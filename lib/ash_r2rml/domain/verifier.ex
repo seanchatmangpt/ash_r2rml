@@ -21,19 +21,13 @@ defmodule AshR2RML.Domain.Verifier do
       |> Verifier.get_entities([:resources])
       |> Enum.map(& &1.resource)
 
-    mappings =
-      members
-      |> Enum.flat_map(fn resource ->
-        with true <- match?({:module, _}, Code.ensure_compiled(resource)),
-             {:ok, %Mapping.Resource{} = mapping} <- AshR2RML.Resource.Info.mapping_result(resource) do
-          [{resource, mapping}]
-        else
-          _ -> []
-        end
-      end)
-      |> Map.new()
+    mappings = Map.new(members, fn resource -> {resource, resolve(resource)} end)
 
-    errors = Enum.flat_map(mappings, fn {resource, mapping} -> check(resource, mapping, members, mappings) end)
+    errors =
+      Enum.flat_map(mappings, fn
+        {resource, %Mapping.Resource{} = mapping} -> check(resource, mapping, members, mappings)
+        {_resource, _failure} -> []
+      end)
 
     case errors do
       [] ->
@@ -49,6 +43,21 @@ defmodule AshR2RML.Domain.Verifier do
     end
   end
 
+  # A member resolves to its mapping, or to the real failure (%Refusal{} or a
+  # not-compiled marker) so the parent's own refusal is surfaced, not masked.
+  defp resolve(resource) do
+    case Code.ensure_compiled(resource) do
+      {:module, _} ->
+        case AshR2RML.Resource.Info.mapping_result(resource) do
+          {:ok, %Mapping.Resource{} = mapping} -> mapping
+          {:error, %AshR2RML.Refusal{} = refusal} -> refusal
+        end
+
+      {:error, reason} ->
+        {:not_compiled, reason}
+    end
+  end
+
   @doc false
   @spec check(module(), Mapping.Resource.t(), [module()], map()) :: [String.t()]
   def check(resource, mapping, members, mappings) do
@@ -60,32 +69,56 @@ defmodule AshR2RML.Domain.Verifier do
         parent not in members ->
           ["#{label}: parent resource #{inspect(parent)} is not in the domain"]
 
-        not Map.has_key?(mappings, parent) ->
-          ["#{label}: parent resource #{inspect(parent)} carries no R2RML mapping"]
-
         true ->
-          parent_mapping = Map.fetch!(mappings, parent)
-          subject_errors(label, parent, parent_mapping) ++ column_errors(label, parent, parent_mapping, ref)
+          case Map.get(mappings, parent) do
+            %Mapping.Resource{} = parent_mapping ->
+              subject_errors(label, parent, parent_mapping) ++
+                column_errors(label, resource, mapping, parent, parent_mapping, ref)
+
+            nil ->
+              ["#{label}: parent resource #{inspect(parent)} carries no R2RML mapping"]
+
+            failure ->
+              ["#{label}: parent resource #{inspect(parent)} failed to map: #{describe(failure)}"]
+          end
       end
     end)
   end
+
+  defp describe(%AshR2RML.Refusal{code: code, detail: detail}), do: "#{code}: #{detail}"
+  defp describe({:not_compiled, reason}), do: "module could not be compiled (#{inspect(reason)})"
+  defp describe(other), do: inspect(other)
 
   defp subject_errors(label, parent, %Mapping.Resource{subject_map: nil}),
     do: ["#{label}: parent #{inspect(parent)} has no subject map"]
 
   defp subject_errors(_label, _parent, _mapping), do: []
 
-  defp column_errors(label, parent, parent_mapping, ref) do
-    columns = known_columns(parent, parent_mapping)
+  defp column_errors(label, child, child_mapping, parent, parent_mapping, ref) do
+    parent_columns = known_columns(parent, parent_mapping)
+    child_columns = known_columns(child, child_mapping)
 
-    ref.joins
-    |> Enum.map(& &1.parent)
-    |> Enum.reject(&(to_string(&1) in columns))
-    |> Enum.map(&"#{label}: parent join column #{inspect(&1)} does not exist on #{inspect(parent)}")
+    parent_errors =
+      ref.joins
+      |> Enum.map(& &1.parent)
+      |> Enum.reject(&(to_string(&1) in parent_columns))
+      |> Enum.map(&"#{label}: parent join column #{inspect(&1)} does not exist on #{inspect(parent)}")
+
+    child_errors =
+      ref.joins
+      |> Enum.map(& &1.child)
+      |> Enum.reject(&(to_string(&1) in child_columns))
+      |> Enum.map(&"#{label}: child join column #{inspect(&1)} does not exist on #{inspect(child)}")
+
+    parent_errors ++ child_errors
   end
 
-  defp known_columns(parent, mapping) do
-    attrs = parent |> Ash.Resource.Info.attributes() |> Enum.map(&to_string(&1.name))
+  # Join conditions carry SOURCE column names (attribute source || name).
+  defp known_columns(resource, mapping) do
+    attrs =
+      resource
+      |> Ash.Resource.Info.attributes()
+      |> Enum.map(&to_string(&1.source || &1.name))
 
     object_cols =
       for %{object_map: %{strategy: :column, value: v}} <- mapping.predicate_object_maps, do: to_string(v)

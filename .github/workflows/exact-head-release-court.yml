@@ -26,6 +26,7 @@ env:
 
 jobs:
   release-security:
+    name: release-security (exact-head court)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

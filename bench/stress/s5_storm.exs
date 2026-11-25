@@ -5,7 +5,8 @@
 # S5 storm: 64 concurrent callers for a deadline (default 60 s), 32 killers (every call must
 # return a typed REFUSED_* error) and 32 healthy callers (every call must return {:ok, result}
 # with a 64-hex digest and the exact expected bindings), then a concurrency sweep printing
-# mean latency per level (knee detection output only, never asserted).
+# mean latency per level (latency/knee is output only, never asserted; any failed healthy
+# call in the sweep fails the run, exit 1).
 #
 #     mix run bench/stress/s5_storm.exs [--seconds N] [--sweep-seconds N]
 #
@@ -94,9 +95,10 @@ defmodule S5.Storm do
     {:ok, sup} = Task.Supervisor.start_link()
 
     storm_ok? = storm(sup, seconds)
-    sweep(sup, sweep_seconds)
+    sweep_ok? = sweep(sup, sweep_seconds)
 
-    if storm_ok? do
+    # Latencies in the sweep are informational, but any failed healthy call there is a FAIL.
+    if storm_ok? and sweep_ok? do
       IO.puts("S5 STORM: PASS")
     else
       IO.puts("S5 STORM: FAIL")
@@ -319,8 +321,8 @@ defmodule S5.Storm do
     IO.puts("\nS5 concurrency sweep (healthy point lookup + join, #{seconds}s per level)")
     IO.puts("  C    calls   bad  mean_latency_us")
 
-    prev =
-      Enum.reduce([1, 4, 16, 64, 256], nil, fn c, prev ->
+    {_prev, total_bad} =
+      Enum.reduce([1, 4, 16, 64, 256], {nil, 0}, fn c, {prev, bad_acc} ->
         deadline = System.monotonic_time(:millisecond) + seconds * 1000
 
         stats =
@@ -340,10 +342,11 @@ defmodule S5.Storm do
         mean = if calls > 0, do: us / calls, else: 0.0
         knee = if prev != nil and prev > 0 and mean > 2 * prev, do: "  <-- knee (>2x previous level)", else: ""
         IO.puts("  #{String.pad_trailing(Integer.to_string(c), 4)} #{String.pad_trailing(Integer.to_string(calls), 8)}#{String.pad_trailing(Integer.to_string(bad), 6)}#{Float.round(mean * 1.0, 1)}#{knee}")
-        mean
+        {mean, bad_acc + bad}
       end)
 
-    prev
+    if total_bad > 0, do: IO.puts("  sweep: #{total_bad} healthy call(s) failed")
+    total_bad == 0
   end
 
   defp timed_loop(i, deadline, {calls, bad, us} = acc) do

@@ -24,10 +24,15 @@ defmodule AshR2RML.OBDA do
 
   ## Options
 
-  `:actor`, `:tenant`, `:authorize?`, `:allow_sensitive?`, `:max_rows`, `:max_triples`,
-  `:timeout_ms`; `:context`, `:domain`, `:allow_unauthorized`, `:require_authorizer`,
-  `:require_tenant` are forwarded to the read. Exceeding `:max_triples` yields
-  `:REFUSED_RESOURCE_BOUND`; `:max_rows` is enforced by the SPARQL engine.
+  `:actor`, `:tenant`, `:authorize?`, `:allow_sensitive?` (alias `:allow_sensitive`),
+  `:max_rows`, `:max_triples`, `:timeout_ms`, `:max_heap_words`; `:action` (read action name),
+  `:context`, `:domain`, `:allow_unauthorized`, `:require_authorizer`, `:require_tenant` are
+  forwarded to the read. Exceeding `:max_triples` yields `:REFUSED_TRIPLE_LIMIT_EXCEEDED`
+  (raised by `AshR2RML.OBDA.InMemory`); `:max_rows` is enforced by the SPARQL engine. The four
+  bounds must be positive integers, else `:REFUSED_UNSUPPORTED_SPARQL_FEATURE`.
+
+  Resources on a `private?: true` ETS table are refused with `:REFUSED_PRIVATE_DATA_LAYER`:
+  the read runs in a worker process that cannot see a private table.
 
   `:pushdown` (default `true`) enables root-resource pushdown of simple FILTERs, ORDER BY and
   LIMIT/OFFSET (see `AshR2RML.QueryBuilder.Lowering`); `pushdown: false` forces the full read.
@@ -60,7 +65,7 @@ defmodule AshR2RML.OBDA do
   alias AshR2RML.Refusal
   alias AshR2RML.SPARQL.Local
 
-  @forwarded [:actor, :tenant, :authorize?, :context, :domain] ++
+  @forwarded [:actor, :tenant, :authorize?, :context, :domain, :action] ++
                [:allow_unauthorized, :require_authorizer, :require_tenant, :max_rows, :max_triples]
 
   @event [:ash_r2rml, :obda, :query]
@@ -75,10 +80,15 @@ defmodule AshR2RML.OBDA do
 
     try do
       result =
-        case Worker.run(fn -> guarded_execute(resources_or_domain, sparql, opts, started) end, opts) do
-          # Worker wraps the function's own {:ok, _} | {:error, _} return; flatten it.
-          {:ok, inner} -> normalize_result(inner)
-          {:error, _} = worker_error -> normalize_result(worker_error)
+        with :ok <- validate_bounds(opts),
+             :ok <- check_private_data_layers(resources_or_domain) do
+          case Worker.run(fn -> guarded_execute(resources_or_domain, sparql, opts, started) end, opts) do
+            # Worker wraps the function's own {:ok, _} | {:error, _} return; flatten it.
+            {:ok, inner} -> normalize_result(inner)
+            {:error, _} = worker_error -> normalize_result(worker_error)
+          end
+        else
+          {:error, _} = refused -> normalize_result(refused)
         end
 
       :telemetry.execute(@event ++ [:stop], %{duration: System.monotonic_time() - started}, stop_meta(meta, result))
@@ -153,7 +163,52 @@ defmodule AshR2RML.OBDA do
 
   defp stop_meta(meta, {:ok, _}), do: Map.put(meta, :result, :ok)
   defp stop_meta(meta, {:error, %Refusal{code: code}}), do: meta |> Map.put(:result, :error) |> Map.put(:code, code)
-  defp stop_meta(meta, _other), do: Map.put(meta, :result, :error)
+  defp stop_meta(meta, {:error, %Error{code: code}}), do: meta |> Map.put(:result, :error) |> Map.put(:code, code)
+
+  @bound_keys [:max_rows, :max_triples, :timeout_ms, :max_heap_words]
+
+  # Bounds must be positive integers (or absent/nil); anything else is refused up front rather than
+  # reaching the worker or the engine with a nonsensical limit.
+  defp validate_bounds(opts) do
+    case Enum.find(@bound_keys, fn key ->
+           value = Keyword.get(opts, key)
+           not (is_nil(value) or (is_integer(value) and value > 0))
+         end) do
+      nil ->
+        :ok
+
+      key ->
+        {:error,
+         refusal("option #{key}", "#{key} must be a positive integer", %{
+           option: key,
+           value: inspect(Keyword.get(opts, key))
+         })}
+    end
+  end
+
+  # The read runs in a spawned worker; a `private?: true` ETS table belongs to the process that
+  # created it, so the worker would silently read an empty table.
+  defp check_private_data_layers(source) do
+    with {:ok, specs} <- resolve_specs(source),
+         [resource | _] <- for({resource, _} <- specs, private_ets?(resource), do: resource) do
+      {:error,
+       Error.new(:REFUSED_PRIVATE_DATA_LAYER,
+         resource: resource,
+         details: %{detail: "#{inspect(resource)} is backed by a private ETS table"}
+       )}
+    else
+      _ -> :ok
+    end
+  end
+
+  defp private_ets?(resource) do
+    Code.ensure_loaded?(Ash.DataLayer.Ets.Info) and
+      function_exported?(Ash.DataLayer.Ets.Info, :private?, 1) and
+      Ash.DataLayer.data_layer(resource) == Ash.DataLayer.Ets and
+      Ash.DataLayer.Ets.Info.private?(resource) == true
+  rescue
+    _ -> false
+  end
 
   # Raises/throws/exits inside the worker become typed errors with the real exception struct
   # classified (Forbidden -> REFUSED_UNAUTHORIZED), instead of a generic worker crash.
@@ -167,6 +222,7 @@ defmodule AshR2RML.OBDA do
 
   defp execute(source, sparql, opts, started) do
     with :ok <- check_order_projected(sparql),
+         :ok <- Modifiers.check(sparql),
          {:ok, specs} <- resolve_specs(source),
          {:ok, readable, pruned} <- preflight(specs, opts),
          {:ok, graph, ttl, observation} <- run_with_pushdown(readable, specs, sparql, opts) do
@@ -230,7 +286,6 @@ defmodule AshR2RML.OBDA do
 
   defp run_pipeline(readable, specs, sparql, opts, pushdown) do
     with {:ok, graph} <- InMemory.materialize_many(readable, materialize_opts(opts, specs, sparql, pushdown)),
-         :ok <- check_max_triples(graph, readable, opts[:max_triples]),
          {:ok, ttl} <- AshR2RML.R2RML.render(%Bundle{resources: Enum.map(specs, &elem(&1, 1))}),
          {:ok, observation} <- Local.query(graph, sparql, local_opts(opts)) do
       {:ok, graph, ttl, observation}
@@ -244,7 +299,7 @@ defmodule AshR2RML.OBDA do
     if Keyword.get(opts, :authorize?, true) == false do
       {:ok, specs, 0}
     else
-      pre_opts = Keyword.take(opts, [:actor, :tenant, :context, :domain])
+      pre_opts = Keyword.take(opts, [:actor, :tenant, :context, :domain, :action])
 
       Enum.reduce_while(specs, {:ok, [], 0}, fn {resource, _mapping} = spec, {:ok, keep, pruned} ->
         case AshR2RML.OBDA.Preflight.check(resource, pre_opts) do
@@ -316,7 +371,7 @@ defmodule AshR2RML.OBDA do
     base =
       opts
       |> Keyword.take(@forwarded)
-      |> Keyword.put(:allow_sensitive, Keyword.get(opts, :allow_sensitive?, false))
+      |> Keyword.put(:allow_sensitive, allow_sensitive?(opts))
 
     base =
       case pushdown do
@@ -330,28 +385,11 @@ defmodule AshR2RML.OBDA do
     end
   end
 
+  # Both spellings are accepted; either set to `true` opts in.
+  defp allow_sensitive?(opts),
+    do: Keyword.get(opts, :allow_sensitive?, false) == true or Keyword.get(opts, :allow_sensitive, false) == true
+
   defp local_opts(opts), do: opts |> Keyword.take([:max_rows]) |> Enum.reject(fn {_k, v} -> is_nil(v) end)
-
-  defp check_max_triples(_graph, _specs, nil), do: :ok
-
-  defp check_max_triples(graph, specs, max) when is_integer(max) and max > 0 do
-    count = RDF.Graph.triple_count(graph)
-
-    if count > max do
-      {:error,
-       Refusal.new(
-         :REFUSED_RESOURCE_BOUND,
-         specs |> List.first() |> elem(0),
-         "materialized graph exceeds max_triples",
-         %{
-           max_triples: max,
-           triples: count
-         }
-       )}
-    else
-      :ok
-    end
-  end
 
   @doc false
   @spec resolve_specs(term()) :: {:ok, [InMemory.spec()]} | {:error, Refusal.t()}

@@ -37,10 +37,7 @@ defmodule MyApp.Person do
   r2rml do
     class "https://schema.org/Person"
 
-    subject do
-      template "https://example.org/people/{id}"
-      term_type :iri
-    end
+    subject template: "https://example.org/people/{id}", term_type: :iri
   end
 end
 ```
@@ -75,8 +72,9 @@ mapping = AshR2RML.Resource.Info.mapping!(MyApp.Person)
 ## Subject IRIs
 
 ```elixir
-{:ok, iri} = AshR2RML.Subject.to_iri(MyApp.Person, id: "abc")
-{:ok, %{id: "abc"}} = AshR2RML.Subject.from_iri(MyApp.Person, iri)
+id = "0b9f3c1e-6d2a-4f57-9a1b-3c8e5d7f2a41"
+{:ok, iri} = AshR2RML.Subject.to_iri(MyApp.Person, id: id)
+{:ok, %{id: ^id}} = AshR2RML.Subject.from_iri(MyApp.Person, iri)
 ```
 
 ## Syncing these rules into your project

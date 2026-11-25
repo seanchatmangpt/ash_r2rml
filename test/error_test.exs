@@ -114,7 +114,7 @@ defmodule AshR2RML.ErrorTest do
       assert e.code == :REFUSED_WORKER_CRASHED
       assert e.details.kind == :error
       assert e.details.class == "RuntimeError"
-      assert Error.retryable?(e)
+      refute Error.retryable?(e)
       assert_catalogued(e)
     end
   end
@@ -129,12 +129,12 @@ defmodule AshR2RML.ErrorTest do
       assert_catalogued(e)
     end
 
-    test "a read that fails for another reason is REFUSED_READ_FAILED, retryable" do
+    test "a read that fails for another reason is REFUSED_READ_FAILED, not retryable" do
       e = OBDA.wrap_failure(:exit, {:shutdown, :db})
       assert e.code == :REFUSED_READ_FAILED
       assert e.resource == nil
       assert e.details.kind == :exit
-      assert Error.retryable?(e)
+      refute Error.retryable?(e)
       assert_catalogued(e)
     end
 

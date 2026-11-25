@@ -28,33 +28,46 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          # The tag push also triggers CI on this SHA, so in-flight duplicates of the
-          # required check names may exist. Wait (bounded by an epoch deadline) until
-          # none of them is queued/in_progress, then require: per name, at least one
-          # success and zero non-success completed runs. Missing names fail closed.
-          names="test test-postgres types release-security"
+          # Required check names are matched exactly (one per line). A name that is absent
+          # is treated as not-yet-started and polled until the epoch deadline, same as a
+          # queued/in_progress run. After the poll, per name: at least one run, and every
+          # run completed with success. Anything missing or pending at the deadline fails.
+          names='test
+          test-postgres
+          types
+          release-security (ci)
+          release-security (exact-head court)'
           deadline=$(( $(date +%s) + 1200 ))
           while :; do
             runs="$(gh api --paginate "repos/${{ github.repository }}/commits/${{ github.sha }}/check-runs?per_page=100" \
               --jq '.check_runs[] | [.name, .status, (.conclusion // "none")] | @tsv')"
             pending=0
-            for name in ${names}; do
-              if printf '%s\n' "${runs}" | awk -F'\t' -v n="${name}" '$1 == n && $2 != "completed" { p=1 } END { exit !p }'; then
+            while IFS= read -r name; do
+              name="${name#"${name%%[![:space:]]*}"}"
+              [ -n "${name}" ] || continue
+              rows="$(printf '%s\n' "${runs}" | awk -F'\t' -v n="${name}" '$1 == n')"
+              if [ -z "${rows}" ]; then
+                echo "Not yet present: ${name}"
+                pending=1
+              elif printf '%s\n' "${rows}" | awk -F'\t' '$2 != "completed" { p=1 } END { exit !p }'; then
+                echo "Not yet completed: ${name}"
                 pending=1
               fi
-            done
+            done <<< "${names}"
             if [ "${pending}" -eq 0 ]; then
               break
             fi
             if [ "$(date +%s)" -ge "${deadline}" ]; then
-              echo "::error title=CI gate::check runs still queued/in_progress after 20 min for ${{ github.sha }}"
+              echo "::error title=CI gate::required check runs absent or incomplete after 20 min for ${{ github.sha }}"
               exit 1
             fi
-            echo "Waiting for in-flight check runs (test/types/release-security)..."
+            echo "Waiting for required check runs..."
             sleep 15
           done
           fail=0
-          for name in ${names}; do
+          while IFS= read -r name; do
+            name="${name#"${name%%[![:space:]]*}"}"
+            [ -n "${name}" ] || continue
             rows="$(printf '%s\n' "${runs}" | awk -F'\t' -v n="${name}" '$1 == n')"
             if [ -z "${rows}" ]; then
               echo "::error title=CI gate::no check run named '${name}' for ${{ github.sha }}"
@@ -63,7 +76,7 @@ jobs:
               echo "::error title=CI gate::check run '${name}' has a non-success run for ${{ github.sha }}: $(printf '%s' "${rows}" | tr '\t\n' ' ;')"
               fail=1
             fi
-          done
+          done <<< "${names}"
           exit "${fail}"
 
       - name: Checkout exact tag subject

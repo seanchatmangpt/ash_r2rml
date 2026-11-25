@@ -255,12 +255,12 @@ defmodule AshR2RML.Subject do
   defp lexical(mapping, field, value) do
     case attribute(mapping, field) do
       nil ->
-        {:ok, to_string(value)}
+        non_empty(mapping, field, to_string(value))
 
       %{type: type, constraints: constraints} ->
         case Ash.Type.cast_input(type, value, constraints) do
           {:ok, cast} when not is_nil(cast) ->
-            {:ok, to_string(cast)}
+            non_empty(mapping, field, to_string(cast))
 
           _ ->
             {:error,
@@ -276,6 +276,19 @@ defmodule AshR2RML.Subject do
     Protocol.UndefinedError ->
       {:error, missing(mapping, field)}
   end
+
+  # An empty lexical never inverts (from_iri refuses an empty capture), so to_iri refuses too.
+  defp non_empty(mapping, field, ""),
+    do:
+      {:error,
+       refuse(
+         mapping,
+         :REFUSED_INVALID_SUBJECT_IRI,
+         "subject template field #{inspect(field)} renders as the empty string",
+         %{field: field}
+       )}
+
+  defp non_empty(_mapping, _field, lexical), do: {:ok, lexical}
 
   defp attribute(%MappingResource{ash_resource: resource}, field)
        when is_atom(resource) and not is_nil(resource) do
@@ -303,18 +316,45 @@ defmodule AshR2RML.Subject do
       |> Enum.chunk_every(2, 1, :discard)
       |> Enum.any?(fn [a, b] -> match?({:field, _}, a) and match?({:field, _}, b) end)
 
-    if adjacent? do
-      {:error,
-       refuse(
-         mapping,
-         :REFUSED_NON_INVERTIBLE_TEMPLATE,
-         "subject template has adjacent placeholders with no separator; not invertible",
-         %{}
-       )}
-    else
-      :ok
+    cond do
+      adjacent? ->
+        {:error,
+         refuse(
+           mapping,
+           :REFUSED_NON_INVERTIBLE_TEMPLATE,
+           "subject template has adjacent placeholders with no separator; not invertible",
+           %{}
+         )}
+
+      separator = ambiguous_separator(segments) ->
+        {:error,
+         refuse(
+           mapping,
+           :REFUSED_NON_INVERTIBLE_TEMPLATE,
+           "separator #{inspect(separator)} between placeholders consists only of characters that " <>
+             "can occur inside an encoded value (URI unreserved or %); first-match split is ambiguous",
+           %{separator: separator}
+         )}
+
+      true ->
+        :ok
     end
   end
+
+  # A literal between two fields that is made only of unreserved characters (or `%`) can
+  # also appear inside a percent-encoded value, so splitting on its first occurrence may
+  # pick the wrong boundary while still re-encoding to the same IRI.
+  defp ambiguous_separator(segments) do
+    segments
+    |> Enum.chunk_every(3, 1, :discard)
+    |> Enum.find_value(fn
+      [{:field, _}, {:lit, text}, {:field, _}] -> if encodable_only?(text), do: text
+      _ -> nil
+    end)
+  end
+
+  defp encodable_only?(text),
+    do: text != "" and text |> String.to_charlist() |> Enum.all?(&(&1 == ?% or URI.char_unreserved?(&1)))
 
   defp capture(mapping, segments, iri), do: capture(mapping, segments, iri, iri, %{})
 

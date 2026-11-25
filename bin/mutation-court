@@ -20,6 +20,9 @@ cd "$ROOT" || exit 2
 export MIX_ENV=test
 
 IN_MEMORY="lib/ash_r2rml/obda_in_memory.ex"
+OBDA="lib/ash_r2rml/obda.ex"
+QUERY_BUILDER="lib/ash_r2rml/query_builder.ex"
+PREFLIGHT="lib/ash_r2rml/obda/preflight.ex"
 SECURITY="lib/ash_r2rml/security.ex"
 DATATYPE="lib/ash_r2rml/datatype_registry.ex"
 MIX_EXS="mix.exs"
@@ -117,9 +120,29 @@ mutate M1c "Security sensitive-attribute detection never matches" \
   's/match\?\(%\{sensitive\?: true\}/match?(%{sensitive?: :mutant}/'
 
 # M2: tenant forwarding drop. Tenant must reach Ash.read.
-mutate M2 "tenant dropped from read options" \
+mutate M2a "tenant dropped from InMemory read options" \
   "$IN_MEMORY" test/obda_in_memory_row_policy_tenant_test.exs \
   's/\[:actor, :tenant, :authorize\?/[:actor, :authorize?/g'
+
+mutate M2b "tenant dropped from OBDA @forwarded read options" \
+  "$OBDA" test/obda_query_unauthorized_test.exs \
+  's/^(\s*)\@forwarded \[:actor, :tenant, /$1\@forwarded [:actor, /'
+
+# M6: query-builder field-policy guard. A field-policy-gated attribute must never be pushed
+# down as a data-layer filter (row count would be an oracle on the hidden value).
+mutate M6 "field-policy pushdown guard replaced by a tautology" \
+  "$QUERY_BUILDER" test/obda_field_policy_filter_oracle_test.exs \
+  's/false <- AshR2RML\.Security\.field_policy_protected\?\(resource, attribute\) do/true <- is_atom(attribute) do/'
+
+# M7: preflight must forward the caller's :context to Ash.can?/3.
+mutate M7 "preflight drops :context" \
+  "$PREFLIGHT" test/obda_preflight_context_test.exs \
+  's/\|> put_context\(Keyword\.get\(opts, :context\)\)/|> put_context(nil)/'
+
+# M8: refusal evidence must stay bounded (resource + error class only).
+mutate M8 "read refusal evidence leaks the raw error" \
+  "$IN_MEMORY" test/obda_refusal_evidence_redaction_test.exs \
+  's/error_class: inspect\(class\)\}/error_class: inspect(class), raw: inspect(error)}/'
 
 # M3: max_rows bound removal and datatype Range refusal.
 mutate M3a "max_rows surplus check disabled" \
@@ -156,5 +179,5 @@ if ! porcelain_empty; then
   exit 4
 fi
 
-echo "MUTATION_COURT_PASS: M1a-M5 killed, tree clean"
+echo "MUTATION_COURT_PASS: M1a-M8 (M1abc M2ab M3ab M4ab M5 M6 M7 M8) killed, tree clean"
 exit 0

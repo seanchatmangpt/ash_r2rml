@@ -65,8 +65,75 @@ defmodule AshR2RML.DomainVerifierTest.Member do
   end
 end
 
+defmodule AshR2RML.DomainVerifierTest.RemapDomain do
+  @moduledoc false
+  use Ash.Domain, validate_config_inclusion?: false, extensions: [AshR2RML.Domain]
+
+  resources do
+    resource AshR2RML.DomainVerifierTest.RemapParent
+    resource AshR2RML.DomainVerifierTest.RemapChild
+  end
+end
+
+defmodule AshR2RML.DomainVerifierTest.RemapParent do
+  @moduledoc false
+  use Ash.Resource,
+    domain: AshR2RML.DomainVerifierTest.RemapDomain,
+    data_layer: Ash.DataLayer.Ets,
+    extensions: [AshR2RML]
+
+  r2rml do
+    class_iri("https://schema.org/Organization")
+    subject_template("https://schema.org/Organization/{id}")
+    table_name("dv_remap_parents")
+    attribute_mappings([{:name, "https://schema.org/name"}])
+  end
+
+  actions do
+    defaults [:read]
+  end
+
+  attributes do
+    uuid_primary_key :id
+    attribute :code, :string, public?: true, source: :code_col
+    attribute :name, :string, public?: true
+  end
+end
+
+defmodule AshR2RML.DomainVerifierTest.RemapChild do
+  @moduledoc false
+  use Ash.Resource,
+    domain: AshR2RML.DomainVerifierTest.RemapDomain,
+    data_layer: Ash.DataLayer.Ets,
+    extensions: [AshR2RML]
+
+  r2rml do
+    class_iri("https://schema.org/Person")
+    subject_template("https://schema.org/Person/{id}")
+    table_name("dv_remap_children")
+    attribute_mappings([{:name, "https://schema.org/name"}])
+    relationship_mappings([{:parent, "https://schema.org/memberOf"}])
+  end
+
+  actions do
+    defaults [:read]
+  end
+
+  attributes do
+    uuid_primary_key :id
+    attribute :name, :string, public?: true
+  end
+
+  relationships do
+    belongs_to :parent, AshR2RML.DomainVerifierTest.RemapParent, public?: true
+  end
+end
+
 defmodule AshR2RML.DomainVerifierTest do
   use ExUnit.Case, async: true
+
+  alias AshR2RML.DomainVerifierTest.{RemapChild, RemapParent}
+  alias AshR2RML.Refusal
 
   alias AshR2RML.Domain.Verifier
   alias AshR2RML.DomainVerifierTest.{Domain, Member, Org}
@@ -105,6 +172,46 @@ defmodule AshR2RML.DomainVerifierTest do
 
     [error] = Verifier.check(Member, member, [Org, Member], maps)
     assert error =~ "ghost_col"
+  end
+
+  defp remap_check(joins, mappings_override \\ %{}) do
+    maps =
+      Map.new([RemapParent, RemapChild], fn r ->
+        {:ok, m} = AshR2RML.Resource.Info.mapping_result(r)
+        {r, m}
+      end)
+
+    child = maps[RemapChild]
+    [ref] = child.reference_object_maps
+    child = %{child | reference_object_maps: [%{ref | joins: joins}]}
+    Verifier.check(RemapChild, child, [RemapParent, RemapChild], Map.merge(maps, mappings_override))
+  end
+
+  test "join on a remapped parent source column is accepted" do
+    assert remap_check([%JoinCondition{child: "parent_id", parent: "code_col"}]) == []
+  end
+
+  test "attribute name is not a column when the attribute is remapped" do
+    [error] = remap_check([%JoinCondition{child: "parent_id", parent: "code"}])
+    assert error =~ "parent join column"
+    assert error =~ "\"code\""
+  end
+
+  test "missing child join column is reported" do
+    [error] = remap_check([%JoinCondition{child: "ghost_child", parent: "code_col"}])
+    assert error =~ "child join column"
+    assert error =~ "ghost_child"
+  end
+
+  test "parent's real refusal is surfaced instead of 'no mapping'" do
+    refusal = Refusal.new(:REFUSED_MISSING_SUBJECT_MAP, RemapParent, "subject template unresolved")
+
+    [error] =
+      remap_check([%JoinCondition{child: "parent_id", parent: "code_col"}], %{RemapParent => refusal})
+
+    assert error =~ "REFUSED_MISSING_SUBJECT_MAP"
+    assert error =~ "subject template unresolved"
+    refute error =~ "carries no R2RML mapping"
   end
 
   test "parent without a subject map is reported" do

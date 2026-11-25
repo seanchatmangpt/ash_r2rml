@@ -160,5 +160,17 @@ defmodule AshR2RML.OBDA.InMemoryCloakTest do
              )
 
     assert observation.rows == []
+
+    # Positive control: the identical query shape over the allowed (non-cloaked) predicate returns
+    # the row, so the empty secret result is the admission boundary, not an empty graph.
+    assert {:ok, control} =
+             InMemory.query(
+               SecretRecord,
+               mapping(),
+               "SELECT ?name WHERE { ?s <https://example.org/name> ?name }",
+               domain: Domain
+             )
+
+    assert Enum.map(control.rows, &to_string(&1["name"])) == ["Cloaked Record"]
   end
 end

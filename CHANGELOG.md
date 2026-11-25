@@ -25,7 +25,7 @@ runtime OBDA backend; the Ontop/JDBC adapter is removed. Runtime deps: `ash`, `s
   jar or Docker files. Recoverable from commit `26f5f49`.
 * Removed (recoverable from commit `5defc87`): ontology-first ingestion/admission/semantic types,
   ggen packs and runtime, GraphQL projection, Reactor steps/pipeline, OCEL telemetry, knowledge
-  hooks, VKG, federation, DfCM, production admission, JSON-LD.
+  hooks, VKG, DfCM, production admission, JSON-LD.
 * `AshR2RML.Compiler.compile/2` accepts Ash resources (or domains) only; profile maps are no
   longer compiled.
 * The `AshGraphql` auto-extension is no longer added by `AshR2RML.Resource`.
@@ -45,7 +45,7 @@ runtime OBDA backend; the Ontop/JDBC adapter is removed. Runtime deps: `ash`, `s
   `AshR2RML.QueryBuilder`, `AshR2RML.Domain` verifier, `Resource.Info.fetch_mapping/1` and `mapped?/1`.
 * `Subject.from_iri/2` casts through `Ash.Type.cast_input/3` and applies constraints; typed
   `REFUSED_MISSING_SUBJECT_KEY`, `REFUSED_INVALID_SUBJECT_IRI`, `REFUSED_NON_INVERTIBLE_TEMPLATE`.
-* `rdf do predicate` on calculations and aggregates; `NewType`, enum and atom `one_of` datatypes.
+* `property` mappings on calculations and aggregates; `NewType`, enum and atom `one_of` datatypes.
 * Declared datatypes now materialize typed literals (numeric/temporal FILTER and ORDER BY were wrong before).
 * `OBDA.query` forwards `max_rows`/`max_triples`; `AshR2RML.Capability` probes `Ash.DataLayer.can?/2` so
   layers without pushdown still get bounded reads; SPARQL ORDER BY/LIMIT/OFFSET applied by the envelope.
@@ -66,7 +66,20 @@ runtime OBDA backend; the Ontop/JDBC adapter is removed. Runtime deps: `ash`, `s
 * **Safe introspection**: Postgres table info resolved dynamically, so non-Postgres resources and
   consumers without `ash_postgres` compile and map without warnings.
 
+* General root-resource pushdown into `Ash.Query`, with a `pushdown: false` opt-out.
+* Attributes gated by field policies are never pushed into data-layer filters.
+* `ORDER BY` on an unprojected variable is refused (`REFUSED_UNSUPPORTED_SPARQL_FEATURE`).
+* `OBDA.Preflight` forwards `:context`.
+* `retryable?` is true only for timeout refusals.
+* `OBDA.Worker` guardian: the caller's death kills the worker.
+* `OBDA.query/3` refuses private-ETS resources (`REFUSED_PRIVATE_DATA_LAYER`) because the read runs
+  in a worker process.
+* Test-only deps: `ash_json_api`, `ash_csv`, `ash_cubdb`, `ash_cloak`, `cloak`, `simple_sat`.
+
 ### Security:
+* Refusal and crash evidence carries the exception class only (no Ash/DB exception text).
+* `SPARQL.Protocol` resolves DNS and refuses private, loopback, link-local and metadata addresses
+  (fail-closed; unresolvable hosts are refused); redirects are not followed.
 * `OBDA.InMemory` reads through `Ash.read/2` with `actor:`, `tenant:` and policies;
   `authorize?: nil` is treated as `true`; `%Ash.ForbiddenField{}` values are omitted.
 * `sensitive?: true` attributes are refused/omitted everywhere they could leak, including subject
@@ -77,7 +90,7 @@ runtime OBDA backend; the Ontop/JDBC adapter is removed. Runtime deps: `ash`, `s
 
 ### Verification:
 * Contract suite on ETS, file-backed AshSqlite and AshPostgres (CI PostgreSQL 16 job);
-  `bin/mutation-court` kills 9/9 in-place mutations; `bench/` DFLSS suite (excluded from the
+  `bin/mutation-court` kills 9/9 in-place mutations (M5 mutates a test file, not `lib/`); `bench/` DFLSS suite (excluded from the
   package) with measured baseline in `bench/BASELINE-26.11.24.md`; the per-layer stress matrix is
   UNVERIFIED (not executed).
 * Release workflow waits for the tag's own CI before gating on check runs.
@@ -96,8 +109,10 @@ runtime OBDA backend; the Ontop/JDBC adapter is removed. Runtime deps: `ash`, `s
   vetted IP: a DNS rebind between check and connect is still possible.
 * File-wide dialyzer ignores (`.dialyzer_ignore.exs`) hide an unproven root cause (`Local.query`
   error-only inference).
-* Workers are not linked to the caller; a killed caller leaves its worker running until its heap cap.
-  `max_heap_size` does not count refc binaries; SPARQL LIMIT/OFFSET apply after evaluation.
+* Rendered R2RML for non-ETS data layers is sanitized: attributes gated by Ash field policies are
+  stripped from the rendered mapping (the Ash-mediated path still applies policies per actor); a
+  SQL engine reading the rendered mapping cannot apply per-actor policies.
+* `max_heap_size` does not count refc binaries; SPARQL LIMIT/OFFSET apply after evaluation.
 * Constant-subject pushdown on templates with unreserved separators between fields
   (e.g. `{a}-{b}`) can invert ambiguously.
 * The per-layer stress matrix (Mnesia, embedded, CSV, custom, MySQL, Postgres S8, SQLite S7) was

@@ -25,15 +25,27 @@ defmodule AshR2RML.CrossLayerEquivalenceTest do
   test "the reference snapshot publishes organizations, people and gated secrets per tenant and role" do
     snapshot = reference_snapshot()
 
-    assert length(snapshot.org["t1"]) == 2
-    assert length(snapshot.org["t2"]) == 1
-    assert length(snapshot.people[{"t1", :admin}].people) == 2
-    assert length(snapshot.people[{"t1", :admin}].secrets) == 2
-    assert length(snapshot.people[{"t1", :member}].people) == 2
-    assert snapshot.people[{"t1", :member}].secrets == []
-    assert snapshot.people[{"t1", :outsider}] == %{people: [], secrets: []}
-    assert snapshot.people[{"t1", nil}] == %{people: [], secrets: []}
-    assert length(snapshot.people[{"t2", :admin}].people) == 1
+    assert {:ok, [_, _]} = snapshot.org["t1"]
+    assert {:ok, [_]} = snapshot.org["t2"]
+    assert {:ok, [_, _]} = snapshot.people[{"t1", :admin}].people
+    assert {:ok, [_, _]} = snapshot.people[{"t1", :admin}].secrets
+    assert {:ok, [_, _]} = snapshot.people[{"t1", :member}].people
+    assert {:ok, [_]} = snapshot.people[{"t2", :admin}].people
+
+    # Positive controls above (admin/member see rows) make these denials meaningful. A denial is a
+    # typed refusal or an explicit empty-ok, never rows.
+    denied = fn
+      {:ok, []} -> true
+      {:error, code} when is_atom(code) -> true
+      _ -> false
+    end
+
+    assert denied.(snapshot.people[{"t1", :member}].secrets)
+
+    for role <- [:outsider, nil] do
+      assert denied.(snapshot.people[{"t1", role}].people)
+      assert denied.(snapshot.people[{"t1", role}].secrets)
+    end
   end
 
   test "ETS snapshot is stable across insertion order" do

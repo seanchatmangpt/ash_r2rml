@@ -68,10 +68,9 @@ defmodule MyApp.Person do
   r2rml do
     class "https://schema.org/Person"
 
-    subject do
-      template "https://example.org/people/{id}"
-      term_type :iri
-    end
+    subject template: "https://example.org/people/{id}", term_type: :iri
+
+    property :name, "http://xmlns.com/foaf/0.1/name"
   end
 
   attributes do
@@ -79,10 +78,6 @@ defmodule MyApp.Person do
 
     attribute :name, :string do
       allow_nil? false
-
-      rdf do
-        predicate "http://xmlns.com/foaf/0.1/name"
-      end
     end
   end
 end
@@ -141,7 +136,7 @@ Do not confuse syntactically valid Turtle with a proven end-to-end virtual RDF g
 Reads are Ash-authorized by default: `authorize?: true` is applied unless you pass otherwise; pass `:actor` and `:tenant` as needed. Opt-ins are explicit:
 
 - `authorize?: false` is refused unless paired with `allow_unauthorized: true`;
-- `sensitive?: true` attributes are refused unless `allow_sensitive: true`;
+- `sensitive?: true` attributes are refused unless `allow_sensitive: true` (`OBDA.query/3` also accepts `allow_sensitive?`);
 - `require_authorizer: true` and `require_tenant: true` add fail-closed guards.
 
 Use `AshR2RML.Subject.to_iri/2` and `from_iri/2` to convert between key values and template subject IRIs (template strategy only; typed refusal otherwise).

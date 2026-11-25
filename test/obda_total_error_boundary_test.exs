@@ -33,10 +33,13 @@ defmodule AshR2RML.OBDATotalErrorBoundaryTest do
       resource AshR2RML.OBDATotalErrorBoundaryTest.Raising
       resource AshR2RML.OBDATotalErrorBoundaryTest.Failing
       resource AshR2RML.OBDATotalErrorBoundaryTest.Locked
+      resource AshR2RML.OBDATotalErrorBoundaryTest.PrivateTable
     end
   end
 
-  defmodule Raising do
+  # Private ETS tables are refused before any read (the worker process cannot see them), so the
+  # resources that must reach the read path use a shared (non-private) table.
+  defmodule PrivateTable do
     use Ash.Resource,
       domain: AshR2RML.OBDATotalErrorBoundaryTest.Domain,
       data_layer: Ash.DataLayer.Ets,
@@ -45,6 +48,29 @@ defmodule AshR2RML.OBDATotalErrorBoundaryTest do
     ets do
       private? true
     end
+
+    r2rml do
+      class_iri("https://example.org/PrivateTable")
+      subject_template("https://example.org/PrivateTable/{id}")
+      table_name("tb_private")
+      attribute_mappings([{:name, "https://example.org/name"}])
+    end
+
+    actions do
+      defaults [:read]
+    end
+
+    attributes do
+      uuid_primary_key :id
+      attribute :name, :string, public?: true
+    end
+  end
+
+  defmodule Raising do
+    use Ash.Resource,
+      domain: AshR2RML.OBDATotalErrorBoundaryTest.Domain,
+      data_layer: Ash.DataLayer.Ets,
+      extensions: [AshR2RML]
 
     r2rml do
       class_iri("https://example.org/Raising")
@@ -71,10 +97,6 @@ defmodule AshR2RML.OBDATotalErrorBoundaryTest do
       domain: AshR2RML.OBDATotalErrorBoundaryTest.Domain,
       data_layer: Ash.DataLayer.Ets,
       extensions: [AshR2RML]
-
-    ets do
-      private? true
-    end
 
     r2rml do
       class_iri("https://example.org/Failing")
@@ -103,10 +125,6 @@ defmodule AshR2RML.OBDATotalErrorBoundaryTest do
       authorizers: [Ash.Policy.Authorizer],
       extensions: [AshR2RML]
 
-    ets do
-      private? true
-    end
-
     r2rml do
       class_iri("https://example.org/Locked")
       subject_template("https://example.org/Locked/{id}")
@@ -132,47 +150,46 @@ defmodule AshR2RML.OBDATotalErrorBoundaryTest do
 
   @sparql "SELECT ?s ?name WHERE { ?s <https://example.org/name> ?name . }"
 
-  defp typed?({:error, %Error{code: code}}), do: is_atom(code)
-  defp typed?({:error, %Refusal{code: code}}), do: is_atom(code)
-  defp typed?(_), do: false
+  test "a read that raises becomes a typed refusal naming the raised class, never an exception" do
+    # The raise escapes InMemory's rescue as an Ash.Error.Unknown and is classified by the
+    # OBDA boundary as a typed REFUSED_READ_FAILED carrying only the exception class.
+    assert {:error, %Error{code: :REFUSED_READ_FAILED, details: details}} =
+             OBDA.query([Raising], @sparql,
+               domain: Domain,
+               authorize?: false,
+               allow_unauthorized: true
+             )
 
-  test "a read that raises becomes a typed error, never an exception" do
-    result =
-      OBDA.query([Raising], @sparql,
-        domain: Domain,
-        authorize?: false,
-        allow_unauthorized: true
-      )
-
-    assert typed?(result)
-    assert {:error, %Error{details: details}} = result
-    assert is_map(details)
+    assert details == %{kind: :error, class: "Ash.Error.Unknown"}
   end
 
   test "a read returning {:error, %Ash.Error.Unknown{}} is wrapped" do
-    result =
-      OBDA.query([Failing], @sparql,
-        domain: Domain,
-        authorize?: false,
-        allow_unauthorized: true
-      )
-
-    assert typed?(result)
     # InMemory fails closed first with a typed Refusal naming the original error class; OBDA never
     # lets the raw Ash.Error.Unknown struct escape.
-    assert {:error, %Refusal{code: code, evidence: evidence}} = result
-    assert is_atom(code)
-    assert evidence.error_class =~ "Ash.Error.Unknown"
-    refute match?({:error, %{__struct__: Ash.Error.Unknown}}, result)
+    assert {:error, %Refusal{code: :REFUSED_UNSUPPORTED_SPARQL_FEATURE, subject: Failing, evidence: evidence}} =
+             OBDA.query([Failing], @sparql,
+               domain: Domain,
+               authorize?: false,
+               allow_unauthorized: true
+             )
+
+    assert evidence.resource == Failing
+    assert evidence.error_class == "Ash.Error.Unknown"
   end
 
-  test "an unauthorized read is a typed refusal or a pruned-by-policy result" do
-    result = OBDA.query([Locked], @sparql, domain: Domain, actor: nil)
+  test "a private ETS table is refused before any read, as a typed Error" do
+    assert {:error, %Error{code: :REFUSED_PRIVATE_DATA_LAYER, resource: PrivateTable, details: details}} =
+             OBDA.query([PrivateTable], @sparql, domain: Domain, authorize?: false, allow_unauthorized: true)
 
-    case result do
-      {:ok, res} -> assert res.stats.resources_pruned_by_policy == 1
-      other -> assert typed?(other)
-    end
+    assert details.detail =~ "private ETS table"
+  end
+
+  test "an actor denied by policy gets an ok result with the resource pruned and no bindings" do
+    assert {:ok, res} = OBDA.query([Locked], @sparql, domain: Domain, actor: nil)
+
+    assert res.stats.resources_pruned_by_policy == 1
+    assert res.bindings == []
+    assert res.stats.rows_read == 0
   end
 
   test "normalize_result classifies raw Ash/Splode errors and bare terms" do
@@ -182,9 +199,15 @@ defmodule AshR2RML.OBDATotalErrorBoundaryTest do
              OBDA.normalize_result({:error, forbidden})
 
     unknown = Ash.Error.Unknown.exception(errors: [])
-    assert {:error, %Error{code: :REFUSED_READ_FAILED}} = OBDA.normalize_result({:error, unknown})
-    assert {:error, %Error{code: :REFUSED_READ_FAILED}} = OBDA.normalize_result({:error, :nope})
-    assert {:error, %Error{}} = OBDA.normalize_result(:weird)
+
+    assert {:error, %Error{code: :REFUSED_READ_FAILED, details: %{kind: :error, class: "Ash.Error.Unknown"}}} =
+             OBDA.normalize_result({:error, unknown})
+
+    assert {:error, %Error{code: :REFUSED_READ_FAILED, details: %{kind: :error, class: nil}}} =
+             OBDA.normalize_result({:error, :nope})
+
+    assert {:error, %Error{code: :REFUSED_READ_FAILED, details: %{kind: :error, class: nil}}} =
+             OBDA.normalize_result(:weird)
 
     refusal = Refusal.new(:REFUSED_UNSUPPORTED_SPARQL_FEATURE, nil, "x", %{})
     assert {:error, ^refusal} = OBDA.normalize_result({:error, refusal})
@@ -194,6 +217,7 @@ defmodule AshR2RML.OBDATotalErrorBoundaryTest do
     assert %Error{code: :REFUSED_READ_FAILED, details: %{kind: :exit}} =
              OBDA.wrap_failure(:exit, {:shutdown, :db})
 
-    assert %Error{details: %{kind: :throw}} = OBDA.wrap_failure(:throw, :ball)
+    assert %Error{code: :REFUSED_READ_FAILED, details: %{kind: :throw, class: nil}} =
+             OBDA.wrap_failure(:throw, :ball)
   end
 end

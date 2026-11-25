@@ -30,7 +30,7 @@ defmodule AshR2RML.CrossLayerEquivalenceAll.Fixture do
       else
         quote do
           actions do
-            defaults [:read]
+            defaults [:read, :destroy]
 
             create :create do
               primary? true

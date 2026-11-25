@@ -28,15 +28,18 @@ defmodule AshR2RML.Security do
   alias AshR2RML.Mapping.Resource
 
   @doc """
-  Returns `mapping` unchanged unless `ash_resource` is `AshPostgres.DataLayer`-backed with
+  Returns `mapping` unchanged unless `ash_resource` is not `Ash.DataLayer.Ets`-backed (unknown
+  layers fail closed) with
   R2RML-mapped attributes that also carry an explicit `field_policy`. Such attributes are
   removed and recorded in `mapping.metadata[:field_policy_excluded_attributes]` because
   a direct database reader has no Ash actor with which to enforce the policy.
   """
   @spec sanitize_mapping(module(), Resource.t()) :: Resource.t()
   def sanitize_mapping(ash_resource, %Resource{} = mapping) when is_atom(ash_resource) do
+    # Only Ash-mediated in-memory (:ets) reads can enforce field policies; every other layer,
+    # including :unknown (fail closed), is read directly by an external R2RML engine.
     mapping =
-      if AshR2RML.DataLayer.backend(ash_resource) == :postgres do
+      if AshR2RML.DataLayer.backend(ash_resource) != :ets do
         ash_resource
         |> unenforceable_attributes(mapping)
         |> then(&remove_attributes(mapping, &1, :field_policy_excluded_attributes))
@@ -47,6 +50,99 @@ defmodule AshR2RML.Security do
     ash_resource
     |> sensitive_mapped_attributes(mapping)
     |> then(&remove_attributes(mapping, &1, :sensitive_excluded_attributes))
+  end
+
+  @doc """
+  Refuses a mapping whose subject map, graph maps, object term maps or reference joins depend
+  on a protected attribute (`sensitive?: true`, or field-policy-protected on a non-`:ets` layer).
+  Predicate maps are handled by `sanitize_mapping/2`; this closes the remaining render paths.
+  Mappings that touch no protected attribute return `:ok` unchanged.
+  """
+  @spec check_protected_dependencies(module(), Resource.t()) :: :ok | {:error, AshR2RML.Refusal.t()}
+  def check_protected_dependencies(ash_resource, %Resource{} = mapping) when is_atom(ash_resource) do
+    own =
+      [{"subject map", subject_fields(mapping.subject_map)}] ++
+        [{"graph map", Enum.flat_map(all_graph_maps(mapping), &graph_fields/1)}] ++
+        [{"object term map", Enum.flat_map(mapping.predicate_object_maps, &object_fields(&1.object_map))}] ++
+        [
+          {"reference join child column",
+           for(ref <- mapping.reference_object_maps, join <- ref.joins || [], do: join.child)}
+        ]
+
+    parent_checks =
+      for ref <- mapping.reference_object_maps,
+          is_atom(ref.parent_resource) and not is_nil(ref.parent_resource),
+          join <- ref.joins || [] do
+        {ref.parent_resource, "reference join parent column", join.parent}
+      end
+
+    own_hit =
+      Enum.find_value(own, fn {where, fields} ->
+        case Enum.find(fields, &protected_column?(ash_resource, &1)) do
+          nil -> nil
+          field -> {where, field}
+        end
+      end)
+
+    hit =
+      own_hit ||
+        Enum.find_value(parent_checks, fn {parent, where, field} ->
+          if protected_column?(parent, field), do: {where, field}
+        end)
+
+    case hit do
+      nil ->
+        :ok
+
+      {where, field} ->
+        {:error,
+         AshR2RML.Refusal.new(
+           :REFUSED_SENSITIVE_ATTRIBUTE_MATERIALIZATION,
+           mapping.ash_resource,
+           "protected attribute #{inspect(to_string(field))} cannot be used in a #{where} of an external R2RML mapping",
+           %{field: to_string(field), where: where}
+         )}
+    end
+  end
+
+  defp all_graph_maps(mapping) do
+    mapping.graph_maps ++
+      mapping.subject_map.graph_maps ++
+      Enum.flat_map(mapping.predicate_object_maps, &(&1.graph_maps ++ &1.object_map.graph_maps)) ++
+      Enum.flat_map(mapping.reference_object_maps, & &1.graph_maps)
+  end
+
+  defp graph_fields(%{strategy: :column, value: value}), do: [value]
+  defp graph_fields(%{strategy: :template, value: value}) when is_binary(value), do: template_columns(value)
+  defp graph_fields(_), do: []
+
+  defp object_fields(%{strategy: :column, value: value}), do: [value]
+  defp object_fields(%{strategy: :template, value: value}) when is_binary(value), do: template_columns(value)
+  defp object_fields(_), do: []
+
+  defp template_columns(template) do
+    ~r/\{([^{}]+)\}/ |> Regex.scan(template, capture: :all_but_first) |> List.flatten()
+  end
+
+  # Unresolvable columns are not protected attributes; a raising lookup fails closed.
+  defp protected_column?(resource, column) do
+    name = to_string(column)
+
+    resource
+    |> Ash.Resource.Info.attributes()
+    |> Enum.find(fn attr ->
+      to_string(attr.name) == name or (not is_nil(attr.source) and to_string(attr.source) == name)
+    end)
+    |> case do
+      nil ->
+        false
+
+      attr ->
+        attr.sensitive? == true or
+          (AshR2RML.DataLayer.backend(resource) != :ets and field_policy_protected?(resource, attr.name))
+    end
+  rescue
+    _ -> true
   end
 
   @doc """

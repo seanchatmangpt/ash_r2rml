@@ -153,11 +153,11 @@ defmodule AshR2RML.OBDA.InMemory do
     mapping_index =
       Map.new(admitted_specs, fn {ash_resource, mapping_resource} -> {ash_resource, mapping_resource} end)
 
-    {base_result, stats} =
+    {first_result, stats, pending} =
       Enum.reduce_while(
         admitted_specs,
-        {{:ok, RDF.Graph.new()}, %{rows_read: 0, triples_emitted: 0}},
-        fn {ash_resource, mapping_resource}, {{:ok, graph_acc}, stats} ->
+        {{:ok, RDF.Graph.new()}, %{rows_read: 0, triples_emitted: 0}, []},
+        fn {ash_resource, mapping_resource}, {{:ok, graph_acc}, stats, pending} ->
           budget_opts = Keyword.put(read_opts, :triple_budget, max_triples - stats.triples_emitted)
 
           case rows_for(ash_resource, mapping_resource, budget_opts) do
@@ -175,17 +175,36 @@ defmodule AshR2RML.OBDA.InMemory do
                      allow_sensitive?
                    ) do
                 {:ok, graph, emitted} ->
-                  {:cont, {{:ok, graph}, %{stats | triples_emitted: emitted}}}
+                  pending = [{ash_resource, mapping_resource, rows} | pending]
+                  {:cont, {{:ok, graph}, %{stats | triples_emitted: emitted}, pending}}
 
                 {:error, refusal, emitted} ->
-                  {:halt, {{:error, refusal}, %{stats | triples_emitted: emitted}}}
+                  {:halt, {{:error, refusal}, %{stats | triples_emitted: emitted}, pending}}
               end
 
             {:error, refusal} ->
-              {:halt, {{:error, refusal}, stats}}
+              {:halt, {{:error, refusal}, stats, pending}}
           end
         end
       )
+
+    # Reference objects are resolved only after every resource was read, and only to parent
+    # subjects actually materialized in this query (a parent row the actor cannot read must
+    # not be disclosed through a child's FK value).
+    {base_result, stats} =
+      case first_result do
+        {:ok, graph} ->
+          add_reference_pass(
+            Enum.reverse(pending),
+            graph,
+            stats,
+            max_triples,
+            mapping_index
+          )
+
+        error ->
+          {error, stats}
+      end
 
     result =
       case {base_result, previous_graph} do
@@ -566,6 +585,57 @@ defmodule AshR2RML.OBDA.InMemory do
     end)
   end
 
+  defp add_reference_pass(pending, graph, stats, max_triples, mapping_index) do
+    visible =
+      Enum.reduce(pending, %{}, fn {ash_resource, mapping, rows}, acc ->
+        subjects = for row <- rows, iri = subject_iri(mapping.subject_map, row), into: MapSet.new(), do: iri
+        Map.update(acc, ash_resource, subjects, &MapSet.union(&1, subjects))
+      end)
+
+    Enum.reduce_while(pending, {{:ok, graph}, stats}, fn {ash_resource, mapping, rows}, acc ->
+      refs = mapping.reference_object_maps
+
+      if refs == [] do
+        {:cont, acc}
+      else
+        reference_rows(rows, refs, ash_resource, mapping, mapping_index, visible, max_triples, acc)
+      end
+    end)
+  end
+
+  defp reference_rows(rows, refs, ash_resource, mapping, mapping_index, visible, max_triples, acc) do
+    Enum.reduce_while(rows, {:cont, acc}, fn row, {:cont, {{:ok, graph}, stats}} ->
+      case subject_iri(mapping.subject_map, row) do
+        nil ->
+          {:cont, {:cont, {{:ok, graph}, stats}}}
+
+        subject ->
+          case add_reference_triples(RDF.Graph.new(), subject, row, refs, mapping_index, visible) do
+            {:ok, ref_graph} ->
+              emitted = stats.triples_emitted + RDF.Graph.triple_count(ref_graph)
+              stats = %{stats | triples_emitted: emitted}
+
+              if emitted > max_triples do
+                refusal =
+                  Refusal.new(
+                    :REFUSED_TRIPLE_LIMIT_EXCEEDED,
+                    ash_resource,
+                    "materialization exceeded max_triples (#{max_triples}); refusing",
+                    %{resource: ash_resource, limit: max_triples}
+                  )
+
+                {:halt, {:halt, {{:error, refusal}, stats}}}
+              else
+                {:cont, {:cont, {{:ok, RDF.Graph.add(graph, ref_graph)}, stats}}}
+              end
+
+            {:error, refusal} ->
+              {:halt, {:halt, {{:error, refusal}, stats}}}
+          end
+      end
+    end)
+  end
+
   defp add_row(graph, row, ash_resource, %Resource{} = mapping_resource, mapping_index, allow_sensitive?) do
     with :ok <- check_subject_sensitive(mapping_resource.subject_map, ash_resource, allow_sensitive?),
          :ok <- check_joins_sensitive(mapping_resource.reference_object_maps, ash_resource, allow_sensitive?) do
@@ -576,17 +646,17 @@ defmodule AshR2RML.OBDA.InMemory do
         subject ->
           graph = add_class_triples(graph, subject, mapping_resource.class_iris)
 
-          with {:ok, graph} <-
-                 add_predicate_triples(
-                   graph,
-                   subject,
-                   row,
-                   mapping_resource.predicate_object_maps,
-                   ash_resource,
-                   allow_sensitive?
-                 ) do
-            add_reference_triples(graph, subject, row, mapping_resource.reference_object_maps, mapping_index)
-          end
+          # Reference triples are added afterwards by `add_reference_pass/5`.
+          _ = mapping_index
+
+          add_predicate_triples(
+            graph,
+            subject,
+            row,
+            mapping_resource.predicate_object_maps,
+            ash_resource,
+            allow_sensitive?
+          )
       end
     end
   end
@@ -786,8 +856,20 @@ defmodule AshR2RML.OBDA.InMemory do
                   %{attribute: attribute}
                 )}}
             else
-              {:cont,
-               {:ok, RDF.Graph.add(acc, {RDF.iri(subject), RDF.iri(predicate_iri), rdf_literal(value, object_map)})}}
+              case rdf_literal(value, object_map) do
+                {:ok, literal} ->
+                  {:cont, {:ok, RDF.Graph.add(acc, {RDF.iri(subject), RDF.iri(predicate_iri), literal})}}
+
+                :error ->
+                  {:halt,
+                   {:error,
+                    Refusal.new(
+                      :REFUSED_NON_LITERAL_DATATYPE,
+                      ash_resource,
+                      "attribute #{inspect(attribute)} holds a value with no RDF literal lexical form (#{value_kind(value)})",
+                      %{attribute: attribute, value_kind: value_kind(value)}
+                    )}}
+              end
             end
         end
     end)
@@ -816,9 +898,9 @@ defmodule AshR2RML.OBDA.InMemory do
   # The one shape that is NOT silently skipped is `joins: []` -- the `:join_table`
   # many-to-many relationship shape (see moduledoc): that surfaces as a real
   # `{:error, refusal}` instead, propagated all the way out through `materialize_many/2`.
-  defp add_reference_triples(graph, subject, row, reference_object_maps, mapping_index) do
+  defp add_reference_triples(graph, subject, row, reference_object_maps, mapping_index, visible) do
     Enum.reduce_while(reference_object_maps, {:ok, graph}, fn reference, {:ok, acc} ->
-      case resolve_reference_object(reference, row, mapping_index) do
+      case resolve_reference_object(reference, row, mapping_index, visible) do
         {:ok, nil} ->
           {:cont, {:ok, acc}}
 
@@ -836,7 +918,7 @@ defmodule AshR2RML.OBDA.InMemory do
   # There is no bridge-table row data anywhere in `mapping_index` to resolve that join
   # against (the join table is never itself a mapped Ash resource passed to
   # `materialize_many/2`), so this is a typed refusal -- see moduledoc for the full rationale.
-  defp resolve_reference_object(%ReferenceObjectMap{joins: []} = reference, _row, _mapping_index) do
+  defp resolve_reference_object(%ReferenceObjectMap{joins: []} = reference, _row, _mapping_index, _visible) do
     {:error,
      Refusal.new(
        :REFUSED_UNSUPPORTED_SPARQL_FEATURE,
@@ -846,11 +928,17 @@ defmodule AshR2RML.OBDA.InMemory do
      )}
   end
 
-  defp resolve_reference_object(%ReferenceObjectMap{joins: joins} = reference, row, mapping_index)
+  defp resolve_reference_object(%ReferenceObjectMap{joins: joins} = reference, row, mapping_index, visible)
        when joins != [] do
     case Map.fetch(mapping_index, reference.parent_resource) do
-      {:ok, parent_mapping} -> {:ok, resolve_composite_object_iri(joins, row, parent_mapping.subject_map)}
-      :error -> {:ok, nil}
+      {:ok, parent_mapping} ->
+        iri = resolve_composite_object_iri(joins, row, parent_mapping.subject_map)
+        parent_subjects = Map.get(visible, reference.parent_resource, MapSet.new())
+
+        if iri != nil and MapSet.member?(parent_subjects, iri), do: {:ok, iri}, else: {:ok, nil}
+
+      :error ->
+        {:ok, nil}
     end
   end
 
@@ -912,26 +1000,49 @@ defmodule AshR2RML.OBDA.InMemory do
 
   # The mapping's declared datatype wins: typed literals are what make numeric/temporal FILTERs and
   # ORDER BY semantically correct. Values with no declared datatype keep the plain-string form.
-  defp rdf_literal(value, %ObjectMap{language: language}) when is_binary(language) and language != "",
-    do: RDF.literal(lexical(value), language: language)
-
-  defp rdf_literal(value, %ObjectMap{datatype: %{rdf_datatype: datatype}}) when is_binary(datatype) do
-    if datatype == "http://www.w3.org/2001/XMLSchema#string" do
-      RDF.literal(lexical(value))
-    else
-      RDF.literal(lexical(value), datatype: RDF.iri(datatype))
+  # Returns `{:ok, literal}` or `:error` (value has no lexical form; never raises).
+  defp rdf_literal(value, object_map) do
+    with {:ok, lex} <- lexical(value) do
+      {:ok, build_literal(lex, object_map)}
     end
   end
 
-  defp rdf_literal(value, _object_map), do: RDF.literal(lexical(value))
+  defp build_literal(lex, %ObjectMap{language: language}) when is_binary(language) and language != "",
+    do: RDF.literal(lex, language: language)
 
-  defp lexical(value) when is_binary(value), do: value
-  defp lexical(%Decimal{} = value), do: Decimal.to_string(value, :normal)
-  defp lexical(%Date{} = value), do: Date.to_iso8601(value)
-  defp lexical(%DateTime{} = value), do: DateTime.to_iso8601(value)
-  defp lexical(%NaiveDateTime{} = value), do: NaiveDateTime.to_iso8601(value)
-  defp lexical(%Time{} = value), do: Time.to_iso8601(value)
-  defp lexical(value), do: to_string(value)
+  defp build_literal(lex, %ObjectMap{datatype: %{rdf_datatype: datatype}}) when is_binary(datatype) do
+    if datatype == "http://www.w3.org/2001/XMLSchema#string" do
+      RDF.literal(lex)
+    else
+      RDF.literal(lex, datatype: RDF.iri(datatype))
+    end
+  end
+
+  defp build_literal(lex, _object_map), do: RDF.literal(lex)
+
+  defp lexical(value) when is_binary(value), do: {:ok, value}
+  defp lexical(%Decimal{coef: coef}) when coef in [:NaN, :inf], do: :error
+  defp lexical(%Decimal{} = value), do: {:ok, Decimal.to_string(value, :normal)}
+  defp lexical(%Date{} = value), do: {:ok, Date.to_iso8601(value)}
+  defp lexical(%DateTime{} = value), do: {:ok, DateTime.to_iso8601(value)}
+  defp lexical(%NaiveDateTime{} = value), do: {:ok, NaiveDateTime.to_iso8601(value)}
+  defp lexical(%Time{} = value), do: {:ok, Time.to_iso8601(value)}
+  defp lexical(value) when is_number(value) or is_atom(value), do: {:ok, to_string(value)}
+
+  defp lexical(value) when is_struct(value) do
+    if String.Chars.impl_for(value), do: {:ok, to_string(value)}, else: :error
+  rescue
+    _ -> :error
+  end
+
+  defp lexical(_value), do: :error
+
+  defp value_kind(%Decimal{}), do: "non-finite decimal"
+  defp value_kind(value) when is_struct(value), do: inspect(value.__struct__)
+  defp value_kind(value) when is_map(value), do: "map"
+  defp value_kind(value) when is_tuple(value), do: "tuple"
+  defp value_kind(value) when is_list(value), do: "list"
+  defp value_kind(_value), do: "term"
 
   defp safe_atom(value) when is_atom(value), do: value
   defp safe_atom(value) when is_binary(value), do: String.to_existing_atom(value)

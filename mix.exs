@@ -104,7 +104,8 @@ defmodule AshR2RML.MixProject do
       files: package_files(),
       links: %{
         "GitHub" => @github_url,
-        "Changelog" => "#{@github_url}/blob/main/CHANGELOG.md"
+        "Changelog" => "#{@github_url}/blob/main/CHANGELOG.md",
+        "Documentation" => "https://hexdocs.pm/ash_r2rml"
       }
     ]
   end

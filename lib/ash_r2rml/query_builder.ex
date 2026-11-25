@@ -92,6 +92,39 @@ defmodule AshR2RML.QueryBuilder.Modifiers do
     end
   end
 
+  @doc """
+  Refuses a query whose modifier tail cannot be parsed but contains `LIMIT` or `OFFSET`, since
+  `run/2` would otherwise silently return every row.
+
+  ## Examples
+
+      iex> AshR2RML.QueryBuilder.Modifiers.check("SELECT ?x WHERE { ?s ?p ?x } ORDER BY DESC(?x) LIMIT 2")
+      :ok
+
+      iex> AshR2RML.QueryBuilder.Modifiers.check("SELECT ?x WHERE { ?s ?p ?x } ORDER BY STR(?x)")
+      :ok
+
+      iex> {:error, %AshR2RML.Refusal{code: code}} = AshR2RML.QueryBuilder.Modifiers.check("SELECT ?x WHERE { ?s ?p ?x } ORDER BY STR(?x) LIMIT 2")
+      iex> code
+      :REFUSED_UNSUPPORTED_SPARQL_FEATURE
+  """
+  @spec check(String.t()) :: :ok | {:error, AshR2RML.Refusal.t()}
+  def check(sparql) when is_binary(sparql) do
+    with :unparsed <- parse(sparql),
+         tail when is_binary(tail) <- tail(sparql),
+         true <- Regex.match?(~r/\b(?:LIMIT|OFFSET)\b/i, tail) do
+      {:error,
+       AshR2RML.Refusal.new(
+         :REFUSED_UNSUPPORTED_SPARQL_FEATURE,
+         "LIMIT/OFFSET",
+         "LIMIT/OFFSET combined with an unsupported solution-modifier tail (ORDER BY over an expression, GROUP BY, HAVING, VALUES) cannot be applied",
+         %{tail: String.trim(tail)}
+       )}
+    else
+      _ -> :ok
+    end
+  end
+
   @doc "Applies parsed modifiers to binding rows: ORDER BY, then OFFSET, then LIMIT."
   @spec run([map()], {:ok, t()} | :unparsed) :: [map()]
   def run(rows, {:ok, %{order: order, limit: limit, offset: offset}}) when is_list(rows) do
@@ -116,6 +149,9 @@ defmodule AshR2RML.QueryBuilder.Modifiers do
   def compare(a, %Decimal{} = b) when is_number(a), do: Decimal.compare(to_decimal(a), b)
   def compare(a, b) when is_binary(a) and is_binary(b), do: if(a < b, do: :lt, else: :gt)
 
+  def compare(%mod{} = a, %mod{} = b) when mod in [Date, Time, DateTime, NaiveDateTime],
+    do: mod.compare(a, b)
+
   def compare(a, b) do
     case {rank(a), rank(b)} do
       {same, same} -> if inspect(a) < inspect(b), do: :lt, else: :gt
@@ -123,9 +159,10 @@ defmodule AshR2RML.QueryBuilder.Modifiers do
     end
   end
 
-  defp rank(v) when is_number(v) or is_struct(v, Decimal), do: 0
-  defp rank(v) when is_binary(v), do: 1
-  defp rank(_), do: 2
+  defp rank(%RDF.IRI{}), do: 0
+  defp rank(v) when is_number(v) or is_struct(v, Decimal), do: 1
+  defp rank(v) when is_binary(v), do: 2
+  defp rank(_), do: 3
 
   defp to_decimal(%Decimal{} = d), do: d
   defp to_decimal(n) when is_integer(n), do: Decimal.new(n)
@@ -499,7 +536,8 @@ defmodule AshR2RML.QueryBuilder.Lowering do
     # uses the explicit bytewise allowlist in AshR2RML.Capability.
     caps = AshR2RML.Capability.probe(resource)
     ets? = AshR2RML.Capability.bytewise_string_order?(resource)
-    pushed = if caps.filter, do: lower_filters(filters, by_var, ets?), else: []
+    ctx = %{ets?: ets?, decimal?: AshR2RML.Capability.decimal_pushdown?(resource)}
+    pushed = if caps.filter, do: lower_filters(filters, by_var, ctx), else: []
 
     limit_mode =
       if caps.filter and caps.sort and caps.limit,
@@ -575,32 +613,33 @@ defmodule AshR2RML.QueryBuilder.Lowering do
 
   # -- filters ---------------------------------------------------------------------------
 
-  defp lower_filters(filters, by_var, ets?) do
+  defp lower_filters(filters, by_var, ctx) do
     filters
     |> Enum.flat_map(&conjuncts/1)
-    |> Enum.flat_map(&lower_filter(&1, by_var, ets?))
+    |> Enum.flat_map(&lower_filter(&1, by_var, ctx))
   end
 
   defp conjuncts(%FunctionCall.Builtin{name: :&&, arguments: [a, b]}), do: conjuncts(a) ++ conjuncts(b)
   defp conjuncts(other), do: [other]
 
-  defp lower_filter(%FunctionCall.Builtin{name: name, arguments: [left, right]}, by_var, ets?)
+  defp lower_filter(%FunctionCall.Builtin{name: name, arguments: [left, right]}, by_var, ctx)
        when is_map_key(@ops, name) do
     op = Map.fetch!(@ops, name)
 
     case {left, right} do
-      {var, %RDF.Literal{} = lit} when is_binary(var) -> filter_term(op, var, lit, by_var, ets?)
-      {%RDF.Literal{} = lit, var} when is_binary(var) -> filter_term(Map.fetch!(@flip, op), var, lit, by_var, ets?)
+      {var, %RDF.Literal{} = lit} when is_binary(var) -> filter_term(op, var, lit, by_var, ctx)
+      {%RDF.Literal{} = lit, var} when is_binary(var) -> filter_term(Map.fetch!(@flip, op), var, lit, by_var, ctx)
       _ -> []
     end
   end
 
-  defp lower_filter(_other, _by_var, _ets?), do: []
+  defp lower_filter(_other, _by_var, _ctx), do: []
 
-  defp filter_term(op, var, literal, by_var, ets?) do
+  defp filter_term(op, var, literal, by_var, ctx) do
     with %{kind: kind, attribute: attribute} <- Map.get(by_var, var),
          {:ok, value} <- constant(kind, literal),
-         true <- kind != :string or op in [:eq, :neq] or ets? do
+         true <- kind != :string or op in [:eq, :neq] or ctx.ets?,
+         true <- kind != :decimal or ctx.decimal? do
       [{op, attribute, value}]
     else
       _ -> []

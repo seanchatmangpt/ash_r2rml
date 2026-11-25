@@ -28,16 +28,10 @@ defmodule AshR2RML.Action.Query do
     sparql = Ash.ActionInput.get_argument(input, :sparql)
 
     with {:ok, source} <- source(opts),
-         {:ok, result} <- unwrap(AshR2RML.OBDA.query(source, sparql, query_opts(opts, context))) do
+         {:ok, result} <- AshR2RML.OBDA.query(source, sparql, query_opts(opts, context)) do
       {:ok, Map.take(result, [:bindings, :triples, :kind, :stats, :digest])}
     end
   end
-
-  # OBDA.query/3 routes through Worker.run/2, which wraps the inner `{:ok, _} | {:error, _}`
-  # in another `{:ok, _}`; tolerate both the nested and the flat shape.
-  defp unwrap({:ok, {:ok, result}}), do: {:ok, result}
-  defp unwrap({:ok, {:error, reason}}), do: {:error, reason}
-  defp unwrap(other), do: other
 
   defp source(opts) do
     cond do

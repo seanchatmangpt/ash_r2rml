@@ -112,7 +112,21 @@ defmodule AshR2RML.OBDAWorkerHardeningTest do
       Task.async(fn ->
         Process.flag(:trap_exit, true)
         r1 = Worker.run(fn -> raise "x" end)
-        r2 = Worker.run(fn -> spawn_link(fn -> exit(:child_died) end) && Process.sleep(100) end)
+
+        r2 =
+          Worker.run(fn ->
+            {child, cref} = spawn_monitor(fn -> exit(:child_died) end)
+
+            receive do
+              {:DOWN, ^cref, :process, ^child, _} -> :ok
+            after
+              2_000 -> :child_never_died
+            end
+
+            Process.link(child)
+            exit(:after_child)
+          end)
+
         r3 = Worker.run(fn -> 7 end)
         {r1, r2, r3, Process.info(self(), :messages) |> elem(1)}
       end)

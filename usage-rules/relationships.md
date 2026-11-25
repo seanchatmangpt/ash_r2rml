@@ -5,13 +5,13 @@ Ash relationships are the source of relational joins and RDF object-property map
 ## Object-property mapping
 
 ```elixir
+r2rml do
+  reference :organization, "https://schema.org/memberOf"
+end
+
 relationships do
   belongs_to :organization, MyApp.Organization do
     allow_nil? false
-
-    rdf do
-      predicate "https://schema.org/memberOf"
-    end
   end
 end
 ```

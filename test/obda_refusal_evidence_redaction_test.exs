@@ -17,6 +17,7 @@ defmodule AshR2RML.OBDARefusalEvidenceRedactionTest do
   @policy_canary "POLICY-CANARY-XYZ"
   @secret_canary "SECRET-CANARY-XYZ"
   @title_pred "https://example.org/title"
+  @secret_pred "https://example.org/secret"
   @string "http://www.w3.org/2001/XMLSchema#string"
 
   defmodule Domain do
@@ -34,7 +35,7 @@ defmodule AshR2RML.OBDARefusalEvidenceRedactionTest do
       authorizers: [Ash.Policy.Authorizer]
 
     ets do
-      private?(true)
+      private?(false)
     end
 
     actions do
@@ -44,7 +45,7 @@ defmodule AshR2RML.OBDARefusalEvidenceRedactionTest do
     policies do
       policy action_type(:read) do
         description("POLICY-CANARY-XYZ")
-        forbid_if(always())
+        authorize_if(actor_attribute_equals(:name, "admin"))
       end
     end
 
@@ -59,8 +60,8 @@ defmodule AshR2RML.OBDARefusalEvidenceRedactionTest do
     %Resource{
       ash_resource: Vault,
       logical_table: %LogicalTable{table_name: "vaults"},
-      subject_map: %SubjectMap{strategy: :template, value: "https://example.org/vaults/{title}", term_type: :iri},
-      class_iris: [],
+      subject_map: %SubjectMap{strategy: :template, value: "https://example.org/vaults/{id}", term_type: :iri},
+      class_iris: ["https://example.org/Vault"],
       predicate_object_maps: [
         %PredicateObjectMap{
           attribute: :title,
@@ -68,6 +69,15 @@ defmodule AshR2RML.OBDARefusalEvidenceRedactionTest do
           object_map: %ObjectMap{
             strategy: :column,
             value: "title",
+            datatype: %Datatype{ash_type: Ash.Type.String, rdf_datatype: @string}
+          }
+        },
+        %PredicateObjectMap{
+          attribute: :secret,
+          predicate_iri: @secret_pred,
+          object_map: %ObjectMap{
+            strategy: :column,
+            value: "secret",
             datatype: %Datatype{ash_type: Ash.Type.String, rdf_datatype: @string}
           }
         }
@@ -79,16 +89,36 @@ defmodule AshR2RML.OBDARefusalEvidenceRedactionTest do
 
   setup do
     Vault
+    |> Ash.read!(authorize?: false, domain: Domain)
+    |> Enum.each(&Ash.destroy!(&1, authorize?: false, domain: Domain))
+
+    Vault
     |> Ash.Changeset.for_create(:create, %{title: "t1", secret: @secret_canary}, domain: Domain)
     |> Ash.create!(authorize?: false, domain: Domain)
 
     :ok
   end
 
-  @select "SELECT ?s ?t WHERE { ?s <#{@title_pred}> ?t }"
+  @select_secret "SELECT ?s ?v WHERE { ?s <#{@secret_pred}> ?v }"
+
+  test "positive control: the secret is readable with an authorized actor and allow_sensitive" do
+    assert {:ok, result} =
+             AshR2RML.OBDA.query([{Vault, mapping()}], @select_secret,
+               domain: Domain,
+               actor: %{name: "admin"},
+               allow_sensitive: true
+             )
+
+    assert inspect(result, limit: :infinity, printable_limit: :infinity) =~ @secret_canary
+  end
 
   test "InMemory.query refusal omits policy text and sensitive values" do
-    assert {:error, error} = InMemory.query(Vault, mapping(), @select, actor: %{name: "mallory"})
+    assert {:error, error} =
+             InMemory.query(Vault, mapping(), @select_secret,
+               actor: %{name: "mallory"},
+               allow_sensitive: true,
+               domain: Domain
+             )
 
     rendered = inspect(error, limit: :infinity, printable_limit: :infinity)
     refute rendered =~ @policy_canary
@@ -99,7 +129,12 @@ defmodule AshR2RML.OBDARefusalEvidenceRedactionTest do
   test "OBDA.query refusal omits policy text and sensitive values" do
     # Preflight may prune the forbidden resource (ok, empty) or refuse; either way the
     # caller-visible value must carry neither canary.
-    result = AshR2RML.OBDA.query([{Vault, mapping()}], @select, domain: Domain, actor: %{name: "mallory"})
+    result =
+      AshR2RML.OBDA.query([{Vault, mapping()}], @select_secret,
+        domain: Domain,
+        actor: %{name: "mallory"},
+        allow_sensitive: true
+      )
 
     rendered = inspect(result, limit: :infinity, printable_limit: :infinity)
     refute rendered =~ @policy_canary
