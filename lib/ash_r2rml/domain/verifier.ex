@@ -30,19 +30,23 @@ defmodule AshR2RML.Domain.Verifier do
         AshR2RML.Domain.default_allowed_prefixes()
       ) || AshR2RML.Domain.default_allowed_prefixes()
 
+    to_result(domain_errors(members, mappings, strict?, prefixes), domain)
+  end
+
+  @doc false
+  @spec domain_errors([module()], map(), boolean(), term()) :: [String.t()]
+  def domain_errors(members, mappings, strict?, prefixes) do
     prefix_errors = if strict?, do: validate_prefixes(prefixes), else: []
 
-    # An invalid allowlist is refused outright; matching against it is moot.
-    strict_prefixes = if prefix_errors == [], do: prefixes, else: []
+    # An invalid allowlist is refused outright: report only the prefix errors,
+    # never a cascade of IRIs "outside" an allowlist that cannot be matched.
+    strict_run? = strict? and prefix_errors == []
 
-    errors =
-      mappings
-      |> Enum.flat_map(&member_errors(&1, members, mappings, strict?, strict_prefixes))
-      |> Kernel.++(prefix_errors)
-      |> Enum.uniq()
-      |> Enum.sort()
-
-    to_result(errors, domain)
+    mappings
+    |> Enum.flat_map(&member_errors(&1, members, mappings, strict_run?, prefixes))
+    |> Kernel.++(prefix_errors)
+    |> Enum.uniq()
+    |> Enum.sort()
   end
 
   # Members whose own mapping failed are reported by their own verifier.

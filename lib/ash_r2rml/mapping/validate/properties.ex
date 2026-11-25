@@ -9,7 +9,7 @@ defmodule AshR2RML.Mapping.Validate.Properties do
 
   import AshR2RML.Mapping.Validate.Shared
 
-  alias AshR2RML.Mapping.Validate.GraphMaps
+  alias AshR2RML.Mapping.Validate.{GraphMaps, Subject}
   alias AshR2RML.Mapping.{ObjectMap, Resource}
   alias AshR2RML.Refusal
 
@@ -92,6 +92,19 @@ defmodule AshR2RML.Mapping.Validate.Properties do
         %{value: object.value}
       )
     end
+  end
+
+  defp object_template(resource, mapping, %ObjectMap{strategy: :template, term_type: :iri, value: value} = object)
+       when is_binary(value) do
+    shape =
+      Subject.template_shape_refusals(
+        resource,
+        value,
+        {resource.ash_resource, mapping.attribute},
+        "IRI object template must be an absolute IRI template with balanced braces"
+      )
+
+    shape ++ object_template(resource, mapping, %{object | term_type: :literal})
   end
 
   defp object_template(resource, mapping, %ObjectMap{strategy: :template, value: value})

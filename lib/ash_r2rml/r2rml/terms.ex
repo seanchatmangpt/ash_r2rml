@@ -70,8 +70,33 @@ defmodule AshR2RML.R2RML.Terms do
         )
       end
 
-    iri_refusals ++ conflict_refusals ++ language_refusals ++ non_literal_refusals
+    unrenderable_refusals =
+      for property <- resource.predicate_object_maps, not renderable_object?(property) do
+        object = property.object_map
+
+        Refusal.new(
+          :REFUSED_INVALID_TERM_MAP,
+          {resource.ash_resource, property.attribute},
+          "object map strategy and term type cannot be rendered as R2RML (constant blank nodes are forbidden)",
+          %{strategy: object.strategy, term_type: object.term_type}
+        )
+      end
+
+    iri_refusals ++ conflict_refusals ++ language_refusals ++ non_literal_refusals ++ unrenderable_refusals
   end
+
+  @term_types [:literal, :iri, :blank_node]
+
+  # Mirrors the renderer's object term map clauses: a constant is only renderable as an IRI or literal
+  # (R2RML 7.1: no constant blank nodes); template and column accept any known term type.
+  defp renderable_object?(%{object_map: %ObjectMap{strategy: :constant, term_type: term_type}}),
+    do: term_type in [:iri, :literal]
+
+  defp renderable_object?(%{object_map: %ObjectMap{strategy: strategy, term_type: term_type}})
+       when strategy in [:template, :column],
+       do: term_type in @term_types
+
+  defp renderable_object?(_), do: false
 
   defp typed_non_literal?(%{object_map: %ObjectMap{term_type: term_type, language: language, datatype: datatype}})
        when term_type != :literal,

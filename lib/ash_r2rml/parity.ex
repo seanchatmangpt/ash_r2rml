@@ -71,6 +71,12 @@ defmodule AshR2RML.Parity do
 
   alias AshR2RML.ParityReceipt
 
+  @doc """
+  Compares two observed row lists as multisets and returns a `ParityReceipt`.
+
+  `metadata` keys may be atoms or strings. `verified?` is true when the normalized
+  multisets are equal; `observed?` follows the rule in the moduledoc.
+  """
   @spec compare(:sparql_sql, term(), list(), list(), map()) :: ParityReceipt.t()
   def compare(kind, subject, left_rows, right_rows, metadata \\ %{})
       when kind == :sparql_sql and is_list(left_rows) and is_list(right_rows) do
@@ -134,8 +140,8 @@ defmodule AshR2RML.Parity do
     |> Enum.sort_by(&:erlang.term_to_binary(&1, [:deterministic]))
   end
 
-  defp canonical(value), do: canonical(value, false)
   # One-arity form is used for the receipt body, where CSV collapsing never applies.
+  defp canonical(value), do: canonical(value, false)
 
   defp canonical(%Decimal{} = decimal, _csv?), do: Decimal.to_string(decimal, :normal)
   defp canonical(%DateTime{} = datetime, _csv?), do: DateTime.to_iso8601(datetime)

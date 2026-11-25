@@ -38,11 +38,15 @@ defmodule AshR2RML.Mapping.Validate do
   """
   @spec run(Resource.t() | Bundle.t()) :: :ok | {:error, [Refusal.t(), ...]}
   def run(%Resource{} = resource) do
+    {missing_object, present} = Enum.split_with(resource.predicate_object_maps, &is_nil(&1.object_map))
+    checked = %{resource | predicate_object_maps: present}
+
     refusals =
       Subject.logical_table(resource) ++
         Subject.classes(resource) ++
         Subject.subject(resource) ++
-        Properties.check(resource) ++
+        Properties.check(checked) ++
+        missing_object_map(resource, missing_object) ++
         Properties.duplicates(resource) ++
         References.check(resource) ++
         References.duplicates(resource) ++
@@ -65,6 +69,17 @@ defmodule AshR2RML.Mapping.Validate do
   @doc false
   @spec absolute_iri?(term()) :: boolean()
   defdelegate absolute_iri?(value), to: Shared
+
+  defp missing_object_map(resource, mappings) do
+    Enum.map(mappings, fn mapping ->
+      Refusal.new(
+        :REFUSED_INVALID_TERM_MAP,
+        {resource.ash_resource, mapping.attribute},
+        "predicate-object map requires an object map",
+        %{predicate_iri: mapping.predicate_iri}
+      )
+    end)
+  end
 
   defp bundled_resource(resource, by_resource) do
     own =

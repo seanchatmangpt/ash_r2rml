@@ -897,6 +897,42 @@ defmodule AshR2RML.DataLayerContract.Shapes do
     end
   end
 
+  @doc """
+  Shapes executed through `AshR2RML.OBDA.query/3` (the only path that applies ORDER BY / LIMIT / OFFSET
+  via `Modifiers.run`), as `{name, sparql}`. The last entry is an unsupported modifier tail that must
+  be refused with the same typed code on every layer.
+  """
+  def obda_shapes do
+    [
+      order_limit_offset: "SELECT ?s ?name WHERE { ?s <http://schema.org/name> ?name } ORDER BY ?name LIMIT 2 OFFSET 1",
+      order_desc_limit: "SELECT ?s ?name WHERE { ?s <http://schema.org/name> ?name } ORDER BY DESC(?name) LIMIT 3",
+      distinct_class: "SELECT DISTINCT ?c WHERE { ?s a ?c } ORDER BY ?c",
+      optional_age:
+        "SELECT ?s ?name ?age WHERE { ?s <http://schema.org/name> ?name . " <>
+          "OPTIONAL { ?s <http://schema.org/age> ?age } } ORDER BY ?name",
+      union_age_score:
+        "SELECT ?s ?v WHERE { { ?s <http://schema.org/age> ?v } UNION " <>
+          "{ ?s <http://schema.org/ratingValue> ?v } } ORDER BY ?s ?v",
+      unsupported_order_expr: "SELECT ?s ?name WHERE { ?s <http://schema.org/name> ?name } ORDER BY STR(?name) LIMIT 2"
+    ]
+  end
+
+  @doc "Typed bindings (envelope order) of one shape via `OBDA.query/3`, or `{:error, code}`."
+  def obda_rows(mod, sparql) do
+    opts = [domain: domain(mod), authorize?: false, allow_unauthorized: true]
+
+    case AshR2RML.OBDA.query(specs(mod), sparql, opts) do
+      {:ok, result} ->
+        {:ok, Enum.map(result.bindings, fn row -> Map.new(row, fn {k, v} -> {k, C.typed_value(v)} end) end)}
+
+      {:error, %{code: code}} ->
+        {:error, code}
+    end
+  end
+
+  @doc "`obda_rows/2` for every `obda_shapes/0` entry, keyed by shape name."
+  def obda_observe(mod), do: Map.new(for {name, sparql} <- obda_shapes(), do: {name, obda_rows(mod, sparql)})
+
   @doc "String-normalized rows (emitted order) of one shape; used for readable positive controls."
   def plain_rows(mod, sparql), do: mod |> query(sparql) |> C.emitted_rows()
 
@@ -1114,7 +1150,9 @@ defmodule AshR2RML.DataLayerContract.Db do
     repo = AshR2RML.DataLayerContract.PostgresRepo
 
     case repo.start_link(url: url, pool_size: 2) do
-      {:ok, _pid} -> :ok
+      # Unlink: the repo is shared by every module that calls start_postgres!/0, so it must outlive
+      # the setup process of whichever module started it (else a later module gets a dying pid).
+      {:ok, pid} -> Process.unlink(pid)
       {:error, {:already_started, _pid}} -> :ok
     end
 

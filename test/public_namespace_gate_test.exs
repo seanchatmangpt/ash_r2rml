@@ -68,7 +68,8 @@ defmodule AshR2RML.PublicNamespaceGateTest do
   # reserved .invalid TLD, interpolated hosts). An endpoint URL locates a service; it is not an
   # RDF term, so the namespace allowlist does not apply to it -- in these files only.
   @endpoint_test_files ~w(test/sparql_protocol_hardening_test.exs test/sparql_private_network_test.exs
-                          test/sparql_result_parity_test.exs test/refusal_codes_coverage_test.exs)
+                          test/sparql_result_parity_test.exs test/refusal_codes_coverage_test.exs
+                          test/refactor_w9_guard_tests_test.exs)
 
   # Exact hosts only: loopback, the documentation ranges (RFC 5737), the example.com address,
   # a host under the reserved .invalid TLD, or an interpolated / empty host. A host must end at

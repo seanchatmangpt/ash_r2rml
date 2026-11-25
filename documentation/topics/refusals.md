@@ -33,7 +33,7 @@ silent fallback, for example no coercion of an unknown Ash type to string.
 | `:REFUSED_NON_LITERAL_DATATYPE` | datatype applied to a non-literal term map |
 | `:REFUSED_CHANGESET_CONFLICT` | changeset-derived triples conflict |
 | `:REFUSED_MANIFEST_GENERATION` | manifest generation could not complete |
-| `:REFUSED_RESOURCE_BOUND` | result exceeds the row bound (default 100,000 rows) |
+| `:REFUSED_RESOURCE_BOUND` | a resource bound was exceeded: SPARQL result rows over `:max_rows` (default 100,000; local and protocol queries), or a mapping closure over 10,000 resources (compiler) |
 
 Meanings for codes not listed in the mapping validators are taken from the code names and
 the call sites in `lib/ash_r2rml/mapping.ex`, `subject.ex`, `obda_in_memory.ex` and

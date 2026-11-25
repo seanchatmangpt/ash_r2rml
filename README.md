@@ -35,7 +35,8 @@ SPARQL is evaluated in-process (`AshR2RML.SPARQL.Local`) over rows read through 
 
 **Explicitly NOT built**
 
-- Federation
+- Federated query mesh (no multi-endpoint federation or `SERVICE` routing; a single bounded
+  remote SPARQL endpoint client ships as `AshR2RML.SPARQL.Protocol`)
 - Reverse actuation (RDF writes back into Ash)
 - AOT `.rq` compile
 - Live streaming

@@ -364,7 +364,9 @@ defmodule AshR2RML.Mapping do
     }
   end
 
+  defp normalize_subject_map(nil), do: nil
   defp normalize_subject_map(%SubjectMap{} = map), do: %{map | graph_maps: sort_graph_maps(map.graph_maps)}
+  defp normalize_object_map(nil), do: nil
   defp normalize_object_map(%ObjectMap{} = map), do: %{map | graph_maps: sort_graph_maps(map.graph_maps)}
 
   defp sort_graph_maps(values) do

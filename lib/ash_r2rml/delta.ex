@@ -37,7 +37,7 @@ defmodule AshR2RML.Delta do
   where the serialization is `RDF.NTriples.Encoder.encode/2` with `sort: true` --
   the encoder's own code-point sort of the canonical N-Triples lines. Hex is
   lowercase. Blake3 adoption, if it ever happens, is a separate spec decision; the
-  `:"sha256:"` prefix makes a future algorithm change self-describing.
+  `"sha256:"` string prefix makes a future algorithm change self-describing.
 
   Determinism scope (honest boundary): sorted N-Triples is deterministic for graphs
   whose terms are fully determined -- which is exactly what `AshR2RML.OBDA.InMemory`

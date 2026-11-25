@@ -130,6 +130,78 @@ defmodule AshR2RML.Mapping.Validate.Subject do
     end
   end
 
+  @scheme_prefix ~r/\A[A-Za-z][A-Za-z0-9+.\-]*:/
+  @placeholder ~r/\{[^{}]*\}/
+  @literal_forbidden ~r/[\x00-\x20\x7f<>"{}|^`\\]/
+
+  @doc """
+  Shape defect of an IRI template, or `nil` when it is well formed.
+
+  A template is defective when its braces are unbalanced, its literal prefix before the first
+  placeholder is not an absolute IRI scheme, or a literal part holds an IRIREF-forbidden character.
+
+      iex> AshR2RML.Mapping.Validate.Subject.template_defect("http://schema.org/uuid/{id}")
+      nil
+      iex> AshR2RML.Mapping.Validate.Subject.template_defect("http://schema.org/{id}/{x")
+      :unbalanced_braces
+      iex> AshR2RML.Mapping.Validate.Subject.template_defect("/rel/{id}")
+      :not_absolute
+      iex> AshR2RML.Mapping.Validate.Subject.template_defect("http://schema.org/a b/{id}")
+      :forbidden_character
+  """
+  @spec template_defect(String.t()) :: nil | :unbalanced_braces | :not_absolute | :forbidden_character
+  def template_defect(template) when is_binary(template) do
+    cond do
+      not balanced?(template, 0) -> :unbalanced_braces
+      not Regex.match?(@scheme_prefix, template) -> :not_absolute
+      forbidden_literal?(template) -> :forbidden_character
+      true -> nil
+    end
+  end
+
+  defp forbidden_literal?(template) do
+    template |> String.split(@placeholder) |> Enum.any?(&Regex.match?(@literal_forbidden, &1))
+  end
+
+  @doc "Refusals for a template that is not a well-formed absolute IRI template."
+  @spec template_shape_refusals(Resource.t(), String.t(), term(), String.t()) :: [Refusal.t()]
+  def template_shape_refusals(resource, template, subject, detail) do
+    case template_defect(template) do
+      nil ->
+        []
+
+      defect ->
+        [
+          Refusal.new(:REFUSED_INVALID_TERM_MAP, subject, detail, %{
+            defect: defect,
+            template: template,
+            resource: resource.ash_resource
+          })
+        ]
+    end
+  end
+
+  defp balanced?(<<>>, 0), do: true
+  defp balanced?(<<>>, _), do: false
+  defp balanced?(<<"{", rest::binary>>, 0), do: balanced?(rest, 1)
+  defp balanced?(<<"{", _::binary>>, _), do: false
+  defp balanced?(<<"}", rest::binary>>, 1), do: balanced?(rest, 0)
+  defp balanced?(<<"}", _::binary>>, _), do: false
+  defp balanced?(<<_, rest::binary>>, depth), do: balanced?(rest, depth)
+
+  defp columns(resource, %SubjectMap{strategy: :template, value: template, term_type: :iri})
+       when is_binary(template) do
+    shape =
+      template_shape_refusals(
+        resource,
+        template,
+        resource.ash_resource,
+        "subject template must be an absolute IRI template with balanced braces"
+      )
+
+    shape ++ columns(resource, %SubjectMap{strategy: :template, value: template, term_type: nil})
+  end
+
   defp columns(resource, %SubjectMap{strategy: :template, value: template}) do
     template_refusals(
       resource,

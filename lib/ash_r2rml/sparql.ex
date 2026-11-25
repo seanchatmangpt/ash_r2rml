@@ -160,8 +160,11 @@ defmodule AshR2RML.SPARQL.Result do
   @spec default_max_rows() :: pos_integer()
   def default_max_rows, do: @default_max_rows
 
-  @doc "Fails closed with `:REFUSED_RESOURCE_BOUND` when `rows` exceeds `max_rows`."
-  @spec bound({:ok, atom(), list()} | term(), term(), pos_integer()) :: term()
+  @doc """
+  Fails closed with `:REFUSED_RESOURCE_BOUND` when `rows` exceeds `max_rows`, or when
+  `max_rows` is not a positive integer. Non-`{:ok, _, _}` input passes through unchanged.
+  """
+  @spec bound({:ok, atom(), list()} | term(), term(), term()) :: term()
   def bound({:ok, _kind, rows} = ok, subject, max_rows)
       when is_integer(max_rows) and max_rows > 0 do
     if length(rows) > max_rows do
@@ -175,6 +178,17 @@ defmodule AshR2RML.SPARQL.Result do
     else
       ok
     end
+  end
+
+  # An invalid bound must never silently disable the bound (fail closed).
+  def bound({:ok, _kind, _rows}, subject, max_rows) do
+    {:error,
+     Refusal.new(
+       :REFUSED_RESOURCE_BOUND,
+       subject,
+       "SPARQL max_rows must be a positive integer",
+       %{max_rows: inspect(max_rows)}
+     )}
   end
 
   def bound(other, _subject, _max_rows), do: other

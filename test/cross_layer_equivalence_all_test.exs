@@ -364,6 +364,15 @@ defmodule AshR2RML.CrossLayerEquivalenceAllTest do
     for key <- Map.keys(reference) do
       assert {key, actual[key]} == {key, reference[key]}
     end
+
+    # OBDA.query/3 envelope shapes: ORDER BY + LIMIT/OFFSET, DISTINCT, OPTIONAL, UNION, COUNT and the
+    # unsupported-tail refusal, compared with typed terms and identical refusal codes.
+    obda_reference = Shapes.obda_observe(Xl.ShapeEts)
+    obda_actual = Shapes.obda_observe(layer)
+
+    for {name, _} <- Shapes.obda_shapes() do
+      assert {name, obda_actual[name]} == {name, obda_reference[name]}
+    end
   end
 
   defp objects(triples, subject_iri, predicate_iri), do: object_of(triples, subject_iri, predicate_iri)
@@ -417,6 +426,17 @@ defmodule AshR2RML.CrossLayerEquivalenceAllTest do
     for name <- Keyword.keys(Shapes.shapes()) do
       assert {:ok, [_ | _]} = observation[name]
     end
+  end
+
+  test "OBDA shape reference: LIMIT/OFFSET slice the ordered rows; unsupported tail is a typed refusal" do
+    Shapes.reseed!(Xl.ShapeEts)
+    observed = Shapes.obda_observe(Xl.ShapeEts)
+    name_of = fn {:ok, rows} -> Enum.map(rows, & &1["name"]) end
+    native = fn names -> Enum.map(names, &{:native, inspect(&1)}) end
+
+    assert name_of.(observed.order_limit_offset) == native.(["Ada", "Bob"])
+    assert name_of.(observed.order_desc_limit) == native.(["Plain Org", "Ed", "Di"])
+    assert observed.unsupported_order_expr == {:error, :REFUSED_UNSUPPORTED_SPARQL_FEATURE}
   end
 
   if Code.ensure_loaded?(AshSqlite.DataLayer) do
