@@ -83,7 +83,7 @@ Items marked UNVERIFIED have source present but no test run by the docs lane.
 * DNS-rebind window between `Host.vet_host` and the `SPARQL.Client` connect (see above); the
   connection is not pinned to the vetted IP.
 * The public-namespace gate scans only `.ex`/`.exs` files under `lib/` and `test/`, and exempts every
-  foreign-scheme and endpoint-host pattern inside the four endpoint test files
+  foreign-scheme and endpoint-host pattern inside the five endpoint test files
   (`@endpoint_test_files`).
 * Cross-layer courts (`test/cross_layer_equivalence_test.exs`, `test/cross_layer_equivalence_all_test.exs`)
   compare ETS, a manual-read resource, CSV and SQLite; Postgres is excluded by default

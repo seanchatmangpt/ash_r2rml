@@ -5,7 +5,7 @@
 defmodule AshR2RML.Introspection.Manifest do
   @moduledoc """
   Thin, real wrapper around `Ash.Info.manifest/1` (Ash >= 3.25) for tooling
-  and ggen-pack generation that needs a resource/field/relationship lookup
+  and tooling that needs a resource/field/relationship lookup
   keyed by module, rather than re-deriving that shape via ad hoc
   `Ash.Resource.Info.*` calls.
 
