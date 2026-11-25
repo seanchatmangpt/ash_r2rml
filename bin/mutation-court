@@ -322,7 +322,7 @@ mutate M18c "worker max_heap_size kill disabled" \
   's/max_heap_size: %\{size: words, kill: true, error_logger: false\}/max_heap_size: %{size: words * 1_000_000, kill: true, error_logger: false}/'
 
 mutate M18d "worker timeout validation disabled" \
-  lib/ash_r2rml/obda/worker.ex test/obda_worker_hardening_test.exs \
+  lib/ash_r2rml/obda/worker.ex test/refactor_w8_thin_codes_test.exs \
   's/not \(is_integer\(timeout\) and timeout > 0\) -> invalid_opt/false -> invalid_opt/'
 
 echo "MUTATION_COURT_PASS: M1a-M18d (M16a retired) (M1abc M2ab M3ab M4ab M5 M6 M7 M8 M9ab M10ab M11ab M12abc M13abcd M14abc M15abcdef M16b M16c1 M16c2 M16d M16e M17a M17b M18a M18b M18c M18d) killed, tree clean"
