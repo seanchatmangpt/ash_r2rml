@@ -127,10 +127,17 @@ jobs:
       - name: Build Hex package
         run: mix hex.build
 
-      - name: Fail when HEX_API_KEY is absent
+      - name: Detect HEX_API_KEY presence
+        id: hexkey
         env:
           HEX_API_KEY: ${{ secrets.HEX_API_KEY }}
-        if: env.HEX_API_KEY == ''
+        run: |
+          # A step's own `env` is not visible to that same step's `if:`, so publish the
+          # decision as an output instead of widening the secret to every step.
+          if [ -n "${HEX_API_KEY}" ]; then echo "present=true" >> "${GITHUB_OUTPUT}"; else echo "present=false" >> "${GITHUB_OUTPUT}"; fi
+
+      - name: Fail when HEX_API_KEY is absent
+        if: steps.hexkey.outputs.present != 'true'
         run: |
           echo "::error title=Hex publish blocked::HEX_API_KEY is empty; package was built but NOT published"
           exit 1
@@ -138,5 +145,5 @@ jobs:
       - name: Publish to Hex.pm
         env:
           HEX_API_KEY: ${{ secrets.HEX_API_KEY }}
-        if: env.HEX_API_KEY != ''
+        if: steps.hexkey.outputs.present == 'true'
         run: mix hex.publish --yes
