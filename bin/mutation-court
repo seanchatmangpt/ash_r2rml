@@ -224,7 +224,7 @@ mutate M13b "endpoint scheme check admits ftp" \
 
 mutate M13c "endpoint host vet skipped (private hosts always admitted)" \
   "$PROTOCOL" test/sparql_private_network_test.exs \
-  's/if allow_private == true, do: :ok, else: vet_endpoint_host\(endpoint, host\)/:ok/'
+  's/if allow_private == true, do: \{:ok, nil\}, else: vet_endpoint_host\(endpoint, uri\)/\{:ok, nil\}/'
 
 mutate M13d "federated Result.bound max_rows guard disabled" \
   "$PROTOCOL" test/sparql_result_parity_test.exs \
