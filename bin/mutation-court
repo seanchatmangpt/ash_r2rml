@@ -113,7 +113,7 @@ mutate M1a "field-policy omission (readable/1 leaks ForbiddenField)" \
 
 mutate M1b "sensitive_attribute?/2 always false (sensitive attribute materialized)" \
   "$IN_MEMORY" test/obda_in_memory_sensitive_coverage_test.exs \
-  's/%\{sensitive\?: true\} -> true/%{sensitive?: true} -> false/'
+  's/%\{sensitive\?: true\} -> true/%{sensitive?: true} -> false/;s/attr\.sensitive\? == true and/attr.sensitive? == :mutant and/'
 
 mutate M1c "Security sensitive-attribute detection never matches" \
   "$SECURITY" test/security_sensitive_compile_path_test.exs \
