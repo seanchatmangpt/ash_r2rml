@@ -22,9 +22,12 @@ silent fallback, for example no coercion of an unknown Ash type to string.
 | `:REFUSED_INVALID_TERM_MAP` | term map invalid, including unsupported subject strategy and non-invertible subject IRIs |
 | `:REFUSED_RELATIONSHIP_TARGET_UNMAPPED` | reference points at a resource with no mapping |
 | `:UNSUPPORTED_TERM_TYPE` | term type not supported, including blank nodes where IRI-only is required |
-| `:UNSUPPORTED_ASH_TYPE` | Ash type has no supported RDF correspondence |
+| `:UNSUPPORTED_ASH_TYPE` | Ash type has no supported RDF correspondence: array types, NewType cycles or nesting too deep, `Ash.Type.Range` attributes, or types with no admitted datatype contract |
 | `:REFUSED_UNSUPPORTED_SPARQL_FEATURE` | SPARQL feature or in-memory read not supported, including read guard failures |
 | `:REFUSED_SENSITIVE_ATTRIBUTE_MATERIALIZATION` | `sensitive?: true` attribute would enter the RDF graph |
+| `:REFUSED_ENCRYPTED_ATTRIBUTE_PROJECTION` | AshCloak-encrypted attribute would be projected in plaintext (subject, graph, object-template or reference-join map); map it as an opaque `urn:sha256:` pointer |
+| `:REFUSED_PRIVATE_DATA_LAYER` | `OBDA.query/3` on a `private?: true` ETS resource; the worker process cannot read a private table |
+| `:REFUSED_INVALID_OPTION` | `OBDA.Worker` option (`:timeout_ms`, `:max_heap_words`) is not a positive integer |
 | `:REFUSED_NON_LITERAL_DATATYPE` | datatype applied to a non-literal term map |
 | `:REFUSED_CHANGESET_CONFLICT` | changeset-derived triples conflict |
 | `:REFUSED_MANIFEST_GENERATION` | manifest generation could not complete |

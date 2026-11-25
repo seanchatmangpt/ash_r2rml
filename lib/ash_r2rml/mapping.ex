@@ -45,6 +45,10 @@ defmodule AshR2RML.Refusal do
           evidence: map()
         }
 
+  @doc """
+  Builds a refusal with the given `code`, `subject`, human-readable `detail`,
+  and optional `evidence` map (default `%{}`).
+  """
   @spec new(code(), term(), String.t(), map()) :: t()
   def new(code, subject, detail, evidence \\ %{}) do
     %__MODULE__{code: code, subject: subject, detail: detail, evidence: evidence}
@@ -214,6 +218,13 @@ defmodule AshR2RML.Mapping do
   alias AshR2RML.Mapping.ObjectMap
   alias AshR2RML.Refusal
 
+  @doc """
+  Puts a mapping into canonical order: sorts and de-duplicates class IRIs,
+  graph maps, identities, joins, and predicate/reference object maps.
+
+  For a bundle, normalizes each resource and sorts them by `mapping_identity/1`.
+  Idempotent.
+  """
   @spec normalize(Resource.t()) :: Resource.t()
   def normalize(%Resource{} = resource) do
     %{
@@ -243,10 +254,19 @@ defmodule AshR2RML.Mapping do
     }
   end
 
+  @doc """
+  Validates a resource or bundle mapping via `AshR2RML.Mapping.Validate`.
+
+  Returns `:ok` or `{:error, [%AshR2RML.Refusal{}]}`.
+  """
   @spec validate(Resource.t() | Bundle.t()) :: :ok | {:error, [Refusal.t()]}
   def validate(%Resource{} = resource), do: Validate.run(resource)
   def validate(%Bundle{} = bundle), do: Validate.run(bundle)
 
+  @doc """
+  Deterministic `urn:sha256:<hex>` identity of a resource mapping, computed over
+  the normalized class IRIs, logical table, and subject map.
+  """
   @spec mapping_identity(Resource.t()) :: String.t()
   def mapping_identity(%Resource{} = resource) do
     normalized = normalize(resource)
@@ -260,6 +280,13 @@ defmodule AshR2RML.Mapping do
     "urn:sha256:" <> digest
   end
 
+  @doc """
+  Sorted, de-duplicated `{field}` names in an IRI/value template; `[]` for
+  non-binaries.
+
+      iex> AshR2RML.Mapping.template_fields("http://schema.org/{b}/{a}/{b}")
+      ["a", "b"]
+  """
   @spec template_fields(String.t()) :: [String.t()]
   def template_fields(template) when is_binary(template) do
     ~r/\{([^{}]+)\}/
@@ -271,6 +298,10 @@ defmodule AshR2RML.Mapping do
 
   def template_fields(_), do: []
 
+  @doc """
+  Columns the subject map derives its term from: the template fields for a
+  `:template` strategy, the single column for `:column`, and `[]` otherwise.
+  """
   @spec subject_identity_columns(Resource.t()) :: [String.t()]
   def subject_identity_columns(%Resource{subject_map: %SubjectMap{strategy: :template, value: value}}),
     do: template_fields(value)
@@ -280,6 +311,14 @@ defmodule AshR2RML.Mapping do
 
   def subject_identity_columns(_), do: []
 
+  @doc """
+  Returns true when the subject map yields a stable IRI/node per row.
+
+  Constant absolute-IRI and blank-node subject maps are stable. Otherwise the
+  subject's identity columns must be non-empty and equal, as a set, to the
+  column set of one declared identity (attributes resolved through
+  `metadata.attribute_columns`, defaulting to the attribute name).
+  """
   @spec stable_subject_identity?(Resource.t()) :: boolean()
   def stable_subject_identity?(%Resource{subject_map: %SubjectMap{strategy: :constant, term_type: :iri, value: value}}),
     do: Validate.absolute_iri?(value)

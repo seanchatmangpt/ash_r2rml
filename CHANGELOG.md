@@ -39,8 +39,9 @@ Items marked UNVERIFIED have source present but no test run by the docs lane.
   Non-strict domains are unchanged.
 
 ### Packaging & docs:
-* Hex package now ships `ash_r2rml.install` and `ash_r2rml.render` (only `generate_docs` is
-  excluded); `test/hex_package_test.exs` asserts the file list. Execution of that test: UNVERIFIED.
+* Hex package excludes all Mix tasks (`lib/mix/` is rejected in `mix.exs`), so `ash_r2rml.install`,
+  `ash_r2rml.render` and `ash_r2rml.generate_docs` are repository-only; `test/hex_package_test.exs`
+  asserts the file list. Execution of that test: UNVERIFIED.
 * `ash_r2rml.install` targets `~> 26.11`, uses non-bang `find_and_update_module/3`, and its
   templates use only public IRIs. `ash_r2rml.render` compiles (not `app.start`), parses args with
   `OptionParser`, and resolves modules without minting atoms. Compile and run: UNVERIFIED.
@@ -57,6 +58,12 @@ Items marked UNVERIFIED have source present but no test run by the docs lane.
   bounded too (`REFUSED_RESULT_LIMIT_EXCEEDED`).
 
 ### Known gaps (accepted):
+* Runtime deps are `ash`, `spark`, `rdf`, `sparql`, `sparql_client`, `jason`, `telemetry` (plus
+  optional `igniter`) because RDF and SPARQL handling need them.
+* Sobelow is not verified clean for Mix tasks: `lib/mix` contains no `load_file` call (grep), only
+  `File.write!` in `ash_r2rml.generate_docs`; the reported finding is UNVERIFIED against a run.
+* The public-namespace gate allows IRIs in endpoint-URL test files by host pattern
+  (`test/public_namespace_gate_test.exs`, `@endpoint_host`).
 * `mix credo --strict` is not clean.
 * No external OBDA engine is verified; `OBDA.InMemory` and `SPARQL.Local` are the evidence.
 * SSRF DNS-rebind window in the SPARQL protocol client: host vetting resolves before the request,

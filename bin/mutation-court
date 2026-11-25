@@ -169,6 +169,46 @@ mutate M5 "reactor undo(:always) neutered, compensation never runs" \
   "$REACTOR_TEST" test/reactor_semantic_test.exs \
   's/undo\(:always\)/undo(:never)/'
 
+# M9: SSRF host vet. Private addresses and localhost names must be refused.
+mutate M9a "SSRF vet_addrs admits private addresses" \
+  "lib/ash_r2rml/sparql/protocol/host.ex" test/sparql_private_network_test.exs \
+  's/private -> \{:private, private\}/_private -> :ok/'
+
+mutate M9b "SSRF vet_host admits localhost names" \
+  "lib/ash_r2rml/sparql/protocol/host.ex" test/sparql_private_network_test.exs \
+  's/^(\s*)\{:private, \[\{127, 0, 0, 1\}\]\}/$1:ok/'
+
+# M10: private-ETS guard fails closed (introspection failure and positive private detection).
+mutate M10a "private_ets/1 introspection failure fails open" \
+  "$OBDA" test/followup_private_ets_failclosed_test.exs \
+  's/(KeyError\] -> ):unknown/$1false/'
+
+mutate M10b "private_ets/1 no longer detects a private ETS table" \
+  "$OBDA" test/obda_contract_fixes_test.exs \
+  's/(Ets\.Info\.private\?\(resource\) == true -> ):private/$1false/'
+
+# M11: security.ex sanitizers.
+mutate M11a "in-memory non-attribute fields no longer excluded" \
+  "$SECURITY" test/obda_in_memory_cloak_test.exs \
+  's/remove_attributes\(mapping, &1, :in_memory_non_attribute_excluded_attributes\)/remove_attributes(mapping, [], :in_memory_non_attribute_excluded_attributes)/'
+
+mutate M11b "sanitize_mapping never strips field-policy attributes" \
+  "$SECURITY" test/security_ash_postgres_test.exs \
+  's/if AshR2RML\.DataLayer\.backend\(ash_resource\) != :ets do/if false do/'
+
+# M12: result bounds.
+mutate M12a "Sparql.bound/3 max_rows guard disabled" \
+  "lib/ash_r2rml/sparql.ex" test/sparql_result_parity_test.exs \
+  's/if length\(rows\) > max_rows do/if length(rows) > max_rows * 1_000_000 do/'
+
+mutate M12b "merged GRAPH ?g bound_merged guard disabled" \
+  "$IN_MEMORY" test/followup_graph_max_rows_test.exs \
+  's/is_integer\(max_rows\) and length\(rows\) > max_rows do/is_integer(max_rows) and length(rows) > max_rows * 1_000_000 do/'
+
+mutate M12c "per-graph local_opts drops max_rows" \
+  "$IN_MEMORY" test/followup_graph_max_rows_test.exs \
+  's/^(\s*)max_rows -> \[max_rows: max_rows\]/$1max_rows -> []/'
+
 if ! git diff --exit-code >/dev/null; then
   echo "FINAL_DIFF_NOT_EMPTY: tracked files differ after the court" >&2
   git diff --stat >&2
@@ -181,5 +221,5 @@ if ! porcelain_empty; then
   exit 4
 fi
 
-echo "MUTATION_COURT_PASS: M1a-M8 (M1abc M2ab M3ab M4ab M5 M6 M7 M8) killed, tree clean"
+echo "MUTATION_COURT_PASS: M1a-M12c (M1abc M2ab M3ab M4ab M5 M6 M7 M8 M9ab M10ab M11ab M12abc) killed, tree clean"
 exit 0

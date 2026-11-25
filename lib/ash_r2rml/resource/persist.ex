@@ -55,7 +55,7 @@ defmodule AshR2RML.Resource.Persist do
 
       {:ok, Transformer.persist(dsl, :ash_r2rml_public_mapping, mapping)}
     else
-      {:error, %Refusal{} = refusal} -> {:error, refusal.detail}
+      {:error, %Refusal{} = refusal} -> {:error, "#{refusal.code}: #{refusal.detail}"}
       {:error, other} -> {:error, inspect(other)}
     end
   end

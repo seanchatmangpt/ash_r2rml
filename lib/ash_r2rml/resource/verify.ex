@@ -28,7 +28,29 @@ defmodule AshR2RML.Resource.Verify do
         :ok
 
       {:error, refusals} ->
-        {:error, Spark.Error.DslError.exception(message: Enum.map_join(refusals, "; ", &"#{&1.code}: #{&1.detail}"))}
+        {:error, diagnostic(Map.get(mapping, :ash_resource), refusals)}
     end
   end
+
+  @doc false
+  # Builds the DslError with module and path; the message keeps each REFUSED_*
+  # code, detail and evidence.
+  @spec diagnostic(module() | nil, [AshR2RML.Refusal.t()] | String.t()) :: Spark.Error.DslError.t()
+  def diagnostic(module, refusals) do
+    Spark.Error.DslError.exception(
+      module: module,
+      path: [:r2rml],
+      message: render(refusals)
+    )
+  end
+
+  defp render(text) when is_binary(text), do: text
+  defp render(refusals), do: Enum.map_join(refusals, "; ", &render_one/1)
+
+  defp render_one(%AshR2RML.Refusal{code: code, detail: detail, evidence: evidence})
+       when evidence == %{} or is_nil(evidence),
+       do: "#{code}: #{detail}"
+
+  defp render_one(%AshR2RML.Refusal{code: code, detail: detail, evidence: evidence}),
+    do: "#{code}: #{detail} (evidence: #{inspect(evidence)})"
 end

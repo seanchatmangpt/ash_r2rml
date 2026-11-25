@@ -68,8 +68,23 @@ defmodule AshR2RML.OBDA do
   @forwarded [:actor, :tenant, :authorize?, :context, :domain, :action] ++
                [:allow_unauthorized, :require_authorizer, :require_tenant, :max_rows, :max_triples]
 
+  # An explicit `nil` bound means "use the default"; it is dropped before forwarding so a bound
+  # can never be disabled (`Keyword.put_new`/`Keyword.get` defaults do not replace a present nil).
+  @bound_forwarded [:max_rows, :max_triples]
+
   @event [:ash_r2rml, :obda, :query]
 
+  @doc """
+  Runs one SPARQL query over mapped Ash resources and returns `{:ok, %AshR2RML.OBDA.Result{}}`
+  or `{:error, %AshR2RML.Error{} | %AshR2RML.Refusal{}}`.
+
+  `resources_or_domain` and `opts` are described in the module documentation. A `nil` value for
+  `:max_rows` or `:max_triples` selects the default bound (never "unbounded"); `:timeout_ms` and
+  `:max_heap_words` must be positive integers or absent. On success the result carries
+  canonically ordered `bindings` (SELECT/ASK) or `triples`/`quads` (CONSTRUCT/DESCRIBE), the
+  result `kind`, `stats` and a content `digest`. Bound violations return typed refusals such as
+  `:REFUSED_RESULT_LIMIT_EXCEEDED` and `:REFUSED_TRIPLE_LIMIT_EXCEEDED`.
+  """
   @spec query(module() | [module() | InMemory.spec()], String.t(), keyword()) ::
           {:ok, Result.t()} | {:error, Error.t() | Refusal.t()}
   def query(resources_or_domain, sparql, opts \\ []) when is_binary(sparql) and is_list(opts) do
@@ -439,6 +454,7 @@ defmodule AshR2RML.OBDA do
     base =
       opts
       |> Keyword.take(@forwarded)
+      |> Enum.reject(fn {key, value} -> key in @bound_forwarded and is_nil(value) end)
       |> Keyword.put(:allow_sensitive, allow_sensitive?(opts))
 
     base =

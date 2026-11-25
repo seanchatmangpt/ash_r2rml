@@ -194,6 +194,12 @@ Policy, generation and conflict codes: `REFUSED_SENSITIVE_ATTRIBUTE_MATERIALIZAT
 (a sensitive attribute would be materialized), `REFUSED_MANIFEST_GENERATION` (manifest
 generation failed), `REFUSED_CHANGESET_CONFLICT` (conflicting changeset).
 
+Security, type and option codes: `REFUSED_ENCRYPTED_ATTRIBUTE_PROJECTION` (AshCloak attribute
+would be projected in plaintext; admit only as an opaque `urn:sha256:` pointer),
+`REFUSED_PRIVATE_DATA_LAYER` (`OBDA.query/3` on a `private?: true` ETS resource),
+`REFUSED_INVALID_OPTION` (worker `:timeout_ms` / `:max_heap_words` not a positive integer),
+`UNSUPPORTED_ASH_TYPE` (array, NewType cycle, `Ash.Type.Range`, or no admitted datatype contract).
+
 Resource-bound code: `REFUSED_RESOURCE_BOUND` (a request, row or size bound was exceeded;
 fail closed, never truncate silently).
 

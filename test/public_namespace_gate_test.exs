@@ -70,7 +70,10 @@ defmodule AshR2RML.PublicNamespaceGateTest do
   @endpoint_test_files ~w(test/sparql_protocol_hardening_test.exs test/sparql_private_network_test.exs
                           test/sparql_result_parity_test.exs test/refusal_codes_coverage_test.exs)
 
-  @endpoint_host ~r/^https?:\/\/(?:[^@\/]*@)?(?:\d{1,3}(?:\.\d{1,3}){3}|localhost|\[[0-9a-f:]+\]|[^\/]*\.invalid|[#]\{|\{|\/)/i
+  # Exact hosts only: loopback, the documentation ranges (RFC 5737), the example.com address,
+  # a host under the reserved .invalid TLD, or an interpolated / empty host. A host must end at
+  # its port or path, so `localhost.evil.test` or `127.0.0.1.evil.test` is not exempt.
+  @endpoint_host ~r/^https?:\/\/(?:[^@\/]*@)?(?:(?:127\.0\.0\.1|93\.184\.216\.34|(?:192\.0\.2|198\.51\.100|203\.0\.113)\.\d{1,3}|localhost|\[::1\]|(?:[a-z0-9-]+\.)*[a-z0-9-]+\.invalid)(?::(?:\d+|[#]\{[^}]*\}))?(?:[\/?#\\]|$)|[#]\{|\{|\/|$)/i
 
   defp endpoint_exception?(relative_file, iri) do
     relative_file in @endpoint_test_files and Regex.match?(@endpoint_host, iri)
@@ -81,11 +84,12 @@ defmodule AshR2RML.PublicNamespaceGateTest do
   @iri_pattern ~r{(?:https?://|(?<![A-Za-z0-9_])urn:)[^\s"'`<>()\[\]\\,;|]+}i
 
   # Only http, https and urn are admissible schemes. Any other IRI scheme is non-public. Listed
-  # explicitly: file, ftp/ftps/sftp, mailto, did and tag. Each alternative needs the shape of a
+  # explicitly: file, ftp/ftps/sftp, ws/wss, s3, gs, ssh, git, ldap/ldaps, data, jdbc, mailto,
+  # did and tag. Each alternative needs the shape of a
   # real IRI of that scheme, so keyword-style text such as `file: path` is not a hit.
   @foreign_scheme_pattern Regex.compile!(
                             ~S"""
-                            (?<![A-Za-z0-9_])(?:(?:file|sftp|ftps?):/[^\s"'`<>()\[\]\\,;|]*|mailto:[^\s"'`<>()\[\]\\,;|@]*@[^\s"'`<>()\[\]\\,;|]*|did:[a-z0-9]+:[^\s"'`<>()\[\]\\,;|]+|tag:[a-z0-9.-]+,\d{4}[^\s"'`<>()\[\]\\;|]*)
+                            (?<![A-Za-z0-9_])(?:(?:file|sftp|ftps?):/[^\s"'`<>()\[\]\\,;|]*|(?:wss?|s3|gs|ssh|git|ldaps?)://[^\s"'`<>()\[\]\\,;|]*|data:[a-z]+/[a-z0-9.+-]+[^\s"'`<>()\[\]\\,;|]*|jdbc:[a-z0-9]+:[^\s"'`<>()\[\]\\,;|]+|mailto:[^\s"'`<>()\[\]\\,;|@]*@[^\s"'`<>()\[\]\\,;|]*|did:[a-z0-9]+:[^\s"'`<>()\[\]\\,;|]+|tag:[a-z0-9.-]+,\d{4}[^\s"'`<>()\[\]\\;|]*)
                             """
                             |> String.trim(),
                             "i"
@@ -205,6 +209,62 @@ defmodule AshR2RML.PublicNamespaceGateTest do
 
     refute foreign_scheme_exception?("lib/ash_r2rml/domain.ex")
     assert foreign_scheme_exception?("test/sparql_protocol_hardening_test.exs")
+  end
+
+  test "newly listed schemes are caught (non-vacuity)" do
+    samples = [
+      "w" <> "s://h.test/x",
+      "w" <> "ss://h.test/x",
+      "s" <> "3://bucket/key",
+      "g" <> "s://bucket/key",
+      "s" <> "sh://h.test/x",
+      "g" <> "it://h.test/r.git",
+      "ld" <> "ap://h.test/dc=x",
+      "ld" <> "aps://h.test/dc=x",
+      "da" <> "ta:text/plain;base64",
+      "jd" <> "bc:postgresql://h.test/db",
+      "WS" <> "S://h.test/x"
+    ]
+
+    for sample <- samples do
+      assert foreign_schemes_in(~s|x = "#{sample}"|) != [], "#{sample} not detected"
+    end
+
+    for clean <- ["ws: 1", "git: x", "s3: y", "data: z", "gs_path: q", "jdbc: no"] do
+      assert foreign_schemes_in(clean) == [], "#{clean} wrongly detected"
+    end
+  end
+
+  test "the endpoint host exemption is exact and scoped to endpoint files (non-vacuity)" do
+    endpoint_file = "test/sparql_protocol_hardening_test.exs"
+    http = "ht" <> "tp://"
+
+    for host <- [
+          "127.0.0.1:8080/x",
+          "localhost/x",
+          "localhost:3000",
+          "[::1]:1/x",
+          "93.184.216.34/sparql",
+          "203.0.113.7/x",
+          "a.invalid/x",
+          "/sparql",
+          ""
+        ] do
+      assert endpoint_exception?(endpoint_file, http <> host), "#{host} not exempt"
+    end
+
+    for host <- [
+          "localhost.evil.test/x",
+          "localhost@evil.test/x",
+          "127.0.0.1.evil.test/x",
+          "evil.invalid.test/x",
+          "evil.test/x",
+          "localhostevil/x"
+        ] do
+      refute endpoint_exception?(endpoint_file, http <> host), "#{host} wrongly exempt"
+    end
+
+    refute endpoint_exception?("lib/ash_r2rml/domain.ex", http <> "127.0.0.1/x")
   end
 
   test "IRIs assembled from parts are detected (non-vacuity)" do

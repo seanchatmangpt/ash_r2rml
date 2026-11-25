@@ -80,6 +80,13 @@ defmodule AshR2RML.Compiler do
 
   @max_closure_resources 10_000
 
+  @doc """
+  Compiles an Ash resource, a domain, or a list of them into a dependency-closed
+  `AshR2RML.Mapping.Bundle`.
+
+  Delegates to `compile_resources/1`; `opts` is currently ignored. Any other
+  input returns `{:error, %AshR2RML.Refusal{code: :REFUSED_MISSING_SUBJECT_MAP}}`.
+  """
   @spec compile(module() | [module()], keyword()) ::
           {:ok, AshR2RML.Mapping.Bundle.t()} | {:error, Refusal.t()}
   def compile(resources, opts \\ [])
