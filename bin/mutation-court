@@ -196,7 +196,7 @@ mutate M11a "in-memory non-attribute fields no longer excluded" \
 
 mutate M11b "sanitize_mapping never strips field-policy attributes" \
   "$SECURITY" test/security_ash_postgres_test.exs \
-  's/if AshR2RML\.DataLayer\.backend\(ash_resource\) != :ets do/if false do/'
+  's/if AshR2RML\.Introspection\.backend\(ash_resource\) != :ets do/if false do/'
 
 # M12: result bounds.
 mutate M12a "Sparql.bound/3 max_rows guard disabled" \
