@@ -228,7 +228,7 @@ mutate M13c "endpoint host vet skipped (private hosts always admitted)" \
 
 mutate M13d "federated Result.bound max_rows guard disabled" \
   "$PROTOCOL" test/sparql_result_parity_test.exs \
-  's/Result\.bound\(endpoint, max_rows\)/Result.bound(endpoint, max_rows * 1_000_000)/'
+  's/Result\.bound\(\{:ok, result_kind, rows\}, endpoint, max_rows\)/Result.bound({:ok, result_kind, rows}, endpoint, max_rows * 1_000_000)/'
 
 # M14: fail-closed refusals (endpoint userinfo/fragment/query, unresolved DNS, triple budget).
 mutate M14a "endpoint userinfo/fragment/query refusal clause never matches" \
@@ -319,7 +319,7 @@ mutate M19a "xsd:boolean false normalized through the string fallback" \
 
 mutate M19b "property path detection disabled" \
   lib/ash_r2rml/obda.ex test/refactor_w16_path_prefixed_test.exs \
-  's/defp property_path\?\(plain\), do: Enum\.any\?\(\@path_patterns, &Regex\.match\?\(&1, plain\)\)/defp property_path?(_plain), do: false/'
+  's/defp property_path\?\(plain\), do: Enum\.any\?\(path_patterns\(\), &Regex\.match\?\(&1, plain\)\)/defp property_path?(_plain), do: false/'
 
 mutate M19c "ghost identity admitted as an available column" \
   lib/ash_r2rml/mapping/validate/shared.ex test/refactor_w16_identity_ghost_test.exs \
@@ -327,7 +327,7 @@ mutate M19c "ghost identity admitted as an available column" \
 
 mutate M19d "reference join ignores the parent join column" \
   lib/ash_r2rml/obda_in_memory.ex test/refactor_w16_join_parent_test.exs \
-  's/\{:ok, match_parent_subject\(joins, row, parents\)\}/{:ok, nil}/'
+  's/\{:ok, match_parent_subject\(joins, row, index\)\}/{:ok, nil}/'
 
 if ! git diff --exit-code >/dev/null; then
   echo "FINAL_DIFF_NOT_EMPTY: tracked files differ after the court" >&2
