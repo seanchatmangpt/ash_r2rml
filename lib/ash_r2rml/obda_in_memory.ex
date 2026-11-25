@@ -450,12 +450,13 @@ defmodule AshR2RML.OBDA.InMemory do
   defp min_triples_per_row(ash_resource, %Resource{} = mapping) do
     with %SubjectMap{strategy: :template, value: template} <- mapping.subject_map,
          true <- template_attrs_non_nil?(ash_resource, template),
-         [] <- Ash.Policy.Info.field_policies(ash_resource) do
+         [] <- Ash.Policy.Info.field_policies(ash_resource),
+         false <- graph_dependent?(mapping) do
       guaranteed =
         mapping.predicate_object_maps
         |> Enum.uniq_by(& &1.predicate_iri)
         |> Enum.count(fn
-          %PredicateObjectMap{attribute: attribute, object_map: %ObjectMap{strategy: :column}}
+          %PredicateObjectMap{attribute: attribute, object_map: %ObjectMap{strategy: :column, term_type: :literal}}
           when not is_nil(attribute) ->
             match?(%{allow_nil?: false, sensitive?: false}, Ash.Resource.Info.attribute(ash_resource, attribute))
 
@@ -470,6 +471,10 @@ defmodule AshR2RML.OBDA.InMemory do
   rescue
     _ -> 0
   end
+
+  # A graph map that fails to resolve for a row drops that row's triples, and a malformed stored
+  # IRI is skipped, so neither can be counted as guaranteed output.
+  defp graph_dependent?(%Resource{} = mapping), do: AshR2RML.Security.all_graph_maps(mapping) != []
 
   # Object-template placeholders must be real attributes: a calculation (e.g. an AshCloak
   # decrypt-by-default calculation) would otherwise leak through an IRI without any sensitivity check.
@@ -917,10 +922,15 @@ defmodule AshR2RML.OBDA.InMemory do
     |> check_fields_sensitive(ash_resource, "join child column")
   end
 
+  # Resolved by attribute name OR `source` rename, without minting atoms: a sensitive attribute
+  # must not escape the check because a join names it by its storage column.
   defp field_sensitive?(ash_resource, field) do
-    sensitive_attribute?(ash_resource, String.to_existing_atom(field))
-  rescue
-    ArgumentError -> false
+    ash_resource
+    |> Ash.Resource.Info.attributes()
+    |> Enum.any?(fn attr ->
+      attr.sensitive? == true and
+        (Atom.to_string(attr.name) == field or (not is_nil(attr.source) and to_string(attr.source) == field))
+    end)
   end
 
   defp check_fields_sensitive(fields, ash_resource, where) do

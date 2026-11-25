@@ -256,7 +256,8 @@ defmodule AshR2RML.Security do
     end
   end
 
-  defp all_graph_maps(mapping) do
+  @doc false
+  def all_graph_maps(mapping) do
     mapping.graph_maps ++
       mapping.subject_map.graph_maps ++
       Enum.flat_map(mapping.predicate_object_maps, &(&1.graph_maps ++ &1.object_map.graph_maps)) ++
