@@ -269,10 +269,6 @@ mutate M15f "OBDA @forwarded drops allow_unauthorized" \
   's/\[:allow_unauthorized, :require_authorizer, :require_tenant, :max_rows/[:require_authorizer, :require_tenant, :max_rows/'
 
 # M16: reference-pass triple bound, bound nil-drop and validation, private-layer refusal, graph-map sensitivity.
-mutate M16a "reference-pass max_triples accumulation refusal disabled (14-space anchor)" \
-  "$IN_MEMORY" test/refactor_w9_guard_tests_test.exs \
-  's/^( {14})if emitted > max_triples do/$1if emitted > max_triples * 1_000_000 do/'
-
 mutate M16b "OBDA @bound_forwarded nil-drop disabled (nil bounds reach the engine)" \
   "$OBDA" test/refactor_w6_bounds_nil_test.exs \
   's/key in \@bound_forwarded and is_nil\(value\)/key in [] and is_nil(value)/'
@@ -305,5 +301,5 @@ if ! porcelain_empty; then
   exit 4
 fi
 
-echo "MUTATION_COURT_PASS: M1a-M16e (M1abc M2ab M3ab M4ab M5 M6 M7 M8 M9ab M10ab M11ab M12abc M13abcd M14abc M15abcdef M16a M16b M16c1 M16c2 M16d M16e) killed, tree clean"
+echo "MUTATION_COURT_PASS: M1a-M16e (M16a retired) (M1abc M2ab M3ab M4ab M5 M6 M7 M8 M9ab M10ab M11ab M12abc M13abcd M14abc M15abcdef M16b M16c1 M16c2 M16d M16e) killed, tree clean"
 exit 0

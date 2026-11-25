@@ -60,6 +60,8 @@ Items marked UNVERIFIED have source present but no test run by the docs lane.
 ### Known gaps (accepted):
 - `AshR2RML.OBDA.InMemory.query*` (the raw engine) does not apply SPARQL `ORDER BY`/`LIMIT`/`OFFSET` row semantics; the OBDA envelope
   (`AshR2RML.OBDA.query/3`) applies them. The cross-layer court compares raw-engine rows order-insensitively.
+- The reference-pass `emitted > max_triples` guard in `InMemory` is redundant with the read-time triple budget in the
+  current fixtures (mutation M16a was equivalent and retired); no test isolates it.
 - Gate extractor holes (split schemes such as a mid-word concat, non-listed foreign schemes) stay accepted.
 * Runtime deps are `ash`, `spark`, `rdf`, `sparql`, `sparql_client`, `jason`, `telemetry` (plus
   optional `igniter`) because RDF and SPARQL handling need them.
