@@ -67,7 +67,7 @@ defmodule AshR2RML.Money do
   def project(%Decimal{} = amount, opts), do: build(amount, Keyword.get(opts, :currency), opts)
 
   def project(%{__struct__: struct, amount: %Decimal{} = amount, currency: currency}, opts)
-      when is_atom(currency) or is_binary(currency) do
+      when (is_atom(currency) and not is_nil(currency)) or is_binary(currency) do
     if Atom.to_string(struct) in @money_modules do
       build(amount, currency, opts)
     else

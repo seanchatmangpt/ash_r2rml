@@ -13,11 +13,11 @@ defmodule AshR2RML do
   serialization and SPARQL execution remain explicit boundary choices rather
   than alternate sources of truth.
 
-  This module is the thin public API only; it is not a Spark extension.
+  This module is the thin public API only; the Spark extension is `AshR2RML.Resource`.
 
   ## Example
 
-  Given resources that `use Ash.Resource, extensions: [AshR2RML]`:
+  Given resources that `use Ash.Resource, extensions: [AshR2RML.Resource]`:
 
       resources = [MyApp.Person, MyApp.Company]
 

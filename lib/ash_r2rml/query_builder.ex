@@ -48,9 +48,10 @@ defmodule AshR2RML.QueryBuilder do
     with {:ok, action} <- read_action(mapping, opts),
          :ok <- check_attributes(mapping, plan.needed_attributes),
          :ok <- check_relationships(mapping, plan.needed_relationships),
+         {:ok, sort_attrs} <- sort_attributes(mapping, plan.sort),
          {:ok, filter_attrs} <- filter_attributes(mapping, plan.filter),
-         :ok <- check_filterable(mapping, filter_attrs ++ Enum.map(plan.sort, &elem(&1, 0))),
-         :ok <- check_field_policy(mapping, filter_attrs ++ Enum.map(plan.sort, &elem(&1, 0))),
+         :ok <- check_attributes(mapping, filter_attrs ++ sort_attrs),
+         :ok <- check_field_policy(mapping, filter_attrs ++ sort_attrs),
          {:ok, filter_expr} <- filter_expr(mapping, plan.filter) do
       select = select_attributes(mapping, plan)
       caps = Capability.probe(resource)
@@ -136,7 +137,7 @@ defmodule AshR2RML.QueryBuilder do
       iex> AshR2RML.QueryBuilder.effective_limit(50, 10)
       11
   """
-  @spec effective_limit(pos_integer() | nil, pos_integer()) :: pos_integer()
+  @spec effective_limit(non_neg_integer() | nil, pos_integer()) :: pos_integer() | 0
   def effective_limit(nil, max_rows), do: max_rows + 1
   def effective_limit(limit, max_rows) when is_integer(limit), do: min(limit, max_rows + 1)
 
@@ -174,7 +175,24 @@ defmodule AshR2RML.QueryBuilder do
 
   defp check_attributes(mapping, names), do: check_each(mapping, names, &admit_attribute/2)
 
-  defp check_filterable(mapping, names), do: check_each(mapping, names, &admit_attribute/2)
+  # A malformed sort entry (wrong shape or direction) refuses instead of crashing in `elem/2`
+  # or inside `Ash.Query.sort/2`.
+  defp sort_attributes(mapping, sort) when is_list(sort) do
+    Enum.reduce_while(sort, {:ok, []}, fn
+      {attribute, direction}, {:ok, acc} when is_atom(attribute) and direction in [:asc, :desc] ->
+        {:cont, {:ok, acc ++ [attribute]}}
+
+      other, _acc ->
+        {:halt, bad_sort(mapping, other)}
+    end)
+  end
+
+  defp sort_attributes(mapping, other), do: bad_sort(mapping, other)
+
+  defp bad_sort(mapping, other) do
+    detail = "unsupported sort shape"
+    {:error, refuse(mapping, :REFUSED_UNSUPPORTED_SPARQL_FEATURE, detail, %{sort: inspect(other)})}
+  end
 
   # A field-policy-gated attribute must never be filtered or sorted in the data layer: the
   # surviving row set would be an oracle on the hidden value.

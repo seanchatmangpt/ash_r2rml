@@ -49,7 +49,7 @@ defmodule AshR2RML.DataLayer do
       Code.ensure_loaded?(Ash.DataLayer.Ets) and function_exported?(Ash.DataLayer.Ets, :table, 1) ->
         to_string(apply(Ash.DataLayer.Ets, :table, [resource]))
 
-      function_exported?(resource, :table, 0) ->
+      Code.ensure_loaded?(resource) and function_exported?(resource, :table, 0) ->
         to_string(resource.table())
 
       true ->
@@ -58,7 +58,7 @@ defmodule AshR2RML.DataLayer do
   end
 
   defp generic_table_name(resource) do
-    if function_exported?(resource, :table, 0),
+    if Code.ensure_loaded?(resource) and function_exported?(resource, :table, 0),
       do: to_string(resource.table()),
       else: default_table_name(resource)
   end

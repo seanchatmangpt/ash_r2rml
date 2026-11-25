@@ -61,7 +61,7 @@ class "http://xmlns.com/foaf/0.1/Person"
 ```
 
 ```
-class ["http://xmlns.com/foaf/0.1/Person", "https://schema.org/Person"]
+class ["http://xmlns.com/foaf/0.1/Person", "http://schema.org/Person"]
 ```
 
 
@@ -197,11 +197,11 @@ Maps an Ash relationship to a referencing object map linking subjects via a pred
 
 ### Examples
 ```
-reference :company, "https://schema.org/worksFor"
+reference :company, "http://schema.org/worksFor"
 ```
 
 ```
-reference :posts, "https://schema.org/creator", direction: :incoming
+reference :posts, "http://schema.org/creator", direction: :incoming
 ```
 
 

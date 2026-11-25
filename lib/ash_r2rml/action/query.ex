@@ -14,7 +14,8 @@ defmodule AshR2RML.Action.Query do
 
   Source options (one required): `:domain`, `:resources` (module list), or
   `:specs_fun` (an `{module, function, args}` returning `{resource, mapping}` specs).
-  `:max_rows`, `:max_triples`, `:timeout_ms`, `:allow_sensitive?` are forwarded. Actor, tenant
+  `:max_rows`, `:max_triples`, `:timeout_ms`, `:allow_sensitive?`, `:require_authorizer` and
+  `:require_tenant` are forwarded. Actor, tenant
   and authorize? come from the action context. The action returns a plain map with
   `:bindings`, `:triples`, `:stats` and `:digest`; a refusal is returned as `{:error, refusal}`.
   """

@@ -31,11 +31,9 @@ defmodule AshR2RML.Mapping.Changeset do
       rule that a subject cannot be both partially updated and wholly replaced
       in the same changeset
 
-  Use `diff/3` to compute a changeset between two snapshots (defaults to a pure
-  add/remove diff -- the `:update`/`:replace` classification requires the
-  caller to say which predicates constitute an entity's identity vs. its
-  mutable state, which AshR2RML's own `AshR2RML.Mapping.Resource` IR already
-  knows and can supply via `subject_identity_predicates`).
+  Use `diff/2` to compute a changeset between two snapshots. `diff/2` is a pure
+  add/remove diff; it never emits `:update` or `:replace`. Those two actions
+  are only populated by callers building a changeset directly with `new/1`.
   """
 
   alias AshR2RML.RDF.GraphAlgebra
@@ -63,26 +61,39 @@ defmodule AshR2RML.Mapping.Changeset do
   that action). Returns `{:error, %Refusal{}}` if validation fails.
   """
   @spec new(keyword() | map()) :: {:ok, t()} | {:error, Refusal.t()}
-  def new(opts \\ []) do
-    changeset = %__MODULE__{
-      add: fetch_graph(opts, :add),
-      update: fetch_graph(opts, :update),
-      replace: fetch_graph(opts, :replace),
-      remove: fetch_graph(opts, :remove)
-    }
+  def new(opts \\ [])
 
-    validate(changeset)
+  def new(opts) when is_list(opts) or is_map(opts) do
+    with {:ok, add} <- fetch_graph(opts, :add),
+         {:ok, update} <- fetch_graph(opts, :update),
+         {:ok, replace} <- fetch_graph(opts, :replace),
+         {:ok, remove} <- fetch_graph(opts, :remove) do
+      validate(%__MODULE__{add: add, update: update, replace: replace, remove: remove})
+    end
   end
 
+  def new(other), do: {:error, invalid_input(:options, other)}
+
+  # A non-`RDF.Graph` value is refused rather than raising a CaseClauseError.
   defp fetch_graph(opts, key) do
     case get(opts, key) do
-      nil -> nil
-      %Graph{} = graph -> graph
+      nil -> {:ok, nil}
+      %Graph{} = graph -> {:ok, graph}
+      other -> {:error, invalid_input(key, other)}
     end
   end
 
   defp get(opts, key) when is_list(opts), do: Keyword.get(opts, key)
   defp get(opts, key) when is_map(opts), do: Map.get(opts, key)
+
+  defp invalid_input(key, value) do
+    Refusal.new(
+      :REFUSED_CHANGESET_CONFLICT,
+      :mapping_changeset,
+      "Changeset input #{inspect(key)} must be an RDF.Graph or nil",
+      %{field: key, got: inspect(value)}
+    )
+  end
 
   @doc """
   Validates a changeset's mutual-exclusion invariants (ported from

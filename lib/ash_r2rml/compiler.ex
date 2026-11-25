@@ -85,13 +85,21 @@ defmodule AshR2RML.Compiler do
   def compile(resources, opts \\ [])
 
   def compile(resources, _opts) when is_atom(resources) or is_list(resources) do
-    case compile_resources(resources) do
-      {:ok, bundle} -> {:ok, bundle}
-      {:error, refusal} -> {:error, refusal}
-    end
+    compile_resources(resources)
+  end
+
+  def compile(other, _opts) do
+    {:error,
+     Refusal.new(
+       :REFUSED_MISSING_SUBJECT_MAP,
+       :compile,
+       "expected a resource, a domain, or a list of them, got #{inspect(other)}",
+       %{}
+     )}
   end
 
   @doc "Cutover requires an observed query-parity witness and an explicit authority receipt."
+  @spec cutover_ready?(term()) :: boolean()
   def cutover_ready?(%CompilationReceipt{
         query_parity: :VERIFIED,
         cutover_authority: :AUTHORIZED,
@@ -102,12 +110,13 @@ defmodule AshR2RML.Compiler do
   def cutover_ready?(_), do: false
 
   @doc "Attach an externally observed parity receipt without executing the compared systems."
+  @spec attach_parity_witness(CompilationReceipt.t(), term(), term()) :: CompilationReceipt.t()
   def attach_parity_witness(%CompilationReceipt{} = receipt, kind, witness)
       when kind == :sparql_sql and is_map(witness) do
     verified? = Map.get(witness, :verified?, Map.get(witness, "verified?", false))
     witness_id = Map.get(witness, :receipt_sha256, Map.get(witness, "receipt_sha256"))
 
-    if verified? and is_binary(witness_id) and witness_id != "" do
+    if verified? == true and is_binary(witness_id) and witness_id != "" do
       receipt = %{receipt | query_parity: :VERIFIED}
       blocked = List.delete(receipt.blocked, :sparql_sql_behavioral_parity)
 
@@ -142,11 +151,11 @@ defmodule AshR2RML.Compiler do
   end
 
   @doc "Attach explicit cutover authority without conflating it with technical parity."
-  def authorize_cutover(%CompilationReceipt{} = receipt, authority) when is_map(authority) do
-    authorized? = Map.get(authority, :authorized?, Map.get(authority, "authorized?", false))
-    authority_id = Map.get(authority, :receipt_sha256, Map.get(authority, "receipt_sha256"))
+  @spec authorize_cutover(CompilationReceipt.t(), term()) :: CompilationReceipt.t()
+  def authorize_cutover(%CompilationReceipt{} = receipt, authority) do
+    {authorized?, authority_id} = authority_fields(authority)
 
-    if authorized? and is_binary(authority_id) and authority_id != "" do
+    if authorized? == true and is_binary(authority_id) and authority_id != "" do
       %{
         receipt
         | cutover_authority: :AUTHORIZED,
@@ -166,6 +175,20 @@ defmodule AshR2RML.Compiler do
     end
   end
 
+  defp authority_fields(authority) when is_map(authority) do
+    {Map.get(authority, :authorized?, Map.get(authority, "authorized?", false)),
+     Map.get(authority, :receipt_sha256, Map.get(authority, "receipt_sha256"))}
+  end
+
+  defp authority_fields(_other), do: {false, nil}
+
+  @doc """
+  Compiles resources and/or domains into a validated, normalized bundle.
+
+  Same contract as `compile/2`; `compile/2` is the public entry point.
+  """
+  @spec compile_resources(module() | [module()]) ::
+          {:ok, AshR2RML.Mapping.Bundle.t()} | {:error, Refusal.t()}
   def compile_resources(resources) do
     with {:ok, resources} <- expand_domains(List.wrap(resources)),
          {:ok, mappings} <- do_closure(resources, %{}, []) do
@@ -241,6 +264,8 @@ defmodule AshR2RML.Compiler do
     end
   end
 
+  @doc "Lowercase hex SHA-256 of a binary, or of the deterministic external term format of any term."
+  @spec sha256(term()) :: String.t()
   def sha256(value) when is_binary(value), do: :crypto.hash(:sha256, value) |> Base.encode16(case: :lower)
   def sha256(value), do: value |> :erlang.term_to_binary([:deterministic]) |> sha256()
 end

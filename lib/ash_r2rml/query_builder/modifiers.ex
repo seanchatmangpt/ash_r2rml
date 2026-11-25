@@ -13,7 +13,8 @@ defmodule AshR2RML.QueryBuilder.Modifiers do
 
   ## Examples
 
-      iex> AshR2RML.QueryBuilder.Modifiers.parse("SELECT ?x WHERE { ?s ?p ?x } ORDER BY DESC(?x) ?s LIMIT 5 OFFSET 2")
+      iex> sparql = "SELECT ?x WHERE { ?s ?p ?x } ORDER BY DESC(?x) ?s LIMIT 5 OFFSET 2"
+      iex> AshR2RML.QueryBuilder.Modifiers.parse(sparql)
       {:ok, %{order: [{"x", :desc}, {"s", :asc}], limit: 5, offset: 2}}
 
       iex> AshR2RML.QueryBuilder.Modifiers.parse("SELECT ?x WHERE { ?s ?p ?x }")
@@ -66,7 +67,8 @@ defmodule AshR2RML.QueryBuilder.Modifiers do
       iex> AshR2RML.QueryBuilder.Modifiers.check("SELECT ?x WHERE { ?s ?p ?x } ORDER BY STR(?x)")
       :ok
 
-      iex> {:error, %AshR2RML.Refusal{code: code}} = AshR2RML.QueryBuilder.Modifiers.check("SELECT ?x WHERE { ?s ?p ?x } ORDER BY STR(?x) LIMIT 2")
+      iex> sparql = "SELECT ?x WHERE { ?s ?p ?x } ORDER BY STR(?x) LIMIT 2"
+      iex> {:error, %AshR2RML.Refusal{code: code}} = AshR2RML.QueryBuilder.Modifiers.check(sparql)
       iex> code
       :REFUSED_UNSUPPORTED_SPARQL_FEATURE
   """
@@ -79,7 +81,8 @@ defmodule AshR2RML.QueryBuilder.Modifiers do
        AshR2RML.Refusal.new(
          :REFUSED_UNSUPPORTED_SPARQL_FEATURE,
          "LIMIT/OFFSET/GROUP BY/HAVING/VALUES",
-         "an unsupported solution-modifier tail (ORDER BY over an expression, GROUP BY, HAVING, VALUES) cannot be applied",
+         "an unsupported solution-modifier tail (ORDER BY over an expression, GROUP BY, HAVING, VALUES) " <>
+           "cannot be applied",
          %{tail: String.trim(tail)}
        )}
     else

@@ -9,8 +9,8 @@ defmodule AshR2RML.Security do
   Two independently observed authority gaps are closed here instead of being left to callers:
 
   * Ash field policies are enforceable on Ash-mediated reads but not by an external engine that
-    reads the database directly. `sanitize_mapping/2` therefore removes field-policy-protected predicate maps from
-    AshPostgres-backed mappings before R2RML rendering.
+    reads the database directly. `sanitize_mapping/2` therefore removes field-policy-protected
+    predicate maps from every non-ETS (including unknown-layer) mapping before R2RML rendering.
   * Ash extensions may replace an admitted attribute with a calculation under the same public
     name. `ash_cloak` does exactly this: the plaintext field becomes a decryption calculation
     while ciphertext lives in `encrypted_<name>`, and `decrypt_by_default` can load that
@@ -26,13 +26,14 @@ defmodule AshR2RML.Security do
   """
 
   alias AshR2RML.Mapping.Resource
+  alias AshR2RML.Security.Fields
 
   @doc """
-  Returns `mapping` unchanged unless `ash_resource` is not `Ash.DataLayer.Ets`-backed (unknown
-  layers fail closed) with
-  R2RML-mapped attributes that also carry an explicit `field_policy`. Such attributes are
-  removed and recorded in `mapping.metadata[:field_policy_excluded_attributes]` because
-  a direct database reader has no Ash actor with which to enforce the policy.
+  Removes cloaked plain-column predicate maps, `sensitive?: true` attributes and, when
+  `ash_resource` is not `Ash.DataLayer.Ets`-backed (unknown layers fail closed), R2RML-mapped
+  attributes that carry an explicit `field_policy`. Field-policy exclusions are recorded in
+  `mapping.metadata[:field_policy_excluded_attributes]` because a direct database reader has
+  no Ash actor with which to enforce the policy.
   """
   @spec sanitize_mapping(module(), Resource.t()) :: Resource.t()
   def sanitize_mapping(ash_resource, %Resource{} = mapping) when is_atom(ash_resource) do
@@ -100,16 +101,14 @@ defmodule AshR2RML.Security do
   # Column names (attribute names and `source` renames) that hold plaintext or ciphertext.
   defp cloaked_names(ash_resource, attrs) do
     Enum.flat_map(attrs, fn attr ->
-      encrypted = String.to_atom("encrypted_" <> to_string(attr))
-
-      [attr, encrypted]
+      # Names stay strings: no atom is minted from attribute names.
+      [to_string(attr), "encrypted_" <> to_string(attr)]
       |> Enum.flat_map(fn name ->
-        case Ash.Resource.Info.attribute(ash_resource, name) do
-          %{source: source} when not is_nil(source) -> [name, source]
-          _ -> [name]
+        case resolve_attributes(ash_resource, name) do
+          [] -> [name]
+          found -> [name | for(%{source: source} <- found, not is_nil(source), do: to_string(source))]
         end
       end)
-      |> Enum.map(&to_string/1)
     end)
   end
 
@@ -257,29 +256,13 @@ defmodule AshR2RML.Security do
   end
 
   @doc false
-  def all_graph_maps(mapping) do
-    mapping.graph_maps ++
-      mapping.subject_map.graph_maps ++
-      Enum.flat_map(mapping.predicate_object_maps, &(&1.graph_maps ++ &1.object_map.graph_maps)) ++
-      Enum.flat_map(mapping.reference_object_maps, & &1.graph_maps)
-  end
+  defdelegate all_graph_maps(mapping), to: Fields
 
-  defp graph_fields(term_map), do: term_map_fields(term_map)
+  defp graph_fields(term_map), do: Fields.term_map_fields(term_map)
 
-  defp object_fields(term_map), do: term_map_fields(term_map)
+  defp object_fields(term_map), do: Fields.term_map_fields(term_map)
 
-  # Columns read by a graph or object term map: the column itself or its template placeholders.
-  defp term_map_fields(%{strategy: :column, value: value}), do: [value]
-
-  defp term_map_fields(%{strategy: :template, value: value}) when is_binary(value),
-    do: template_columns(value)
-
-  defp term_map_fields(_), do: []
-
-  # The single placeholder scanner for subject, graph and object templates.
-  defp template_columns(template) do
-    ~r/\{([^{}]+)\}/ |> Regex.scan(template, capture: :all_but_first) |> List.flatten()
-  end
+  defp subject_fields(term_map), do: Fields.subject_fields(term_map)
 
   # Resolves a column or placeholder name to attributes by attribute name or `source` rename.
   defp resolve_attributes(resource, column) do
@@ -454,14 +437,6 @@ defmodule AshR2RML.Security do
     end
   end
 
-  defp subject_fields(%{strategy: :column, value: value}), do: [value]
-
-  defp subject_fields(%{strategy: strategy, value: value})
-       when strategy in [:template, :blank_node] and is_binary(value),
-       do: template_columns(value)
-
-  defp subject_fields(_), do: []
-
   # Fail closed: any resolution error means the column is not admitted.
   defp attribute_column?(ash_resource, column) do
     not cloaked_column?(ash_resource, column) and resolve_attributes(ash_resource, column) != []
@@ -525,7 +500,7 @@ defmodule AshR2RML.Security do
   @doc """
   Returns the R2RML-mapped attributes on `ash_resource` that also carry an explicit Ash
   `field_policy`, independent of data layer. `sanitize_mapping/2` gates the actual exclusion
-  on `AshPostgres.DataLayer`.
+  on the layer not being `Ash.DataLayer.Ets`-backed (unknown layers fail closed).
   """
   @spec unenforceable_attributes(module(), Resource.t()) :: [atom()]
   def unenforceable_attributes(ash_resource, %Resource{predicate_object_maps: predicate_object_maps}) do

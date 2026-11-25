@@ -8,7 +8,8 @@ defmodule AshR2RML.R2RML.Terms do
 
   Checks that every constant IRI in a normalized `AshR2RML.Mapping.Bundle`
   can be written as a Turtle IRIREF, and that no literal object map carries
-  both a language and a datatype. The first problem found is returned as a
+  both a language and a datatype, and that every language is a well-formed
+  Turtle LANGTAG. The first problem found is returned as a
   typed `AshR2RML.Refusal`; nothing is rewritten or repaired.
   """
 
@@ -16,6 +17,8 @@ defmodule AshR2RML.R2RML.Terms do
   alias AshR2RML.Refusal
 
   @invalid_iri_chars ~r/[\x00-\x20<>"{}|^`\\\x7f]/
+
+  @langtag ~r/\A[A-Za-z]+(-[A-Za-z0-9]+)*\z/
 
   @doc """
   Returns `:ok`, or `{:error, refusal}` for the first invalid term in the bundle.
@@ -47,8 +50,25 @@ defmodule AshR2RML.R2RML.Terms do
         )
       end
 
-    iri_refusals ++ conflict_refusals
+    language_refusals =
+      for property <- resource.predicate_object_maps, bad_language?(property) do
+        Refusal.new(
+          :REFUSED_INVALID_TERM_MAP,
+          {resource.ash_resource, property.attribute},
+          "language tag is not serializable as a Turtle LANGTAG",
+          %{language: property.object_map.language}
+        )
+      end
+
+    iri_refusals ++ conflict_refusals ++ language_refusals
   end
+
+  # The renderer interpolates constant-literal languages unquoted (`"x"@tag`),
+  # so a tag outside the Turtle LANGTAG shape would corrupt the document.
+  defp bad_language?(%{object_map: %ObjectMap{strategy: :constant, language: language}}) when is_binary(language),
+    do: not Regex.match?(@langtag, language)
+
+  defp bad_language?(_), do: false
 
   defp iris(%Resource{} = resource) do
     subject = resource.subject_map

@@ -38,22 +38,26 @@ defmodule AshR2RML.SPARQL.Protocol.Host do
       |> String.downcase()
       |> String.trim_trailing(".")
 
+    name = String.to_charlist(h)
+
     cond do
       h == "localhost" or String.ends_with?(h, ".localhost") ->
         {:private, [{127, 0, 0, 1}]}
 
-      match?({:ok, _}, :inet.parse_address(String.to_charlist(h))) ->
-        {:ok, ip} = :inet.parse_address(String.to_charlist(h))
-        if private_ip?(ip), do: {:private, [ip]}, else: :ok
-
       true ->
-        addrs = resolve_all(String.to_charlist(h))
-
-        cond do
-          addrs == [] -> :unresolved
-          Enum.any?(addrs, &private_ip?/1) -> {:private, Enum.filter(addrs, &private_ip?/1)}
-          true -> :ok
+        case :inet.parse_address(name) do
+          {:ok, ip} -> vet_addrs([ip])
+          {:error, _} -> name |> resolve_all() |> vet_addrs()
         end
+    end
+  end
+
+  defp vet_addrs([]), do: :unresolved
+
+  defp vet_addrs(addrs) do
+    case Enum.filter(addrs, &private_ip?/1) do
+      [] -> :ok
+      private -> {:private, private}
     end
   end
 

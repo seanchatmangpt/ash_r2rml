@@ -10,8 +10,12 @@ defmodule AshR2RML.Domain do
   Checks per `AshR2RML.Mapping.ReferenceObjectMap`:
 
     * the parent resource is a member of the domain
-    * each join's parent column exists on the parent mapping
+    * each join's parent column exists on the parent resource or mapping
+    * each join's child column exists on the child resource or mapping
     * the parent has a subject map
+    * the parent carries a mapping that resolves (a parent refusal is surfaced verbatim)
+
+  Enable it on a domain with:
 
       use Ash.Domain, extensions: [AshR2RML.Domain]
 

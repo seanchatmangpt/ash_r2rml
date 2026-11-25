@@ -16,7 +16,7 @@ defmodule AshR2RML.Resource do
     describe: "Declares one or more rdf:type class IRIs asserted for every subject of this resource.",
     examples: [
       ~s|class "http://xmlns.com/foaf/0.1/Person"|,
-      ~s|class ["http://xmlns.com/foaf/0.1/Person", "https://schema.org/Person"]|
+      ~s|class ["http://xmlns.com/foaf/0.1/Person", "http://schema.org/Person"]|
     ],
     args: [:iri],
     target: AshR2RML.Dsl.Class,
@@ -27,7 +27,8 @@ defmodule AshR2RML.Resource do
   @subject %Spark.Dsl.Entity{
     name: :subject,
     describe:
-      "Defines how subject terms are generated: exactly one of template, column, or constant (blank_node term type may omit all).",
+      "Defines how subject terms are generated: exactly one of template, column, or constant " <>
+        "(blank_node term type may omit all).",
     examples: [
       ~s|subject template: "urn:uuid:{id}"|,
       ~s|subject term_type: :blank_node|
@@ -81,8 +82,8 @@ defmodule AshR2RML.Resource do
     name: :reference,
     describe: "Maps an Ash relationship to a referencing object map linking subjects via a predicate IRI.",
     examples: [
-      ~s|reference :company, "https://schema.org/worksFor"|,
-      ~s|reference :posts, "https://schema.org/creator", direction: :incoming|
+      ~s|reference :company, "http://schema.org/worksFor"|,
+      ~s|reference :posts, "http://schema.org/creator", direction: :incoming|
     ],
     args: [:relationship, :predicate_iri],
     target: AshR2RML.Dsl.Reference,

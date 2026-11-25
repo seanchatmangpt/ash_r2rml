@@ -43,7 +43,11 @@ defmodule AshR2RML.QueryBuilder.Lowering do
   @ops %{=: :eq, !=: :neq, <: :lt, <=: :lte, >: :gt, >=: :gte}
   @flip %{eq: :eq, neq: :neq, lt: :gt, lte: :gte, gt: :lt, gte: :lte}
 
-  @doc "Lowers `sparql` against `specs` (`{ash_resource, %Mapping.Resource{}}` pairs)."
+  @doc """
+  Lowers `sparql` against `specs` (`{ash_resource, %Mapping.Resource{}}` pairs).
+
+  `opts` is accepted for API stability and currently ignored.
+  """
   @spec lower(String.t(), [{module(), Resource.t()}], keyword()) :: {:ok, Pushdown.t()} | :fallback
   def lower(sparql, specs, _opts \\ []) when is_binary(sparql) and is_list(specs) do
     do_lower(sparql, specs)
@@ -137,15 +141,20 @@ defmodule AshR2RML.QueryBuilder.Lowering do
   # -- star classification ---------------------------------------------------------------
 
   defp classify(root_triples, resource, mapping) do
-    root_triples
-    |> Enum.reduce_while({:ok, []}, fn triple, {:ok, acc} ->
-      case classify_triple(triple, resource, mapping) do
-        {:ok, info} -> {:cont, {:ok, [info | acc]}}
+    traverse(root_triples, &classify_triple(&1, resource, mapping))
+  end
+
+  # Maps `fun` over `items`, halting at the first `:error`; order-preserving.
+  defp traverse(items, fun) do
+    items
+    |> Enum.reduce_while({:ok, []}, fn item, {:ok, acc} ->
+      case fun.(item) do
+        {:ok, value} -> {:cont, {:ok, [value | acc]}}
         :error -> {:halt, :error}
       end
     end)
     |> case do
-      {:ok, infos} -> {:ok, Enum.reverse(infos)}
+      {:ok, values} -> {:ok, Enum.reverse(values)}
       :error -> :error
     end
   end
@@ -321,20 +330,15 @@ defmodule AshR2RML.QueryBuilder.Lowering do
   defp limit_mode(_mods, _by_var, _subject_attrs, _mapping, _resource, _ets?), do: nil
 
   defp sort_keys(order, by_var, ets?) do
-    order
-    |> Enum.reduce_while({:ok, []}, fn {var, dir}, {:ok, acc} ->
+    traverse(order, fn {var, dir} ->
       case Map.get(by_var, var) do
         %{kind: kind} = info when kind == :integer or (kind == :string and ets?) ->
-          {:cont, {:ok, [Map.put(info, :dir, dir) | acc]}}
+          {:ok, Map.put(info, :dir, dir)}
 
         _ ->
-          {:halt, :error}
+          :error
       end
     end)
-    |> case do
-      {:ok, keys} -> {:ok, Enum.reverse(keys)}
-      :error -> :error
-    end
   end
 
   # -- filters ---------------------------------------------------------------------------

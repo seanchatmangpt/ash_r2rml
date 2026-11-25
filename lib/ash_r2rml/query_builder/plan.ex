@@ -37,6 +37,6 @@ defmodule AshR2RML.QueryBuilder.Plan do
           filter: filter(),
           sort: [{atom(), :asc | :desc}],
           offset: non_neg_integer(),
-          limit: pos_integer() | nil
+          limit: non_neg_integer() | nil
         }
 end

@@ -316,12 +316,23 @@ defmodule AshR2RML.Resource.Persist do
 
   defp term_map_conflict(property) do
     cond do
-      is_binary(property.constant) and is_binary(property.template) -> "constant and template"
-      property.language && property.datatype -> "language and datatype"
-      property.language && property.language_column -> "language and language_column"
-      property.language_column && property.datatype -> "language_column and datatype"
-      property.datatype && property.term_type in [:iri, :blank_node] -> "datatype with term_type #{property.term_type}"
-      true -> nil
+      is_binary(property.constant) and is_binary(property.template) ->
+        "constant and template"
+
+      property.language && property.datatype ->
+        "language and datatype"
+
+      property.language && property.language_column ->
+        "language and language_column"
+
+      property.language_column && property.datatype ->
+        "language_column and datatype"
+
+      property.datatype && property.term_type in [:iri, :blank_node] ->
+        "datatype with term_type #{property.term_type}"
+
+      true ->
+        nil
     end
   end
 
@@ -404,8 +415,11 @@ defmodule AshR2RML.Resource.Persist do
   defp dsl_join_columns(resource, dsl, rel_name, rel) do
     {source, destination} =
       case Ash.Resource.Info.relationship(dsl, rel_name) do
-        %{source_attribute: s, destination_attribute: d} -> {rel.source_attribute || s, rel.destination_attribute || d}
-        _ -> {rel.source_attribute || :id, rel.destination_attribute}
+        %{source_attribute: s, destination_attribute: d} ->
+          {rel.source_attribute || s, rel.destination_attribute || d}
+
+        _ ->
+          {rel.source_attribute || :id, rel.destination_attribute}
       end
 
     if is_nil(destination) do

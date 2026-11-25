@@ -111,21 +111,32 @@ defmodule AshR2RML.NQuads do
     if String.valid?(iri), do: {:ok, "<" <> escape_iri(iri) <> ">"}, else: refuse_term(t)
   end
 
-  defp term({:literal, lex}) when is_binary(lex), do: {:ok, quote_lit(lex)}
+  # Literal text must be valid UTF-8: escaping is byte-wise and would otherwise emit
+  # an invalid N-Quads document without any refusal.
+  defp term({:literal, lex} = t) when is_binary(lex), do: valid_literal(t, lex)
+  defp term({:literal, lex, _} = t) when is_binary(lex), do: valid_literal(t, lex)
+  defp term(t), do: refuse_term(t)
 
-  defp term({:literal, lex, {:datatype, @xsd_string}}) when is_binary(lex),
-    do: {:ok, quote_lit(lex)}
+  defp valid_literal(t, lex) do
+    if String.valid?(lex), do: literal(t), else: refuse_term(t)
+  end
 
-  defp term({:literal, lex, {:datatype, dt}} = t) when is_binary(lex) and is_binary(dt) do
+  defp literal({:literal, lex}), do: {:ok, quote_lit(lex)}
+  defp literal({:literal, lex, {:datatype, @xsd_string}}), do: {:ok, quote_lit(lex)}
+
+  defp literal({:literal, lex, {:datatype, dt}} = t) when is_binary(dt) do
     if String.valid?(dt),
       do: {:ok, quote_lit(lex) <> "^^<" <> escape_iri(dt) <> ">"},
       else: refuse_term(t)
   end
 
-  defp term({:literal, lex, {:lang, tag}}) when is_binary(lex) and is_binary(tag) and tag != "",
-    do: {:ok, quote_lit(lex) <> "@" <> String.downcase(tag)}
+  defp literal({:literal, lex, {:lang, tag}} = t) when is_binary(tag) and tag != "" do
+    if String.valid?(tag),
+      do: {:ok, quote_lit(lex) <> "@" <> String.downcase(tag)},
+      else: refuse_term(t)
+  end
 
-  defp term(t), do: refuse_term(t)
+  defp literal(t), do: refuse_term(t)
 
   defp refuse_term({:bnode, _} = t), do: refuse(:blank_node, t)
   defp refuse_term(t), do: refuse(:invalid_term, t)

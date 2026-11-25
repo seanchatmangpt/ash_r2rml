@@ -72,12 +72,22 @@ defmodule AshR2RML.QueryBuilder.Verification do
     graph
     |> RDF.Graph.subjects()
     |> Enum.filter(&root_subject?(mapping, &1))
-    |> Enum.reduce_while({:ok, []}, fn subject, {:ok, acc} ->
-      case key_values(graph, subject, keys) do
-        {:ok, values} -> {:cont, {:ok, [values | acc]}}
+    |> traverse(&key_values(graph, &1, keys))
+  end
+
+  # Maps `fun` over `items`, halting at the first `:error`; order-preserving.
+  defp traverse(items, fun) do
+    items
+    |> Enum.reduce_while({:ok, []}, fn item, {:ok, acc} ->
+      case fun.(item) do
+        {:ok, value} -> {:cont, {:ok, [value | acc]}}
         :error -> {:halt, :error}
       end
     end)
+    |> case do
+      {:ok, values} -> {:ok, Enum.reverse(values)}
+      :error -> :error
+    end
   end
 
   defp root_subject?(mapping, %RDF.IRI{} = subject) do
@@ -89,17 +99,7 @@ defmodule AshR2RML.QueryBuilder.Verification do
   defp key_values(graph, subject, keys) do
     description = graph[subject]
 
-    keys
-    |> Enum.reduce_while({:ok, []}, fn key, {:ok, acc} ->
-      case key_value(description, key) do
-        {:ok, value} -> {:cont, {:ok, [value | acc]}}
-        :error -> {:halt, :error}
-      end
-    end)
-    |> case do
-      {:ok, values} -> {:ok, Enum.reverse(values)}
-      :error -> :error
-    end
+    traverse(keys, &key_value(description, &1))
   end
 
   defp key_value(description, %{predicate: predicate, datatype: datatype}) do

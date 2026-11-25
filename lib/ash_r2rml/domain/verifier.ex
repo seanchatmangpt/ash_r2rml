@@ -172,18 +172,18 @@ defmodule AshR2RML.Domain.Verifier do
   defp iri_uses(%Mapping.Resource{} = m) do
     subject_graphs = graph_uses(m.subject_map && m.subject_map.graph_maps)
 
-    classes = Enum.map(m.class_iris, &{:class, &1})
+    classes = Enum.map(m.class_iris || [], &{:class, &1})
     graphs = graph_uses(m.graph_maps)
 
     poms =
-      Enum.flat_map(m.predicate_object_maps, fn pom ->
+      Enum.flat_map(m.predicate_object_maps || [], fn pom ->
         [{:predicate, pom.predicate_iri}] ++
           constant_iri(:object, pom.object_map) ++
           graph_uses(pom.graph_maps) ++ graph_uses(pom.object_map && pom.object_map.graph_maps)
       end)
 
     roms =
-      Enum.flat_map(m.reference_object_maps, fn rom ->
+      Enum.flat_map(m.reference_object_maps || [], fn rom ->
         inverse = if rom.inverse_predicate, do: [{:predicate, rom.inverse_predicate}], else: []
         [{:predicate, rom.predicate_iri}] ++ inverse ++ graph_uses(rom.graph_maps)
       end)
@@ -242,7 +242,8 @@ defmodule AshR2RML.Domain.Verifier do
       |> Enum.map(&to_string(&1.source || &1.name))
 
     object_cols =
-      for %{object_map: %{strategy: :column, value: v}} <- mapping.predicate_object_maps, do: to_string(v)
+      for %{object_map: %{strategy: :column, value: v}} <- mapping.predicate_object_maps || [],
+          do: to_string(v)
 
     subject_cols =
       case mapping.subject_map do

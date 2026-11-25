@@ -37,7 +37,7 @@ defmodule AshR2RML.Introspection do
       {nil, nil} ->
         infer_logical_table(resource, Keyword.get(opts, :dsl))
 
-      {nil, _query} ->
+      {nil, query} when is_binary(query) ->
         {:error,
          Refusal.new(
            :REFUSED_INVALID_LOGICAL_TABLE,
@@ -210,7 +210,7 @@ defmodule AshR2RML.Introspection do
 
     template_keys = Enum.map(template_fields, &Map.get(columns_by_attribute, &1))
 
-    Enum.all?(template_keys, &is_atom/1) and
+    Enum.all?(template_keys, &(not is_nil(&1))) and
       Enum.any?(identities(resource), &(MapSet.new(&1) == MapSet.new(template_keys)))
   end
 

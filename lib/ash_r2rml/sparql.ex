@@ -65,38 +65,7 @@ defmodule AshR2RML.SPARQL.Query do
     admit_parsed(parsed, source)
   end
 
-  def admit(source) when is_binary(source) do
-    try do
-      case Elixir.SPARQL.Query.new(source, default_prefixes: nil) do
-        %Elixir.SPARQL.Query{} = parsed ->
-          admit_parsed(parsed, source)
-
-        {:error, reason} ->
-          {:error,
-           Refusal.new(
-             :REFUSED_UNPROVEN_EQUIVALENCE,
-             :sparql_query,
-             "SPARQL.ex refused the query during language admission",
-             %{reason: inspect(reason)}
-           )}
-      end
-    rescue
-      exception in [
-        ArgumentError,
-        FunctionClauseError,
-        MatchError,
-        RuntimeError,
-        Protocol.UndefinedError
-      ] ->
-        {:error,
-         Refusal.new(
-           :REFUSED_UNPROVEN_EQUIVALENCE,
-           :sparql_query,
-           "SPARQL.ex raised during language admission",
-           %{reason: Exception.message(exception), exception: inspect(exception.__struct__)}
-         )}
-    end
-  end
+  def admit(source) when is_binary(source), do: parse_source(source)
 
   def admit(other) do
     {:error,
@@ -106,6 +75,31 @@ defmodule AshR2RML.SPARQL.Query do
        "expected SPARQL query text or SPARQL.Query",
        %{got: inspect(other)}
      )}
+  end
+
+  defp parse_source(source) do
+    case Elixir.SPARQL.Query.new(source, default_prefixes: nil) do
+      %Elixir.SPARQL.Query{} = parsed ->
+        admit_parsed(parsed, source)
+
+      {:error, reason} ->
+        {:error,
+         Refusal.new(
+           :REFUSED_UNPROVEN_EQUIVALENCE,
+           :sparql_query,
+           "SPARQL.ex refused the query during language admission",
+           %{reason: inspect(reason)}
+         )}
+    end
+  rescue
+    exception in [ArgumentError, FunctionClauseError, MatchError, RuntimeError, Protocol.UndefinedError] ->
+      {:error,
+       Refusal.new(
+         :REFUSED_UNPROVEN_EQUIVALENCE,
+         :sparql_query,
+         "SPARQL.ex raised during language admission",
+         %{reason: Exception.message(exception), exception: inspect(exception.__struct__)}
+       )}
   end
 
   # Admits an already parsed `SPARQL.Query` under the lexical `source` it came from.
@@ -201,19 +195,17 @@ defmodule AshR2RML.SPARQL.Result do
   end
 
   def normalize(data) do
-    try do
-      rows = data |> RDF.Data.statements() |> Enum.map(&normalize_statement/1)
-      {:ok, :rdf, rows}
-    rescue
-      exception in [ArgumentError, FunctionClauseError, Protocol.UndefinedError] ->
-        {:error,
-         Refusal.new(
-           :REFUSED_UNPROVEN_EQUIVALENCE,
-           :sparql_result,
-           "unsupported SPARQL result shape",
-           %{result: inspect(data), exception: inspect(exception.__struct__)}
-         )}
-    end
+    rows = data |> RDF.Data.statements() |> Enum.map(&normalize_statement/1)
+    {:ok, :rdf, rows}
+  rescue
+    exception in [ArgumentError, FunctionClauseError, Protocol.UndefinedError] ->
+      {:error,
+       Refusal.new(
+         :REFUSED_UNPROVEN_EQUIVALENCE,
+         :sparql_result,
+         "unsupported SPARQL result shape",
+         %{result: inspect(data), exception: inspect(exception.__struct__)}
+       )}
   end
 
   @doc "SHA-256 (lowercase hex) over the multiset-normalized rows; row order does not matter."

@@ -117,7 +117,7 @@ defmodule AshR2RML.Subject do
   defp blank_node_site(%MappingResource{} = m) do
     cond do
       subject_blank?(m.subject_map) ->
-        {"subject map", %{term_type: m.subject_map && m.subject_map.term_type}}
+        {"subject map", %{term_type: subject_term_type(m.subject_map)}}
 
       pom = Enum.find(m.predicate_object_maps, &(object_term(&1) == :blank_node)) ->
         {"object map", %{predicate_iri: pom.predicate_iri, term_type: :blank_node}}
@@ -132,6 +132,9 @@ defmodule AshR2RML.Subject do
 
   defp subject_blank?(%SubjectMap{term_type: :iri}), do: false
   defp subject_blank?(_), do: true
+
+  defp subject_term_type(%SubjectMap{term_type: t}), do: t
+  defp subject_term_type(_), do: nil
 
   defp object_term(%{object_map: %{term_type: t}}), do: t
   defp object_term(_), do: nil

@@ -10,7 +10,7 @@ defmodule AshR2RML.OBDA do
   Materialization and query execution are delegated to `AshR2RML.OBDA.InMemory` (real
   `Ash.read/2` under the caller's actor/tenant) and `AshR2RML.SPARQL.Local`; this module adds
   canonical ordering, bounds, a digest, stats and telemetry, and runs the work inside
-  `AshR2RML.OBDA.Worker.run/2`.
+  `AshR2RML.OBDA.Worker.call/2`.
 
   ## Sources
 
@@ -280,7 +280,7 @@ defmodule AshR2RML.OBDA do
   end
 
   defp run_dataset(readable, specs, sparql, opts, plan) do
-    {result, stats} = InMemory.query_with_stats(readable, sparql, materialize_opts(opts, specs, sparql, nil))
+    {result, stats} = InMemory.query_with_stats(readable, sparql, materialize_opts(opts, sparql, nil))
 
     with {:ok, observation} <- result,
          {:ok, ttl} <- AshR2RML.R2RML.render(%Bundle{resources: Enum.map(specs, &elem(&1, 1))}) do
@@ -350,7 +350,7 @@ defmodule AshR2RML.OBDA do
   end
 
   defp run_pipeline(readable, specs, sparql, opts, pushdown) do
-    with {:ok, graph} <- InMemory.materialize_many(readable, materialize_opts(opts, specs, sparql, pushdown)),
+    with {:ok, graph} <- InMemory.materialize_many(readable, materialize_opts(opts, sparql, pushdown)),
          {:ok, ttl} <- AshR2RML.R2RML.render(%Bundle{resources: Enum.map(specs, &elem(&1, 1))}),
          {:ok, observation} <- Local.query(graph, sparql, local_opts(opts)) do
       {:ok, graph, ttl, observation}
@@ -435,7 +435,7 @@ defmodule AshR2RML.OBDA do
 
   defp canonical_rows(%{rows: rows}, _sparql), do: Result.canonical_sort(rows)
 
-  defp materialize_opts(opts, specs, sparql, pushdown) do
+  defp materialize_opts(opts, sparql, pushdown) do
     base =
       opts
       |> Keyword.take(@forwarded)
@@ -447,9 +447,9 @@ defmodule AshR2RML.OBDA do
         nil -> base
       end
 
-    case {specs, constant_subject(sparql)} do
-      {_, iri} when is_binary(iri) -> base |> Keyword.put(:subject_iri, iri) |> Keyword.put(:pushdown_ok, true)
-      _ -> base
+    case constant_subject(sparql) do
+      iri when is_binary(iri) -> base |> Keyword.put(:subject_iri, iri) |> Keyword.put(:pushdown_ok, true)
+      nil -> base
     end
   end
 
@@ -464,7 +464,10 @@ defmodule AshR2RML.OBDA do
   def resolve_specs(domain) when is_atom(domain) and not is_nil(domain) do
     resolve_specs(AshR2RML.Resource.Info.domain_resources(domain))
   rescue
-    _ -> {:error, refusal(domain, "not an Ash domain or mapped resource", %{})}
+    # A non-domain atom fails introspection with one of these; anything else is a real bug and crashes
+    # into the `query/3` boundary instead of being relabelled.
+    _e in [UndefinedFunctionError, ArgumentError, FunctionClauseError, KeyError, MatchError] ->
+      {:error, refusal(domain, "not an Ash domain or mapped resource", %{})}
   end
 
   def resolve_specs([]), do: {:error, refusal(nil, "no mapped resources given", %{})}

@@ -110,7 +110,8 @@ defmodule AshR2RML.OBDA.InMemory do
   `previous_graph:` differential option of `materialize_many/2` flows through here
   unchanged (this function delegates to it).
   """
-  @spec materialize(module(), Resource.t(), keyword()) :: {:ok, RDF.Graph.t()} | {:error, failure()}
+  @spec materialize(module(), Resource.t(), keyword()) ::
+          {:ok, RDF.Graph.t()} | {:ok, %{graph: RDF.Graph.t(), delta: AshR2RML.Delta.t()}} | {:error, failure()}
   def materialize(ash_resource, %Resource{} = mapping_resource, opts \\ []) when is_atom(ash_resource) do
     materialize_many([{ash_resource, mapping_resource}], opts)
   end
@@ -210,8 +211,7 @@ defmodule AshR2RML.OBDA.InMemory do
         {ash_resource, Security.sanitize_in_memory_mapping(ash_resource, mapping_resource)}
       end)
 
-    mapping_index =
-      Map.new(admitted_specs, fn {ash_resource, mapping_resource} -> {ash_resource, mapping_resource} end)
+    mapping_index = Map.new(admitted_specs)
 
     {first_result, stats, pending} =
       Enum.reduce_while(
@@ -506,7 +506,7 @@ defmodule AshR2RML.OBDA.InMemory do
   # Object-template placeholders must be real attributes: a calculation (e.g. an AshCloak
   # decrypt-by-default calculation) would otherwise leak through an IRI without any sensitivity check.
   defp check_object_template_fields(template, ash_resource) do
-    fields = Regex.scan(~r/\{([^}]+)\}/, template, capture: :all_but_first) |> List.flatten()
+    fields = template_fields(template)
     attribute_names = ash_resource |> Ash.Resource.Info.attributes() |> MapSet.new(&Atom.to_string(&1.name))
 
     case Enum.reject(fields, &MapSet.member?(attribute_names, &1)) do
@@ -524,8 +524,12 @@ defmodule AshR2RML.OBDA.InMemory do
     end
   end
 
+  defp template_fields(template) do
+    ~r/\{([^}]+)\}/ |> Regex.scan(template, capture: :all_but_first) |> List.flatten()
+  end
+
   defp template_attrs_non_nil?(ash_resource, template) do
-    fields = Regex.scan(~r/\{([^}]+)\}/, template, capture: :all_but_first) |> List.flatten()
+    fields = template_fields(template)
 
     fields != [] and
       Enum.all?(fields, fn field ->
@@ -536,10 +540,7 @@ defmodule AshR2RML.OBDA.InMemory do
       end)
   end
 
-  # Trivial pushdown: a constant `:subject_iri` inverted through the template subject map
-  # into key attribute values. Applied per spec, and never to a resource that another spec (or
-  # itself) references as a join parent -- a filter must not starve a join partner. A
-  # non-invertible IRI (e.g. another resource's template) yields no pushdown for that spec.
+  # Mapping resources referenced as a join parent by any spec (including itself).
   defp referenced_parents(specs) do
     specs
     |> Enum.flat_map(fn {_ash, %Resource{reference_object_maps: refs}} ->
@@ -549,6 +550,10 @@ defmodule AshR2RML.OBDA.InMemory do
     |> Enum.uniq()
   end
 
+  # Trivial pushdown: a constant `:subject_iri` inverted through the template subject map
+  # into key attribute values. Applied per spec, and never to a resource that another spec (or
+  # itself) references as a join parent -- a filter must not starve a join partner. A
+  # non-invertible IRI (e.g. another resource's template) yields no pushdown for that spec.
   defp pushdown_keys(%Resource{subject_map: %SubjectMap{strategy: :template}} = mapping, read_opts) do
     with true <- read_opts[:pushdown_ok] == true,
          false <- mapping.ash_resource in Keyword.get(read_opts, :pushdown_parents, []),
@@ -731,14 +736,21 @@ defmodule AshR2RML.OBDA.InMemory do
     Refusal.new(:REFUSED_UNSUPPORTED_SPARQL_FEATURE, ash_resource, message, evidence)
   end
 
-  # Returns `{:ok, graph}` | `{:error, refusal}` -- a `:join_table` reference object map
-  # (see `add_reference_triples/4`) surfaces as a real refusal now, so every caller between
-  # here and `materialize_many/2` must be able to propagate it rather than only ever
-  # returning a bare graph.
+  # Returns `{:ok, graph, emitted, rows_done}` | `{:error, refusal, emitted, rows_done}`; the
+  # counters let the caller keep running statistics even when a row refuses.
   #
   # Each row is built into its own small graph so its triple count is cheap; the running
   # `emitted` total halts accumulation the moment it exceeds `max_triples`.
-  defp add_rows(rows, graph_acc, emitted0, max_triples, ash_resource, mapping_resource, mapping_index, allow_sensitive?) do
+  defp add_rows(
+         rows,
+         graph_acc,
+         emitted0,
+         max_triples,
+         ash_resource,
+         mapping_resource,
+         _mapping_index,
+         allow_sensitive?
+       ) do
     # Sensitivity/schema checks depend only on the spec, so they run once per spec (and only
     # when there is at least one row, as before), not once per row.
     case check_spec_sensitive(rows, mapping_resource, ash_resource, allow_sensitive?) do
@@ -750,7 +762,6 @@ defmodule AshR2RML.OBDA.InMemory do
           max_triples,
           ash_resource,
           mapping_resource,
-          mapping_index,
           allow_sensitive?
         )
 
@@ -775,12 +786,11 @@ defmodule AshR2RML.OBDA.InMemory do
          max_triples,
          ash_resource,
          mapping_resource,
-         mapping_index,
          allow_sensitive?
        ) do
     rows
     |> Enum.reduce_while({:ok, graph_acc, emitted0, 0}, fn row, {:ok, acc, emitted, n} ->
-      case add_row(RDF.Dataset.new(), row, ash_resource, mapping_resource, mapping_index, allow_sensitive?) do
+      case add_row(RDF.Dataset.new(), row, ash_resource, mapping_resource, allow_sensitive?) do
         {:ok, row_graph} ->
           emitted = emitted + RDF.Dataset.statement_count(row_graph)
 
@@ -854,7 +864,7 @@ defmodule AshR2RML.OBDA.InMemory do
     end)
   end
 
-  defp add_row(graph, row, ash_resource, %Resource{} = mapping_resource, mapping_index, allow_sensitive?) do
+  defp add_row(graph, row, ash_resource, %Resource{} = mapping_resource, allow_sensitive?) do
     case subject_iri(mapping_resource.subject_map, row) do
       nil ->
         {:ok, graph}
@@ -864,8 +874,6 @@ defmodule AshR2RML.OBDA.InMemory do
         graph = add_class_triples(graph, subject, mapping_resource.class_iris, class_graphs)
 
         # Reference triples are added afterwards by `add_reference_pass/5`.
-        _ = mapping_index
-
         add_predicate_triples(graph, subject, row, mapping_resource, ash_resource, allow_sensitive?)
     end
   end
@@ -1294,10 +1302,7 @@ defmodule AshR2RML.OBDA.InMemory do
   defp object_term(_value, %ObjectMap{term_type: :blank_node}), do: :unsupported
 
   defp object_term(value, object_map) do
-    case rdf_literal(value, object_map) do
-      {:ok, literal} -> {:ok, literal}
-      :error -> :error
-    end
+    rdf_literal(value, object_map)
   end
 
   defp rdf_literal(value, object_map) do
