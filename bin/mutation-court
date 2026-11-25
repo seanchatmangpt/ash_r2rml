@@ -37,7 +37,7 @@ restore_current() {
     if [ "$CURRENT_KIND" = "created" ]; then
       rm -f -- "$CURRENT_FILE"
     else
-      git checkout -- "$CURRENT_FILE"
+      git checkout -- $CURRENT_FILE
     fi
     CURRENT_FILE=""
     CURRENT_KIND=""
@@ -56,7 +56,8 @@ if ! porcelain_empty; then
   exit 2
 fi
 
-# mutate <id> <description> <file> <test-file> <perl-substitution-or-:create:>
+# mutate <id> <description> <file[ file...]> <test-file> <perl-substitution-or-:create:>
+# (several space-separated files get the same substitution; it must change at least one)
 mutate() {
   local id="$1" description="$2" file="$3" test_file="$4" edit="$5"
 
@@ -72,10 +73,10 @@ end
 EOF
   else
     CURRENT_KIND="edited"
-    perl -pi -e "$edit" "$file"
+    perl -pi -e "$edit" $file
   fi
 
-  if [ "$CURRENT_KIND" = "edited" ] && git diff --quiet -- "$file"; then
+  if [ "$CURRENT_KIND" = "edited" ] && git diff --quiet -- $file; then
     echo "MUTATION_NOT_APPLIED: $id left $file unchanged" >&2
     exit 3
   fi
@@ -132,7 +133,7 @@ mutate M2b "tenant dropped from OBDA @forwarded read options" \
 # both are mutated together). A field-policy-gated attribute must never be pushed
 # down as a data-layer filter (row count would be an oracle on the hidden value).
 mutate M6 "field-policy pushdown guard replaced by a tautology" \
-  "$QUERY_BUILDER" test/obda_field_policy_filter_oracle_test.exs \
+  "$QUERY_BUILDER lib/ash_r2rml/query_builder/lowering.ex" test/obda_field_policy_filter_oracle_test.exs \
   's/false <- AshR2RML\.Security\.field_policy_protected\?\(resource, attribute\) do/true <- is_atom(attribute) do/;s/if AshR2RML\.Security\.field_policy_protected\?\(resource, name\) do/if name == :__never_a_field__ do/'
 
 # M7: preflight must forward the caller's :context to Ash.can?/3.
