@@ -27,7 +27,9 @@ defmodule AshR2RML.FormatterModuleTest do
   end
 
   test "format/2 tolerates caller-supplied spark extensions option" do
-    out = Formatter.format("y = 2\n", spark: [extensions: []])
-    assert is_binary(out)
+    src = "y   =   2\n"
+    out = Formatter.format(src, spark: [extensions: []])
+    assert out == "y = 2\n"
+    assert out == Formatter.format(src, [])
   end
 end

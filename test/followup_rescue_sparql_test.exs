@@ -11,7 +11,6 @@ defmodule AshR2RML.FollowupRescueSparqlTest do
     assert {:error, %Refusal{code: :REFUSED_UNPROVEN_EQUIVALENCE} = refusal} =
              AshR2RML.SPARQL.Result.normalize(:not_rdf_data)
 
-    assert is_binary(inspect(refusal))
     assert inspect(refusal) =~ "exception"
   end
 

@@ -54,7 +54,7 @@ defmodule AshR2RML.Mapping.Validate.Shared do
   @spec available_columns(Resource.t()) :: MapSet.t(String.t())
   def available_columns(resource) do
     metadata_columns = resource.metadata |> Map.get(:attribute_columns, %{}) |> Map.values()
-    identity_cols = resource.identities |> List.flatten() |> Enum.map(&to_string/1)
+    identity_cols = resource |> Mapping.identity_column_sets() |> List.flatten()
 
     property_columns =
       Enum.flat_map(resource.predicate_object_maps, fn mapping ->

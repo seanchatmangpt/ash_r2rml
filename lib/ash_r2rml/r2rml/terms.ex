@@ -60,8 +60,24 @@ defmodule AshR2RML.R2RML.Terms do
         )
       end
 
-    iri_refusals ++ conflict_refusals ++ language_refusals
+    non_literal_refusals =
+      for property <- resource.predicate_object_maps, typed_non_literal?(property) do
+        Refusal.new(
+          :REFUSED_INVALID_TERM_MAP,
+          {resource.ash_resource, property.attribute},
+          "datatype and language are only valid on literal object maps (R2RML 7.3)",
+          %{term_type: property.object_map.term_type}
+        )
+      end
+
+    iri_refusals ++ conflict_refusals ++ language_refusals ++ non_literal_refusals
   end
+
+  defp typed_non_literal?(%{object_map: %ObjectMap{term_type: term_type, language: language, datatype: datatype}})
+       when term_type != :literal,
+       do: not is_nil(language) or not is_nil(datatype)
+
+  defp typed_non_literal?(_), do: false
 
   # The renderer interpolates constant-literal languages unquoted (`"x"@tag`),
   # so a tag outside the Turtle LANGTAG shape would corrupt the document.

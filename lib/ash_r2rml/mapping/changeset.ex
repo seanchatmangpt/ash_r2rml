@@ -63,7 +63,15 @@ defmodule AshR2RML.Mapping.Changeset do
   @spec new(keyword() | map()) :: {:ok, t()} | {:error, Refusal.t()}
   def new(opts \\ [])
 
-  def new(opts) when is_list(opts) or is_map(opts) do
+  def new(opts) when is_map(opts), do: build(opts)
+
+  def new(opts) when is_list(opts) do
+    if Keyword.keyword?(opts), do: build(opts), else: {:error, invalid_input(:options, opts)}
+  end
+
+  def new(other), do: {:error, invalid_input(:options, other)}
+
+  defp build(opts) do
     with {:ok, add} <- fetch_graph(opts, :add),
          {:ok, update} <- fetch_graph(opts, :update),
          {:ok, replace} <- fetch_graph(opts, :replace),
@@ -71,8 +79,6 @@ defmodule AshR2RML.Mapping.Changeset do
       validate(%__MODULE__{add: add, update: update, replace: replace, remove: remove})
     end
   end
-
-  def new(other), do: {:error, invalid_input(:options, other)}
 
   # A non-`RDF.Graph` value is refused rather than raising a CaseClauseError.
   defp fetch_graph(opts, key) do

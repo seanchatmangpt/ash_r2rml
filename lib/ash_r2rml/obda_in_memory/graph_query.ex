@@ -21,7 +21,7 @@ defmodule AshR2RML.OBDA.InMemory.GraphQuery do
   """
 
   # Regexes live in functions, not module attributes (OTP 28 compiled-regex rule).
-  defp grapher, do: ~r/(?<![\w?$:.\-])GRAPH\s+(<i*>|[?$]\w+|[A-Za-z_][\w\-]*:[\w.\-]*)\s*\{/i
+  defp grapher, do: ~r/(?<![\w?$:.\-])GRAPH\s+(<i*>|[?$]\w+|(?:[A-Za-z_][\w\-]*)?:[\w.\-]*)\s*\{/i
 
   defp modifiers do
     ~r/(?<![\w?$])(LIMIT|OFFSET|GROUP\s+BY|DISTINCT|REDUCED|ORDER\s+BY|HAVING|COUNT|SUM|AVG|MIN|MAX|SAMPLE|GROUP_CONCAT)(?![\w])/i

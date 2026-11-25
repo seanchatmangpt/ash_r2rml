@@ -34,9 +34,42 @@ defmodule AshR2RML.OBDA.InMemory.IriTemplate do
   @spec substitute(String.t(), map()) :: String.t()
   def substitute(template, row) do
     Regex.replace(@placeholder, template, fn _whole, field ->
-      row |> Map.get(String.to_existing_atom(field)) |> to_string() |> encode()
+      value = Map.get(row, String.to_existing_atom(field))
+
+      case lexical(value) do
+        {:ok, lex} -> encode(lex)
+        :error -> raise ArgumentError, "no lexical form for template field #{field}"
+      end
     end)
   end
+
+  @doc """
+  The single lexical serializer shared by subject templates, join keys and literals.
+
+  ## Examples
+
+      iex> AshR2RML.OBDA.InMemory.IriTemplate.lexical(~U[2026-01-02 03:04:05Z])
+      {:ok, "2026-01-02T03:04:05Z"}
+      iex> AshR2RML.OBDA.InMemory.IriTemplate.lexical(Decimal.new("1E+3"))
+      {:ok, "1000"}
+  """
+  @spec lexical(term()) :: {:ok, String.t()} | :error
+  def lexical(value) when is_binary(value), do: {:ok, value}
+  def lexical(%Decimal{coef: coef}) when coef in [:NaN, :inf], do: :error
+  def lexical(%Decimal{} = value), do: {:ok, Decimal.to_string(value, :normal)}
+  def lexical(%Date{} = value), do: {:ok, Date.to_iso8601(value)}
+  def lexical(%DateTime{} = value), do: {:ok, DateTime.to_iso8601(value)}
+  def lexical(%NaiveDateTime{} = value), do: {:ok, NaiveDateTime.to_iso8601(value)}
+  def lexical(%Time{} = value), do: {:ok, Time.to_iso8601(value)}
+  def lexical(value) when is_number(value) or is_atom(value), do: {:ok, to_string(value)}
+
+  def lexical(value) when is_struct(value) do
+    if String.Chars.impl_for(value), do: {:ok, to_string(value)}, else: :error
+  rescue
+    _error in [ArgumentError, Protocol.UndefinedError] -> :error
+  end
+
+  def lexical(_value), do: :error
 
   @doc "Percent-encodes everything except RFC 3986 unreserved characters."
   @spec encode(String.t()) :: String.t()

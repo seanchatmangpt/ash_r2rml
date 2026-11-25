@@ -19,7 +19,7 @@ defmodule AshR2RML.OBDA.Worker do
   The worker inherits the caller's `:"$callers"` chain (caller prepended), so ownership-based
   lookups (e.g. SQL sandbox allowances) resolve inside the worker.
 
-  Options: `:timeout_ms` (default #{5000}), `:max_heap_words` (default 50_000_000).
+  Options: `:timeout_ms` (default 5000), `:max_heap_words` (default 50_000_000).
 
   ## Message protocol
 

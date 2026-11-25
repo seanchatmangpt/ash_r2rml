@@ -323,12 +323,30 @@ defmodule AshR2RML.Mapping do
   def stable_subject_identity?(%Resource{subject_map: %SubjectMap{strategy: :constant, term_type: :iri, value: value}}),
     do: Validate.absolute_iri?(value)
 
-  def stable_subject_identity?(%Resource{subject_map: %SubjectMap{term_type: :blank_node}}), do: true
+  def stable_subject_identity?(%Resource{subject_map: %SubjectMap{term_type: :blank_node} = subject} = resource) do
+    case blank_node_fields(subject) do
+      # Field-less blank nodes keep their pinned behavior; only a constant blank node
+      # collapses every row to one node and is never a stable identity.
+      [] -> subject.strategy != :constant
+      columns -> identity_backed?(resource, columns)
+    end
+  end
 
   def stable_subject_identity?(%Resource{} = resource) do
-    columns = subject_identity_columns(resource)
-    identity_columns = identity_column_sets(resource)
-    columns != [] and Enum.any?(identity_columns, &(MapSet.new(&1) == MapSet.new(columns)))
+    identity_backed?(resource, subject_identity_columns(resource))
+  end
+
+  defp blank_node_fields(%SubjectMap{strategy: strategy, value: value}) when strategy in [:template, :blank_node],
+    do: template_fields(value)
+
+  defp blank_node_fields(%SubjectMap{strategy: :column, value: value}), do: [value]
+  defp blank_node_fields(_), do: []
+
+  defp identity_backed?(_resource, []), do: false
+
+  defp identity_backed?(resource, columns) do
+    wanted = MapSet.new(columns)
+    Enum.any?(identity_column_sets(resource), &(MapSet.new(&1) == wanted))
   end
 
   defp normalize_predicate_object_map(%PredicateObjectMap{} = mapping) do
@@ -355,7 +373,12 @@ defmodule AshR2RML.Mapping do
     |> Enum.sort_by(&{&1.strategy, &1.value})
   end
 
-  defp identity_column_sets(resource) do
+  @doc """
+  Declared identities as column-name lists, resolving attributes through
+  `metadata.attribute_columns` (default: the attribute name as a string).
+  """
+  @spec identity_column_sets(Resource.t()) :: [[String.t()]]
+  def identity_column_sets(resource) do
     columns = Map.get(resource.metadata, :attribute_columns, %{})
 
     Enum.map(resource.identities, fn identity ->

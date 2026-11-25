@@ -91,7 +91,8 @@ defmodule AshR2RML.Compiler do
           {:ok, AshR2RML.Mapping.Bundle.t()} | {:error, Refusal.t()}
   def compile(resources, opts \\ [])
 
-  def compile(resources, _opts) when is_atom(resources) or is_list(resources) do
+  def compile(resources, _opts)
+      when (is_atom(resources) and not is_nil(resources)) or is_list(resources) do
     compile_resources(resources)
   end
 

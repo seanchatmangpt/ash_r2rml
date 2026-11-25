@@ -256,7 +256,8 @@ defmodule AshR2RML.ApiSurfaceCoverageTest do
       }
 
       bundle = %Bundle{resources: [hand_resource(reference_object_maps: [ref])]}
-      assert {:error, [%Refusal{code: :REFUSED_RELATIONSHIP_TARGET_UNMAPPED}]} = Mapping.validate(bundle)
+      assert {:error, refusals} = Mapping.validate(bundle)
+      assert :REFUSED_RELATIONSHIP_TARGET_UNMAPPED in Enum.map(refusals, & &1.code)
     end
 
     test "subject_identity_columns/1 per strategy" do

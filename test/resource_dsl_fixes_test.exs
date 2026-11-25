@@ -116,7 +116,7 @@ defmodule AshR2RML.ResourceDslFixesTest do
                )
 
       assert %ObjectMap{datatype: datatype} = hd(Info.mapping!(mod).predicate_object_maps).object_map
-      assert is_binary(datatype) or not is_nil(datatype)
+      assert datatype.rdf_datatype == "http://www.w3.org/2001/XMLSchema#string"
     end
 
     test "constant + template" do

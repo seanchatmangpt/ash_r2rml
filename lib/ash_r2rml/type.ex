@@ -93,11 +93,15 @@ defmodule AshR2RML.Type do
     end
   end
 
+  def contract(_other), do: :error
+
   @doc "Encodes `value` with `module`; `{:error, :not_semantic_type}` if it has no contract."
   @spec encode(module(), term()) :: rdf_term() | {:error, term()}
   def encode(module, value) when is_atom(module) do
     if semantic_type?(module), do: module.to_rdf(value), else: {:error, :not_semantic_type}
   end
+
+  def encode(_other, _value), do: {:error, :not_semantic_type}
 
   @doc "Decodes `term` with `module`; typed error if there is no contract or no decoder."
   @spec decode(module(), rdf_term()) :: {:ok, term()} | {:error, term()}
@@ -113,6 +117,8 @@ defmodule AshR2RML.Type do
         {:error, :rdf_decoder_not_implemented}
     end
   end
+
+  def decode(_other, _term), do: {:error, :not_semantic_type}
 
   defp exported(module, callback) do
     if function_exported?(module, callback, 0), do: apply(module, callback, []), else: nil

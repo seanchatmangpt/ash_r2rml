@@ -71,6 +71,17 @@ Items marked UNVERIFIED have source present but no test run by the docs lane.
 * `.dialyzer_ignore.exs` uses file-wide ignores by file and warning class (Unnecessary Skips: 4).
 * `max_heap_size` does not bound reference-counted (refc) binaries.
 * A `GRAPH ?g` merged result is bounded by `max_rows` only after per-graph execution completes.
+* `sparql_client` `follow_redirects: n` with n > 0 does not re-vet redirect hops through
+  `Host.vet_host`; only the initial host is vetted. The default (0) holds.
+* DNS-rebind window between `Host.vet_host` and the `SPARQL.Client` connect (see above); the
+  connection is not pinned to the vetted IP.
+* The public-namespace gate scans only `.ex`/`.exs` files under `lib/` and `test/`, and exempts every
+  foreign-scheme and endpoint-host pattern inside the four endpoint test files
+  (`@endpoint_test_files`).
+* Cross-layer courts (`test/cross_layer_equivalence_test.exs`, `test/cross_layer_equivalence_all_test.exs`)
+  compare ETS, a manual-read resource, CSV and SQLite; Postgres is excluded by default
+  (`exclude_postgres_by_default!`) and runs only under `:postgres`. The all-layer court covers one
+  50-row Person query. Mnesia, embedded and MySQL are not in these courts.
 
 ### Frozen handoff contract (downstream `ash_graphlaw` / `ash_affidavit`):
 * Deterministic R2RML: the same resources render byte-identical Turtle.

@@ -230,6 +230,19 @@ mutate M13d "federated Result.bound max_rows guard disabled" \
   "$PROTOCOL" test/sparql_result_parity_test.exs \
   's/Result\.bound\(endpoint, max_rows\)/Result.bound(endpoint, max_rows * 1_000_000)/'
 
+# M14: fail-closed refusals (endpoint userinfo/fragment/query, unresolved DNS, triple budget).
+mutate M14a "endpoint userinfo/fragment/query refusal clause never matches" \
+  "$PROTOCOL" test/sparql_protocol_hardening_test.exs \
+  's/\(userinfo != nil or fragment != nil or query != nil\) ->/userinfo == :mutant ->/'
+
+mutate M14b "SSRF vet_addrs admits an unresolved (empty) address list" \
+  "lib/ash_r2rml/sparql/protocol/host.ex" test/sparql_private_network_test.exs \
+  's/defp vet_addrs\(\[\]\), do: :unresolved/defp vet_addrs([]), do: :ok/'
+
+mutate M14c "triple-budget clamp refusal disabled" \
+  "$IN_MEMORY" test/followup_triple_clamp_test.exs \
+  's/clamp\? and length\(rows\) >= triple_cap ->/clamp? and length(rows) >= triple_cap * 1_000_000 ->/'
+
 if ! git diff --exit-code >/dev/null; then
   echo "FINAL_DIFF_NOT_EMPTY: tracked files differ after the court" >&2
   git diff --stat >&2
@@ -242,5 +255,5 @@ if ! porcelain_empty; then
   exit 4
 fi
 
-echo "MUTATION_COURT_PASS: M1a-M13d (M1abc M2ab M3ab M4ab M5 M6 M7 M8 M9ab M10ab M11ab M12abc M13abcd) killed, tree clean"
+echo "MUTATION_COURT_PASS: M1a-M14c (M1abc M2ab M3ab M4ab M5 M6 M7 M8 M9ab M10ab M11ab M12abc M13abcd M14abc) killed, tree clean"
 exit 0

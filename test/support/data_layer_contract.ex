@@ -230,6 +230,36 @@ defmodule AshR2RML.DataLayerContract do
     Enum.map(observation.rows, fn row -> Map.new(row, fn {k, v} -> {k, norm(v)} end) end)
   end
 
+  @doc """
+  A term with its RDF identity intact. Literals become `{:literal, datatype_iri, lexical, language}`
+  (so `"7"^^xsd:integer` and `"7"^^xsd:string` differ, as do timestamps of different precision),
+  IRIs `{:iri, string}`, blank nodes `{:bnode, label}`. Unlike `visible/1` (which flattens every
+  term to a string and is only used where the lexical form is the claim), this is the comparison
+  to use when the datatype is the claim.
+  """
+  @spec typed_term(term()) :: tuple()
+  def typed_term(%RDF.Literal{} = literal) do
+    {:literal, to_string(RDF.Literal.datatype_id(literal)), RDF.Literal.lexical(literal), RDF.Literal.language(literal)}
+  end
+
+  def typed_term(%RDF.IRI{} = iri), do: {:iri, to_string(iri)}
+  def typed_term(%RDF.BlankNode{} = bnode), do: {:bnode, to_string(bnode)}
+
+  @doc """
+  Materializes `kind` on layer `mod` through `AshR2RML.OBDA.InMemory` and returns the sorted
+  `{subject, predicate, object}` triples with every term in `typed_term/1` form.
+  """
+  @spec typed_triples(module(), :org | :person, keyword()) :: [{tuple(), tuple(), tuple()}]
+  def typed_triples(mod, kind, opts \\ []) do
+    {:ok, graph} =
+      InMemory.materialize(resource(mod, kind), mapping(mod, kind), [domain: domain(mod)] ++ opts)
+
+    graph
+    |> RDF.Graph.triples()
+    |> Enum.map(fn {s, p, o} -> {typed_term(s), typed_term(p), typed_term(o)} end)
+    |> Enum.sort()
+  end
+
   defp norm(value) when is_binary(value), do: value
   defp norm(value), do: if(String.Chars.impl_for(value), do: to_string(value), else: inspect(value))
 

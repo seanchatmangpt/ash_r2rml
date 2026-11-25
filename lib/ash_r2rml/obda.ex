@@ -311,8 +311,8 @@ defmodule AshR2RML.OBDA do
   def check_order_projected(sparql) do
     with {:ok, %{order: [_ | _] = order}} <- Modifiers.parse(sparql),
          [_, select] <- Regex.run(~r/\bSELECT\b\s+(?:DISTINCT\s+|REDUCED\s+)?(.*?)\s*(?:\bWHERE\b|\{)/is, sparql),
-         false <- String.contains?(select, "*") do
-      projected = ~r/[?$](\w+)/ |> Regex.scan(select, capture: :all_but_first) |> List.flatten()
+         false <- Regex.match?(~r/\A\s*\*/, select) do
+      projected = projected_variables(select)
       missing = for {var, _dir} <- order, var not in projected, do: var
 
       case missing do
@@ -329,6 +329,22 @@ defmodule AshR2RML.OBDA do
       end
     else
       _ -> :ok
+    end
+  end
+
+  # Projected variables: bare `?v` entries and `(expr AS ?alias)` aliases. Variables that only
+  # occur inside a parenthesized expression are not projected.
+  @spec projected_variables(String.t()) :: [String.t()]
+  defp projected_variables(select) do
+    aliases = ~r/\bAS\s+[?$](\w+)\s*\)/i |> Regex.scan(select, capture: :all_but_first) |> List.flatten()
+    bare = select |> strip_groups() |> then(&Regex.scan(~r/[?$](\w+)/, &1, capture: :all_but_first))
+    Enum.uniq(List.flatten(bare) ++ aliases)
+  end
+
+  defp strip_groups(text) do
+    case Regex.replace(~r/\([^()]*\)/, text, " ") do
+      ^text -> text
+      stripped -> strip_groups(stripped)
     end
   end
 

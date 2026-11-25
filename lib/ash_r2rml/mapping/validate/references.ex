@@ -82,7 +82,33 @@ defmodule AshR2RML.Mapping.Validate.References do
 
     []
     |> maybe_add(requires_join(subject, reference))
-    |> Kernel.++(Enum.flat_map(reference.joins, &join(subject, &1)))
+    |> Kernel.++(Enum.flat_map(reference.joins, &join(resource, subject, reference, &1)))
+  end
+
+  # Column existence is checked only when the mapping declares its columns
+  # (`metadata.attribute_columns`); the parent side is checked only for
+  # self-referential relationships, since this rule group sees one resource.
+  defp dangling_column(resource, subject, reference, %JoinCondition{child: child, parent: parent}) do
+    if declared_columns?(resource) do
+      available = available_columns(resource)
+
+      [{:child, child, true}, {:parent, parent, reference.parent_resource == resource.ash_resource}]
+      |> Enum.filter(fn {_side, column, checked?} -> checked? and not MapSet.member?(available, column) end)
+      |> Enum.map(fn {side, column, _checked?} ->
+        Refusal.new(
+          :REFUSED_INVALID_JOIN_CONDITION,
+          subject,
+          "join #{side} column is not a column of the mapped resource",
+          %{side: side, column: column, available: available |> MapSet.to_list() |> Enum.sort()}
+        )
+      end)
+    else
+      []
+    end
+  end
+
+  defp declared_columns?(resource) do
+    match?(%{attribute_columns: columns} when is_map(columns) and map_size(columns) > 0, resource.metadata)
   end
 
   defp requires_join(subject, reference) do
@@ -141,9 +167,9 @@ defmodule AshR2RML.Mapping.Validate.References do
     end
   end
 
-  defp join(subject, %JoinCondition{child: child, parent: parent}) do
+  defp join(resource, subject, reference, %JoinCondition{child: child, parent: parent} = join) do
     if non_empty_string?(child) and non_empty_string?(parent) do
-      []
+      dangling_column(resource, subject, reference, join)
     else
       [
         Refusal.new(
@@ -156,7 +182,7 @@ defmodule AshR2RML.Mapping.Validate.References do
     end
   end
 
-  defp join(subject, other) do
+  defp join(_resource, subject, _reference, other) do
     [
       Refusal.new(:REFUSED_INVALID_JOIN_CONDITION, subject, "join must be a JoinCondition", %{
         join: inspect(other)

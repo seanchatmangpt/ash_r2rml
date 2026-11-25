@@ -1321,22 +1321,7 @@ defmodule AshR2RML.OBDA.InMemory do
 
   defp build_literal(lex, _object_map), do: RDF.literal(lex)
 
-  defp lexical(value) when is_binary(value), do: {:ok, value}
-  defp lexical(%Decimal{coef: coef}) when coef in [:NaN, :inf], do: :error
-  defp lexical(%Decimal{} = value), do: {:ok, Decimal.to_string(value, :normal)}
-  defp lexical(%Date{} = value), do: {:ok, Date.to_iso8601(value)}
-  defp lexical(%DateTime{} = value), do: {:ok, DateTime.to_iso8601(value)}
-  defp lexical(%NaiveDateTime{} = value), do: {:ok, NaiveDateTime.to_iso8601(value)}
-  defp lexical(%Time{} = value), do: {:ok, Time.to_iso8601(value)}
-  defp lexical(value) when is_number(value) or is_atom(value), do: {:ok, to_string(value)}
-
-  defp lexical(value) when is_struct(value) do
-    if String.Chars.impl_for(value), do: {:ok, to_string(value)}, else: :error
-  rescue
-    _error in [ArgumentError, Protocol.UndefinedError] -> :error
-  end
-
-  defp lexical(_value), do: :error
+  defp lexical(value), do: IriTemplate.lexical(value)
 
   defp value_kind(%Decimal{}), do: "non-finite decimal"
   defp value_kind(value) when is_struct(value), do: inspect(value.__struct__)

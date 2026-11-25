@@ -440,6 +440,9 @@ defmodule AshR2RML.R2RML do
 
   defp render_object_datatype(%ObjectMap{strategy: :constant}), do: []
 
+  # W3C R2RML 7.3: rr:datatype and rr:language are valid only on literal term maps.
+  defp render_object_datatype(%ObjectMap{term_type: term_type}) when term_type != :literal, do: []
+
   defp render_object_datatype(%ObjectMap{language: language}) when is_binary(language),
     do: ["rr:language #{literal(language)}"]
 

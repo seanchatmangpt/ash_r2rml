@@ -73,6 +73,32 @@ if Code.ensure_loaded?(AshPostgres.DataLayer) do
   end
 end
 
+require AshR2RML.CrossLayerEquivalenceAll.TypedFixture, as: TypedFixture
+
+TypedFixture.define AshR2RML.CrossLayerEquivalenceAll.TypedEts, Ash.DataLayer.Ets do
+  ets do
+    private? false
+  end
+end
+
+if Code.ensure_loaded?(AshSqlite.DataLayer) do
+  TypedFixture.define AshR2RML.CrossLayerEquivalenceAll.TypedSqlite, AshSqlite.DataLayer do
+    sqlite do
+      table "xl_typed_people"
+      repo(AshR2RML.CrossLayerEquivalenceAll.SqliteRepo)
+    end
+  end
+end
+
+if Code.ensure_loaded?(AshPostgres.DataLayer) do
+  TypedFixture.define AshR2RML.CrossLayerEquivalenceAll.TypedPostgres, AshPostgres.DataLayer do
+    postgres do
+      table "xl_typed_people"
+      repo(AshR2RML.CrossLayerEquivalenceAll.PostgresRepo)
+    end
+  end
+end
+
 defmodule AshR2RML.CrossLayerEquivalenceAllTest do
   @moduledoc """
   The same 50 Person rows, published through ETS, a manual-read Simple resource, CSV, SQLite and
@@ -133,6 +159,171 @@ defmodule AshR2RML.CrossLayerEquivalenceAllTest do
     assert byte_size(result.digest) == 64
     assert result.stats.rows_read == reference.stats.rows_read
     assert result.stats.triples_emitted == reference.stats.triples_emitted
+  end
+
+  # -- typed court: terms compared with datatype IRI + lexical form + language intact ----------------
+
+  alias AshR2RML.DataLayerContract, as: C
+
+  @xsd_string "http://www.w3.org/2001/XMLSchema#string"
+  @xsd_integer "http://www.w3.org/2001/XMLSchema#integer"
+  @xsd_boolean "http://www.w3.org/2001/XMLSchema#boolean"
+  @xsd_decimal "http://www.w3.org/2001/XMLSchema#decimal"
+  @xsd_date "http://www.w3.org/2001/XMLSchema#date"
+  @xsd_datetime "http://www.w3.org/2001/XMLSchema#dateTime"
+
+  @typed_base ~U[2026-01-01 00:00:00.000000Z]
+
+  defp typed_attrs(i) do
+    %{
+      pid: "p#{i}",
+      name: "Person #{i}",
+      age: i,
+      active: rem(i, 2) == 0,
+      price: Decimal.new("#{i}.25"),
+      born_on: Date.add(~D[1990-01-01], i),
+      seen_at: DateTime.add(@typed_base, i * 1_000_123, :microsecond),
+      ref: "00000000-0000-4000-8000-" <> String.pad_leading("#{i}", 12, "0")
+    }
+  end
+
+  defp typed_seed!(layer) do
+    resource = Module.concat(layer, Person)
+    domain = Module.concat(layer, Domain)
+
+    for i <- 1..@rows do
+      resource
+      |> Ash.Changeset.for_create(:create, typed_attrs(i), domain: domain)
+      |> Ash.create!(domain: domain, authorize?: false)
+    end
+
+    :ok
+  end
+
+  defp typed_reference do
+    layer = Xl.TypedEts
+    resource = Module.concat(layer, Person)
+    domain = Module.concat(layer, Domain)
+
+    resource
+    |> Ash.read!(domain: domain, authorize?: false)
+    |> Enum.each(&Ash.destroy!(&1, domain: domain, authorize?: false))
+
+    typed_seed!(layer)
+    C.typed_triples(layer, :person)
+  end
+
+  defp object_of(triples, subject_iri, predicate_iri) do
+    for {{:iri, ^subject_iri}, {:iri, ^predicate_iri}, object} <- triples, do: object
+  end
+
+  # No layer is declared to differ: any divergence in datatype IRI, lexical form or language between
+  # a layer and the ETS reference is a real finding and fails here, never flattened away.
+  defp assert_typed_equivalent(layer) do
+    reference = typed_reference()
+    typed_seed!(layer)
+    actual = C.typed_triples(layer, :person)
+
+    assert length(actual) == length(reference)
+    assert actual == reference
+  end
+
+  test "typed terms keep datatype and lexical form where string flattening cannot" do
+    integer = RDF.XSD.Integer.new(7)
+    string = RDF.XSD.String.new("7")
+    lang = RDF.LangString.new("7", language: "en")
+
+    assert to_string(RDF.Literal.lexical(integer)) == to_string(RDF.Literal.lexical(string))
+    refute C.typed_term(integer) == C.typed_term(string)
+    refute C.typed_term(string) == C.typed_term(lang)
+    assert C.typed_term(integer) == {:literal, @xsd_integer, "7", nil}
+    assert C.typed_term(lang) == {:literal, "http://www.w3.org/1999/02/22-rdf-syntax-ns#langString", "7", "en"}
+  end
+
+  test "the ETS reference publishes every attribute as its own typed literal" do
+    reference = typed_reference()
+    subject = "urn:uuid:p7"
+
+    assert [{:literal, @xsd_string, "Person 7", nil}] = object_of(reference, subject, "http://schema.org/name")
+    assert [{:literal, @xsd_integer, "7", nil}] = object_of(reference, subject, "http://schema.org/age")
+    assert [{:literal, @xsd_boolean, "false", nil}] = object_of(reference, subject, "http://schema.org/active")
+    assert [{:literal, @xsd_decimal, price, nil}] = object_of(reference, subject, "http://schema.org/price")
+    assert [{:literal, @xsd_date, "1990-01-08", nil}] = object_of(reference, subject, "http://schema.org/birthDate")
+
+    assert [{:literal, @xsd_datetime, seen_at, nil}] =
+             object_of(reference, subject, "http://schema.org/dateModified")
+
+    assert [{:literal, @xsd_string, "00000000-0000-4000-8000-000000000007", nil}] =
+             object_of(reference, subject, "http://schema.org/identifier")
+
+    assert price == "7.25"
+    # microsecond precision survives into the lexical form (7 * 1_000_123 us = 7.000861 s)
+    assert String.starts_with?(seen_at, "2026-01-01T00:00:07.000861")
+
+    subjects =
+      for {{:iri, s}, {:iri, "http://schema.org/age"}, _} <- reference, do: s
+
+    assert length(subjects) == @rows
+  end
+
+  if Code.ensure_loaded?(AshSqlite.DataLayer) do
+    @tag :sqlite
+    test "SQLite typed literals (datatype + lexical) equal ETS" do
+      repo = Xl.SqliteRepo
+      path = Path.join(System.tmp_dir!(), "ash_r2rml_xl_typed_#{System.unique_integer([:positive])}.db")
+
+      {:ok, pid} = repo.start_link(database: path, pool_size: 1)
+
+      Ecto.Adapters.SQL.query!(
+        repo,
+        "CREATE TABLE IF NOT EXISTS xl_typed_people (pid TEXT PRIMARY KEY NOT NULL, name TEXT, age INTEGER, " <>
+          "active INTEGER, price TEXT, born_on TEXT, seen_at TEXT, ref TEXT)",
+        []
+      )
+
+      on_exit(fn ->
+        ref = Process.monitor(pid)
+        Process.exit(pid, :shutdown)
+
+        receive do
+          {:DOWN, ^ref, :process, ^pid, _} -> :ok
+        after
+          5_000 -> :ok
+        end
+
+        for suffix <- ["", "-shm", "-wal"], do: File.rm(path <> suffix)
+      end)
+
+      # price is a TEXT column on purpose: SQLite has no decimal type, and a NUMERIC column would
+      # round-trip "7.25" through a binary float. The fixture asserts the lexical form survives.
+      assert_typed_equivalent(Xl.TypedSqlite)
+    end
+  end
+
+  if Code.ensure_loaded?(AshPostgres.DataLayer) do
+    @tag :postgres
+    test "Postgres typed literals (datatype + lexical) equal ETS" do
+      repo = Xl.PostgresRepo
+
+      url =
+        case System.get_env("ASH_R2RML_POSTGRES_URL") do
+          value when value in [nil, ""] -> flunk("ASH_R2RML_POSTGRES_URL is required for :postgres tests")
+          value -> value
+        end
+
+      start_supervised!(%{id: repo, start: {repo, :start_link, [[url: url, pool_size: 2]]}})
+
+      Ecto.Adapters.SQL.query!(
+        repo,
+        "CREATE TABLE IF NOT EXISTS xl_typed_people (pid TEXT PRIMARY KEY NOT NULL, name TEXT, age BIGINT, " <>
+          "active BOOLEAN, price NUMERIC, born_on DATE, seen_at TIMESTAMP(6), ref UUID)",
+        []
+      )
+
+      Ecto.Adapters.SQL.query!(repo, "DELETE FROM xl_typed_people", [])
+
+      assert_typed_equivalent(Xl.TypedPostgres)
+    end
   end
 
   test "the ETS reference publishes every seeded person with its name and age" do
@@ -222,10 +413,7 @@ defmodule AshR2RML.CrossLayerEquivalenceAllTest do
           value -> value
         end
 
-      case repo.start_link(url: url, pool_size: 2) do
-        {:ok, _pid} -> :ok
-        {:error, {:already_started, _pid}} -> :ok
-      end
+      start_supervised!(%{id: repo, start: {repo, :start_link, [[url: url, pool_size: 2]]}})
 
       Ecto.Adapters.SQL.query!(
         repo,
