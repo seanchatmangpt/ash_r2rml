@@ -240,7 +240,7 @@ mutate M14b "SSRF vet_addrs admits an unresolved (empty) address list" \
   's/defp vet_addrs\(\[\]\), do: :unresolved/defp vet_addrs([]), do: :ok/'
 
 mutate M14c "triple-budget clamp refusal disabled" \
-  "$IN_MEMORY" test/followup_triple_clamp_test.exs \
+  "$IN_MEMORY" test/obda_in_memory_limits_test.exs \
   's/clamp\? and length\(rows\) >= triple_cap ->/clamp? and length(rows) >= triple_cap * 1_000_000 ->/'
 
 if ! git diff --exit-code >/dev/null; then
