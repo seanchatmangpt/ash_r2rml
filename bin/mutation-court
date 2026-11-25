@@ -209,7 +209,7 @@ mutate M12b "merged GRAPH ?g bound_merged guard disabled" \
 
 mutate M12c "per-graph local_opts drops max_rows" \
   "$IN_MEMORY" test/followup_graph_max_rows_test.exs \
-  's/^(\s*)max_rows -> \[max_rows: max_rows\]/$1max_rows -> []/'
+  's/\[max_rows: Keyword\.get\(read_opts, :max_rows\) \|\| \@default_max_rows\]/[]/'
 
 if ! git diff --exit-code >/dev/null; then
   echo "FINAL_DIFF_NOT_EMPTY: tracked files differ after the court" >&2
