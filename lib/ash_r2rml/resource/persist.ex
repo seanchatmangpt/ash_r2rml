@@ -102,10 +102,18 @@ defmodule AshR2RML.Resource.Persist do
     |> AshR2RML.Mapping.normalize()
   end
 
+  # Calculations and aggregates are readable columns of the mapped resource too.
   defp attribute_columns(dsl) do
-    dsl
-    |> Ash.Resource.Info.attributes()
-    |> Map.new(fn attribute -> {attribute.name, to_string(attribute.source || attribute.name)} end)
+    attributes =
+      dsl
+      |> Ash.Resource.Info.attributes()
+      |> Map.new(fn attribute -> {attribute.name, to_string(attribute.source || attribute.name)} end)
+
+    derived =
+      (Ash.Resource.Info.calculations(dsl) ++ Ash.Resource.Info.aggregates(dsl))
+      |> Map.new(fn field -> {field.name, to_string(field.name)} end)
+
+    Map.merge(derived, attributes)
   end
 
   defp compile_subject(resource, _dsl, nil, _graphs) do
