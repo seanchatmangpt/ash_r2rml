@@ -301,5 +301,13 @@ if ! porcelain_empty; then
   exit 4
 fi
 
-echo "MUTATION_COURT_PASS: M1a-M16e (M16a retired) (M1abc M2ab M3ab M4ab M5 M6 M7 M8 M9ab M10ab M11ab M12abc M13abcd M14abc M15abcdef M16b M16c1 M16c2 M16d M16e) killed, tree clean"
+mutate M17a "VALUES refusal disabled" \
+  lib/ash_r2rml/obda.ex test/refactor_w11_unsupported_shapes_test.exs \
+  's/-> unsupported_shape\("VALUES"\)/-> :ok/'
+
+mutate M17b "duplicate ash_resource refusal disabled" \
+  lib/ash_r2rml/mapping/validate.ex test/refactor_w11_duplicate_resource_test.exs \
+  's/duplicate_resources\(bundle.resources\)/[]/'
+
+echo "MUTATION_COURT_PASS: M1a-M17b (M16a retired) (M1abc M2ab M3ab M4ab M5 M6 M7 M8 M9ab M10ab M11ab M12abc M13abcd M14abc M15abcdef M16b M16c1 M16c2 M16d M16e M17a M17b) killed, tree clean"
 exit 0

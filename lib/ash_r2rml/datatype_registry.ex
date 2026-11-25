@@ -111,9 +111,9 @@ defmodule AshR2RML.Datatype.Registry do
   # First matching contract wins: explicit override, semantic literal,
   # non-literal refusal, enum, money, builtin table.
   # Returns `{:ok, rdf_datatype, default_storage_type}` or a typed refusal.
-  defp lookup_contract(ash_type, _base, normalized, rdf_override) when is_binary(rdf_override) do
+  defp lookup_contract(ash_type, base, normalized, rdf_override) when is_binary(rdf_override) do
     if absolute_iri?(rdf_override) do
-      {:ok, rdf_override, builtin_storage(normalized)}
+      {:ok, rdf_override, default_storage(ash_type, base, normalized)}
     else
       {:error,
        Refusal.new(:REFUSED_UNMAPPED_DATATYPE, ash_type, "explicit RDF datatype must be an absolute IRI", %{
@@ -262,6 +262,14 @@ defmodule AshR2RML.Datatype.Registry do
   defp enum_type?(ash_type) do
     is_atom(ash_type) and Code.ensure_loaded?(ash_type) and function_exported?(ash_type, :values, 0) and
       (Spark.implements_behaviour?(ash_type, Ash.Type.Enum) or function_exported?(ash_type, :storage_type, 0))
+  end
+
+  # Storage type the type would have without an RDF override (enum, money, literal, builtin).
+  defp default_storage(ash_type, base, normalized) do
+    case lookup_contract(ash_type, base, normalized, nil) do
+      {:ok, _rdf, storage} -> storage
+      {:error, _} -> builtin_storage(normalized)
+    end
   end
 
   defp builtin_storage(normalized) do

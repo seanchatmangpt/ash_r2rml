@@ -76,6 +76,7 @@ defmodule AshR2RML.Mapping.Validate.Subject do
     |> maybe_add(term_type(resource, subject))
     |> maybe_add(value(resource, subject))
     |> maybe_add(constant_iri(resource, subject))
+    |> maybe_add(constant_blank(resource, subject))
     |> Kernel.++(columns(resource, subject))
     |> Kernel.++(GraphMaps.check(resource.ash_resource, subject.graph_maps))
     |> maybe_add(identity(resource, subject))
@@ -115,6 +116,18 @@ defmodule AshR2RML.Mapping.Validate.Subject do
         resource.ash_resource,
         "constant IRI subject must be absolute",
         %{value: subject.value}
+      )
+    end
+  end
+
+  # R2RML 7.1: a constant-valued term map cannot be a blank node.
+  defp constant_blank(resource, subject) do
+    if subject.strategy == :constant and subject.term_type == :blank_node do
+      Refusal.new(
+        :REFUSED_INVALID_TERM_MAP,
+        resource.ash_resource,
+        "constant blank-node subject maps are forbidden (R2RML 7.1)",
+        %{strategy: subject.strategy, term_type: subject.term_type}
       )
     end
   end

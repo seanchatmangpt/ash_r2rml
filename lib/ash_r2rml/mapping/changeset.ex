@@ -63,7 +63,7 @@ defmodule AshR2RML.Mapping.Changeset do
   @spec new(keyword() | map()) :: {:ok, t()} | {:error, Refusal.t()}
   def new(opts \\ [])
 
-  def new(opts) when is_map(opts), do: build(opts)
+  def new(opts) when is_map(opts) and not is_struct(opts), do: build(opts)
 
   def new(opts) when is_list(opts) do
     if Keyword.keyword?(opts), do: build(opts), else: {:error, invalid_input(:options, opts)}

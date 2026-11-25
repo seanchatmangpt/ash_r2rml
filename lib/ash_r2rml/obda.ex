@@ -263,7 +263,8 @@ defmodule AshR2RML.OBDA do
   end
 
   defp execute(source, sparql, opts, started) do
-    with :ok <- check_order_projected(sparql),
+    with :ok <- check_supported_shapes(sparql),
+         :ok <- check_order_projected(sparql),
          :ok <- Modifiers.check(sparql),
          {:ok, specs} <- resolve_specs(source),
          {:ok, readable, pruned} <- preflight(specs, opts),
@@ -302,6 +303,32 @@ defmodule AshR2RML.OBDA do
       quad_graph = if plan.kind == :iri, do: to_string(plan.iri)
       {:ok, Map.take(stats, [:rows_read, :triples_emitted]), ttl, observation, quad_graph}
     end
+  end
+
+  # The in-process engine silently ignores VALUES and sub-SELECTs and returns no rows for property
+  # paths; a wrong answer is worse than a refusal, so those shapes are refused up front.
+  @doc false
+  @spec check_supported_shapes(String.t()) :: :ok | {:error, Refusal.t()}
+  def check_supported_shapes(sparql) do
+    plain =
+      sparql
+      |> String.replace(~r/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/s, "\"\"")
+      |> String.replace(~r/#[^\n]*/, "")
+      |> String.replace(~r/<[^>\s]*>/, "<>")
+
+    cond do
+      Regex.match?(~r/\bVALUES\b/i, plain) -> unsupported_shape("VALUES")
+      Regex.match?(~r/\{\s*SELECT\b/i, plain) -> unsupported_shape("sub-SELECT")
+      Regex.match?(~r/(<>|\w+:\w*)\s*[\/|]\s*(<>|\w+:)|\^\s*<>|<>[*+]/, plain) -> unsupported_shape("property path")
+      true -> :ok
+    end
+  end
+
+  defp unsupported_shape(name) do
+    {:error,
+     refusal(:sparql, "#{name} is not supported by the in-process engine; refusing instead of answering wrongly", %{
+       feature: name
+     })}
   end
 
   # SPARQL.ex projects before this module sorts, so an ORDER BY variable that is not in the SELECT

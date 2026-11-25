@@ -56,15 +56,27 @@ defmodule AshR2RML.Mapping.Validate.Shared do
     metadata_columns = resource.metadata |> Map.get(:attribute_columns, %{}) |> Map.values()
     identity_cols = resource |> Mapping.identity_column_sets() |> List.flatten()
 
+    # Self-admission of :column object values applies only when the mapping
+    # declares no columns; a declared column set is authoritative.
     property_columns =
-      Enum.flat_map(resource.predicate_object_maps, fn mapping ->
-        case mapping.object_map do
-          %ObjectMap{strategy: :column, value: value} -> [value]
-          _ -> []
-        end
-      end)
+      if columns_declared?(resource) do
+        []
+      else
+        Enum.flat_map(resource.predicate_object_maps, fn mapping ->
+          case mapping.object_map do
+            %ObjectMap{strategy: :column, value: value} -> [value]
+            _ -> []
+          end
+        end)
+      end
 
     MapSet.new(metadata_columns ++ identity_cols ++ property_columns)
+  end
+
+  @doc "True when the mapping declares its columns via non-empty `metadata.attribute_columns`."
+  @spec columns_declared?(Resource.t()) :: boolean()
+  def columns_declared?(resource) do
+    match?(%{attribute_columns: columns} when is_map(columns) and map_size(columns) > 0, resource.metadata)
   end
 
   @doc "One refusal naming every template field the resource mapping cannot supply."

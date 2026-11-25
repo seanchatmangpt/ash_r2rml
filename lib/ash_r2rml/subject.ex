@@ -54,8 +54,42 @@ defmodule AshR2RML.Subject do
   def to_iri(source, record_or_keys) do
     with {:ok, mapping, template} <- template(source),
          {:ok, segments} <- parse(mapping, template) do
-      render(mapping, segments, record_or_keys)
+      with {:ok, iri} <- render(mapping, segments, record_or_keys) do
+        check_invertible(mapping, segments, record_or_keys, iri)
+      end
     end
+  end
+
+  # A key whose IRI from_iri/2 cannot invert back to the same key (e.g. key text ending in a
+  # trailing unreserved literal of the template) is refused. Templates that are structurally
+  # non-invertible keep their existing to_iri behavior (from_iri refuses those itself).
+  defp check_invertible(mapping, segments, record, iri) do
+    with :ok <- check_separators(mapping, segments),
+         {:ok, captured} <- capture(mapping, segments, iri),
+         {:ok, typed} <- cast_values(mapping, captured, iri),
+         true <- same_fields?(mapping, segments, record, typed) do
+      {:ok, iri}
+    else
+      {:error, %Refusal{code: :REFUSED_NON_INVERTIBLE_TEMPLATE}} -> {:ok, iri}
+      _ -> {:error, non_invertible_key(mapping, iri)}
+    end
+  end
+
+  defp same_fields?(mapping, segments, record, typed) do
+    Enum.all?(segments, fn
+      {:field, _} = segment -> render_segment(mapping, segment, record) == render_segment(mapping, segment, typed)
+      _ -> true
+    end)
+  end
+
+  defp non_invertible_key(mapping, iri) do
+    refuse(
+      mapping,
+      :REFUSED_INVALID_SUBJECT_IRI,
+      "subject key renders to an IRI that from_iri/2 cannot invert to the same key " <>
+        "(ambiguous against a literal of the template)",
+      %{iri: iri}
+    )
   end
 
   @doc """

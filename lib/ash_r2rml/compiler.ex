@@ -46,7 +46,7 @@ defmodule AshR2RML.CompilationReceipt do
           postgres_sha256: String.t() | nil,
           r2rml_sha256: String.t() | nil,
           shacl_sha256: String.t() | nil,
-          query_parity: :UNKNOWN | :VERIFIED,
+          query_parity: :UNKNOWN | :VERIFIED | nil,
           cutover_authority: :UNAUTHORIZED | :AUTHORIZED | nil,
           classes_admitted: non_neg_integer(),
           attributes_admitted: non_neg_integer(),

@@ -58,6 +58,8 @@ Items marked UNVERIFIED have source present but no test run by the docs lane.
   bounded too (`REFUSED_RESULT_LIMIT_EXCEEDED`).
 
 ### Known gaps (accepted):
+- The in-process engine silently ignored VALUES, sub-SELECTs and property paths; `OBDA.query/3` now refuses them
+  (`REFUSED_UNSUPPORTED_SPARQL_FEATURE`). ETS is private-by-default, so actor/tenant equivalence has no ETS reference.
 - `AshR2RML.OBDA.InMemory.query*` (the raw engine) does not apply SPARQL `ORDER BY`/`LIMIT`/`OFFSET` row semantics; the OBDA envelope
   (`AshR2RML.OBDA.query/3`) applies them. The cross-layer court compares raw-engine rows order-insensitively.
 - The reference-pass `emitted > max_triples` guard in `InMemory` is redundant with the read-time triple budget in the

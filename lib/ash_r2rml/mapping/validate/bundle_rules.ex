@@ -67,10 +67,7 @@ defmodule AshR2RML.Mapping.Validate.BundleRules do
   # A reference joining a parent on columns the parent lacks dangles: refuse it. Joining on a
   # non-identity parent column is lawful (has_many-style joins), so uniqueness is not required.
   defp parent_join_columns(resource, reference, parent) do
-    columns =
-      reference.joins
-      |> Enum.filter(&match?(%Mapping.JoinCondition{}, &1))
-      |> Enum.map(& &1.parent)
+    columns = parent_columns(reference, parent)
 
     available = Shared.available_columns(parent)
     missing = columns |> Enum.reject(&MapSet.member?(available, &1)) |> Enum.uniq() |> Enum.sort()
@@ -83,6 +80,26 @@ defmodule AshR2RML.Mapping.Validate.BundleRules do
       missing != [] -> refuse.(missing_detail, missing)
       true -> []
     end
+  end
+
+  # many_to_many references carry no joins: the destination parent column lives in the bridge
+  # metadata and is checked only when the parent declares its columns.
+  defp parent_columns(%{metadata: %{kind: :many_to_many} = metadata}, parent) do
+    column =
+      case metadata do
+        %{join_to_destination: %Mapping.JoinCondition{parent: column}} -> column
+        %{destination_parent_column: column} -> column
+        _ -> nil
+      end
+
+    declared? = map_size(Map.get(parent.metadata, :attribute_columns, %{})) > 0
+    if is_binary(column) and column != "" and declared?, do: [column], else: []
+  end
+
+  defp parent_columns(reference, _parent) do
+    reference.joins
+    |> Enum.filter(&match?(%Mapping.JoinCondition{}, &1))
+    |> Enum.map(& &1.parent)
   end
 
   defp join_refusal(resource, reference, parent, detail, columns) do

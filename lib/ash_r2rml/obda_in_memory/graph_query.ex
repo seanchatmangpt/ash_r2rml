@@ -152,15 +152,18 @@ defmodule AshR2RML.OBDA.InMemory.GraphQuery do
       [{start, len}] ->
         open = start + len - 1
         close = matching(fragment, open, ?(, ?))
+        size = byte_size(fragment)
 
-        binary_part(fragment, 0, start) <>
-          " " <> strip_filters(binary_part(fragment, close + 1, byte_size(fragment) - close - 1))
+        # An unclosed FILTER paren consumes the rest of the fragment.
+        rest = if close >= size, do: "", else: binary_part(fragment, close + 1, size - close - 1)
+        binary_part(fragment, 0, start) <> " " <> strip_filters(rest)
     end
   end
 
   defp matching_close(text, open), do: matching(text, open, ?{, ?})
 
-  # Index of the bracket closing the one at `open`; end of text when unbalanced.
+  # Index of the bracket closing the one at `open`; `byte_size(text)` (one past the end)
+  # when unbalanced, so no in-range byte can be mistaken for the missing closer.
   defp matching(text, open, opener, closer) do
     size = byte_size(text)
 
@@ -174,7 +177,7 @@ defmodule AshR2RML.OBDA.InMemory.GraphQuery do
     end)
     |> case do
       {:found, index} -> index
-      _ -> size - 1
+      _ -> size
     end
   end
 

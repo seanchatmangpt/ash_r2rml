@@ -128,6 +128,37 @@ defmodule AshR2RML.Mapping.Validate.References do
     []
     |> maybe_add(bridge_through_table(subject, Map.get(metadata, :through_logical_table)))
     |> maybe_add(bridge_complete(subject, metadata, bridge_columns(metadata)))
+    |> Kernel.++(bridge_child_dangling(resource, subject, metadata))
+  end
+
+  # The bridge's source side joins the child resource: its column must exist there when the
+  # mapping declares columns. The destination side is checked against the parent in bundle rules.
+  defp bridge_child_dangling(resource, subject, metadata) do
+    column =
+      case metadata do
+        %{source_to_join: %JoinCondition{child: child}} -> child
+        %{source_parent_column: child} -> child
+        _ -> nil
+      end
+
+    if non_empty_string?(column) and declared_columns?(resource) do
+      available = available_columns(resource)
+
+      if MapSet.member?(available, column) do
+        []
+      else
+        [
+          Refusal.new(
+            :REFUSED_INVALID_JOIN_CONDITION,
+            subject,
+            "many_to_many source column is not a column of the mapped resource",
+            %{side: :child, column: column, available: available |> MapSet.to_list() |> Enum.sort()}
+          )
+        ]
+      end
+    else
+      []
+    end
   end
 
   defp bridge_columns(metadata) do

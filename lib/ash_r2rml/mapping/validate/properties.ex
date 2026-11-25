@@ -42,6 +42,7 @@ defmodule AshR2RML.Mapping.Validate.Properties do
     |> maybe_add(value(subject, object))
     |> maybe_add(language_datatype(subject, object))
     |> maybe_add(constant_iri(subject, object))
+    |> maybe_add(column_exists(resource, subject, object))
     |> Kernel.++(object_template(resource, mapping, object))
     |> Kernel.++(datatype(subject, object.datatype))
     |> Kernel.++(GraphMaps.check(subject, mapping.graph_maps ++ object.graph_maps))
@@ -93,6 +94,21 @@ defmodule AshR2RML.Mapping.Validate.Properties do
       )
     end
   end
+
+  # Enforced only when the mapping declares its columns (metadata.attribute_columns).
+  defp column_exists(resource, subject, %ObjectMap{strategy: :column, value: value})
+       when is_binary(value) and value != "" do
+    if columns_declared?(resource) and not MapSet.member?(available_columns(resource), value) do
+      Refusal.new(
+        :REFUSED_INVALID_TERM_MAP,
+        subject,
+        "column object map is not a column of the mapped resource",
+        %{column: value, available: resource |> available_columns() |> MapSet.to_list() |> Enum.sort()}
+      )
+    end
+  end
+
+  defp column_exists(_resource, _subject, _object), do: nil
 
   defp object_template(resource, mapping, %ObjectMap{strategy: :template, term_type: :iri, value: value} = object)
        when is_binary(value) do

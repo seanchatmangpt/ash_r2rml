@@ -49,7 +49,7 @@ defmodule AshR2RML.OBDA.InMemory do
   default rather than materialized: `Ash.read!/2` returns the real plaintext value
   for a `sensitive?: true` attribute exactly like any other (unlike a field-policy
   denial, which comes back as a real `%Ash.ForbiddenField{}` sentinel Ash itself
-  produces -- see `add_predicate_triples/5` below), so without an explicit check
+  produces -- see `add_predicate_triples/6` below), so without an explicit check
   here that plaintext would flow straight into the materialized RDF graph. This
   mirrors the `:join_table` precedent immediately below: a typed
   `:REFUSED_SENSITIVE_ATTRIBUTE_MATERIALIZATION` refusal, not a silent per-triple
@@ -229,7 +229,6 @@ defmodule AshR2RML.OBDA.InMemory do
                      max_triples,
                      ash_resource,
                      mapping_resource,
-                     mapping_index,
                      allow_sensitive?
                    ) do
                 {:ok, graph, emitted, n} ->
@@ -780,7 +779,6 @@ defmodule AshR2RML.OBDA.InMemory do
          max_triples,
          ash_resource,
          mapping_resource,
-         _mapping_index,
          allow_sensitive?
        ) do
     # Sensitivity/schema checks depend only on the spec, so they run once per spec (and only

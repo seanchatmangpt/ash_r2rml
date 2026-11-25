@@ -61,7 +61,8 @@ defmodule AshR2RML.Mapping.Validate do
 
     refusals =
       Enum.flat_map(bundle.resources, &bundled_resource(&1, by_resource)) ++
-        BundleRules.duplicate_subject_contracts(bundle.resources)
+        BundleRules.duplicate_subject_contracts(bundle.resources) ++
+        duplicate_resources(bundle.resources)
 
     to_result(refusals)
   end
@@ -77,6 +78,21 @@ defmodule AshR2RML.Mapping.Validate do
         {resource.ash_resource, mapping.attribute},
         "predicate-object map requires an object map",
         %{predicate_iri: mapping.predicate_iri}
+      )
+    end)
+  end
+
+  defp duplicate_resources(resources) do
+    resources
+    |> Enum.frequencies_by(& &1.ash_resource)
+    |> Enum.filter(fn {_resource, count} -> count > 1 end)
+    |> Enum.sort()
+    |> Enum.map(fn {ash_resource, count} ->
+      Refusal.new(
+        :REFUSED_NON_UNIQUE_SEMANTIC_IDENTITY,
+        ash_resource,
+        "bundle lists more than one mapping for the same ash_resource",
+        %{ash_resource: ash_resource, entries: count}
       )
     end)
   end
